@@ -1,0 +1,89 @@
+import { CategoryInfo, VehicleCategory } from '../types';
+
+export const VEHICLE_CATEGORIES: Record<VehicleCategory, CategoryInfo> = {
+  economica: {
+    id: 'economica',
+    name: 'RACE Econômica',
+    tagline: 'O melhor custo-benefício da cidade',
+    basePrice: 5.00,
+    pricePerKm: 2.50, // Conforme especificado pelo usuário: R$ 2,50 por km
+    iconName: 'Car',
+    estimatedTimeMin: 4,
+    description: 'Carros compactos e confortáveis com ar-condicionado. Ideal para o dia a dia.',
+    capacity: 'Até 4 passageiros',
+    recommendedFor: 'Economia e agilidade',
+  },
+  confort: {
+    id: 'confort',
+    name: 'RACE Confort',
+    tagline: 'Espaço extra, carros premium e atendimento VIP',
+    basePrice: 7.00,
+    pricePerKm: 3.50, // Conforme especificado pelo usuário: R$ 3,50 por km
+    iconName: 'Sparkles',
+    estimatedTimeMin: 6,
+    description: 'Sedans e SUVs novos, motoristas top avaliados e temperatura personalizada.',
+    capacity: 'Até 4 passageiros + bagagem ampla',
+    recommendedFor: 'Reuniões, viagens e máximo conforto',
+  },
+  moto_passageiro: {
+    id: 'moto_passageiro',
+    name: 'RACE Moto Passageiro',
+    tagline: 'Fuja do trânsito na modalidade mais rápida',
+    basePrice: 4.00,
+    pricePerKm: 1.80,
+    iconName: 'Bike',
+    estimatedTimeMin: 2,
+    description: 'Motoboy profissional credenciado. Acompanha capacete higienizado com touca descartável.',
+    capacity: '1 passageiro',
+    recommendedFor: 'Pressa e horários de pico',
+  },
+  moto_entrega: {
+    id: 'moto_entrega',
+    name: 'RACE Moto Entrega Flash',
+    tagline: 'Envio imediato de encomendas e documentos',
+    basePrice: 4.50,
+    pricePerKm: 2.00,
+    iconName: 'PackageCheck',
+    estimatedTimeMin: 3,
+    description: 'Motoboy com baú térmico/mochila segura. Rastreamento do pacote em tempo real e código de entrega.',
+    capacity: 'Até 20kg / 45L',
+    recommendedFor: 'Documentos, compras e encomendas urgentes',
+  },
+};
+
+export const WEEKLY_SUBSCRIPTION_PRICE = 300.00; // R$ 300 semanal sem taxa de corrida
+
+export function calculateFare(
+  category: VehicleCategory,
+  distanceKm: number
+): {
+  totalPrice: number;
+  driverEarnings: number;
+  platformFee: number;
+  breakdown: { base: number; perKm: number; distance: number; rate: number };
+} {
+  const cat = VEHICLE_CATEGORIES[category];
+  const kmCost = distanceKm * cat.pricePerKm;
+  const total = Math.max(cat.basePrice + kmCost, cat.basePrice);
+  const roundedTotal = Number(total.toFixed(2));
+
+  // No RACE: 100% dos ganhos para o motorista/motoboy! 0 taxas!
+  return {
+    totalPrice: roundedTotal,
+    driverEarnings: roundedTotal, // 100%
+    platformFee: 0.00,           // 0% cobrança
+    breakdown: {
+      base: cat.basePrice,
+      perKm: kmCost,
+      distance: distanceKm,
+      rate: cat.pricePerKm,
+    },
+  };
+}
+
+export function formatBRL(value: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(value);
+}

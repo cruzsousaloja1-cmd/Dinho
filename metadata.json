@@ -1,0 +1,6 @@
+{
+  "name": "RACE - Mobilidade Urbana & Entregas",
+  "description": "Plataforma de mobilidade urbana e entregas RACE. Ganhos 100% livres para motoristas e motoboys com assinatura semanal de R$300, GPS em tempo real, suporte 24h e segurança integrada.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
