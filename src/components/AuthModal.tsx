@@ -179,12 +179,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }, 400);
   };
 
-  const handleQuickDemo = (demoEmail: string, demoName: string, demoRole: 'passenger' | 'driver') => {
-    setEmail(demoEmail);
-    setPassword('race123');
-    setName(demoName);
-    setRole(demoRole);
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/70 backdrop-blur-sm animate-fade-in overflow-y-auto">
@@ -480,35 +474,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </form>
 
-        {/* Demo Fast Fill */}
-        <div className="border-t border-slate-200 mt-4 pt-3.5 text-center">
-          <span className="text-xs text-slate-500 font-medium block mb-2">
-            Acesso Rápido para Demonstração:
-          </span>
-          <div className="flex flex-wrap justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('passageiro.demo@raceapp.com.br', 'Passageiro RACE', 'passenger')}
-              className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3 py-1.5 rounded-lg border border-slate-300 cursor-pointer"
-            >
-              👤 Passageiro Demo
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('carlos.silva@raceapp.com.br', 'Carlos Silva (Econômica)', 'driver')}
-              className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold px-3 py-1.5 rounded-lg border border-amber-300 cursor-pointer"
-            >
-              🚗 Carlos (Motorista)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('renata.prado@raceapp.com.br', 'Renata Prado (Confort)', 'driver')}
-              className="text-xs bg-purple-100 hover:bg-purple-200 text-purple-950 font-bold px-3 py-1.5 rounded-lg border border-purple-300 cursor-pointer"
-            >
-              ✨ Renata (Confort)
-            </button>
-          </div>
-        </div>
+
       </div>
     </div>
   );

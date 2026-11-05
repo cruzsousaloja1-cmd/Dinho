@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Driver, VehicleCategory, AppUser } from '../types';
 import { WEEKLY_FEE } from '../config/pricing';
-import { Eye, EyeOff, AlertTriangle, ArrowRight, CheckCircle2, Car, Zap } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface DriverLoginScreenProps {
@@ -24,8 +24,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   // Registration Fields
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [vehicleModel, setVehicleModel] = useState('Chevrolet Onix Plus');
-  const [vehiclePlate, setVehiclePlate] = useState('BRA2E19');
+  const [vehicleModel, setVehicleModel] = useState('');
+  const [vehiclePlate, setVehiclePlate] = useState('');
   const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory>('economica');
 
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -34,63 +34,39 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !password) {
-      setErrorMessage('Por favor, informe seu email e sua senha.');
+      setErrorMessage('Por favor, informe seu e-mail e sua senha.');
       return;
     }
 
-    // Find driver by email or fallback to first matching/demo driver
+    // Procura motorista cadastrado na lista
     const matched = drivers.find(
       (d) => d.email.toLowerCase() === cleanEmail
     );
 
-    const now = new Date();
-    let targetDriver: Driver;
-
-    if (matched) {
-      const expiresDate = matched.weeklyFeeExpiresAt
-        ? new Date(matched.weeklyFeeExpiresAt)
-        : matched.weeklyPlanExpiresAt
-        ? new Date(matched.weeklyPlanExpiresAt)
-        : null;
-      const isSubActive = Boolean(matched.weeklyPlanActive && expiresDate && expiresDate > now);
-
-      targetDriver = {
-        ...matched,
-        status: isSubActive ? 'online' : 'offline',
-      };
-    } else {
-      // Create new driver session with default active 7-day plan
-      targetDriver = {
-        id: `drv-${Date.now().toString().slice(-4)}`,
-        name: cleanEmail.split('@')[0].toUpperCase(),
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        phone: '(11) 98765-4321',
-        email: cleanEmail,
-        cpf: '000.***.***-00',
-        cnh: '01234567890 - Categoria B (EAR)',
-        category: 'economica',
-        vehicleModel: 'Veículo Parceiro',
-        vehiclePlate: 'RCE0A00',
-        vehicleColor: 'Prata',
-        vehicleYear: 2023,
-        rating: 5.0,
-        totalRides: 0,
-        status: 'online',
-        lat: -23.5615,
-        lng: -46.6558,
-        weeklyPlanActive: true,
-        weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        weeklyFeePaidAt: new Date().toISOString(),
-        weeklyFeeExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        weeklyPlanPrice: WEEKLY_FEE,
-        earningsToday: 0,
-        earningsWeek: 0,
-        cnhVerified: true,
-        vehicleVerified: true,
-        criminalRecordClear: true,
-        registrationDate: new Date().toISOString().split('T')[0],
-      };
+    if (!matched) {
+      setErrorMessage(
+        'Nenhum motorista cadastrado com este e-mail. Clique em "Criar conta de motorista" abaixo para realizar seu cadastro.'
+      );
+      return;
     }
+
+    if (matched.password && matched.password !== password) {
+      setErrorMessage('Senha incorreta. Verifique os dados digitados.');
+      return;
+    }
+
+    const now = new Date();
+    const expiresDate = matched.weeklyFeeExpiresAt
+      ? new Date(matched.weeklyFeeExpiresAt)
+      : matched.weeklyPlanExpiresAt
+      ? new Date(matched.weeklyPlanExpiresAt)
+      : null;
+    const isSubActive = Boolean(matched.weeklyPlanActive && expiresDate && expiresDate > now);
+
+    const targetDriver: Driver = {
+      ...matched,
+      status: isSubActive ? 'online' : 'offline',
+    };
 
     const appUser: AppUser = {
       id: targetDriver.id,
@@ -115,13 +91,20 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setErrorMessage(null);
 
     const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !password || !name || !phone) {
+    if (!cleanEmail || !password || !name.trim() || !phone.trim()) {
       setErrorMessage('Por favor, preencha todos os campos obrigatórios.');
       return;
     }
 
+    // Verifica se já existe motorista cadastrado com este e-mail
+    if (drivers.some((d) => d.email.toLowerCase() === cleanEmail)) {
+      setErrorMessage('Já existe uma conta com este e-mail. Faça login ou use outro e-mail.');
+      return;
+    }
+
+    // Requisito 5: novo motorista inicia com assinatura VENCIDA pedindo pagamento de R$ 200
     const newDriver: Driver = {
-      id: `drv-${Date.now().toString().slice(-4)}`,
+      id: `drv-${Date.now().toString().slice(-5)}`,
       name: name.trim(),
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
       phone: phone.trim(),
@@ -130,18 +113,18 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       cnh: '01234567890 - Categoria B (EAR)',
       category: vehicleCategory,
       vehicleModel: vehicleModel.trim() || 'Veículo Parceiro',
-      vehiclePlate: (vehiclePlate.trim() || 'RCE1A00').toUpperCase(),
+      vehiclePlate: (vehiclePlate.trim() || 'BRA2E19').toUpperCase(),
       vehicleColor: 'Preto',
       vehicleYear: 2024,
       rating: 5.0,
       totalRides: 0,
-      status: 'online',
+      status: 'offline', // Offline até pagar a assinatura
       lat: -23.5615,
       lng: -46.6558,
-      weeklyPlanActive: true,
-      weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      weeklyFeePaidAt: new Date().toISOString(),
-      weeklyFeeExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      weeklyPlanActive: false, // Assinatura vencida/inativa
+      weeklyPlanExpiresAt: null,
+      weeklyFeePaidAt: null,
+      weeklyFeeExpiresAt: null,
       weeklyPlanPrice: WEEKLY_FEE,
       earningsToday: 0,
       earningsWeek: 0,
@@ -149,6 +132,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       vehicleVerified: true,
       criminalRecordClear: true,
       registrationDate: new Date().toISOString().split('T')[0],
+      password: password,
     };
 
     const appUser: AppUser = {
@@ -169,11 +153,6 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     onRegisterSuccess(appUser, newDriver);
   };
 
-  const handleQuickDemo = (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('race123');
-  };
-
   return (
     <div className="min-h-screen bg-[#000000] text-white flex flex-col justify-center items-center px-6 py-12 selection:bg-[#ff6a00] selection:text-white">
       <div className="w-full max-w-sm sm:max-w-md space-y-8 animate-fade-in">
@@ -184,7 +163,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           </h1>
           {/* Subtítulo: "App do Motorista" em branco/cinza claro, embaixo do RACE */}
           <p className="text-zinc-300 font-medium text-base sm:text-lg tracking-wide">
-            {mode === 'login' ? 'App do Motorista' : 'Cadastro de Motorista Parceiro'}
+            {mode === 'login' ? 'App do Motorista' : 'Cadastro de Motorista'}
           </p>
         </div>
 
@@ -196,7 +175,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           </div>
         )}
 
-        {/* Formulário: Design exatamente igual ao print preto e laranja */}
+        {/* Formulário: Design limpo exatamente preto e laranja */}
         {mode === 'login' ? (
           <form onSubmit={handleLoginSubmit} className="space-y-6 pt-2">
             {/* Campo EMAIL */}
@@ -262,7 +241,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             </div>
           </form>
         ) : (
-          <form onSubmit={handleRegisterSubmit} className="space-y-4 pt-2">
+          /* Formulário de Cadastro de Novo Motorista */
+          <form onSubmit={handleRegisterSubmit} className="space-y-4 pt-1">
             {/* NOME COMPLETO */}
             <div className="space-y-1.5">
               <label className="text-white text-xs font-bold uppercase tracking-wider block">
@@ -273,7 +253,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Ex: Carlos Silva"
+                placeholder="Seu nome completo"
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors"
               />
             </div>
@@ -323,11 +303,28 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
               />
             </div>
 
+            {/* CATEGORIA */}
+            <div className="space-y-1.5">
+              <label className="text-white text-xs font-bold uppercase tracking-wider block">
+                CATEGORIA
+              </label>
+              <select
+                value={vehicleCategory}
+                onChange={(e) => setVehicleCategory(e.target.value as VehicleCategory)}
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors"
+              >
+                <option value="economica">RACE Econômica (Carro)</option>
+                <option value="confort">RACE Confort (Sedã/SUV)</option>
+                <option value="moto_passageiro">RACE Moto Passageiro</option>
+                <option value="moto_entrega">RACE Flash (Entregas)</option>
+              </select>
+            </div>
+
             {/* VEÍCULO & PLACA */}
             <div className="grid grid-cols-2 gap-3 pt-1">
               <div className="space-y-1.5">
                 <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                  MODELO DO CARRO
+                  MODELO DO VEÍCULO
                 </label>
                 <input
                   type="text"
@@ -377,29 +374,6 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             </div>
           </form>
         )}
-
-        {/* Acesso rápido para testes/demonstração */}
-        <div className="pt-8 border-t border-[#1a1a1a] text-center space-y-2.5">
-          <span className="text-zinc-500 text-xs font-medium block">
-            Acesso Rápido para Demonstração:
-          </span>
-          <div className="flex flex-wrap justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('carlos.silva@raceapp.com.br')}
-              className="text-xs bg-[#1a1a1a] hover:bg-[#252525] text-zinc-300 hover:text-white px-3 py-1.5 rounded-lg border border-[#2a2a2a] transition-colors cursor-pointer"
-            >
-              🚗 Carlos Silva (Ativo)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('renata.prado@raceapp.com.br')}
-              className="text-xs bg-[#1a1a1a] hover:bg-[#252525] text-zinc-300 hover:text-white px-3 py-1.5 rounded-lg border border-[#2a2a2a] transition-colors cursor-pointer"
-            >
-              ✨ Renata Prado (Confort)
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

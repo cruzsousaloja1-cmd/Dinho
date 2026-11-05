@@ -80,7 +80,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   onRenewWeeklyPlan,
   onTriggerToast,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'login' | 'register' | 'subscription'>('dashboard');
+  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'login' | 'register' | 'subscription'>(() => {
+    return currentDriver.weeklyPlanActive ? 'dashboard' : 'subscription';
+  });
   const [isOnline, setIsOnline] = useState(currentDriver.status === 'online');
   const [acceptedRideNotice, setAcceptedRideNotice] = useState<string | null>(null);
   const [comfortWarning, setComfortWarning] = useState<string | null>(null);
@@ -477,6 +479,31 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       {/* SUBTAB 1: DRIVER DASHBOARD */}
       {activeSubTab === 'dashboard' && (
         <div className="space-y-4">
+          {/* Alerta de Assinatura Vencida se o plano estiver inativo */}
+          {!currentDriver.weeklyPlanActive && (
+            <div className="bg-rose-50 border-2 border-rose-400 rounded-3xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-heading font-black text-rose-950 text-base sm:text-lg">
+                    ASSINATURA SEMANAL VENCIDA ({WEEKLY_FEE_TEXT})
+                  </h4>
+                  <p className="text-xs sm:text-sm text-rose-800 font-medium">
+                    Sua assinatura de R$ 200 venceu. Pague via PIX para liberar seu status ONLINE e receber chamados com 100% dos ganhos livres.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveSubTab('subscription')}
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer whitespace-nowrap active:scale-95"
+              >
+                PAGAR R$ 200 VIA PIX
+              </button>
+            </div>
+          )}
+
           {/* Status & Online Toggle Card in White */}
           <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md">
             <div className="flex items-center justify-between">
@@ -847,34 +874,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             </div>
           </form>
 
-          {/* Quick account switch for convenience */}
-          <div className="border-t border-slate-200 pt-4 text-center">
-            <span className="text-xs text-slate-500 font-medium block mb-2">
-              Ou acesse rapidamente uma conta de demonstração:
-            </span>
-            <div className="flex justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginEmail('carlos.silva@raceapp.com.br');
-                  setLoginPassword('race123');
-                }}
-                className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3 py-1.5 rounded-lg border border-slate-300 cursor-pointer"
-              >
-                Preencher Carlos (Onix)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginEmail('renata.prado@raceapp.com.br');
-                  setLoginPassword('race123');
-                }}
-                className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-900 font-bold px-3 py-1.5 rounded-lg border border-purple-200 cursor-pointer"
-              >
-                Preencher Renata (Corolla Confort)
-              </button>
-            </div>
-          </div>
+
         </div>
       )}
 

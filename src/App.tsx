@@ -9,7 +9,8 @@ import {
 import { 
   INITIAL_DRIVERS, 
   INITIAL_NOTIFICATIONS, 
-  INITIAL_RIDES_HISTORY 
+  INITIAL_RIDES_HISTORY,
+  DEFAULT_NEW_DRIVER
 } from './data/mockData';
 import { Header } from './components/Header';
 import { BottomNav, TabType } from './components/BottomNav';
@@ -33,8 +34,38 @@ import { WEEKLY_FEE, WEEKLY_FEE_TEXT, COMMISSION, WEEKLY_FEE_BADGE } from './con
 export default function App() {
   // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
   const [activeTab, setActiveTab] = useState<TabType>('driver_portal');
-  const [drivers, setDrivers] = useState<Driver[]>(INITIAL_DRIVERS);
-  const [currentDriver, setCurrentDriver] = useState<Driver>(INITIAL_DRIVERS[0]);
+  const [drivers, setDrivers] = useState<Driver[]>(() => {
+    try {
+      const stored = localStorage.getItem('race_registered_drivers');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (
+          Array.isArray(parsed) &&
+          !parsed.some((d: any) => d.email?.includes('raceapp.com.br') || d.id === 'drv-01')
+        ) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return INITIAL_DRIVERS;
+  });
+
+  const [currentDriver, setCurrentDriver] = useState<Driver>(() => {
+    try {
+      const stored = localStorage.getItem('race_registered_drivers');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (
+          Array.isArray(parsed) &&
+          parsed.length > 0 &&
+          !parsed.some((d: any) => d.email?.includes('raceapp.com.br') || d.id === 'drv-01')
+        ) {
+          return parsed[0];
+        }
+      }
+    } catch {}
+    return DEFAULT_NEW_DRIVER;
+  });
   const [ridesHistory, setRidesHistory] = useState<Ride[]>(INITIAL_RIDES_HISTORY);
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
 
@@ -68,6 +99,34 @@ export default function App() {
   const [currentToast, setCurrentToast] = useState<PushNotification | null>(null);
   const [subscriptionExpiredModalOpen, setSubscriptionExpiredModalOpen] = useState(false);
   const [expiredModalDriver, setExpiredModalDriver] = useState<Driver | null>(null);
+
+  // Limpar dados de teste e usuários demo legados do localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('race_registered_drivers');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (
+          Array.isArray(parsed) &&
+          parsed.some((d: any) => d.email?.includes('raceapp.com.br') || d.id === 'drv-01')
+        ) {
+          localStorage.removeItem('race_registered_drivers');
+          localStorage.removeItem('race_current_user');
+          setDrivers([]);
+          setCurrentUser(null);
+          setCurrentDriver(DEFAULT_NEW_DRIVER);
+        }
+      }
+      const storedUser = localStorage.getItem('race_current_user');
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        if (parsedUser.email?.includes('raceapp.com.br')) {
+          localStorage.removeItem('race_current_user');
+          setCurrentUser(null);
+        }
+      }
+    } catch {}
+  }, []);
 
   // 4. Bloqueio Automático a cada 1 minuto (Se weeklyFeeExpiresAt < now, set weeklyPlanActive = false e status = offline)
   useEffect(() => {
@@ -262,18 +321,30 @@ export default function App() {
 
   // Driver register / updates
   const handleRegisterDriver = (newDriver: Driver) => {
-    setDrivers((prev) => [newDriver, ...prev]);
+    setDrivers((prev) => {
+      const next = [newDriver, ...prev.filter((d) => d.id !== newDriver.id)];
+      try {
+        localStorage.setItem('race_registered_drivers', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     setCurrentDriver(newDriver);
     triggerPush(
       '🎉 Bem-vindo à RACE!',
-      `Cadastro de ${newDriver.name} concluído com sucesso. Assinatura de ${WEEKLY_FEE_TEXT} ativa com 100% de ganhos livres!`,
+      `Cadastro de ${newDriver.name} concluído com sucesso. Ative sua assinatura semanal de ${WEEKLY_FEE_TEXT} para começar a receber corridas com 100% dos ganhos livres!`,
       'financial'
     );
   };
 
   const handleUpdateDriver = (updated: Driver) => {
     setCurrentDriver(updated);
-    setDrivers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+    setDrivers((prev) => {
+      const next = prev.map((d) => (d.id === updated.id ? updated : d));
+      try {
+        localStorage.setItem('race_registered_drivers', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   };
 
   const handleToggleDriverStatus = (driverId: string) => {
@@ -450,19 +521,26 @@ export default function App() {
           );
           if (isSubActive) {
             handleUpdateDriver({ ...driver, status: 'online' });
+            setActiveTab('rides');
+            setLoginSuccessBanner(
+              `Bem-vindo, ${driver.name}! Você entrou na Central de Corridas com 100% dos ganhos livres.`
+            );
+          } else {
+            handleUpdateDriver({ ...driver, status: 'offline' });
+            setActiveTab('driver_portal');
+            setLoginSuccessBanner(
+              `Bem-vindo, ${driver.name}! Sua assinatura semanal de R$ 200 está VENCIDA. Efetue o pagamento via PIX para ficar ONLINE.`
+            );
           }
-          setActiveTab('rides');
-          setLoginSuccessBanner(
-            `Bem-vindo, ${driver.name}! Você entrou na Central de Corridas com 100% dos ganhos livres.`
-          );
         }}
         onRegisterSuccess={(user, newDriver) => {
           handleRegisterDriver(newDriver);
           setCurrentUser(user);
           setCurrentDriver(newDriver);
-          setActiveTab('rides');
+          // 5. Depois que criar conta, o motorista deve cair na tela "Assinatura Vencida" pedindo pagamento de R$200
+          setActiveTab('driver_portal');
           setLoginSuccessBanner(
-            `Cadastro de ${newDriver.name} homologado com sucesso! Você entrou direto na Central de Corridas com 100% dos ganhos livres.`
+            `Cadastro de ${newDriver.name} realizado com sucesso! Sua assinatura semanal está VENCIDA. Efetue o pagamento de R$ 200 via PIX para ativar seu acesso.`
           );
         }}
       />
