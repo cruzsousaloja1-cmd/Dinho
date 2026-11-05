@@ -43,10 +43,11 @@ export interface Driver {
   lat: number;
   lng: number;
   weeklyPlanActive: boolean;
-  weeklyPlanExpiresAt: string;
+  weeklyPlanExpiresAt?: string | null;
   weeklyFeePaidAt?: string | null; // ISO date
   weeklyFeeExpiresAt?: string | null; // ISO date
-  weeklyPlanPrice: number; // 200 (WEEKLY_FEE)
+  weeklyPlanPrice?: number;
+  pixKey?: string; // chave pix do motorista pra receber corrida
   earningsToday: number;
   earningsWeek: number;
   cnhVerified: boolean;

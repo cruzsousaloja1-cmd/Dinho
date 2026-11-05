@@ -481,6 +481,8 @@ export default function App() {
               setExpiredModalDriver(currentDriver);
               setSubscriptionExpiredModalOpen(true);
             }}
+            onRenewWeeklyPlan={handleRenewWeeklyPlan}
+            onTriggerToast={(title, msg, type) => triggerPush(title, msg, type || 'financial')}
           />
         )}
 
