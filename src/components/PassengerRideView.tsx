@@ -37,7 +37,8 @@ import {
   X,
   Zap,
   ArrowRight,
-  Power
+  Power,
+  Maximize2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -58,6 +59,7 @@ interface PassengerRideViewProps {
   currentDriver?: Driver;
   loginSuccessBanner?: string | null;
   onClearLoginBanner?: () => void;
+  onOpenFullMap?: () => void;
 }
 
 export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
@@ -77,6 +79,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   currentDriver,
   loginSuccessBanner,
   onClearLoginBanner,
+  onOpenFullMap,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'race_pay'>('pix');
@@ -493,7 +496,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           )}
         </div>
 
-        {/* Real-time map directly below active ride card */}
+        {/* Real-time map directly below active ride card - MINI-MAP 200px com Expandir mapa */}
         {mapElement && (
           <div className="space-y-2.5">
             <div className="flex items-center justify-between px-1">
@@ -501,12 +504,38 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 <Navigation className="w-4 h-4 text-amber-600" />
                 <span>Rastreamento GPS da Viagem ao Vivo</span>
               </span>
-              <span className="text-xs text-emerald-700 font-mono font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
-                Telemetria Satélite 5G
-              </span>
+              {onOpenFullMap && (
+                <button
+                  type="button"
+                  onClick={onOpenFullMap}
+                  className="text-xs bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  <span>Expandir mapa</span>
+                </button>
+              )}
             </div>
-            <div className="h-[380px] sm:h-[460px] rounded-2xl overflow-hidden shadow-md border border-slate-200">
+            <div
+              onClick={onOpenFullMap}
+              className="h-[200px] rounded-2xl overflow-hidden shadow-md border-2 border-slate-300 relative cursor-pointer group"
+              title="Clique para abrir mapa em tela cheia"
+            >
               {mapElement}
+              {onOpenFullMap && (
+                <div className="absolute top-2.5 right-2.5 z-[400]">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenFullMap();
+                    }}
+                    className="bg-[#ff6a00] hover:bg-[#e05e00] text-white text-xs font-heading font-black px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-1.5 border border-amber-400 cursor-pointer active:scale-95"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span>Expandir mapa</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1068,22 +1097,51 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
       </div>
 
-      {/* MAPA ABAIXO DAS OPÇÕES DE CORRIDA */}
+      {/* MINI-MAP DE 200px ABAIXO DAS OPÇÕES DE CORRIDA */}
       {mapElement && (
-        <div className="space-y-3 pt-2">
+        <div className="space-y-2.5 pt-2">
           <div className="flex items-center justify-between px-1">
             <span className="text-sm font-heading font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <Navigation className="w-4 h-4 text-amber-600" />
-              <span>Mapa & GPS em Tempo Real - Rotas Otimizadas</span>
+              <Navigation className="w-4 h-4 text-[#ff6a00]" />
+              <span>Mapa & GPS em Tempo Real</span>
             </span>
-            <span className="text-xs text-slate-700 flex items-center gap-1.5 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse" />
-              Sinal GPS Conectado
-            </span>
+            {onOpenFullMap && (
+              <button
+                type="button"
+                onClick={onOpenFullMap}
+                className="text-xs bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Expandir mapa</span>
+              </button>
+            )}
           </div>
 
-          <div className="h-[380px] sm:h-[480px] rounded-3xl overflow-hidden shadow-lg border border-slate-200 bg-white">
+          <div
+            onClick={onOpenFullMap}
+            className="h-[200px] rounded-3xl overflow-hidden shadow-md border-2 border-slate-300 relative cursor-pointer group bg-white"
+            title="Clique para abrir mapa em tela cheia"
+          >
             {mapElement}
+            {onOpenFullMap && (
+              <div className="absolute top-2.5 right-2.5 z-[400]">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenFullMap();
+                  }}
+                  className="bg-[#ff6a00] hover:bg-[#e05e00] text-white text-xs font-heading font-black px-3.5 py-2 rounded-xl shadow-xl flex items-center gap-1.5 border border-amber-400 cursor-pointer active:scale-95"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                  <span>Expandir mapa</span>
+                </button>
+              </div>
+            )}
+            <div className="absolute bottom-2.5 left-2.5 z-[400] bg-black/80 backdrop-blur-xs text-white text-xs font-bold px-3 py-1 rounded-xl pointer-events-none flex items-center gap-1.5 border border-zinc-700 shadow">
+              <Maximize2 className="w-3.5 h-3.5 text-[#ff6a00]" />
+              <span>Toque para ver em Tela Cheia</span>
+            </div>
           </div>
         </div>
       )}

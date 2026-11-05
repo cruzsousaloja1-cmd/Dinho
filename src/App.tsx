@@ -26,6 +26,7 @@ import { PushNotificationToast } from './components/PushNotificationToast';
 import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
 import { DriverLoginScreen } from './components/DriverLoginScreen';
+import { FullMapView } from './components/FullMapView';
 import { AppUser } from './types';
 import { AlertTriangle, CheckCircle2, X, QrCode } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -34,6 +35,7 @@ import { WEEKLY_FEE, WEEKLY_FEE_TEXT, COMMISSION, WEEKLY_FEE_BADGE } from './con
 export default function App() {
   // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
   const [activeTab, setActiveTab] = useState<TabType>('driver_portal');
+  const [isFullMapOpen, setIsFullMapOpen] = useState(false);
   const [drivers, setDrivers] = useState<Driver[]>(() => {
     try {
       const stored = localStorage.getItem('race_registered_drivers');
@@ -201,7 +203,7 @@ export default function App() {
       if (progress >= 1) {
         clearInterval(interval);
       }
-    }, 1000);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [activeRide]);
@@ -597,6 +599,7 @@ export default function App() {
             currentDriver={currentDriver}
             loginSuccessBanner={loginSuccessBanner}
             onClearLoginBanner={() => setLoginSuccessBanner(null)}
+            onOpenFullMap={() => setIsFullMapOpen(true)}
           />
         )}
 
@@ -784,6 +787,19 @@ export default function App() {
         onChangeTab={(tab) => setActiveTab(tab)}
         isDriverOnline={currentDriver.status === 'online'}
       />
+
+      {/* 1. Página de Mapa Fullscreen */}
+      {isFullMapOpen && (
+        <FullMapView
+          onClose={() => setIsFullMapOpen(false)}
+          pickup={pickup}
+          destination={destination}
+          activeDriver={activeRide?.driver || (drivers.length > 0 ? drivers[0] : null)}
+          activeRide={activeRide}
+          driverPosition={driverPosition}
+          onUpdateDriverPosition={(pos) => setDriverPosition(pos)}
+        />
+      )}
     </div>
   );
 }

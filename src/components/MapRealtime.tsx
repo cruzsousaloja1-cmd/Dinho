@@ -252,7 +252,7 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+    <div className="relative w-full h-full min-h-[180px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
       {/* Real Map Canvas */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
