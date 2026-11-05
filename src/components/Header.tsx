@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Bell, 
   Headphones, 
@@ -7,7 +7,10 @@ import {
   LogIn,
   User,
   LogOut,
-  Download
+  MoreVertical,
+  X,
+  ChevronRight,
+  ShieldCheck
 } from 'lucide-react';
 import { AppUser } from '../types';
 import { WEEKLY_FEE_BADGE } from '../config/pricing';
@@ -37,37 +40,44 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAuthModal,
   onLogout,
 }) => {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const handleMobileNav = (action: () => void) => {
+    action();
+    setIsMobileMenuOpen(false);
+  };
+
   return (
-    <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-xs">
-      {/* Main Bar - Clean White Theme without top orange banner */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3">
+    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs w-full max-w-full overflow-x-hidden">
+      {/* Main Bar */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 w-full box-border">
         {/* Brand RACE em Destaque */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <div 
-            className="flex items-center gap-2.5 group cursor-pointer" 
+            className="flex items-center gap-2 sm:gap-2.5 group cursor-pointer" 
             onClick={() => onChangeRole('passenger')}
           >
-            <div className="relative flex items-center justify-center w-12 h-12 rounded-2xl bg-slate-950 text-white font-black shadow-md border border-slate-800">
-              <span className="font-heading text-2xl sm:text-3xl tracking-tighter italic font-black">R</span>
-              <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white shadow"></div>
+            <div className="relative flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-slate-950 text-white font-black shadow-md border border-slate-800">
+              <span className="font-heading text-xl sm:text-2xl tracking-tighter italic font-black">R</span>
+              <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow"></div>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-heading font-black text-3xl sm:text-4xl tracking-wider text-slate-950 italic">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="font-heading font-black text-2xl sm:text-3xl md:text-4xl tracking-wider text-slate-950 italic leading-none">
                   RACE
                 </span>
-                <span className="text-xs font-extrabold tracking-widest px-2 py-0.5 rounded-md bg-slate-900 text-white uppercase border border-slate-800 font-mono">
+                <span className="text-[10px] sm:text-xs font-extrabold tracking-widest px-1.5 py-0.5 rounded bg-slate-900 text-white uppercase border border-slate-800 font-mono">
                   PRO
                 </span>
               </div>
-              <p className="text-xs text-slate-500 font-semibold hidden sm:block tracking-wide">
+              <p className="text-[11px] text-slate-500 font-semibold hidden md:block tracking-wide mt-0.5">
                 Mobilidade Urbana & Entregas Inteligentes
               </p>
             </div>
           </div>
         </div>
 
-        {/* Quick Role Switcher in Header */}
+        {/* Quick Role Switcher in Header (Desktop md+) */}
         <div className="hidden lg:flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-sm font-bold shadow-inner">
           <button
             onClick={() => onChangeRole('passenger')}
@@ -108,15 +118,15 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Action Buttons: Login/Cadastrar, Compartilhar, 24h Support, SOS, Notifications */}
-        <div className="flex items-center gap-2 sm:gap-2.5">
+        {/* Action Buttons Desktop (md+) */}
+        <div className="hidden md:flex items-center gap-2 sm:gap-2.5">
           {/* User Account / Login & Cadastrar */}
           {currentUser ? (
             <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-300 rounded-xl px-2.5 py-1.5 shadow-xs">
               <div className="w-6 h-6 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center">
                 {currentUser.name.charAt(0).toUpperCase()}
               </div>
-              <div className="text-left hidden md:block">
+              <div className="text-left hidden lg:block">
                 <span className="text-xs font-black text-slate-950 block leading-tight truncate max-w-[100px]">
                   {currentUser.name.split(' ')[0]}
                 </span>
@@ -140,7 +150,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={onOpenAuthModal}
-                className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs sm:text-sm font-heading font-black transition-all shadow-xs cursor-pointer active:scale-95 border border-amber-400"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs sm:text-sm font-heading font-black transition-all shadow-xs cursor-pointer active:scale-95 border border-amber-400"
                 title="Entrar com Login e Senha ou Cadastrar"
               >
                 <LogIn className="w-4 h-4" />
@@ -149,42 +159,31 @@ export const Header: React.FC<HeaderProps> = ({
             )
           )}
 
-          {/* Baixar Código .ZIP */}
-          <a
-            href="/race-app-codigo-fonte.zip"
-            download="race-app-codigo-fonte.zip"
-            className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-900 text-white text-xs sm:text-sm font-black transition-all shadow-xs cursor-pointer active:scale-95"
-            title="Baixar Código-Fonte Completo (.ZIP)"
-          >
-            <Download className="w-4 h-4 text-emerald-400" />
-            <span className="hidden sm:inline">Baixar .ZIP</span>
-          </a>
-
           {/* Compartilhar App */}
           <button
             onClick={onOpenShare}
-            className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer active:scale-95"
             title="Compartilhar Aplicativo RACE"
           >
             <Share2 className="w-4 h-4 text-emerald-700" />
-            <span className="hidden sm:inline">Compartilhar</span>
+            <span>Compartilhar</span>
           </button>
 
           {/* Suporte 24 Horas */}
           <button
             onClick={onOpenSupport}
-            className="flex items-center gap-2 px-3 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-900 text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer group active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-900 text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer group active:scale-95"
             title="Suporte Técnico 24 Horas RACE"
           >
             <Headphones className="w-4 h-4 text-slate-800 group-hover:rotate-12 transition-transform" />
-            <span className="hidden md:inline">Suporte 24h</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse md:ml-0.5"></span>
+            <span>Suporte 24h</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 radar-pulse"></span>
           </button>
 
           {/* SOS Emergência */}
           <button
             onClick={onOpenSos}
-            className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 text-xs sm:text-sm font-black transition-all shadow-xs cursor-pointer active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 text-xs sm:text-sm font-black transition-all shadow-xs cursor-pointer active:scale-95"
             title="Botão do Pânico / Segurança 24h"
           >
             <ShieldAlert className="w-4 h-4 text-rose-600 animate-pulse" />
@@ -194,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Notificações */}
           <button
             onClick={onOpenNotifications}
-            className="relative w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-800 transition-all cursor-pointer active:scale-95 shadow-xs"
+            className="relative w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-800 transition-all cursor-pointer active:scale-95 shadow-xs"
             title="Notificações push"
           >
             <Bell className="w-5 h-5" />
@@ -205,7 +204,174 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
         </div>
+
+        {/* Action Cluster Mobile (abaixo de 768px - SEMPRE CABE EM 360px) */}
+        <div className="flex md:hidden items-center gap-1.5 shrink-0">
+          {/* Botão SOS Rápido */}
+          <button
+            type="button"
+            onClick={onOpenSos}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 text-xs font-black transition-all shadow-xs cursor-pointer active:scale-95"
+            title="SOS Emergência"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
+            <span>SOS</span>
+          </button>
+
+          {/* Botão Notificações */}
+          <button
+            type="button"
+            onClick={onOpenNotifications}
+            className="relative w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-800 transition-all cursor-pointer active:scale-95 shadow-xs"
+            title="Notificações"
+          >
+            <Bell className="w-4 h-4" />
+            {unreadNotifsCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-600 text-white text-[10px] font-black flex items-center justify-center shadow">
+                {unreadNotifsCount}
+              </span>
+            )}
+          </button>
+
+          {/* Botão Menu 3 Pontinhos ⋮ */}
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="w-9 h-9 rounded-xl bg-slate-950 hover:bg-slate-800 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95 shadow-xs border border-slate-800 ml-0.5"
+            aria-label="Menu de Opções"
+            title="Mais Opções"
+          >
+            {isMobileMenuOpen ? (
+              <X className="w-5 h-5 text-amber-400" />
+            ) : (
+              <MoreVertical className="w-5 h-5 text-white" />
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* Menu Lateral / Drawer Móvel Responsivo (Botão 3 Pontinhos) */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden border-t border-slate-200 bg-white/98 backdrop-blur-xl px-4 py-4 space-y-4 shadow-2xl animate-fade-in max-h-[82vh] overflow-y-auto">
+          {/* Usuário / Conta no Menu */}
+          {currentUser ? (
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-slate-900 text-white font-bold text-sm flex items-center justify-center">
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h4 className="font-heading font-black text-slate-950 text-sm">
+                    {currentUser.name}
+                  </h4>
+                  <span className="text-xs font-bold text-emerald-700">
+                    {currentUser.role === 'driver' ? 'Motorista Parceiro' : 'Passageiro RACE'}
+                  </span>
+                </div>
+              </div>
+
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={() => handleMobileNav(onLogout)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sair</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            onOpenAuthModal && (
+              <button
+                type="button"
+                onClick={() => handleMobileNav(onOpenAuthModal)}
+                className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black text-sm shadow-md cursor-pointer border border-amber-400"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Entrar ou Criar Nova Conta</span>
+              </button>
+            )
+          )}
+
+          {/* Lista de Ações Móveis */}
+          <div className="space-y-2 pt-1">
+            <label className="text-[11px] font-heading font-black uppercase text-slate-500 tracking-wider">
+              Serviços & Suporte
+            </label>
+
+            {/* Suporte 24h */}
+            <button
+              type="button"
+              onClick={() => handleMobileNav(onOpenSupport)}
+              className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-900 transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-800 flex items-center justify-center">
+                  <Headphones className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <span className="font-heading font-black text-sm block">Suporte 24 Horas</span>
+                  <span className="text-xs text-emerald-700 font-bold flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 radar-pulse" />
+                    Atendimento Online
+                  </span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-400" />
+            </button>
+
+            {/* Compartilhar App */}
+            <button
+              type="button"
+              onClick={() => handleMobileNav(onOpenShare)}
+              className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-950 transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-200 text-emerald-800 flex items-center justify-center">
+                  <Share2 className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <span className="font-heading font-black text-sm block">Compartilhar App RACE</span>
+                  <span className="text-xs text-emerald-800">Indique amigos ou passageiros</span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-emerald-600" />
+            </button>
+
+            {/* Painel Administrativo */}
+            <button
+              type="button"
+              onClick={() => handleMobileNav(() => onChangeRole('admin'))}
+              className={`w-full flex items-center justify-between p-3.5 rounded-2xl transition-all cursor-pointer ${
+                activeRole === 'admin'
+                  ? 'bg-slate-950 text-white shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-900'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                  activeRole === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 text-slate-800'
+                }`}>
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <span className="font-heading font-black text-sm block">Painel Administrativo</span>
+                  <span className={`text-xs ${activeRole === 'admin' ? 'text-zinc-300' : 'text-slate-500'}`}>
+                    Métricas, Motoristas & Aprovação PIX
+                  </span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-400" />
+            </button>
+          </div>
+
+          {/* Rodapé do Menu */}
+          <div className="pt-2 text-center border-t border-slate-100 text-xs text-slate-500 font-medium">
+            RACE PRO &bull; Mobilidade Urbana com 100% Repasse Livre
+          </div>
+        </div>
+      )}
     </header>
   );
 };

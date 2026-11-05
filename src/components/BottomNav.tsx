@@ -1,14 +1,13 @@
 import React from 'react';
 import { 
   Car, 
-  MapPin,
   Package, 
   ShieldCheck, 
   History, 
   UserCheck 
 } from 'lucide-react';
 
-export type TabType = 'rides' | 'map' | 'delivery' | 'driver_portal' | 'history' | 'admin';
+export type TabType = 'rides' | 'delivery' | 'driver_portal' | 'history' | 'admin';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -30,13 +29,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       badge: 'R$2,50/km',
     },
     {
-      id: 'map' as TabType,
-      label: 'Mapa',
-      sublabel: 'Toda Tela',
-      icon: MapPin,
-      badge: 'GPS Livre',
-    },
-    {
       id: 'delivery' as TabType,
       label: 'Entregas',
       sublabel: 'Flash Motoboy',
@@ -46,7 +38,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     {
       id: 'driver_portal' as TabType,
       label: 'Condutor',
-      sublabel: 'R$300 Semanal',
+      sublabel: 'R$200 Semanal',
       icon: UserCheck,
       isHighlight: true,
       onlineDot: isDriverOnline,

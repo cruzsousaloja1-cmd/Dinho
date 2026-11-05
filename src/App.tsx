@@ -586,7 +586,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans pb-28 selection:bg-slate-900 selection:text-white">
+    <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans pb-28 selection:bg-slate-900 selection:text-white w-full max-w-full overflow-x-hidden box-border">
       {/* Prominent RACE Brand Header */}
       <Header
         unreadNotifsCount={unreadNotifsCount}
@@ -615,7 +615,7 @@ export default function App() {
       />
 
       {/* Main Layout Container */}
-      <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5">
+      <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5 overflow-x-hidden box-border">
         {/* 1. Corridas (Passageiro / Condutor) com MAPA ABAIXO DAS OPÇÕES DE CORRIDA */}
         {activeTab === 'rides' && (
           <PassengerRideView
@@ -825,12 +825,9 @@ export default function App() {
       />
 
       {/* 1. Página de Mapa Fullscreen Toda Tela Sem Nenhuma Informação por Cima */}
-      {(isFullMapOpen || activeTab === 'map') && (
+      {isFullMapOpen && (
         <FullMapView
-          onClose={() => {
-            setIsFullMapOpen(false);
-            if (activeTab === 'map') setActiveTab('rides');
-          }}
+          onClose={() => setIsFullMapOpen(false)}
           pickup={pickup}
           destination={destination}
           activeDriver={activeRide?.driver || (drivers.length > 0 ? drivers[0] : null)}
