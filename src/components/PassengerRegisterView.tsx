@@ -56,18 +56,46 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       email: cleanEmail,
       phone: cleanPhone,
       role: 'passenger',
+      tipo: 'passenger',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
       rating: 5.0,
       password: password,
     };
 
     try {
-      // Salva no localStorage
+      // Salva no localStorage race_current_user com id, nome, email, tipo: passenger
+      localStorage.setItem('race_current_user', JSON.stringify({
+        id: newPassenger.id,
+        name: newPassenger.name,
+        email: newPassenger.email,
+        phone: newPassenger.phone,
+        tipo: 'passenger',
+        role: 'passenger',
+        avatar: newPassenger.avatar,
+      }));
+
+      // Salva em race_users
+      const existingUsers = JSON.parse(localStorage.getItem('race_users') || '[]');
+      const updatedUsers = [
+        {
+          id: newPassenger.id,
+          name: newPassenger.name,
+          email: newPassenger.email,
+          phone: newPassenger.phone,
+          tipo: 'passenger',
+          role: 'passenger',
+          password: password,
+          createdAt: new Date().toISOString(),
+        },
+        ...existingUsers.filter((u: any) => u.email?.toLowerCase() !== cleanEmail),
+      ];
+      localStorage.setItem('race_users', JSON.stringify(updatedUsers));
+
+      // Salva em race_registered_passengers
       const stored = localStorage.getItem('race_registered_passengers');
       const list: AppUser[] = stored ? JSON.parse(stored) : [];
       const updated = [newPassenger, ...list.filter((p) => p.id !== newPassenger.id)];
       localStorage.setItem('race_registered_passengers', JSON.stringify(updated));
-      localStorage.setItem('race_current_user', JSON.stringify(newPassenger));
     } catch {}
 
     try {

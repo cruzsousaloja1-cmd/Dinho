@@ -131,17 +131,22 @@ export const Header: React.FC<HeaderProps> = ({
                   {currentUser.name.split(' ')[0]}
                 </span>
                 <span className="text-[10px] font-bold text-emerald-700 block leading-none">
-                  {currentUser.role === 'driver' ? 'Motorista' : 'Passageiro'}
+                  {currentUser.role === 'driver'
+                    ? 'Motorista'
+                    : currentUser.role === 'motoboy'
+                    ? 'Motoboy'
+                    : 'Passageiro'}
                 </span>
               </div>
               {onLogout && (
                 <button
                   type="button"
                   onClick={onLogout}
-                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer transition-colors"
-                  title="Sair / Trocar de Conta"
+                  className="flex items-center gap-1 text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors text-xs font-bold"
+                  title="Sair / Deslogar"
                 >
                   <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Sair</span>
                 </button>
               )}
             </div>
@@ -265,7 +270,11 @@ export const Header: React.FC<HeaderProps> = ({
                     {currentUser.name}
                   </h4>
                   <span className="text-xs font-bold text-emerald-700">
-                    {currentUser.role === 'driver' ? 'Motorista Parceiro' : 'Passageiro RACE'}
+                    {currentUser.role === 'driver'
+                      ? 'Motorista Parceiro'
+                      : currentUser.role === 'motoboy'
+                      ? 'Motoboy Parceiro'
+                      : 'Passageiro RACE'}
                   </span>
                 </div>
               </div>
@@ -364,6 +373,30 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400" />
             </button>
+
+            {/* Botão Sair / Deslogar no Menu Lateral (Requisito 3) */}
+            {currentUser && onLogout && (
+              <button
+                type="button"
+                onClick={() => handleMobileNav(onLogout)}
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-rose-200 text-rose-800 flex items-center justify-center">
+                    <LogOut className="w-5 h-5" />
+                  </div>
+                  <div className="text-left">
+                    <span className="font-heading font-black text-sm block text-rose-800">
+                      Sair da Conta / Deslogar
+                    </span>
+                    <span className="text-xs text-rose-600">
+                      Limpar acesso e voltar para tela de login
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-rose-400" />
+              </button>
+            )}
           </div>
 
           {/* Rodapé do Menu */}

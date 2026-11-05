@@ -157,16 +157,47 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       };
     }
 
+    const userTipo = role === 'driver' ? 'driver' : 'passenger';
     const appUser: AppUser = {
       id: `usr-${Date.now()}`,
       name: name || (email.split('@')[0]),
       email,
       phone: phone || '(11) 99887-1122',
       role,
+      tipo: userTipo,
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
       rating: 5.0,
       driverData: createdDriver,
     };
+
+    try {
+      localStorage.setItem('race_current_user', JSON.stringify({
+        id: appUser.id,
+        name: appUser.name,
+        email: appUser.email,
+        phone: appUser.phone,
+        tipo: userTipo,
+        role: appUser.role,
+        avatar: appUser.avatar,
+        driverData: createdDriver,
+      }));
+
+      const existingUsers = JSON.parse(localStorage.getItem('race_users') || '[]');
+      const updatedUsers = [
+        {
+          id: appUser.id,
+          name: appUser.name,
+          email: appUser.email,
+          phone: appUser.phone,
+          tipo: userTipo,
+          role: appUser.role,
+          password,
+          createdAt: new Date().toISOString(),
+        },
+        ...existingUsers.filter((u: any) => u.email?.toLowerCase() !== email.toLowerCase()),
+      ];
+      localStorage.setItem('race_users', JSON.stringify(updatedUsers));
+    } catch {}
 
     setTimeout(() => {
       setIsSubmitting(false);

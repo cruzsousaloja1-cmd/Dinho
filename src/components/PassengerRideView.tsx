@@ -550,6 +550,71 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
       )}
 
+      {/* 2. Painel "Aguardando Corridas" quando o usuário logado for Motorista ou Motoboy */}
+      {(currentUser?.role === 'driver' ||
+        currentUser?.role === 'motoboy' ||
+        currentUser?.tipo === 'driver' ||
+        currentUser?.tipo === 'motoboy') && (
+        <div className="bg-slate-950 text-white border-2 border-[#ff6a00] rounded-3xl p-5 sm:p-6 shadow-xl space-y-4 animate-fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#ff6a00]/20 border border-[#ff6a00]/50 text-[#ff6a00] flex items-center justify-center shrink-0">
+                {currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy' ? (
+                  <Bike className="w-6 h-6" />
+                ) : (
+                  <Car className="w-6 h-6" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-heading font-black text-white text-lg sm:text-xl">
+                    Aguardando Corridas & Chamados
+                  </h3>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-[#ff6a00] text-black uppercase font-mono">
+                    {currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy'
+                      ? 'Motoboy'
+                      : 'Motorista'}
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-zinc-300 font-medium">
+                  {currentUser?.name} &bull; 100% de Repasse Livre ao Condutor
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              <span className="text-xs sm:text-sm font-bold text-emerald-400">
+                Radar Ativo no Mapa
+              </span>
+            </div>
+          </div>
+
+          {/* Aviso da Assinatura R$ 200/semana */}
+          <div className="bg-[#141414] border border-amber-500/40 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-amber-400 text-sm">
+                  Plano Semanal: R$ 200 / semana
+                </span>
+                <span className="bg-amber-400/20 text-amber-300 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                  CHAVE PIX
+                </span>
+              </div>
+              <p className="text-zinc-300 font-mono select-all text-xs">
+                Chave PIX:{' '}
+                <span className="text-[#ff6a00] font-black font-mono">
+                  9d9e5635-9e68-46bf-bffe-08bdae29c8ba
+                </span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Acesso ao Mapa em Tela Cheia (Página Única Sem Informações na Tela) */}
       {onOpenFullMap && (
         <div className="bg-[#0a0a0a] text-white border-2 border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">

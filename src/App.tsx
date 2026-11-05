@@ -83,8 +83,19 @@ export default function App() {
     return [];
   });
 
-  // Authentication & Session - Inicia deslogado (null) para abrir a tela cheia de login de motorista/passageiro
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  // 1. Authentication & Session - Auto-login persistente via localStorage
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
+    try {
+      const stored = localStorage.getItem('race_current_user');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.email && !parsed.email.includes('raceapp.com.br')) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [loginSuccessBanner, setLoginSuccessBanner] = useState<string | null>(null);
 
@@ -114,29 +125,47 @@ export default function App() {
   const [subscriptionExpiredModalOpen, setSubscriptionExpiredModalOpen] = useState(false);
   const [expiredModalDriver, setExpiredModalDriver] = useState<Driver | null>(null);
 
-  // Limpar dados de teste e usuários demo legados do localStorage
+  // 2. Auto-login no App.tsx: verificar localStorage.getItem('race_current_user') e restaurar sessão ativa
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('race_registered_drivers');
+      const stored = localStorage.getItem('race_current_user');
       if (stored) {
-        const parsed = JSON.parse(stored);
-        if (
-          Array.isArray(parsed) &&
-          parsed.some((d: any) => d.email?.includes('raceapp.com.br') || d.id === 'drv-01')
-        ) {
-          localStorage.removeItem('race_registered_drivers');
-          localStorage.removeItem('race_current_user');
-          setDrivers([]);
-          setCurrentUser(null);
-          setCurrentDriver(DEFAULT_NEW_DRIVER);
-        }
-      }
-      const storedUser = localStorage.getItem('race_current_user');
-      if (storedUser) {
-        const parsedUser = JSON.parse(storedUser);
-        if (parsedUser.email?.includes('raceapp.com.br')) {
-          localStorage.removeItem('race_current_user');
-          setCurrentUser(null);
+        const parsed: AppUser = JSON.parse(stored);
+        if (parsed && parsed.email && !parsed.email.includes('raceapp.com.br')) {
+          setCurrentUser(parsed);
+
+          const isDriverOrMotoboy =
+            parsed.tipo === 'driver' ||
+            parsed.tipo === 'motoboy' ||
+            parsed.role === 'driver' ||
+            parsed.role === 'motoboy';
+
+          if (isDriverOrMotoboy) {
+            // Restaura dados do motorista/motoboy
+            const storedDrivers = localStorage.getItem('race_registered_drivers');
+            const driverList: Driver[] = storedDrivers ? JSON.parse(storedDrivers) : [];
+            const matched = driverList.find((d) => d.email.toLowerCase() === parsed.email.toLowerCase()) || parsed.driverData;
+            if (matched) {
+              const now = new Date();
+              const expiresDate = matched.weeklyFeeExpiresAt
+                ? new Date(matched.weeklyFeeExpiresAt)
+                : matched.weeklyPlanExpiresAt
+                ? new Date(matched.weeklyPlanExpiresAt)
+                : null;
+              const isSubActive = Boolean(matched.weeklyPlanActive && expiresDate && expiresDate > now);
+              const updatedMatched: Driver = {
+                ...matched,
+                status: isSubActive ? 'online' : 'offline',
+              };
+              setCurrentDriver(updatedMatched);
+              if (!isSubActive) {
+                setLoginSuccessBanner(
+                  `Bem-vindo(a) de volta, ${matched.name}! Você está na Central de Corridas (Aguardando Corridas). ⚠️ Assinatura semanal de R$ 200 pendente. Chave PIX: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba.`
+                );
+              }
+            }
+          }
+          setActiveTab('rides');
         }
       }
     } catch {}
@@ -525,7 +554,17 @@ export default function App() {
         passengers={passengers}
         onLoginSuccess={(user, driver) => {
           setCurrentUser(user);
-          if (user.role === 'driver' && driver) {
+          try {
+            localStorage.setItem('race_current_user', JSON.stringify(user));
+          } catch {}
+
+          const isDriverOrMotoboy =
+            user.role === 'driver' ||
+            user.role === 'motoboy' ||
+            user.tipo === 'driver' ||
+            user.tipo === 'motoboy';
+
+          if (isDriverOrMotoboy && driver) {
             setCurrentDriver(driver);
             const expiresDate = driver.weeklyFeeExpiresAt
               ? new Date(driver.weeklyFeeExpiresAt)
@@ -539,13 +578,14 @@ export default function App() {
               handleUpdateDriver({ ...driver, status: 'online' });
               setActiveTab('rides');
               setLoginSuccessBanner(
-                `Bem-vindo, ${driver.name}! Você entrou na Central de Corridas com 100% dos ganhos livres.`
+                `Bem-vindo(a), ${driver.name}! Você entrou na Central de Corridas com 100% dos ganhos livres.`
               );
             } else {
               handleUpdateDriver({ ...driver, status: 'offline' });
-              setActiveTab('driver_portal');
+              // Vai direto para central de corridas com aviso de assinatura R$ 200
+              setActiveTab('rides');
               setLoginSuccessBanner(
-                `Bem-vindo, ${driver.name}! Sua assinatura semanal de R$ 200 está VENCIDA. Efetue o pagamento via PIX para ficar ONLINE.`
+                `Bem-vindo(a), ${driver.name}! Você está na Central de Corridas (Aguardando Corridas). ⚠️ ATENÇÃO: Sua assinatura semanal de R$ 200 está VENCIDA/PENDENTE. Chave PIX: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba.`
               );
             }
           } else {
@@ -560,10 +600,28 @@ export default function App() {
           handleRegisterDriver(newDriver);
           setCurrentUser(user);
           setCurrentDriver(newDriver);
-          // Motorista -> vai para tela de assinatura R$200/semana PIX
-          setActiveTab('driver_portal');
+          try {
+            localStorage.setItem('race_current_user', JSON.stringify(user));
+          } catch {}
+          // 1. Redirecionar DIRETO para as opções de corridas, sem pedir login de novo
+          // Motorista -> vai para tela "Aguardando corridas" + aviso assinatura R$200/semana PIX
+          setActiveTab('rides');
           setLoginSuccessBanner(
-            `Cadastro de ${newDriver.name} realizado com sucesso! Sua assinatura semanal de R$ 200 está VENCIDA. Efetue o pagamento via PIX para ativar seu acesso.`
+            `Cadastro de Motorista (${newDriver.name}) realizado com sucesso! Você entrou direto na Central de Corridas (Aguardando Corridas). ⚠️ ATENÇÃO: Assinatura semanal de R$ 200 pendente. Chave PIX: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba.`
+          );
+        }}
+        onRegisterMotoboySuccess={(user, newMotoboy) => {
+          handleRegisterDriver(newMotoboy);
+          setCurrentUser(user);
+          setCurrentDriver(newMotoboy);
+          try {
+            localStorage.setItem('race_current_user', JSON.stringify(user));
+          } catch {}
+          // 1. Redirecionar DIRETO para as opções de corridas, sem pedir login de novo
+          // Motoboy -> vai para tela "Aguardando corridas" + aviso assinatura R$200/semana PIX
+          setActiveTab('rides');
+          setLoginSuccessBanner(
+            `Cadastro de Motoboy Parceiro (${newMotoboy.name}) realizado com sucesso! Você entrou direto na Central de Corridas (Aguardando Corridas & Entregas Flash). ⚠️ ATENÇÃO: Assinatura semanal de R$ 200 pendente. Chave PIX: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba.`
           );
         }}
         onRegisterPassengerSuccess={(newUser) => {
@@ -575,10 +633,13 @@ export default function App() {
             return next;
           });
           setCurrentUser(newUser);
-          // Passageiro -> vai direto para tela de pedir corrida com mapa
+          try {
+            localStorage.setItem('race_current_user', JSON.stringify(newUser));
+          } catch {}
+          // 1. Passageiro -> vai direto para tela "Pedir corrida" com mapa
           setActiveTab('rides');
           setLoginSuccessBanner(
-            `Bem-vindo à RACE, ${newUser.name}! Sua conta de passageiro foi criada com sucesso. Peça sua corrida agora.`
+            `Bem-vindo(a) à RACE, ${newUser.name}! Sua conta de passageiro foi criada com sucesso. Peça sua corrida ou entrega agora.`
           );
         }}
       />
@@ -597,6 +658,8 @@ export default function App() {
         activeRole={
           activeTab === 'admin'
             ? 'admin'
+            : currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy'
+            ? 'driver'
             : activeTab === 'driver_portal'
             ? 'driver'
             : 'passenger'
@@ -609,7 +672,12 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onLogout={() => {
+          // 3. Limpar localStorage e voltar para tela preta
+          try {
+            localStorage.removeItem('race_current_user');
+          } catch {}
           setCurrentUser(null);
+          setActiveTab('rides');
           triggerPush('Sessão Encerrada', 'Você saiu da sua conta RACE.', 'system');
         }}
       />

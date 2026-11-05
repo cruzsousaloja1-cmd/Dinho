@@ -92,11 +92,49 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
       email: newDriver.email,
       phone: newDriver.phone,
       role: 'driver',
+      tipo: 'driver',
       avatar: newDriver.avatar,
       rating: 5.0,
       password: password,
       driverData: newDriver,
     };
+
+    // Salvar no localStorage: race_current_user, race_users, race_registered_drivers
+    try {
+      localStorage.setItem('race_current_user', JSON.stringify({
+        id: appUser.id,
+        name: appUser.name,
+        email: appUser.email,
+        phone: appUser.phone,
+        tipo: 'driver',
+        role: 'driver',
+        avatar: appUser.avatar,
+        driverData: newDriver,
+      }));
+
+      const existingUsers = JSON.parse(localStorage.getItem('race_users') || '[]');
+      const updatedUsers = [
+        {
+          id: appUser.id,
+          name: appUser.name,
+          email: appUser.email,
+          phone: appUser.phone,
+          tipo: 'driver',
+          role: 'driver',
+          password: password,
+          createdAt: new Date().toISOString(),
+        },
+        ...existingUsers.filter((u: any) => u.email?.toLowerCase() !== cleanEmail),
+      ];
+      localStorage.setItem('race_users', JSON.stringify(updatedUsers));
+
+      const existingDriversList = JSON.parse(localStorage.getItem('race_registered_drivers') || '[]');
+      const updatedDrivers = [
+        newDriver,
+        ...existingDriversList.filter((d: any) => d.email?.toLowerCase() !== cleanEmail),
+      ];
+      localStorage.setItem('race_registered_drivers', JSON.stringify(updatedDrivers));
+    } catch {}
 
     try {
       confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });

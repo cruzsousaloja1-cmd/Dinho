@@ -1,11 +1,15 @@
 export type VehicleCategory = 'economica' | 'confort' | 'moto_passageiro' | 'moto_entrega';
 
+export type UserRole = 'passenger' | 'driver' | 'motoboy' | 'admin';
+export type UserTipo = 'driver' | 'motoboy' | 'passenger';
+
 export interface AppUser {
   id: string;
   name: string;
   email: string;
   phone: string;
-  role: 'passenger' | 'driver' | 'admin';
+  role: UserRole;
+  tipo?: UserTipo;
   avatar?: string;
   rating?: number;
   password?: string;
