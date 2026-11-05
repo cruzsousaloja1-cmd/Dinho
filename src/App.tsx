@@ -24,28 +24,22 @@ import { SosModal } from './components/SosModal';
 import { PushNotificationToast } from './components/PushNotificationToast';
 import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
+import { DriverLoginScreen } from './components/DriverLoginScreen';
 import { AppUser } from './types';
 import { AlertTriangle, CheckCircle2, X, QrCode } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { WEEKLY_FEE, WEEKLY_FEE_TEXT, COMMISSION, WEEKLY_FEE_BADGE } from './config/pricing';
 
 export default function App() {
-  // Global States
-  const [activeTab, setActiveTab] = useState<TabType>('rides');
+  // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
+  const [activeTab, setActiveTab] = useState<TabType>('driver_portal');
   const [drivers, setDrivers] = useState<Driver[]>(INITIAL_DRIVERS);
   const [currentDriver, setCurrentDriver] = useState<Driver>(INITIAL_DRIVERS[0]);
   const [ridesHistory, setRidesHistory] = useState<Ride[]>(INITIAL_RIDES_HISTORY);
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
 
-  // Authentication & Session
-  const [currentUser, setCurrentUser] = useState<AppUser | null>({
-    id: 'usr-default',
-    name: 'Carlos Silva',
-    email: 'carlos.silva@raceapp.com.br',
-    phone: '(11) 98765-4321',
-    role: 'driver',
-    driverData: INITIAL_DRIVERS[0],
-  });
+  // Authentication & Session - Inicia deslogado (null) para abrir a tela cheia de login de motorista
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [loginSuccessBanner, setLoginSuccessBanner] = useState<string | null>(null);
 
@@ -349,6 +343,59 @@ export default function App() {
     triggerPush('🛡️ Auditoria Aprovada', 'Documentos de condutor validados com sucesso.', 'safety');
   };
 
+  const handleApproveWeeklyPayment = (driver: Driver) => {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const updated: Driver = {
+      ...driver,
+      weeklyFeePaidAt: now.toISOString(),
+      weeklyFeeExpiresAt: expiresAt.toISOString(),
+      weeklyPlanExpiresAt: expiresAt.toISOString(),
+      weeklyPlanActive: true,
+      weeklyPlanPrice: WEEKLY_FEE,
+      status: 'online',
+      pendingPayment: driver.pendingPayment
+        ? {
+            ...driver.pendingPayment,
+            status: 'approved',
+          }
+        : null,
+    };
+    handleUpdateDriver(updated);
+    if (currentUser?.driverData?.id === updated.id) {
+      setCurrentUser((prev) => (prev ? { ...prev, driverData: updated } : null));
+    }
+    triggerPush(
+      'Pagamento aprovado!',
+      `O comprovante de R$ 200 de ${driver.name} foi aprovado! Status ONLINE liberado por 7 dias com 100% dos ganhos.`,
+      'financial'
+    );
+    try {
+      confetti({ particleCount: 75, spread: 80, origin: { y: 0.6 } });
+    } catch {}
+  };
+
+  const handleRejectWeeklyPayment = (driver: Driver) => {
+    const updated: Driver = {
+      ...driver,
+      pendingPayment: driver.pendingPayment
+        ? {
+            ...driver.pendingPayment,
+            status: 'rejected',
+          }
+        : null,
+    };
+    handleUpdateDriver(updated);
+    if (currentUser?.driverData?.id === updated.id) {
+      setCurrentUser((prev) => (prev ? { ...prev, driverData: updated } : null));
+    }
+    triggerPush(
+      'Pagamento Reprovado',
+      `O comprovante PIX de ${driver.name} foi reprovado. O condutor foi notificado para enviar novo comprovante.`,
+      'financial'
+    );
+  };
+
   // Auth success handler: "Após realização de cadastro com login e senha todos entrarão no aplicativo direto na página de atendimento de corridas"
   const handleAuthSuccess = (user: AppUser, driver?: Driver) => {
     setCurrentUser(user);
@@ -383,6 +430,44 @@ export default function App() {
       selectionMode={mapSelectionMode}
     />
   );
+
+  // 1. Quando o app abre deslogado, NÃO mostrar PassengerRideView, Header ou BottomNav.
+  // Mostrar tela de login de motorista full-screen com design preto e laranja igual ao print.
+  if (!currentUser) {
+    return (
+      <DriverLoginScreen
+        drivers={drivers}
+        onLoginSuccess={(user, driver) => {
+          setCurrentUser(user);
+          setCurrentDriver(driver);
+          const expiresDate = driver.weeklyFeeExpiresAt
+            ? new Date(driver.weeklyFeeExpiresAt)
+            : driver.weeklyPlanExpiresAt
+            ? new Date(driver.weeklyPlanExpiresAt)
+            : null;
+          const isSubActive = Boolean(
+            driver.weeklyPlanActive && expiresDate && expiresDate > new Date()
+          );
+          if (isSubActive) {
+            handleUpdateDriver({ ...driver, status: 'online' });
+          }
+          setActiveTab('rides');
+          setLoginSuccessBanner(
+            `Bem-vindo, ${driver.name}! Você entrou na Central de Corridas com 100% dos ganhos livres.`
+          );
+        }}
+        onRegisterSuccess={(user, newDriver) => {
+          handleRegisterDriver(newDriver);
+          setCurrentUser(user);
+          setCurrentDriver(newDriver);
+          setActiveTab('rides');
+          setLoginSuccessBanner(
+            `Cadastro de ${newDriver.name} homologado com sucesso! Você entrou direto na Central de Corridas com 100% dos ganhos livres.`
+          );
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans pb-28 selection:bg-slate-900 selection:text-white">
@@ -499,6 +584,8 @@ export default function App() {
             onApproveDriver={handleApproveDriver}
             onToggleDriverStatus={handleToggleDriverStatus}
             onOpenShare={() => setIsShareOpen(true)}
+            onApproveWeeklyPayment={handleApproveWeeklyPayment}
+            onRejectWeeklyPayment={handleRejectWeeklyPayment}
           />
         )}
       </main>
@@ -592,11 +679,13 @@ export default function App() {
             <div className="space-y-2 pt-2">
               <button
                 type="button"
-                onClick={() => handleRenewWeeklyPlan(expiredModalDriver || currentDriver)}
+                onClick={() => {
+                  setSubscriptionExpiredModalOpen(false);
+                  setActiveTab('driver_portal');
+                }}
                 className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black py-4 px-4 rounded-2xl shadow-lg transition-all cursor-pointer active:scale-95 text-sm sm:text-base flex items-center justify-center gap-2"
               >
-                <QrCode className="w-5 h-5 text-emerald-200" />
-                <span>Pagar R$200 da semana via PIX</span>
+                <span>Pagar R$200 da semana via PIX (Copiar Chave & Comprovante)</span>
               </button>
 
               <button

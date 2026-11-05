@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Driver, Ride } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
-import { WEEKLY_FEE_TEXT, WEEKLY_FEE_BADGE } from '../config/pricing';
+import { WEEKLY_FEE, WEEKLY_FEE_TEXT, WEEKLY_FEE_BADGE, RACE_PIX_BANK } from '../config/pricing';
 import { 
   ShieldCheck, 
   Users, 
@@ -14,7 +14,17 @@ import {
   BarChart3, 
   Activity, 
   FileSpreadsheet,
-  Share2
+  Share2,
+  Wallet,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  ExternalLink,
+  FileText,
+  AlertTriangle,
+  Phone,
+  Calendar,
+  Check
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -23,6 +33,8 @@ interface AdminDashboardProps {
   onApproveDriver: (driverId: string) => void;
   onToggleDriverStatus: (driverId: string) => void;
   onOpenShare?: () => void;
+  onApproveWeeklyPayment?: (driver: Driver) => void;
+  onRejectWeeklyPayment?: (driver: Driver) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -31,10 +43,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onApproveDriver,
   onToggleDriverStatus,
   onOpenShare,
+  onApproveWeeklyPayment,
+  onRejectWeeklyPayment,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'drivers' | 'rides' | 'reports'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'drivers' | 'rides' | 'reports'>('overview');
   const [driverFilterCategory, setDriverFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [previewProofImage, setPreviewProofImage] = useState<string | null>(null);
+
+  const pendingDrivers = drivers.filter(
+    (d) => d.pendingPayment && d.pendingPayment.status === 'pending'
+  );
 
   // Financial calculations
   const activeWeeklySubs = drivers.filter((d) => d.weeklyPlanActive).length;
@@ -133,6 +152,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           Visão Geral & Métricas
         </button>
         <button
+          onClick={() => setActiveTab('payments')}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'payments'
+              ? 'bg-amber-500 text-slate-950 shadow'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Wallet className="w-4 h-4 text-emerald-700" />
+          <span>Pagamentos Pendentes ({pendingDrivers.length})</span>
+          {pendingDrivers.length > 0 && (
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+          )}
+        </button>
+        <button
           onClick={() => setActiveTab('drivers')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'drivers'
@@ -167,6 +200,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* TAB 1: OVERVIEW & KEY PERFORMANCE INDICATORS */}
       {activeTab === 'overview' && (
         <div className="space-y-4">
+          {/* Alerta de Pagamentos Pendentes no Overview se houver */}
+          {pendingDrivers.length > 0 && (
+            <div className="bg-amber-50 border-2 border-amber-400 rounded-3xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-200 text-amber-900 flex items-center justify-center font-bold">
+                  <Clock className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-amber-950 text-base sm:text-lg">
+                    {pendingDrivers.length} {pendingDrivers.length === 1 ? 'Comprovante PIX Pendente' : 'Comprovantes PIX Pendentes'}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-amber-800 font-medium">
+                    Condutores aguardando conferência bancária ({RACE_PIX_BANK}) para liberação de 7 dias com 100% dos ganhos.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('payments')}
+                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-heading font-black text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow-sm shrink-0 flex items-center justify-center gap-2"
+              >
+                <span>Auditar Comprovantes Agora</span>
+                <ExternalLink className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           {/* Key KPI Cards in White */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
             {/* KPI 1 */}
@@ -262,7 +321,161 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 2: DRIVERS & MOTOBOYS MANAGEMENT */}
+      {/* TAB 2: PAGAMENTOS PENDENTES (AUDITORIA PIX MANUAL) */}
+      {activeTab === 'payments' && (
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold border border-amber-300">
+                  <Wallet className="w-6 h-6 text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-slate-950 text-xl">
+                    Auditoria de Pagamentos Semanais via PIX
+                  </h3>
+                  <span className="text-xs font-mono font-bold text-slate-500">
+                    Conta: {RACE_PIX_BANK} &bull; Valor padrão: {WEEKLY_FEE_TEXT}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-600 mt-2 font-medium">
+                Confira o extrato bancário do Nubank. Ao aprovar, o motorista é liberado imediatamente por 7 dias com status online e 100% de repasse.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold px-3 py-1.5 rounded-xl bg-amber-100 text-amber-900 border border-amber-300">
+                {pendingDrivers.length} {pendingDrivers.length === 1 ? 'pendente' : 'pendentes'}
+              </span>
+            </div>
+          </div>
+
+          {/* Lista de Pagamentos Pendentes */}
+          {pendingDrivers.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center space-y-3 shadow-sm">
+              <div className="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <h4 className="font-heading font-black text-slate-900 text-lg">
+                Nenhum Pagamento Pendente de Auditoria
+              </h4>
+              <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto font-medium">
+                Todos os comprovantes PIX enviados pelos motoristas foram auditados. Novos comprovantes aparecerão aqui assim que enviados pelo condutor.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3.5">
+              {pendingDrivers.map((driver) => {
+                const pending = driver.pendingPayment!;
+                const formattedDate = pending.sentAt
+                  ? new Date(pending.sentAt).toLocaleString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : 'Recentemente';
+
+                return (
+                  <div
+                    key={driver.id}
+                    className="bg-white border-2 border-amber-300 rounded-3xl p-5 sm:p-6 shadow-md hover:shadow-lg transition-all space-y-4"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
+                      {/* Motorista info */}
+                      <div className="flex items-center gap-3.5">
+                        <img
+                          src={driver.avatar}
+                          alt={driver.name}
+                          className="w-13 h-13 rounded-2xl object-cover border-2 border-amber-400 shadow-xs"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                              {driver.name}
+                            </h4>
+                            <span className="text-[11px] font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-700 border border-slate-200 uppercase">
+                              {driver.category}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 font-medium mt-0.5 flex items-center gap-1.5">
+                            <Phone className="w-3.5 h-3.5 text-slate-500" />
+                            <span>{driver.phone}</span>
+                            <span className="text-slate-300">&bull;</span>
+                            <span>{driver.vehicleModel} ({driver.vehiclePlate})</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Valor e Data */}
+                      <div className="text-left sm:text-right">
+                        <span className="text-xs font-mono font-bold text-slate-500 block">
+                          Valor Declarado
+                        </span>
+                        <span className="text-xl sm:text-2xl font-heading font-black text-emerald-700 block">
+                          {formatBRL(pending.amount || WEEKLY_FEE)}
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono font-bold flex items-center sm:justify-end gap-1 mt-0.5">
+                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Enviado: {formattedDate}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Detalhes do Comprovante */}
+                    <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="space-y-1">
+                        <span className="font-mono font-bold text-slate-500 uppercase block text-[11px]">
+                          Código / ID do Comprovante:
+                        </span>
+                        <span className="font-mono font-black text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-300 inline-block text-xs sm:text-sm select-all">
+                          {pending.comprovanteId}
+                        </span>
+                      </div>
+
+                      {pending.comprovanteUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewProofImage(pending.comprovanteUrl || null)}
+                          className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 font-heading font-black rounded-xl border border-slate-300 shadow-xs cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                        >
+                          <FileText className="w-4 h-4 text-emerald-600" />
+                          <span>Visualizar Print Anexo</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Botões de Ação */}
+                    <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => onRejectWeeklyPayment && onRejectWeeklyPayment(driver)}
+                        className="w-full sm:w-auto px-5 py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <XCircle className="w-4 h-4 text-rose-600" />
+                        <span>Reprovar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onApproveWeeklyPayment && onApproveWeeklyPayment(driver)}
+                        className="w-full sm:w-auto px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                        <span>Aprovar - Libera 7 dias</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: DRIVERS & MOTOBOYS MANAGEMENT */}
       {activeTab === 'drivers' && (
         <div className="space-y-4">
           {/* Filters & Search */}
@@ -473,6 +686,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Prévia do Comprovante Anexo */}
+      {previewProofImage && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-300 animate-scale-up">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
+                <FileText className="w-5 h-5 text-emerald-600" />
+                <span>Comprovante PIX Anexado pelo Condutor</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setPreviewProofImage(null)}
+                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer transition-colors"
+                title="Fechar"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="max-h-[65vh] overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-2 text-center">
+              <img
+                src={previewProofImage}
+                alt="Comprovante"
+                className="max-w-full h-auto object-contain rounded-xl mx-auto shadow-sm"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setPreviewProofImage(null)}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-heading font-black py-3 rounded-xl text-xs sm:text-sm transition-all cursor-pointer"
+            >
+              Fechar Visualização
+            </button>
           </div>
         </div>
       )}

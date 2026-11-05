@@ -24,6 +24,16 @@ export interface CategoryInfo {
   recommendedFor: string;
 }
 
+export interface PendingPayment {
+  status: 'pending' | 'approved' | 'rejected';
+  amount: number;
+  sentAt: string; // ISO date
+  comprovanteId: string;
+  comprovanteUrl?: string;
+  driverName?: string;
+  driverPhone?: string;
+}
+
 export interface Driver {
   id: string;
   name: string;
@@ -48,6 +58,7 @@ export interface Driver {
   weeklyFeeExpiresAt?: string | null; // ISO date
   weeklyPlanPrice?: number;
   pixKey?: string; // chave pix do motorista pra receber corrida
+  pendingPayment?: PendingPayment | null;
   earningsToday: number;
   earningsWeek: number;
   cnhVerified: boolean;

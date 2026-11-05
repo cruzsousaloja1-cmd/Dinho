@@ -469,7 +469,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black py-4 rounded-2xl transition-all cursor-pointer shadow-md text-sm sm:text-base border border-amber-400 flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 mt-4"
+            className="w-full bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black py-4 rounded-xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/20 text-sm sm:text-base flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 mt-4 uppercase tracking-wider"
           >
             <span>
               {mode === 'login'

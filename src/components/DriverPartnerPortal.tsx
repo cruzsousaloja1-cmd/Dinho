@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Driver, Ride, VehicleCategory } from '../types';
+import { Driver, Ride, VehicleCategory, PendingPayment } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
 import { 
   WEEKLY_FEE, 
@@ -9,12 +9,11 @@ import {
   WEEKLY_DAYS, 
   ECONOMY_VS_UBER_PERCENT, 
   COMMISSION,
-  PIX_KEY_RACE 
+  RACE_PIX_KEY,
+  RACE_PIX_KEY_TYPE,
+  RACE_PIX_BANK,
+  RACE_PIX_NAME
 } from '../config/pricing';
-import { 
-  createWeeklyPixCharge, 
-  PixCharge 
-} from '../services/subscriptionService';
 import { 
   validateComfortEligibility, 
   COMFORT_POPULAR_MODELS, 
@@ -48,7 +47,12 @@ import {
   Clock,
   Wallet,
   Loader2,
-  X
+  X,
+  Upload,
+  FileCheck,
+  Building2,
+  UserCheck2,
+  CheckCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -87,11 +91,14 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   );
   const [savedDriverPixNotice, setSavedDriverPixNotice] = useState(false);
 
-  // Real PIX Charge Modal for R$ 200 Weekly Plan
+  // Real Manual PIX Modal & Comprovante state for R$ 200 Weekly Plan
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
-  const [pixCharge, setPixCharge] = useState<PixCharge | null>(null);
-  const [isGeneratingPix, setIsGeneratingPix] = useState(false);
-  const [copiedPixModal, setCopiedPixModal] = useState(false);
+  const [copiedRacePix, setCopiedRacePix] = useState(false);
+  const [comprovanteId, setComprovanteId] = useState('');
+  const [comprovanteImage, setComprovanteImage] = useState<string | null>(null);
+  const [comprovanteFileName, setComprovanteFileName] = useState('');
+  const [isSubmittingProof, setIsSubmittingProof] = useState(false);
+  const [proofSentSuccessNotice, setProofSentSuccessNotice] = useState<string | null>(null);
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
@@ -344,62 +351,62 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
   };
 
-  const handleOpenPixModal = async () => {
-    setIsGeneratingPix(true);
+  const handleOpenPixModal = () => {
     setIsPixModalOpen(true);
-    try {
-      const charge = await createWeeklyPixCharge(currentDriver);
-      setPixCharge(charge);
-    } catch (err) {
-      console.error('Falha ao gerar cobrança PIX:', err);
-    } finally {
-      setIsGeneratingPix(false);
+    setProofSentSuccessNotice(null);
+  };
+
+  const handleCopyRacePixKey = () => {
+    navigator.clipboard?.writeText(RACE_PIX_KEY);
+    setCopiedRacePix(true);
+    setTimeout(() => setCopiedRacePix(false), 2500);
+  };
+
+  const handleComprovanteFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setComprovanteFileName(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setComprovanteImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleCopyPixModal = () => {
-    if (!pixCharge) return;
-    navigator.clipboard?.writeText(pixCharge.pixCopyPaste);
-    setCopiedPixModal(true);
-    setTimeout(() => setCopiedPixModal(false), 2500);
-  };
-
-  const handleConfirmPixPayment = () => {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + WEEKLY_DAYS * 24 * 60 * 60 * 1000);
+  const handleSubmitProofOfPayment = () => {
+    setIsSubmittingProof(true);
+    const finalId = (comprovanteId.trim() || `COMP-${Date.now().toString().slice(-6)}`).toUpperCase();
+    const now = new Date().toISOString();
     
-    if (onRenewWeeklyPlan) {
-      onRenewWeeklyPlan(currentDriver);
-    } else {
-      onUpdateDriver({
+    setTimeout(() => {
+      const updated: Driver = {
         ...currentDriver,
-        weeklyFeePaidAt: now.toISOString(),
-        weeklyFeeExpiresAt: expiresAt.toISOString(),
-        weeklyPlanExpiresAt: expiresAt.toISOString(),
-        weeklyPlanActive: true,
-        weeklyPlanPrice: WEEKLY_FEE,
-        status: 'online',
-      });
-      setIsOnline(true);
-    }
+        pendingPayment: {
+          status: 'pending',
+          amount: WEEKLY_FEE,
+          sentAt: now,
+          comprovanteId: finalId,
+          comprovanteUrl: comprovanteImage || undefined,
+          driverName: currentDriver.name,
+          driverPhone: currentDriver.phone,
+        },
+      };
 
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 80,
-        origin: { y: 0.6 },
-      });
-    } catch {}
-
-    if (onTriggerToast) {
-      onTriggerToast(
-        'Assinatura Semanal Liberada!',
-        'PIX R$200 confirmado! Online por 7 dias com 100% de repasse',
-        'financial'
+      onUpdateDriver(updated);
+      setIsSubmittingProof(false);
+      setProofSentSuccessNotice(
+        "Comprovante enviado! Aguarde aprovação do Admin em até 10 minutos. Você receberá notificação."
       );
-    }
 
-    setIsPixModalOpen(false);
+      if (onTriggerToast) {
+        onTriggerToast(
+          'Comprovante PIX Enviado!',
+          'Comprovante enviado! Aguarde aprovação do Admin em até 10 minutos. Você receberá notificação.',
+          'financial'
+        );
+      }
+    }, 600);
   };
 
   const handleSaveDriverPixKey = () => {
@@ -765,45 +772,43 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         </div>
       )}
 
-      {/* SUBTAB 2: LOGIN DO CONDUTOR (LOGIN E SENHA) */}
+      {/* SUBTAB 2: LOGIN DO CONDUTOR (DESIGN PRETO E LARANJA #ff6a00) */}
       {activeSubTab === 'login' && (
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-7 shadow-md space-y-5 max-w-xl mx-auto">
-          <div className="border-b border-slate-200 pb-4 text-center">
-            <div className="w-14 h-14 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-amber-300">
-              <Lock className="w-7 h-7" />
-            </div>
-            <h3 className="font-heading font-black text-slate-950 text-2xl">
-              Acesso do Motorista e Motoboy
-            </h3>
-            <p className="text-sm text-slate-600 font-medium mt-1">
-              Entre com seu e-mail e senha cadastrados para acessar o aplicativo
+        <div className="bg-[#000000] border-2 border-[#1a1a1a] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 max-w-md mx-auto text-white">
+          <div className="text-center space-y-1.5 pb-2">
+            <h1 className="text-5xl font-heading font-black text-[#ff6a00] tracking-tighter uppercase select-none">
+              RACE
+            </h1>
+            <p className="text-zinc-300 font-medium text-sm tracking-wide">
+              App do Motorista
             </p>
           </div>
 
           {loginFeedback && (
-            <div className="bg-rose-50 border border-rose-300 text-rose-800 text-sm p-3.5 rounded-xl font-medium">
-              {loginFeedback}
+            <div className="bg-red-950/80 border border-red-500/80 text-red-200 text-xs sm:text-sm p-3.5 rounded-xl font-medium flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>{loginFeedback}</span>
             </div>
           )}
 
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
-            <div>
-              <label className="text-xs sm:text-sm font-bold text-slate-700 block mb-1.5">
-                Login / E-mail do Parceiro *
+          <form onSubmit={handleLoginSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <label className="text-white text-xs font-bold uppercase tracking-wider block">
+                EMAIL
               </label>
               <input
                 type="email"
                 required
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="Ex: seuemail@raceapp.com.br"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                placeholder="seu.email@exemplo.com"
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3.5 text-base focus:outline-none focus:border-[#ff6a00] transition-colors"
               />
             </div>
 
-            <div>
-              <label className="text-xs sm:text-sm font-bold text-slate-700 block mb-1.5">
-                Senha de Acesso *
+            <div className="space-y-2">
+              <label className="text-white text-xs font-bold uppercase tracking-wider block">
+                SENHA
               </label>
               <div className="relative">
                 <input
@@ -811,40 +816,35 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   required
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Digite sua senha cadastrada"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium pr-12"
+                  placeholder="••••••••"
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3.5 text-base focus:outline-none focus:border-[#ff6a00] transition-colors pr-12"
                 />
                 <button
                   type="button"
                   onClick={() => setShowLoginPassword(!showLoginPassword)}
-                  className="absolute right-3.5 top-3.5 text-slate-500 hover:text-slate-800 cursor-pointer"
+                  className="absolute right-4 top-4 text-zinc-400 hover:text-white transition-colors cursor-pointer"
                 >
                   {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-xs sm:text-sm text-slate-600 pt-1">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" defaultChecked className="rounded border-slate-300 text-amber-500" />
-                <span>Lembrar meu login neste aparelho</span>
-              </label>
-              <button
-                type="button"
-                onClick={onOpenSupport}
-                className="text-amber-800 hover:underline font-bold"
-              >
-                Esqueci minha senha
-              </button>
-            </div>
-
             <button
               type="submit"
-              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black py-4 rounded-xl transition-all cursor-pointer shadow-md text-sm sm:text-base border border-amber-400 flex items-center justify-center gap-2"
+              className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-lg py-4 px-6 rounded-xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/20 uppercase tracking-wider block mt-6"
             >
-              <LogIn className="w-5 h-5" />
-              <span>ENTRAR NO MEU PAINEL RACE</span>
+              ENTRAR
             </button>
+
+            <div className="text-center pt-1">
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('register')}
+                className="text-[#ff6a00] hover:underline text-sm font-bold transition-all cursor-pointer inline-block"
+              >
+                Criar conta de motorista
+              </button>
+            </div>
           </form>
 
           {/* Quick account switch for convenience */}
@@ -1443,6 +1443,24 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               )}
             </div>
 
+            {/* Status do Pagamento Pendente se houver */}
+            {currentDriver.pendingPayment?.status === 'pending' && (
+              <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 shadow-sm">
+                <Clock className="w-6 h-6 text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+                <div className="space-y-1">
+                  <span className="text-xs font-mono font-bold text-amber-800 uppercase tracking-wider block">
+                    Comprovante em Análise
+                  </span>
+                  <h4 className="font-heading font-black text-amber-950 text-sm sm:text-base">
+                    Comprovante enviado! Aguarde aprovação do Admin em até 10 minutos.
+                  </h4>
+                  <p className="text-xs text-amber-900 font-medium">
+                    ID do Comprovante: <span className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-amber-300">{currentDriver.pendingPayment.comprovanteId}</span> &bull; Você receberá notificação assim que homologado no banco {RACE_PIX_BANK}.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Botão grande: "PAGAR R$200 DA SEMANA VIA PIX" -> abre modal */}
             <div className="pt-2">
               <button
@@ -1450,33 +1468,33 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 onClick={handleOpenPixModal}
                 className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-heading font-black py-4 px-6 rounded-2xl shadow-xl transition-all cursor-pointer text-base sm:text-lg flex items-center justify-center gap-3 border-2 border-emerald-500"
               >
-                <QrCode className="w-6 h-6 text-emerald-100" />
+                <Wallet className="w-6 h-6 text-emerald-100" />
                 <span>PAGAR R$200 DA SEMANA VIA PIX</span>
               </button>
               <p className="text-center text-xs text-slate-500 mt-2 font-medium">
-                Gera QR Code oficial e código copia e cola para liberação imediata por 7 dias.
+                Pague pelo seu banco com a chave PIX oficial e envie o comprovante para liberação em até 10 minutos.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal PIX: QR Code, Copia e Cola, Timer 24h, Botão "Já paguei, liberar agora", Botão fechar */}
+      {/* Modal PIX Manual Real de R$ 200/semana com Envio de Comprovante */}
       {isPixModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border-2 border-slate-200 space-y-5 my-auto animate-scale-up">
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border-2 border-slate-200 space-y-5 my-auto animate-scale-up">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-                  <QrCode className="w-6 h-6 text-emerald-700" />
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center border border-emerald-200 shadow-xs">
+                  <Wallet className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-heading font-black text-slate-900 text-lg leading-tight">
-                    Pagamento Semanal RACE
+                  <h3 className="font-heading font-black text-slate-950 text-lg sm:text-xl leading-tight">
+                    Pague R$200 da semana via PIX
                   </h3>
-                  <span className="text-xs font-mono font-bold text-emerald-700">
-                    {WEEKLY_FEE_TEXT}
+                  <span className="text-xs font-mono font-bold text-emerald-700 block">
+                    Taxa Zero &bull; 100% de Repasse ao Condutor
                   </span>
                 </div>
               </div>
@@ -1490,86 +1508,176 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               </button>
             </div>
 
-            {/* QR Code Container */}
-            <div className="text-center space-y-3">
-              {isGeneratingPix || !pixCharge ? (
-                <div className="w-56 h-56 mx-auto flex flex-col items-center justify-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300">
-                  <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
-                  <span className="text-xs text-slate-500 mt-2 font-bold">
-                    Gerando QR Code PIX oficial...
-                  </span>
+            {/* Feedback de sucesso após envio */}
+            {proofSentSuccessNotice ? (
+              <div className="p-5 rounded-2xl bg-emerald-50 border-2 border-emerald-400 text-center space-y-4 animate-fade-in">
+                <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto text-emerald-700">
+                  <CheckCircle className="w-8 h-8" />
                 </div>
-              ) : (
-                <div className="inline-block p-3 bg-white rounded-2xl border-2 border-emerald-400 shadow-md">
-                  <img
-                    src={pixCharge.qrCodeDataUrl}
-                    alt="QR Code PIX R$ 200 Semanal"
-                    className="w-52 h-52 mx-auto rounded-xl object-contain block"
-                  />
-                  <span className="text-[11px] font-mono font-bold text-slate-500 mt-1 block">
-                    Chave Destino: {PIX_KEY_RACE}
-                  </span>
+                <div className="space-y-1">
+                  <h4 className="font-heading font-black text-emerald-950 text-base sm:text-lg">
+                    Comprovante Enviado com Sucesso!
+                  </h4>
+                  <p className="text-sm text-emerald-900 font-semibold leading-relaxed">
+                    {proofSentSuccessNotice}
+                  </p>
                 </div>
-              )}
-
-              {/* Timer 24h */}
-              <div className="flex items-center justify-center gap-2 text-xs font-mono font-bold text-amber-800 bg-amber-50 py-2 px-3 rounded-xl border border-amber-200">
-                <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>QR Code válido por 24 horas (Timer 24h)</span>
-              </div>
-            </div>
-
-            {/* Código Copia e Cola com botão COPIAR */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-heading font-black text-slate-700 uppercase tracking-wider block">
-                Código Copia e Cola:
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={pixCharge?.pixCopyPaste || ''}
-                  className="flex-1 bg-slate-50 border border-slate-300 text-slate-700 text-xs font-mono p-2.5 rounded-xl truncate focus:outline-hidden"
-                />
+                <div className="p-3 bg-white rounded-xl border border-emerald-200 text-xs text-slate-600 font-medium">
+                  Assim que o administrador verificar o depósito de R$ 200,00 na conta, sua liberação de 7 dias será ativada instantaneamente.
+                </div>
                 <button
                   type="button"
-                  onClick={handleCopyPixModal}
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm"
+                  onClick={() => setIsPixModalOpen(false)}
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-heading font-black py-3 rounded-xl transition-all cursor-pointer text-sm"
                 >
-                  {copiedPixModal ? (
-                    <>
-                      <Check className="w-4 h-4 text-emerald-400" />
-                      <span>Copiado!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>COPIAR</span>
-                    </>
-                  )}
+                  Entendido / Fechar
                 </button>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Dados Oficiais da Conta PIX da Race */}
+                <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3.5">
+                  {/* Chave PIX da Race */}
+                  <div>
+                    <label className="text-xs font-heading font-black text-slate-500 uppercase tracking-wider block mb-1">
+                      Chave PIX da Race ({RACE_PIX_KEY_TYPE})
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 font-mono font-black text-slate-900 text-sm sm:text-base select-all truncate">
+                        {RACE_PIX_KEY}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCopyRacePixKey}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer shadow flex items-center gap-1.5 shrink-0"
+                      >
+                        {copiedRacePix ? (
+                          <>
+                            <Check className="w-4 h-4 text-emerald-200" />
+                            <span>COPIADO!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            <span>COPIAR CHAVE</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
 
-            {/* Botões de Ação do Modal */}
-            <div className="space-y-2 pt-2">
-              <button
-                type="button"
-                onClick={handleConfirmPixPayment}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-heading font-black py-3.5 px-4 rounded-xl shadow-lg transition-all cursor-pointer text-sm sm:text-base flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 className="w-5 h-5 text-emerald-200" />
-                <span>Já paguei, liberar agora</span>
-              </button>
+                  {/* Informações Bancárias */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                    <div className="bg-white p-3 rounded-xl border border-slate-200">
+                      <span className="text-[11px] font-bold text-slate-500 block uppercase">Banco</span>
+                      <span className="text-xs sm:text-sm font-heading font-black text-slate-900 block mt-0.5">
+                        {RACE_PIX_BANK}
+                      </span>
+                    </div>
 
-              <button
-                type="button"
-                onClick={() => setIsPixModalOpen(false)}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all cursor-pointer"
-              >
-                Fechar
-              </button>
-            </div>
+                    <div className="bg-white p-3 rounded-xl border border-slate-200">
+                      <span className="text-[11px] font-bold text-slate-500 block uppercase">Favorecido</span>
+                      <span className="text-xs sm:text-sm font-heading font-black text-slate-900 block mt-0.5 truncate">
+                        {RACE_PIX_NAME}
+                      </span>
+                    </div>
+
+                    <div className="bg-emerald-100 p-3 rounded-xl border border-emerald-300 text-emerald-950">
+                      <span className="text-[11px] font-bold text-emerald-800 block uppercase">Valor Exato</span>
+                      <span className="text-sm sm:text-base font-heading font-black text-emerald-950 block mt-0.5">
+                        R$ 200,00
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Instrução em texto grande */}
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 sm:p-4.5 space-y-1.5">
+                  <span className="text-xs font-mono font-bold text-amber-800 uppercase tracking-wider block">
+                    Passo a Passo de Pagamento:
+                  </span>
+                  <p className="text-sm sm:text-base font-heading font-black text-amber-950 leading-relaxed">
+                    1. Abra seu banco &bull; 2. PIX com chave acima &bull; 3. Valor R$200 &bull; 4. Tire print do comprovante &bull; 5. Clique em Já paguei
+                  </p>
+                </div>
+
+                {/* Input pra colar ID do comprovante ou upload de print */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-heading font-black text-slate-700 uppercase tracking-wider block mb-1">
+                      ID ou Código do Comprovante Bancário:
+                    </label>
+                    <input
+                      type="text"
+                      value={comprovanteId}
+                      onChange={(e) => setComprovanteId(e.target.value)}
+                      placeholder="Ex: E18236120202611050938... ou código de autenticação"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-mono text-slate-900 focus:outline-hidden focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-heading font-black text-slate-700 uppercase tracking-wider block mb-1">
+                      Anexar Print do Comprovante (opcional):
+                    </label>
+                    <label className="flex items-center justify-center gap-2 p-3 bg-white border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-emerald-500 hover:bg-emerald-50/40 transition-all text-xs font-bold text-slate-700">
+                      <Upload className="w-4 h-4 text-emerald-600" />
+                      <span>{comprovanteFileName || 'Selecionar imagem / print do comprovante'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleComprovanteFileChange}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {comprovanteImage && (
+                      <div className="mt-2 p-2 bg-white rounded-xl border border-slate-200 flex items-center gap-3">
+                        <img
+                          src={comprovanteImage}
+                          alt="Prévia Comprovante"
+                          className="w-12 h-12 object-cover rounded-lg border border-slate-300"
+                        />
+                        <div className="text-xs text-slate-700">
+                          <span className="font-bold block truncate max-w-[200px]">{comprovanteFileName}</span>
+                          <span className="text-emerald-700 font-semibold text-[11px]">Print anexado com sucesso</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Botão "Já paguei R$200 - Liberar acesso" */}
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleSubmitProofOfPayment}
+                    disabled={isSubmittingProof}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-heading font-black py-4 px-4 rounded-xl shadow-lg transition-all cursor-pointer text-sm sm:text-base flex items-center justify-center gap-2"
+                  >
+                    {isSubmittingProof ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>Enviando Comprovante...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-5 h-5 text-emerald-200" />
+                        <span>Já paguei R$200 - Liberar acesso</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsPixModalOpen(false)}
+                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
