@@ -50,10 +50,12 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         maxZoom: 19,
       }).addTo(map);
 
-      // Add Zoom Control to bottom right
-      L.control.zoom({ position: 'bottomright' }).addTo(map);
-
       mapInstanceRef.current = map;
+
+      // Invalidate size shortly after mount to ensure crisp full-container rendering
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 250);
 
       // Handle map clicks
       map.on('click', (e) => {
@@ -65,8 +67,13 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
       });
     }
 
+    const handleResize = () => {
+      mapInstanceRef.current?.invalidateSize();
+    };
+    window.addEventListener('resize', handleResize);
+
     return () => {
-      // Cleanup on unmount
+      window.removeEventListener('resize', handleResize);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
