@@ -8,6 +8,7 @@ export interface AppUser {
   role: 'passenger' | 'driver' | 'admin';
   avatar?: string;
   rating?: number;
+  password?: string;
   driverData?: Driver;
 }
 

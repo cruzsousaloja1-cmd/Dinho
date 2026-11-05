@@ -71,7 +71,19 @@ export default function App() {
   const [ridesHistory, setRidesHistory] = useState<Ride[]>(INITIAL_RIDES_HISTORY);
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
 
-  // Authentication & Session - Inicia deslogado (null) para abrir a tela cheia de login de motorista
+  // Registered Passengers State
+  const [passengers, setPassengers] = useState<AppUser[]>(() => {
+    try {
+      const stored = localStorage.getItem('race_registered_passengers');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  // Authentication & Session - Inicia deslogado (null) para abrir a tela cheia de login de motorista/passageiro
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [loginSuccessBanner, setLoginSuccessBanner] = useState<string | null>(null);
@@ -510,39 +522,63 @@ export default function App() {
     return (
       <DriverLoginScreen
         drivers={drivers}
+        passengers={passengers}
         onLoginSuccess={(user, driver) => {
           setCurrentUser(user);
-          setCurrentDriver(driver);
-          const expiresDate = driver.weeklyFeeExpiresAt
-            ? new Date(driver.weeklyFeeExpiresAt)
-            : driver.weeklyPlanExpiresAt
-            ? new Date(driver.weeklyPlanExpiresAt)
-            : null;
-          const isSubActive = Boolean(
-            driver.weeklyPlanActive && expiresDate && expiresDate > new Date()
-          );
-          if (isSubActive) {
-            handleUpdateDriver({ ...driver, status: 'online' });
+          if (user.role === 'driver' && driver) {
+            setCurrentDriver(driver);
+            const expiresDate = driver.weeklyFeeExpiresAt
+              ? new Date(driver.weeklyFeeExpiresAt)
+              : driver.weeklyPlanExpiresAt
+              ? new Date(driver.weeklyPlanExpiresAt)
+              : null;
+            const isSubActive = Boolean(
+              driver.weeklyPlanActive && expiresDate && expiresDate > new Date()
+            );
+            if (isSubActive) {
+              handleUpdateDriver({ ...driver, status: 'online' });
+              setActiveTab('rides');
+              setLoginSuccessBanner(
+                `Bem-vindo, ${driver.name}! Você entrou na Central de Corridas com 100% dos ganhos livres.`
+              );
+            } else {
+              handleUpdateDriver({ ...driver, status: 'offline' });
+              setActiveTab('driver_portal');
+              setLoginSuccessBanner(
+                `Bem-vindo, ${driver.name}! Sua assinatura semanal de R$ 200 está VENCIDA. Efetue o pagamento via PIX para ficar ONLINE.`
+              );
+            }
+          } else {
+            // Passageiro: vai direto para tela de pedir corrida com mapa
             setActiveTab('rides');
             setLoginSuccessBanner(
-              `Bem-vindo, ${driver.name}! Você entrou na Central de Corridas com 100% dos ganhos livres.`
-            );
-          } else {
-            handleUpdateDriver({ ...driver, status: 'offline' });
-            setActiveTab('driver_portal');
-            setLoginSuccessBanner(
-              `Bem-vindo, ${driver.name}! Sua assinatura semanal de R$ 200 está VENCIDA. Efetue o pagamento via PIX para ficar ONLINE.`
+              `Olá, ${user.name}! Escolha seu ponto de embarque e destino para solicitar sua corrida ou entrega.`
             );
           }
         }}
-        onRegisterSuccess={(user, newDriver) => {
+        onRegisterDriverSuccess={(user, newDriver) => {
           handleRegisterDriver(newDriver);
           setCurrentUser(user);
           setCurrentDriver(newDriver);
-          // 5. Depois que criar conta, o motorista deve cair na tela "Assinatura Vencida" pedindo pagamento de R$200
+          // Motorista -> vai para tela de assinatura R$200/semana PIX
           setActiveTab('driver_portal');
           setLoginSuccessBanner(
-            `Cadastro de ${newDriver.name} realizado com sucesso! Sua assinatura semanal está VENCIDA. Efetue o pagamento de R$ 200 via PIX para ativar seu acesso.`
+            `Cadastro de ${newDriver.name} realizado com sucesso! Sua assinatura semanal de R$ 200 está VENCIDA. Efetue o pagamento via PIX para ativar seu acesso.`
+          );
+        }}
+        onRegisterPassengerSuccess={(newUser) => {
+          setPassengers((prev) => {
+            const next = [newUser, ...prev.filter((p) => p.id !== newUser.id)];
+            try {
+              localStorage.setItem('race_registered_passengers', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+          setCurrentUser(newUser);
+          // Passageiro -> vai direto para tela de pedir corrida com mapa
+          setActiveTab('rides');
+          setLoginSuccessBanner(
+            `Bem-vindo à RACE, ${newUser.name}! Sua conta de passageiro foi criada com sucesso. Peça sua corrida agora.`
           );
         }}
       />

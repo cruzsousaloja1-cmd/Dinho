@@ -1,32 +1,30 @@
 import React, { useState } from 'react';
-import { Driver, VehicleCategory, AppUser } from '../types';
-import { WEEKLY_FEE } from '../config/pricing';
-import { Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { Driver, AppUser } from '../types';
+import { Eye, EyeOff, AlertTriangle, UserPlus, Car } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { PassengerRegisterView } from './PassengerRegisterView';
+import { DriverRegisterView } from './DriverRegisterView';
 
 interface DriverLoginScreenProps {
   drivers: Driver[];
-  onLoginSuccess: (user: AppUser, driver: Driver) => void;
-  onRegisterSuccess: (user: AppUser, newDriver: Driver) => void;
+  passengers?: AppUser[];
+  onLoginSuccess: (user: AppUser, driver?: Driver) => void;
+  onRegisterDriverSuccess: (user: AppUser, newDriver: Driver) => void;
+  onRegisterPassengerSuccess: (user: AppUser) => void;
 }
 
 export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   drivers,
+  passengers = [],
   onLoginSuccess,
-  onRegisterSuccess,
+  onRegisterDriverSuccess,
+  onRegisterPassengerSuccess,
 }) => {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [viewMode, setViewMode] = useState<'login' | 'register_driver' | 'register_passenger'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // Registration Fields
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [vehicleModel, setVehicleModel] = useState('');
-  const [vehiclePlate, setVehiclePlate] = useState('');
-  const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory>('economica');
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,120 +36,112 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    // Procura motorista cadastrado na lista
-    const matched = drivers.find(
-      (d) => d.email.toLowerCase() === cleanEmail
+    // 4. No login, detectar automaticamente se é motorista ou passageiro pelo cadastro e direcionar
+    // Primeiro verifica se é MOTORISTA
+    const matchedDriver = drivers.find((d) => d.email.toLowerCase() === cleanEmail);
+    if (matchedDriver) {
+      if (matchedDriver.password && matchedDriver.password !== password) {
+        setErrorMessage('Senha incorreta para esta conta de motorista.');
+        return;
+      }
+
+      const now = new Date();
+      const expiresDate = matchedDriver.weeklyFeeExpiresAt
+        ? new Date(matchedDriver.weeklyFeeExpiresAt)
+        : matchedDriver.weeklyPlanExpiresAt
+        ? new Date(matchedDriver.weeklyPlanExpiresAt)
+        : null;
+      const isSubActive = Boolean(matchedDriver.weeklyPlanActive && expiresDate && expiresDate > now);
+
+      const targetDriver: Driver = {
+        ...matchedDriver,
+        status: isSubActive ? 'online' : 'offline',
+      };
+
+      const appUser: AppUser = {
+        id: targetDriver.id,
+        name: targetDriver.name,
+        email: targetDriver.email,
+        phone: targetDriver.phone,
+        role: 'driver',
+        avatar: targetDriver.avatar,
+        rating: targetDriver.rating,
+        driverData: targetDriver,
+      };
+
+      try {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      } catch {}
+
+      onLoginSuccess(appUser, targetDriver);
+      return;
+    }
+
+    // Em seguida verifica se é PASSAGEIRO
+    // Busca em passengers do prop ou no localStorage
+    let allPassengers = [...passengers];
+    try {
+      const stored = localStorage.getItem('race_registered_passengers');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          allPassengers = [...allPassengers, ...parsed];
+        }
+      }
+    } catch {}
+
+    const matchedPassenger = allPassengers.find((p) => p.email.toLowerCase() === cleanEmail);
+    if (matchedPassenger) {
+      if (matchedPassenger.password && matchedPassenger.password !== password) {
+        setErrorMessage('Senha incorreta para esta conta de passageiro.');
+        return;
+      }
+
+      try {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      } catch {}
+
+      onLoginSuccess(matchedPassenger);
+      return;
+    }
+
+    // Não encontrado em nenhuma das bases
+    setErrorMessage(
+      'Nenhuma conta encontrada com este e-mail. Crie sua conta de motorista ou de passageiro abaixo.'
     );
-
-    if (!matched) {
-      setErrorMessage(
-        'Nenhum motorista cadastrado com este e-mail. Clique em "Criar conta de motorista" abaixo para realizar seu cadastro.'
-      );
-      return;
-    }
-
-    if (matched.password && matched.password !== password) {
-      setErrorMessage('Senha incorreta. Verifique os dados digitados.');
-      return;
-    }
-
-    const now = new Date();
-    const expiresDate = matched.weeklyFeeExpiresAt
-      ? new Date(matched.weeklyFeeExpiresAt)
-      : matched.weeklyPlanExpiresAt
-      ? new Date(matched.weeklyPlanExpiresAt)
-      : null;
-    const isSubActive = Boolean(matched.weeklyPlanActive && expiresDate && expiresDate > now);
-
-    const targetDriver: Driver = {
-      ...matched,
-      status: isSubActive ? 'online' : 'offline',
-    };
-
-    const appUser: AppUser = {
-      id: targetDriver.id,
-      name: targetDriver.name,
-      email: targetDriver.email,
-      phone: targetDriver.phone,
-      role: 'driver',
-      avatar: targetDriver.avatar,
-      rating: targetDriver.rating,
-      driverData: targetDriver,
-    };
-
-    try {
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-    } catch {}
-
-    onLoginSuccess(appUser, targetDriver);
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
+  // Se estiver em modo Cadastro de Passageiro
+  if (viewMode === 'register_passenger') {
+    return (
+      <PassengerRegisterView
+        existingPassengers={passengers}
+        onRegisterSuccess={(newUser) => {
+          onRegisterPassengerSuccess(newUser);
+        }}
+        onBackToLogin={() => {
+          setErrorMessage(null);
+          setViewMode('login');
+        }}
+      />
+    );
+  }
 
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !password || !name.trim() || !phone.trim()) {
-      setErrorMessage('Por favor, preencha todos os campos obrigatórios.');
-      return;
-    }
-
-    // Verifica se já existe motorista cadastrado com este e-mail
-    if (drivers.some((d) => d.email.toLowerCase() === cleanEmail)) {
-      setErrorMessage('Já existe uma conta com este e-mail. Faça login ou use outro e-mail.');
-      return;
-    }
-
-    // Requisito 5: novo motorista inicia com assinatura VENCIDA pedindo pagamento de R$ 200
-    const newDriver: Driver = {
-      id: `drv-${Date.now().toString().slice(-5)}`,
-      name: name.trim(),
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      phone: phone.trim(),
-      email: cleanEmail,
-      cpf: '000.***.***-00',
-      cnh: '01234567890 - Categoria B (EAR)',
-      category: vehicleCategory,
-      vehicleModel: vehicleModel.trim() || 'Veículo Parceiro',
-      vehiclePlate: (vehiclePlate.trim() || 'BRA2E19').toUpperCase(),
-      vehicleColor: 'Preto',
-      vehicleYear: 2024,
-      rating: 5.0,
-      totalRides: 0,
-      status: 'offline', // Offline até pagar a assinatura
-      lat: -23.5615,
-      lng: -46.6558,
-      weeklyPlanActive: false, // Assinatura vencida/inativa
-      weeklyPlanExpiresAt: null,
-      weeklyFeePaidAt: null,
-      weeklyFeeExpiresAt: null,
-      weeklyPlanPrice: WEEKLY_FEE,
-      earningsToday: 0,
-      earningsWeek: 0,
-      cnhVerified: true,
-      vehicleVerified: true,
-      criminalRecordClear: true,
-      registrationDate: new Date().toISOString().split('T')[0],
-      password: password,
-    };
-
-    const appUser: AppUser = {
-      id: newDriver.id,
-      name: newDriver.name,
-      email: newDriver.email,
-      phone: newDriver.phone,
-      role: 'driver',
-      avatar: newDriver.avatar,
-      rating: 5.0,
-      driverData: newDriver,
-    };
-
-    try {
-      confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });
-    } catch {}
-
-    onRegisterSuccess(appUser, newDriver);
-  };
+  // Se estiver em modo Cadastro de Motorista
+  if (viewMode === 'register_driver') {
+    return (
+      <DriverRegisterView
+        existingDrivers={drivers}
+        onRegisterSuccess={(user, newDriver) => {
+          onRegisterDriverSuccess(user, newDriver);
+        }}
+        onBackToLogin={() => {
+          setErrorMessage(null);
+          setViewMode('login');
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#000000] text-white flex flex-col justify-center items-center px-6 py-12 selection:bg-[#ff6a00] selection:text-white">
@@ -161,9 +151,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           <h1 className="text-6xl sm:text-7xl font-heading font-black text-[#ff6a00] tracking-tighter uppercase select-none">
             RACE
           </h1>
-          {/* Subtítulo: "App do Motorista" em branco/cinza claro, embaixo do RACE */}
           <p className="text-zinc-300 font-medium text-base sm:text-lg tracking-wide">
-            {mode === 'login' ? 'App do Motorista' : 'Cadastro de Motorista'}
+            App do Motorista & Passageiro
           </p>
         </div>
 
@@ -175,205 +164,85 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           </div>
         )}
 
-        {/* Formulário: Design limpo exatamente preto e laranja */}
-        {mode === 'login' ? (
-          <form onSubmit={handleLoginSubmit} className="space-y-6 pt-2">
-            {/* Campo EMAIL */}
-            <div className="space-y-2">
-              <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                EMAIL
-              </label>
+        {/* Formulário de Login */}
+        <form onSubmit={handleLoginSubmit} className="space-y-6 pt-2">
+          {/* Campo EMAIL */}
+          <div className="space-y-2">
+            <label className="text-white text-xs font-bold uppercase tracking-wider block">
+              EMAIL
+            </label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="seu.email@exemplo.com"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3.5 text-base focus:outline-none focus:border-[#ff6a00] transition-colors"
+            />
+          </div>
+
+          {/* Campo SENHA */}
+          <div className="space-y-2">
+            <label className="text-white text-xs font-bold uppercase tracking-wider block">
+              SENHA
+            </label>
+            <div className="relative">
               <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu.email@exemplo.com"
-                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3.5 text-base focus:outline-none focus:border-[#ff6a00] transition-colors"
-              />
-            </div>
-
-            {/* Campo SENHA */}
-            <div className="space-y-2">
-              <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                SENHA
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3.5 text-base focus:outline-none focus:border-[#ff6a00] transition-colors pr-12"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-4 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                  title={showPassword ? 'Ocultar senha' : 'Ver senha'}
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Botão ENTRAR laranja #ff6a00, texto branco bold, borda arredondada, largura total */}
-            <button
-              type="submit"
-              className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-lg py-4 px-6 rounded-xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/20 uppercase tracking-wider block mt-8"
-            >
-              ENTRAR
-            </button>
-
-            {/* Link embaixo: "Criar conta de motorista" laranja, centralizado */}
-            <div className="text-center pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setErrorMessage(null);
-                  setMode('register');
-                }}
-                className="text-[#ff6a00] hover:underline text-sm sm:text-base font-bold transition-all cursor-pointer inline-block"
-              >
-                Criar conta de motorista
-              </button>
-            </div>
-          </form>
-        ) : (
-          /* Formulário de Cadastro de Novo Motorista */
-          <form onSubmit={handleRegisterSubmit} className="space-y-4 pt-1">
-            {/* NOME COMPLETO */}
-            <div className="space-y-1.5">
-              <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                NOME COMPLETO
-              </label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Seu nome completo"
-                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors"
-              />
-            </div>
-
-            {/* WHATSAPP / TELEFONE */}
-            <div className="space-y-1.5">
-              <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                WHATSAPP / TELEFONE
-              </label>
-              <input
-                type="tel"
-                required
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="(11) 98765-4321"
-                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors"
-              />
-            </div>
-
-            {/* EMAIL */}
-            <div className="space-y-1.5">
-              <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                EMAIL
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu.email@exemplo.com"
-                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors"
-              />
-            </div>
-
-            {/* SENHA */}
-            <div className="space-y-1.5">
-              <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                SENHA
-              </label>
-              <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Mínimo 6 dígitos"
-                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors"
+                placeholder="••••••••"
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-4 py-3.5 text-base focus:outline-none focus:border-[#ff6a00] transition-colors pr-12"
               />
-            </div>
-
-            {/* CATEGORIA */}
-            <div className="space-y-1.5">
-              <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                CATEGORIA
-              </label>
-              <select
-                value={vehicleCategory}
-                onChange={(e) => setVehicleCategory(e.target.value as VehicleCategory)}
-                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors"
-              >
-                <option value="economica">RACE Econômica (Carro)</option>
-                <option value="confort">RACE Confort (Sedã/SUV)</option>
-                <option value="moto_passageiro">RACE Moto Passageiro</option>
-                <option value="moto_entrega">RACE Flash (Entregas)</option>
-              </select>
-            </div>
-
-            {/* VEÍCULO & PLACA */}
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <div className="space-y-1.5">
-                <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                  MODELO DO VEÍCULO
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={vehicleModel}
-                  onChange={(e) => setVehicleModel(e.target.value)}
-                  placeholder="Ex: Onix 1.0"
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-[#ff6a00] transition-colors"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                  PLACA DO VEÍCULO
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={vehiclePlate}
-                  onChange={(e) => setVehiclePlate(e.target.value)}
-                  placeholder="BRA2E19"
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-[#ff6a00] transition-colors uppercase"
-                />
-              </div>
-            </div>
-
-            {/* BOTÃO CADASTRAR */}
-            <button
-              type="submit"
-              className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/20 uppercase tracking-wider block mt-6"
-            >
-              CONCLUIR CADASTRO
-            </button>
-
-            {/* Voltar para login */}
-            <div className="text-center pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  setErrorMessage(null);
-                  setMode('login');
-                }}
-                className="text-[#ff6a00] hover:underline text-sm font-bold transition-all cursor-pointer inline-block"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-4 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                title={showPassword ? 'Ocultar senha' : 'Ver senha'}
               >
-                Já tenho conta de motorista - Entrar
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
-          </form>
-        )}
+          </div>
+
+          {/* Botão ENTRAR laranja #ff6a00, texto branco bold, borda arredondada, largura total */}
+          <button
+            type="submit"
+            className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-lg py-4 px-6 rounded-xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/20 uppercase tracking-wider block mt-8"
+          >
+            ENTRAR
+          </button>
+
+          {/* 1. Embaixo do botão ENTRAR, 2 botões: Criar conta de motorista e Criar conta de passageiro */}
+          <div className="space-y-3 pt-2">
+            {/* Botão 1: "Criar conta de motorista" laranja */}
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMessage(null);
+                setViewMode('register_driver');
+              }}
+              className="w-full py-3 px-4 rounded-xl text-center text-[#ff6a00] hover:bg-[#ff6a00]/10 border border-[#ff6a00]/40 text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Car className="w-4 h-4" />
+              <span>Criar conta de motorista</span>
+            </button>
+
+            {/* Botão 2: "Criar conta de passageiro" branco / outline */}
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMessage(null);
+                setViewMode('register_passenger');
+              }}
+              className="w-full py-3 px-4 rounded-xl text-center text-white hover:bg-white/10 border border-zinc-600 hover:border-zinc-400 text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+            >
+              <UserPlus className="w-4 h-4 text-zinc-300" />
+              <span>Criar conta de passageiro</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
