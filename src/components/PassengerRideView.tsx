@@ -301,116 +301,107 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
     return (
       <div className="space-y-4">
-        {/* MAPA HERO COM INFORMAÇÕES DESLOCADAS EM CIMA DO MAPA */}
-        {mapElement && (
-          <div className="relative w-full h-[380px] sm:h-[460px] md:h-[500px] rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-300 bg-white">
-            {/* Mapa Leaflet Real-time */}
-            <div className="w-full h-full">
-              {mapElement}
+        {/* Active Ride HUD card in clean white */}
+        <div className="bg-white border-2 border-amber-400 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+          {/* Status Header */}
+          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+            <div className="flex items-center gap-3">
+              <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 radar-pulse" />
+              <div>
+                <h3 className="font-heading font-black text-slate-950 text-lg sm:text-xl">
+                  {activeRide.status === 'driver_assigned' && 'Motorista a Caminho'}
+                  {activeRide.status === 'driver_arriving' && 'Motorista Chegando no Embarque'}
+                  {activeRide.status === 'in_progress' && 'Viagem em Andamento'}
+                  {activeRide.status === 'completed' && 'Viagem Concluída com Sucesso!'}
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 font-mono font-bold">
+                  Corrida #{activeRide.id} • Rastreamento Seguro 24h
+                </p>
+              </div>
             </div>
 
-            {/* TOP FLOATING BAR EM CIMA DO MAPA */}
-            <div className="absolute top-3 left-3 right-3 z-[400] flex items-center justify-between gap-2 pointer-events-none">
-              <div className="pointer-events-auto bg-slate-950/90 backdrop-blur-md border border-slate-800 text-white px-3.5 py-2 rounded-2xl flex items-center gap-2.5 shadow-xl">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 radar-pulse" />
+            <div className="text-right">
+              <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
+                {formatBRL(activeRide.price)}
+              </div>
+              <div className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                100% ao Condutor
+              </div>
+            </div>
+          </div>
+
+          {/* Botão de Destaque: Ver Mapa em Tela Cheia Sem Informações em Cima */}
+          {onOpenFullMap && (
+            <button
+              type="button"
+              onClick={onOpenFullMap}
+              className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black py-3.5 px-4 rounded-2xl shadow-lg flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-[#ff8533] text-sm sm:text-base uppercase tracking-wider"
+            >
+              <Maximize2 className="w-5 h-5" />
+              <span>Ver Mapa em Tela Cheia (100% da Tela)</span>
+            </button>
+          )}
+
+          {/* Driver & Vehicle Details */}
+          {activeRide.driver && (
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex items-center justify-between gap-4 shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div className="relative">
+                  <img
+                    src={activeRide.driver.avatar}
+                    alt={activeRide.driver.name}
+                    className="w-14 h-14 rounded-full object-cover border-2 border-amber-500 shadow-md"
+                  />
+                  <span className="absolute -bottom-1 -right-1 bg-white text-slate-900 border border-slate-300 text-xs px-1.5 py-0.2 rounded-full font-bold flex items-center shadow">
+                    ★ {activeRide.driver.rating.toFixed(2)}
+                  </span>
+                </div>
                 <div>
-                  <h4 className="font-heading font-black text-xs sm:text-sm text-white">
-                    {activeRide.status === 'driver_assigned' && 'Motorista a Caminho'}
-                    {activeRide.status === 'driver_arriving' && 'Chegando no Embarque'}
-                    {activeRide.status === 'in_progress' && 'Viagem em Andamento'}
-                    {activeRide.status === 'completed' && 'Viagem Concluída!'}
+                  <h4 className="font-heading font-bold text-slate-900 text-base sm:text-lg">
+                    {activeRide.driver.name}
                   </h4>
-                  <p className="text-[10px] text-zinc-400 font-mono">
-                    Corrida #{activeRide.id} • GPS Ativo
+                  <p className="text-sm text-amber-700 font-mono font-bold">
+                    {activeRide.driver.vehicleModel}
+                  </p>
+                  <p className="text-xs sm:text-sm text-slate-600 font-mono mt-0.5">
+                    Placa: <span className="bg-white text-slate-950 px-2 py-0.5 rounded border border-slate-300 font-extrabold">{activeRide.driver.vehiclePlate}</span>
                   </p>
                 </div>
               </div>
 
-              {onOpenFullMap && (
-                <button
-                  type="button"
-                  onClick={onOpenFullMap}
-                  className="pointer-events-auto bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs py-2.5 px-3.5 rounded-2xl shadow-xl flex items-center gap-1.5 transition-all cursor-pointer border border-[#ff8533] active:scale-95"
+              <div className="flex items-center gap-2">
+                <a
+                  href={`tel:${activeRide.driver.phone}`}
+                  className="w-12 h-12 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-700 flex items-center justify-center transition-all shadow cursor-pointer active:scale-95"
+                  title="Ligar para o condutor"
                 >
-                  <Maximize2 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Expandir</span>
-                </button>
-              )}
-            </div>
-
-            {/* BOTTOM FLOATING CARD DO MOTORISTA EM CIMA DO MAPA */}
-            <div className="absolute bottom-3 left-3 right-3 z-[400] max-w-xl mx-auto">
-              <div className="bg-white/95 backdrop-blur-xl border-2 border-amber-400 rounded-3xl p-3.5 sm:p-4 shadow-2xl space-y-2.5">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <img
-                        src={activeRide.driver?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                        alt={activeRide.driver?.name}
-                        className="w-12 h-12 rounded-2xl object-cover border-2 border-amber-500 shadow-md"
-                      />
-                      <span className="absolute -bottom-1 -right-1 bg-white text-slate-900 border border-slate-300 text-[10px] px-1 py-0.2 rounded-full font-bold flex items-center shadow">
-                        ★ {activeRide.driver?.rating.toFixed(2)}
-                      </span>
-                    </div>
-                    <div>
-                      <h4 className="font-heading font-black text-slate-900 text-sm sm:text-base">
-                        {activeRide.driver?.name}
-                      </h4>
-                      <p className="text-xs text-amber-700 font-mono font-bold">
-                        {activeRide.driver?.vehicleModel} &bull;{' '}
-                        <span className="bg-slate-100 text-slate-950 px-1.5 py-0.5 rounded border border-slate-300 font-extrabold">
-                          {activeRide.driver?.vehiclePlate}
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      <span className="font-heading font-black text-slate-950 text-base sm:text-lg block">
-                        {formatBRL(activeRide.price)}
-                      </span>
-                      <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 block">
-                        100% livre
-                      </span>
-                    </div>
-                    {activeRide.driver?.phone && (
-                      <a
-                        href={`tel:${activeRide.driver.phone}`}
-                        className="w-10 h-10 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-700 flex items-center justify-center transition-all shadow cursor-pointer active:scale-95 shrink-0"
-                        title="Ligar para o condutor"
-                      >
-                        <Phone className="w-4 h-4" />
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                {/* Ações da corrida */}
-                {!isCompleted ? (
-                  <div className="flex items-center gap-2 pt-1 border-t border-slate-200/80">
-                    <button
-                      type="button"
-                      onClick={onCompleteRide}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-extrabold text-xs sm:text-sm py-2.5 px-3 rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Concluir Corrida</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onCancelRide}
-                      className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-rose-600 text-xs font-bold border border-slate-300 transition-all cursor-pointer"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                ) : null}
+                  <Phone className="w-5 h-5" />
+                </a>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Ações da corrida */}
+          {!isCompleted && (
+            <div className="flex items-center gap-3 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={onCompleteRide}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-extrabold text-sm sm:text-base py-3.5 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
+              >
+                <CheckCircle2 className="w-5 h-5" />
+                <span>Simular Conclusão da Corrida</span>
+              </button>
+              <button
+                type="button"
+                onClick={onCancelRide}
+                className="px-5 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-rose-600 text-sm font-bold border border-slate-300 transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Informações detalhadas da rota abaixo do mapa */}
         <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md space-y-4">
@@ -559,128 +550,37 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
       )}
 
-      {/* 2. MAPA HERO EM DESTAQUE COM INFORMAÇÕES DESLOCADAS EM CIMA DO MAPA */}
-      {mapElement && (
-        <div className="relative w-full h-[400px] sm:h-[480px] md:h-[520px] rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-300 bg-white group">
-          {/* Mapa Leaflet Real-time */}
-          <div className="w-full h-full z-0">
-            {mapElement}
-          </div>
-
-          {/* TOP FLOATING OVERLAY: ROTA RÁPIDA, STATUS E BOTÃO EXPANDIR EM CIMA DO MAPA */}
-          <div className="absolute top-3 left-3 right-3 z-[400] flex flex-col gap-2 pointer-events-none">
-            <div className="pointer-events-auto bg-white/95 backdrop-blur-md shadow-xl border border-slate-200/90 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between gap-2">
-              <div className="flex-1 min-w-0 space-y-1">
-                {/* Linha Saída */}
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                  <span className="text-[11px] font-mono font-bold text-emerald-800 uppercase shrink-0">Saída:</span>
-                  <span className="text-slate-900 font-bold truncate">
-                    {pickupInput || 'Defina o ponto de embarque'}
-                  </span>
-                </div>
-                {/* Linha Destino */}
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
-                  <span className="text-[11px] font-mono font-bold text-amber-800 uppercase shrink-0">Destino:</span>
-                  <span className="text-slate-900 font-bold truncate">
-                    {destInput || 'Defina o destino'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Botões do Topo: Meu GPS e Expandir Mapa */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={handleUseCurrentLocation}
-                  disabled={isLocatingUser}
-                  title="Detectar Minha Localização GPS"
-                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold py-2 px-2.5 rounded-xl flex items-center gap-1 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
-                >
-                  {isLocatingUser ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Crosshair className="w-3.5 h-3.5 text-emerald-700" />}
-                  <span className="hidden sm:inline">Meu GPS</span>
-                </button>
-
-                {onOpenFullMap && (
-                  <button
-                    type="button"
-                    onClick={onOpenFullMap}
-                    className="bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs py-2 px-3 rounded-xl shadow-md flex items-center gap-1.5 border border-[#ff8533] cursor-pointer transition-all active:scale-95"
-                    title="Abrir mapa em tela cheia"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                    <span>Expandir</span>
-                  </button>
-                )}
-              </div>
+      {/* Acesso ao Mapa em Tela Cheia (Página Única Sem Informações na Tela) */}
+      {onOpenFullMap && (
+        <div className="bg-[#0a0a0a] text-white border-2 border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-[#ff6a00]/20 border border-[#ff6a00]/40 text-[#ff6a00] flex items-center justify-center shrink-0">
+              <MapPin className="w-6 h-6 text-[#ff6a00]" />
             </div>
-
-            {/* Pill Indicador de Distância & Condutores */}
-            <div className="self-start pointer-events-auto bg-slate-950/85 backdrop-blur-md text-white px-3 py-1 rounded-full text-[11px] font-mono font-bold flex items-center gap-2 shadow-lg border border-slate-800">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 radar-pulse" />
-              <span>{dynamicDistanceKm} km • ~{Math.round(dynamicDistanceKm * 2.2)} min</span>
-              <span className="text-zinc-400">|</span>
-              <span className="text-amber-400">{availableDrivers.filter((d) => d.status === 'online').length} motoristas online</span>
-            </div>
-          </div>
-
-          {/* BOTTOM FLOATING OVERLAY: CARD SELETOR DE CATEGORIA E CONFIRMAR EM CIMA DO MAPA */}
-          <div className="absolute bottom-3 left-3 right-3 z-[400] max-w-xl mx-auto">
-            <div className="bg-white/95 backdrop-blur-xl shadow-2xl border-2 border-amber-400/90 rounded-3xl p-3 sm:p-4 space-y-2.5">
-              {/* Seletor Rápido de Categorias com Preços Instantâneos */}
-              <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-2xl">
-                {(['economica', 'confort', 'moto_passageiro', 'moto_entrega'] as VehicleCategory[]).map((catKey) => {
-                  const fare = calculateFare(catKey, dynamicDistanceKm);
-                  const isSelected = selectedCategory === catKey;
-
-                  return (
-                    <button
-                      key={catKey}
-                      type="button"
-                      onClick={() => setSelectedCategory(catKey)}
-                      className={`py-2 px-1 rounded-xl text-center transition-all cursor-pointer flex flex-col items-center justify-center ${
-                        isSelected
-                          ? 'bg-amber-500 text-slate-950 font-black shadow-md border border-amber-400'
-                          : 'text-slate-700 hover:text-slate-950 hover:bg-white/70 font-semibold'
-                      }`}
-                    >
-                      <span className="text-[10px] sm:text-xs truncate max-w-full font-heading font-black">
-                        {catKey === 'economica' && 'Econômica'}
-                        {catKey === 'confort' && 'Confort'}
-                        {catKey === 'moto_passageiro' && 'Moto Táxi'}
-                        {catKey === 'moto_entrega' && 'Entrega'}
-                      </span>
-                      <span className="text-[11px] sm:text-xs font-mono font-black mt-0.5">
-                        {formatBRL(fare.totalPrice)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Botão Principal Confirmar Corrida diretamente em cima do mapa */}
+            <div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleRequestRideWithCategory(selectedCategory)}
-                  className="flex-1 py-3 px-4 rounded-xl font-heading font-black text-xs sm:text-sm md:text-base flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400"
-                >
-                  <CheckCircle2 className="w-5 h-5 fill-slate-950 text-amber-400 shrink-0" />
-                  <span className="truncate">
-                    Confirmar {VEHICLE_CATEGORIES[selectedCategory].name} ({formatBRL(calculateFare(selectedCategory, dynamicDistanceKm).totalPrice)})
-                  </span>
-                </button>
-                <a
-                  href="#route-details"
-                  className="py-3 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center border border-slate-300 transition-all shrink-0 cursor-pointer"
-                  title="Ver mais detalhes de endereço e pagamento"
-                >
-                  Detalhes ↓
-                </a>
+                <h3 className="font-heading font-black text-white text-base sm:text-lg">
+                  Mapa GPS em Tela Cheia
+                </h3>
+                <span className="text-[10px] font-mono font-bold bg-[#ff6a00] text-white px-2 py-0.5 rounded-full uppercase">
+                  Toda a Tela
+                </span>
               </div>
+              <p className="text-xs sm:text-sm text-zinc-400 font-medium mt-0.5">
+                Veja ruas, rotas e carros ao vivo em 100% da tela sem nenhuma informação por cima
+              </p>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={onOpenFullMap}
+            className="bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs sm:text-sm py-3 px-5 rounded-2xl shadow-xl flex items-center justify-center gap-2 border border-[#ff8533] cursor-pointer transition-all shrink-0 uppercase tracking-wider"
+          >
+            <Maximize2 className="w-4 h-4" />
+            <span>Abrir Mapa Tela Cheia</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
         </div>
       )}
 

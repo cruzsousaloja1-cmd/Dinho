@@ -824,10 +824,13 @@ export default function App() {
         isDriverOnline={currentDriver.status === 'online'}
       />
 
-      {/* 1. Página de Mapa Fullscreen */}
-      {isFullMapOpen && (
+      {/* 1. Página de Mapa Fullscreen Toda Tela Sem Nenhuma Informação por Cima */}
+      {(isFullMapOpen || activeTab === 'map') && (
         <FullMapView
-          onClose={() => setIsFullMapOpen(false)}
+          onClose={() => {
+            setIsFullMapOpen(false);
+            if (activeTab === 'map') setActiveTab('rides');
+          }}
           pickup={pickup}
           destination={destination}
           activeDriver={activeRide?.driver || (drivers.length > 0 ? drivers[0] : null)}
