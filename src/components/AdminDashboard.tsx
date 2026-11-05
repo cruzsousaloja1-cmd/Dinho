@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Driver, Ride } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
+import { WEEKLY_FEE_TEXT, WEEKLY_FEE_BADGE } from '../config/pricing';
 import { 
   ShieldCheck, 
   Users, 
@@ -54,7 +55,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const exportReportCSV = () => {
     const rows = [
-      ['ID', 'Nome', 'Categoria', 'Placa', 'Avaliação', 'Status Plano Semanal (R$300)', 'Ganhos Semanais'],
+      ['ID', 'Nome', 'Categoria', 'Placa', 'Avaliação', `Status Plano Semanal (${WEEKLY_FEE_BADGE})`, 'Ganhos Semanais'],
       ...drivers.map((d) => [
         d.id,
         d.name,
@@ -171,7 +172,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {/* KPI 1 */}
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs sm:text-sm text-slate-600 font-bold">Receita Semanal (R$300)</span>
+                <span className="text-xs sm:text-sm text-slate-600 font-bold">Receita Semanal ({WEEKLY_FEE_BADGE})</span>
                 <DollarSign className="w-5 h-5 text-amber-600" />
               </div>
               <div className="text-2xl sm:text-3xl font-heading font-black text-amber-700">
@@ -235,7 +236,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-300 space-y-2.5">
                 <span className="font-black text-emerald-900 uppercase text-xs sm:text-sm block">
-                  Plataforma RACE (Assinatura Semanal R$ 300)
+                  Plataforma RACE (Assinatura Semanal {WEEKLY_FEE_TEXT})
                 </span>
                 <p className="text-slate-800 font-medium">
                   O condutor retém <strong>100% de todas as corridas</strong>. Se faturar R$ 2.500 no mês, fica com R$ 2.500 integrais, pagando apenas a mensalidade previsível.
@@ -339,7 +340,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-200">
                   <div className="text-right">
                     <span className="text-xs text-slate-500 block font-mono font-bold">
-                      Plano R$ 300 Semanal
+                      Plano {WEEKLY_FEE_BADGE}
                     </span>
                     <span
                       className={`text-sm font-black ${
@@ -451,7 +452,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <span className="text-xs text-slate-500 uppercase font-black block">Sustentabilidade RACE</span>
               <p className="text-emerald-700 text-sm font-bold">Zero Risco para o Motorista</p>
               <p className="text-slate-700 text-xs font-medium">
-                O modelo de R$ 300/semana gera receita fixa para a plataforma e garante previsibilidade aos parceiros.
+                O modelo de {WEEKLY_FEE_BADGE} gera receita fixa para a plataforma e garante previsibilidade aos parceiros.
               </p>
             </div>
 

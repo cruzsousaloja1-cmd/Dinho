@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Driver, Ride, VehicleCategory } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
+import { WEEKLY_FEE, WEEKLY_FEE_TEXT, COMMISSION, WEEKLY_FEE_BADGE } from '../config/pricing';
 import { 
   validateComfortEligibility, 
   COMFORT_POPULAR_MODELS, 
@@ -40,6 +41,7 @@ interface DriverPartnerPortalProps {
   onOpenSupport: () => void;
   onOpenShare?: () => void;
   onNavigateToRides?: () => void;
+  onShowSubscriptionExpiredModal?: () => void;
 }
 
 export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
@@ -49,6 +51,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   onOpenSupport,
   onOpenShare,
   onNavigateToRides,
+  onShowSubscriptionExpiredModal,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'login' | 'register' | 'subscription'>('dashboard');
   const [isOnline, setIsOnline] = useState(currentDriver.status === 'online');
@@ -88,7 +91,48 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     parseInt(regYear, 10) || 0
   );
 
+  const isSubscriptionExpired = () => {
+    if (!currentDriver.weeklyPlanActive) return true;
+    const expiresDate = currentDriver.weeklyFeeExpiresAt
+      ? new Date(currentDriver.weeklyFeeExpiresAt)
+      : currentDriver.weeklyPlanExpiresAt
+      ? new Date(currentDriver.weeklyPlanExpiresAt)
+      : null;
+    return expiresDate ? expiresDate < new Date() : false;
+  };
+
+  // Status da assinatura: Ativa até DD/MM ou Vencida
+  const getSubscriptionStatus = () => {
+    const expiresStr = currentDriver.weeklyFeeExpiresAt || currentDriver.weeklyPlanExpiresAt;
+    if (!currentDriver.weeklyPlanActive || !expiresStr) {
+      return { isActive: false, label: 'Vencida' };
+    }
+    const expiresDate = new Date(expiresStr);
+    if (isNaN(expiresDate.getTime()) || expiresDate < new Date()) {
+      return { isActive: false, label: 'Vencida' };
+    }
+    const day = String(expiresDate.getDate()).padStart(2, '0');
+    const month = String(expiresDate.getMonth() + 1).padStart(2, '0');
+    return { isActive: true, label: `Ativa até ${day}/${month}` };
+  };
+
+  const subStatus = getSubscriptionStatus();
+
+  // Economia vs Uber/99 (comissão média de ~28%)
+  const weeklyEarnings = currentDriver.earningsWeek || 0;
+  const uberCut = Math.round(weeklyEarnings * 0.28);
+  const raceFee = WEEKLY_FEE;
+  const driverSavingsVsUber99 = Math.max(0, uberCut - raceFee);
+
   const toggleOnline = () => {
+    if (!isOnline && isSubscriptionExpired()) {
+      if (onShowSubscriptionExpiredModal) {
+        onShowSubscriptionExpiredModal();
+      } else {
+        setActiveSubTab('subscription');
+      }
+      return;
+    }
     const nextStatus = !isOnline;
     setIsOnline(nextStatus);
     onUpdateDriver({
@@ -200,8 +244,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       lat: -23.5615,
       lng: -46.6558,
       weeklyPlanActive: true,
+      weeklyFeePaidAt: new Date().toISOString(),
+      weeklyFeeExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      weeklyPlanPrice: WEEKLY_SUBSCRIPTION_PRICE,
+      weeklyPlanPrice: WEEKLY_FEE,
       earningsToday: 0,
       earningsWeek: 0,
       cnhVerified: true,
@@ -233,28 +279,35 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   };
 
   const handlePayWeeklyPlan = () => {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     setShowPixQr(true);
     setTimeout(() => {
       onUpdateDriver({
         ...currentDriver,
+        weeklyFeePaidAt: now.toISOString(),
+        weeklyFeeExpiresAt: expiresAt.toISOString(),
+        weeklyPlanExpiresAt: expiresAt.toISOString(),
         weeklyPlanActive: true,
-        weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        weeklyPlanPrice: WEEKLY_FEE,
+        status: 'online',
       });
+      setIsOnline(true);
       try {
         confetti({
-          particleCount: 50,
-          spread: 60,
+          particleCount: 60,
+          spread: 70,
           origin: { y: 0.6 },
         });
       } catch {
         // safe
       }
-    }, 2500);
+    }, 1200);
   };
 
   const handleCopyPix = () => {
     navigator.clipboard?.writeText(
-      '00020126580014BR.GOV.BCB.PIX0136race-financeiro-plano-300-semanal-sem-taxas5204000053039865406300.005802BR5910RACE BRASIL6009SAO PAULO62070503***6304E8A1'
+      '00020126580014BR.GOV.BCB.PIX0136race-financeiro-plano-200-semanal-sem-taxas5204000053039865406200.005802BR5910RACE BRASIL6009SAO PAULO62070503***6304E8A1'
     );
     setCopiedPix(true);
     setTimeout(() => setCopiedPix(false), 2000);
@@ -303,7 +356,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          <span>Plano R$ 300</span>
+          <span>Plano {WEEKLY_FEE_BADGE}</span>
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
         </button>
       </div>
@@ -381,15 +434,22 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   100% DOS GANHOS SÃO SEUS
                 </h4>
                 <p className="text-xs sm:text-sm text-slate-700 font-medium">
-                  Sem comissão por corrida. Apenas assinatura semanal fixa de R$ 300.
+                  Sem comissão por corrida. Apenas assinatura semanal fixa de {WEEKLY_FEE_TEXT}.
                 </p>
               </div>
             </div>
 
             <div className="text-right">
-              <span className="text-xs text-slate-500 font-mono block font-bold">Status do Plano</span>
-              <span className="text-sm font-black text-emerald-700 flex items-center gap-1 justify-end">
-                <CheckCircle2 className="w-4 h-4" /> Ativo
+              <span className="text-xs text-slate-500 font-mono block font-bold">Status da Assinatura</span>
+              <span className={`text-sm font-black flex items-center gap-1 justify-end ${
+                subStatus.isActive ? 'text-emerald-700' : 'text-rose-600'
+              }`}>
+                {subStatus.isActive ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                )}
+                {subStatus.label}
               </span>
             </div>
           </div>
@@ -418,8 +478,44 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 {formatBRL(currentDriver.earningsWeek)}
               </div>
               <p className="text-xs text-slate-600 mt-1 font-medium">
-                Assinatura R$ 300 quitada
+                Assinatura {WEEKLY_FEE_BADGE} {subStatus.isActive ? 'ativa' : 'vencida'}
               </p>
+            </div>
+          </div>
+
+          {/* Economia vs Uber/99 Card */}
+          <div className="bg-emerald-50 border-2 border-emerald-300 rounded-3xl p-5 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs sm:text-sm font-heading font-black uppercase tracking-wider text-emerald-950 flex items-center gap-1.5">
+                  <TrendingUp className="w-4 h-4 text-emerald-700" />
+                  Economia no Bolso vs Uber e 99
+                </span>
+              </div>
+              <span className="text-xs font-mono font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full">
+                0% Comissões
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+              <div className="bg-white p-3 rounded-2xl border border-emerald-200">
+                <span className="text-[11px] font-bold text-slate-500 uppercase block">Ganhos Brutos</span>
+                <span className="text-base sm:text-lg font-heading font-black text-slate-900">
+                  {formatBRL(weeklyEarnings)}
+                </span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-rose-200">
+                <span className="text-[11px] font-bold text-rose-600 uppercase block">Taxa Uber/99 (~28%)</span>
+                <span className="text-base sm:text-lg font-heading font-black text-rose-600">
+                  - {formatBRL(uberCut)}
+                </span>
+              </div>
+              <div className="bg-emerald-600 p-3 rounded-2xl text-white shadow-xs">
+                <span className="text-[11px] font-bold text-emerald-100 uppercase block">Sua Economia Real</span>
+                <span className="text-base sm:text-lg font-heading font-black text-white">
+                  + {formatBRL(driverSavingsVsUber99)}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1104,40 +1200,98 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 type="submit"
                 className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black py-4 rounded-xl transition-all cursor-pointer shadow-md text-sm sm:text-base border border-amber-400"
               >
-                CRIAR LOGIN, SENHA E FINALIZAR CADASTRO NO PLANO R$ 300
+                CRIAR LOGIN, SENHA E FINALIZAR CADASTRO NO PLANO {WEEKLY_FEE_BADGE}
               </button>
             </form>
           )}
         </div>
       )}
 
-      {/* SUBTAB 4: SUBSCRIPTION PLAN (R$ 300 SEMANAL) */}
+      {/* SUBTAB 4: SUBSCRIPTION PLAN (R$ 200 SEMANAL) */}
       {activeSubTab === 'subscription' && (
         <div className="space-y-4">
-          <div className="bg-white border-2 border-amber-400 rounded-3xl p-6 sm:p-7 shadow-lg relative overflow-hidden">
-            <div className="flex items-start justify-between mb-5">
+          {/* Card Principal de Pagamento da Assinatura Semanal */}
+          <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-7 shadow-lg space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
               <div>
-                <span className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1 rounded-full font-mono uppercase tracking-wider">
-                  MODELO EXCLUSIVO RACE
+                <span className="text-xs font-mono font-black uppercase tracking-wider text-slate-500 block mb-1">
+                  Assinatura Semanal RACE
                 </span>
-                <h2 className="font-heading font-black text-slate-950 text-2xl sm:text-3xl mt-2">
-                  Assinatura Semanal de R$ 300,00
+                <h2 className="font-heading font-black text-slate-950 text-2xl sm:text-3xl">
+                  {WEEKLY_FEE_TEXT}
                 </h2>
-                <p className="text-sm sm:text-base text-slate-700 mt-1 max-w-lg font-medium">
-                  Esqueça as taxas abusivas dos outros apps. Na RACE você paga apenas R$ 300 por semana e <strong>fica com 100% de todo o dinheiro das corridas</strong>!
+                <p className="text-xs sm:text-sm text-slate-600 font-medium mt-1">
+                  100% de todos os ganhos das corridas repassados integralmente para você.
                 </p>
               </div>
 
-              <div className="text-right">
-                <div className="text-3xl sm:text-4xl font-heading font-black text-amber-700">
-                  R$ 300
-                </div>
-                <span className="text-xs sm:text-sm text-slate-500 font-mono font-bold">/ semana</span>
+              {/* Status da Assinatura: Ativa até DD/MM ou Vencida */}
+              <div className="text-left sm:text-right">
+                <span className="text-xs text-slate-500 font-mono font-bold block mb-1">
+                  Status da Assinatura:
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-heading font-black border ${
+                    subStatus.isActive
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-rose-100 text-rose-800 border-rose-300'
+                  }`}
+                >
+                  {subStatus.isActive ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  )}
+                  <span>{subStatus.label}</span>
+                </span>
               </div>
             </div>
 
-            {/* Checklist of Benefits */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 my-5">
+            {/* Mostrar quanto ele já economizou vs Uber/99 */}
+            <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="font-heading font-black text-emerald-950 text-sm sm:text-base flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-emerald-700" />
+                  <span>Quanto Você Já Economizou com a RACE vs Uber e 99</span>
+                </h4>
+                <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                  Zero Taxas por Corrida
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div className="bg-white p-3.5 rounded-xl border border-emerald-200">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase block">Ganhos Semanais Brutos</span>
+                  <span className="text-lg sm:text-xl font-heading font-black text-slate-900 block mt-0.5">
+                    {formatBRL(weeklyEarnings)}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">100% creditado na carteira</span>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-rose-200">
+                  <span className="text-[11px] font-bold text-rose-600 uppercase block">Taxa Uber/99 (~28% de comissão)</span>
+                  <span className="text-lg sm:text-xl font-heading font-black text-rose-600 block mt-0.5">
+                    - {formatBRL(uberCut)}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">Seria descontado das suas corridas</span>
+                </div>
+
+                <div className="bg-emerald-600 p-3.5 rounded-xl text-white shadow-sm">
+                  <span className="text-[11px] font-bold text-emerald-100 uppercase block">Economia Líquida Real</span>
+                  <span className="text-lg sm:text-xl font-heading font-black text-white block mt-0.5">
+                    + {formatBRL(driverSavingsVsUber99)}
+                  </span>
+                  <span className="text-[10px] text-emerald-100 font-medium">Dinheiro a mais no seu bolso</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-emerald-900 font-semibold pt-1">
+                Enquanto os outros aplicativos cobram entre 25% a 35% de tudo o que você roda, na RACE você paga apenas o valor fixo de {WEEKLY_FEE_TEXT} e fica com todo o resto.
+              </p>
+            </div>
+
+            {/* Checklist de Benefícios */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {[
                 '0% de taxa sobre corridas (100% de ganho líquido)',
                 'Suporte técnico e operacional 24 horas por dia',
@@ -1147,56 +1301,43 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 'Seguro APP contra acidentes pessoais incluso',
               ].map((benefit, i) => (
                 <div key={i} className="flex items-center gap-2.5 text-xs sm:text-sm text-slate-800 bg-slate-50 p-3 rounded-xl border border-slate-200 font-medium">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{benefit}</span>
                 </div>
               ))}
             </div>
 
-            {/* Payment Method Selector */}
-            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 mt-5 space-y-4">
-              <h4 className="text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wider">
-                Renovação ou Pagamento do Plano
-              </h4>
-
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setSubPayMethod('pix')}
-                  className={`p-3.5 rounded-xl border-2 flex items-center justify-center gap-2 text-sm font-black transition-all cursor-pointer ${
-                    subPayMethod === 'pix'
-                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm'
-                      : 'bg-white border-slate-200 text-slate-700'
-                  }`}
-                >
-                  <QrCode className="w-5 h-5 text-emerald-600" />
-                  <span>PIX Instantâneo</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSubPayMethod('credit_card')}
-                  className={`p-3.5 rounded-xl border-2 flex items-center justify-center gap-2 text-sm font-black transition-all cursor-pointer ${
-                    subPayMethod === 'credit_card'
-                      ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-sm'
-                      : 'bg-white border-slate-200 text-slate-700'
-                  }`}
-                >
-                  <CreditCard className="w-5 h-5 text-amber-600" />
-                  <span>Cartão de Crédito</span>
-                </button>
+            {/* Área de Pagamento / Renovação */}
+            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wider">
+                  Renovação Semanal via PIX
+                </h4>
+                <span className="text-xs font-mono font-bold text-slate-600">
+                  Liberação Automática
+                </span>
               </div>
+
+              {/* Botão "Pagar R$200 da semana via PIX" que simula pagamento e atualiza as datas */}
+              <button
+                type="button"
+                onClick={handlePayWeeklyPlan}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black py-4 px-4 rounded-2xl shadow-lg transition-all cursor-pointer text-sm sm:text-base flex items-center justify-center gap-2"
+              >
+                <QrCode className="w-5 h-5 text-emerald-200" />
+                <span>Pagar R$200 da semana via PIX</span>
+              </button>
 
               {/* PIX Simulated Flow */}
               {showPixQr && (
-                <div className="bg-white p-5 rounded-2xl border border-emerald-400 text-center space-y-3.5 shadow-md">
+                <div className="bg-white p-5 rounded-2xl border-2 border-emerald-400 text-center space-y-3.5 shadow-md animate-fade-in">
                   <div className="inline-block p-4 bg-slate-50 rounded-2xl border border-slate-200">
                     <QrCode className="w-28 h-28 text-emerald-700 animate-pulse mx-auto" />
                     <span className="text-xs font-mono font-bold text-emerald-800 mt-1 block">PIX SEGURO RACE</span>
                   </div>
 
                   <p className="text-sm text-slate-800 font-semibold">
-                    Chave PIX Copia e Cola gerada para <strong>R$ 300,00</strong>:
+                    Chave PIX Copia e Cola gerada para <strong>{WEEKLY_FEE_TEXT}</strong>:
                   </p>
 
                   <div className="flex items-center justify-center gap-2">
@@ -1208,18 +1349,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     </button>
                   </div>
                   <span className="text-xs text-emerald-700 block font-bold">
-                    Aprovação em menos de 3 segundos com liberação imediata
+                    ✓ Pagamento simulado computado com sucesso! Datas atualizadas por 7 dias.
                   </span>
                 </div>
-              )}
-
-              {!showPixQr && (
-                <button
-                  onClick={handlePayWeeklyPlan}
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black py-4 rounded-xl transition-all cursor-pointer shadow-md text-sm sm:text-base border border-amber-400"
-                >
-                  PAGAR ASSINATURA SEMANAL (R$ 300,00)
-                </button>
               )}
             </div>
           </div>

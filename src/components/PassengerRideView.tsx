@@ -7,6 +7,7 @@ import {
   VehicleCategory 
 } from '../types';
 import { VEHICLE_CATEGORIES, calculateFare, formatBRL } from '../services/pricingService';
+import { FINAL_RIDE_MESSAGE, WEEKLY_FEE_TEXT } from '../config/pricing';
 import { 
   searchAddressAutocomplete, 
   calculateDistanceKm, 
@@ -326,6 +327,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </div>
           </div>
 
+          {/* Mensagem Oficial do Repasse Integral */}
+          <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-3.5 mb-5 text-xs sm:text-sm text-emerald-950 font-bold flex items-center gap-2.5 shadow-xs">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span>Total repassado integralmente ao motorista (100%) - Race cobra apenas R$200 por semana</span>
+          </div>
+
           {/* Driver & Vehicle Details */}
           {activeRide.driver && (
             <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex items-center justify-between gap-4 mb-5 shadow-sm">
@@ -419,6 +426,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 <p className="text-sm text-slate-600">
                   Sua avaliação garante a segurança e qualidade máxima da plataforma RACE.
                 </p>
+                <div className="mt-2 bg-emerald-50 border border-emerald-200 text-emerald-950 font-bold text-xs p-2.5 rounded-xl flex items-center justify-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Total repassado integralmente ao motorista (100%) - Race cobra apenas R$200 por semana</span>
+                </div>
               </div>
 
               {/* Stars */}

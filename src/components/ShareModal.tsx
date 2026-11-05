@@ -13,6 +13,7 @@ import {
   Download
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { WEEKLY_FEE_TEXT, WEEKLY_FEE_BADGE } from '../config/pricing';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const shareTitle = 'RACE - Mobilidade Urbana & Entregas Inteligentes';
   const shareText = 
 `🚀 Conheça a RACE: Mobilidade e Entregas com 100% dos ganhos para condutores!
-⭐ Sem cobrança de taxas: Apenas R$ 300 semanal
+⭐ Sem cobrança de taxas: Apenas ${WEEKLY_FEE_TEXT}
 🚗 Corridas Econômica: R$ 2,50/km | Confort: R$ 3,50/km
 🏍️ Moto Passageiro: R$ 1,80/km | Flash Entrega: R$ 2,00/km
 🛡️ Suporte 24h & GPS em tempo real!
@@ -123,7 +124,7 @@ Acesse agora: ${currentUrl}`;
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 font-medium">
             <div className="bg-white p-2 rounded-xl border border-slate-200">
               <span className="font-bold text-slate-900 block">🚗 100% dos Ganhos</span>
-              Zero taxas, plano R$ 300/sem
+              Zero taxas, plano {WEEKLY_FEE_BADGE}
             </div>
             <div className="bg-white p-2 rounded-xl border border-slate-200">
               <span className="font-bold text-slate-900 block">⚡ R$ 2,50 a R$ 3,50/km</span>

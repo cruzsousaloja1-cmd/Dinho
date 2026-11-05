@@ -44,7 +44,9 @@ export interface Driver {
   lng: number;
   weeklyPlanActive: boolean;
   weeklyPlanExpiresAt: string;
-  weeklyPlanPrice: number; // 300
+  weeklyFeePaidAt?: string | null; // ISO date
+  weeklyFeeExpiresAt?: string | null; // ISO date
+  weeklyPlanPrice: number; // 200 (WEEKLY_FEE)
   earningsToday: number;
   earningsWeek: number;
   cnhVerified: boolean;
@@ -106,7 +108,7 @@ export interface Ride {
 export interface WeeklySubscription {
   driverId: string;
   driverName: string;
-  amount: number; // 300
+  amount: number; // 200 (WEEKLY_FEE)
   status: 'active' | 'expiring_soon' | 'expired' | 'pending_payment';
   startedAt: string;
   expiresAt: string;

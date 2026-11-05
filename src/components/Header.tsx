@@ -10,6 +10,7 @@ import {
   Download
 } from 'lucide-react';
 import { AppUser } from '../types';
+import { WEEKLY_FEE_BADGE } from '../config/pricing';
 
 interface HeaderProps {
   unreadNotifsCount: number;
@@ -92,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
                 ? 'bg-emerald-500 text-slate-950'
                 : 'bg-emerald-100 text-emerald-800'
             }`}>
-              R$300/sem
+              {WEEKLY_FEE_BADGE}
             </span>
           </button>
           <button

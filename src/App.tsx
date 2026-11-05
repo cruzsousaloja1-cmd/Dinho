@@ -25,6 +25,9 @@ import { PushNotificationToast } from './components/PushNotificationToast';
 import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
 import { AppUser } from './types';
+import { AlertTriangle, CheckCircle2, X, QrCode } from 'lucide-react';
+import confetti from 'canvas-confetti';
+import { WEEKLY_FEE, WEEKLY_FEE_TEXT, COMMISSION, WEEKLY_FEE_BADGE } from './config/pricing';
 
 export default function App() {
   // Global States
@@ -69,6 +72,57 @@ export default function App() {
   const [isNotifCenterOpen, setIsNotifCenterOpen] = useState(false);
   const [notifications, setNotifications] = useState<PushNotification[]>(INITIAL_NOTIFICATIONS);
   const [currentToast, setCurrentToast] = useState<PushNotification | null>(null);
+  const [subscriptionExpiredModalOpen, setSubscriptionExpiredModalOpen] = useState(false);
+  const [expiredModalDriver, setExpiredModalDriver] = useState<Driver | null>(null);
+
+  // 4. Bloqueio Automático a cada 1 minuto (Se weeklyFeeExpiresAt < now, set weeklyPlanActive = false e status = offline)
+  useEffect(() => {
+    const checkSubscriptions = () => {
+      const now = new Date();
+      setDrivers((prevDrivers) =>
+        prevDrivers.map((driver) => {
+          const expiresDate = driver.weeklyFeeExpiresAt
+            ? new Date(driver.weeklyFeeExpiresAt)
+            : driver.weeklyPlanExpiresAt
+            ? new Date(driver.weeklyPlanExpiresAt)
+            : null;
+
+          if (expiresDate && expiresDate < now) {
+            if (driver.weeklyPlanActive || driver.status === 'online') {
+              return {
+                ...driver,
+                weeklyPlanActive: false,
+                status: 'offline',
+              };
+            }
+          }
+          return driver;
+        })
+      );
+
+      setCurrentDriver((prev) => {
+        if (!prev) return prev;
+        const expiresDate = prev.weeklyFeeExpiresAt
+          ? new Date(prev.weeklyFeeExpiresAt)
+          : prev.weeklyPlanExpiresAt
+          ? new Date(prev.weeklyPlanExpiresAt)
+          : null;
+
+        if (expiresDate && expiresDate < now && (prev.weeklyPlanActive || prev.status === 'online')) {
+          return {
+            ...prev,
+            weeklyPlanActive: false,
+            status: 'offline',
+          };
+        }
+        return prev;
+      });
+    };
+
+    checkSubscriptions();
+    const interval = setInterval(checkSubscriptions, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Simulated GPS movement when a ride is active
   useEffect(() => {
@@ -218,7 +272,7 @@ export default function App() {
     setCurrentDriver(newDriver);
     triggerPush(
       '🎉 Bem-vindo à RACE!',
-      `Cadastro de ${newDriver.name} concluído com sucesso. Assinatura de R$ 300 ativa com 100% de ganhos livres!`,
+      `Cadastro de ${newDriver.name} concluído com sucesso. Assinatura de ${WEEKLY_FEE_TEXT} ativa com 100% de ganhos livres!`,
       'financial'
     );
   };
@@ -229,6 +283,23 @@ export default function App() {
   };
 
   const handleToggleDriverStatus = (driverId: string) => {
+    const target = drivers.find((d) => d.id === driverId);
+    if (target) {
+      const willBeOnline = target.status !== 'online';
+      const expiresDate = target.weeklyFeeExpiresAt
+        ? new Date(target.weeklyFeeExpiresAt)
+        : target.weeklyPlanExpiresAt
+        ? new Date(target.weeklyPlanExpiresAt)
+        : null;
+      const isExpired = !target.weeklyPlanActive || (expiresDate ? expiresDate < new Date() : false);
+
+      if (willBeOnline && isExpired) {
+        setExpiredModalDriver(target);
+        setSubscriptionExpiredModalOpen(true);
+        return;
+      }
+    }
+
     setDrivers((prev) =>
       prev.map((d) =>
         d.id === driverId
@@ -236,6 +307,35 @@ export default function App() {
           : d
       )
     );
+  };
+
+  const handleRenewWeeklyPlan = (driverTarget?: Driver | null) => {
+    const target = driverTarget || currentDriver;
+    if (!target) return;
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const updated: Driver = {
+      ...target,
+      weeklyFeePaidAt: now.toISOString(),
+      weeklyFeeExpiresAt: expiresAt.toISOString(),
+      weeklyPlanExpiresAt: expiresAt.toISOString(),
+      weeklyPlanActive: true,
+      weeklyPlanPrice: WEEKLY_FEE,
+      status: 'online',
+    };
+    handleUpdateDriver(updated);
+    if (currentUser?.driverData?.id === updated.id) {
+      setCurrentUser((prev) => (prev ? { ...prev, driverData: updated } : null));
+    }
+    setSubscriptionExpiredModalOpen(false);
+    triggerPush(
+      '🎉 Assinatura Semanal Ativa!',
+      `Pagamento de ${WEEKLY_FEE_TEXT} via PIX confirmado! Seu status está ONLINE e liberado para receber chamados com 100% de repasse.`,
+      'financial'
+    );
+    try {
+      confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+    } catch {}
   };
 
   const handleApproveDriver = (driverId: string) => {
@@ -349,7 +449,7 @@ export default function App() {
           />
         )}
 
-        {/* 3. Condutor & Cadastro (Plano Semanal R$ 300 e 100% dos Ganhos) */}
+        {/* 3. Condutor & Cadastro (Plano Semanal R$ 200 e 100% dos Ganhos) */}
         {activeTab === 'driver_portal' && (
           <DriverPartnerPortal
             currentDriver={currentDriver}
@@ -377,6 +477,10 @@ export default function App() {
             }}
             onOpenSupport={() => setIsSupportOpen(true)}
             onOpenShare={() => setIsShareOpen(true)}
+            onShowSubscriptionExpiredModal={() => {
+              setExpiredModalDriver(currentDriver);
+              setSubscriptionExpiredModalOpen(true);
+            }}
           />
         )}
 
@@ -442,6 +546,68 @@ export default function App() {
         onAuthSuccess={handleAuthSuccess}
         initialRole={activeTab === 'driver_portal' ? 'driver' : 'passenger'}
       />
+
+      {/* 4. Modal de Assinatura Semanal Vencida */}
+      {subscriptionExpiredModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white border-2 border-rose-300 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative text-center space-y-4">
+            <button
+              onClick={() => setSubscriptionExpiredModalOpen(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors cursor-pointer"
+              title="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-16 h-16 rounded-3xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border-2 border-rose-200 shadow-sm">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-mono font-black text-rose-600 uppercase tracking-widest bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 inline-block">
+                Assinatura Vencida
+              </span>
+              <h3 className="text-xl sm:text-2xl font-heading font-black text-slate-950">
+                Acesso aos Chamados Bloqueado
+              </h3>
+            </div>
+
+            <p className="text-sm sm:text-base text-slate-800 font-bold leading-relaxed px-2">
+              Sua assinatura semanal de R$200 venceu. Renove para voltar a receber corridas com 100% dos ganhos
+            </p>
+
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-slate-700 space-y-1.5 text-left font-medium">
+              <div className="flex items-center gap-2 text-emerald-950 font-bold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Zero taxas sobre corridas (100% de repasse líquido)</span>
+              </div>
+              <div className="flex items-center gap-2 text-emerald-950 font-bold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Ativação instantânea via PIX com validade de 7 dias</span>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handleRenewWeeklyPlan(expiredModalDriver || currentDriver)}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black py-4 px-4 rounded-2xl shadow-lg transition-all cursor-pointer active:scale-95 text-sm sm:text-base flex items-center justify-center gap-2"
+              >
+                <QrCode className="w-5 h-5 text-emerald-200" />
+                <span>Pagar R$200 da semana via PIX</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSubscriptionExpiredModalOpen(false)}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-2xl transition-all cursor-pointer text-xs sm:text-sm"
+              >
+                Permanecer Offline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ergonomic Bottom Navigation Bar */}
       <BottomNav

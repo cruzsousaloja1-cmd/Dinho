@@ -4,6 +4,7 @@ import {
   Send, 
   PhoneCall
 } from 'lucide-react';
+import { WEEKLY_FEE_TEXT } from '../config/pricing';
 
 interface Support24hModalProps {
   isOpen: boolean;
@@ -37,7 +38,7 @@ export const Support24hModal: React.FC<Support24hModalProps> = ({
 
   const quickQuestions = [
     'Quais carros são aceitos no RACE Confort?',
-    'Como funciona a assinatura semanal de R$ 300?',
+    `Como funciona a assinatura semanal de ${WEEKLY_FEE_TEXT}?`,
     'É verdade que o motorista fica com 100% da corrida?',
     'Quais são os valores por km nas categorias?',
     'Como acionar o suporte de emergência durante a corrida?',
@@ -65,8 +66,8 @@ export const Support24hModal: React.FC<Support24hModalProps> = ({
 
       if (lower.includes('confort') || lower.includes('voyage') || lower.includes('etios') || lower.includes('argo') || lower.includes('polo')) {
         reply = 'As exigências do modelo RACE Confort para liberação são: 1) Etios Sedan, Voyage, Prisma, Logan e Cobalt: ano a partir de 2019; 2) Argo e Polo: ano a partir de 2023; 3) Demais modelos (SUVs, CR-V, Sedãs médios): ano a partir de 2018!';
-      } else if (lower.includes('300') || lower.includes('assinatura') || lower.includes('semanal')) {
-        reply = 'O modelo RACE é revolucionário: o condutor paga R$ 300 fixos por semana e NENHUMA taxa sobre as corridas! Todo o valor pago pelo passageiro cai 100% na conta do motorista/motoboy.';
+      } else if (lower.includes('200') || lower.includes('300') || lower.includes('assinatura') || lower.includes('semanal')) {
+        reply = `O modelo RACE é revolucionário: o condutor paga apenas ${WEEKLY_FEE_TEXT} e NENHUMA taxa sobre as corridas! Todo o valor pago pelo passageiro cai 100% na conta do motorista/motoboy.`;
       } else if (lower.includes('100%') || lower.includes('taxa') || lower.includes('comissão')) {
         reply = 'Sim, exatamente! Zero comissão (0%). Ao contrário de outras plataformas que retêm 25% a 40%, na RACE 100% do valor da corrida pertence ao profissional parceiro.';
       } else if (lower.includes('km') || lower.includes('valor') || lower.includes('tarifa') || lower.includes('preço')) {

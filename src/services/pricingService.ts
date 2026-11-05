@@ -51,7 +51,9 @@ export const VEHICLE_CATEGORIES: Record<VehicleCategory, CategoryInfo> = {
   },
 };
 
-export const WEEKLY_SUBSCRIPTION_PRICE = 300.00; // R$ 300 semanal sem taxa de corrida
+import { WEEKLY_FEE } from '../config/pricing';
+
+export const WEEKLY_SUBSCRIPTION_PRICE = WEEKLY_FEE; // R$ 200,00 semanal sem taxa de corrida
 
 export function calculateFare(
   category: VehicleCategory,
