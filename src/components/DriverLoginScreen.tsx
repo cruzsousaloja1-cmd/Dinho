@@ -41,10 +41,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    // 0. Acesso Secreto para Administrador: admin@race.com.br com senha race@2024
+    // 0. Acesso Secreto para Administrador: admin@race.com.br com senha race123
     if (cleanEmail === 'admin@race.com.br') {
-      if (password !== 'race@2024' && password !== 'admin' && password !== 'race2024' && password !== 'admin123') {
-        setErrorMessage('Senha incorreta para a conta de Administrador.');
+      if (password !== 'race123' && password !== 'race@2024' && password !== 'admin' && password !== 'admin123') {
+        setErrorMessage('Senha incorreta para a conta de Administrador (use race123).');
         return;
       }
 

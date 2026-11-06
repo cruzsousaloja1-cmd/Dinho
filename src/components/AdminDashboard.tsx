@@ -307,38 +307,111 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* Operational Model Insight */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-md">
-            <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg flex items-center gap-2">
-              <Activity className="w-5 h-5 text-amber-600" />
-              <span>Eficiência do Modelo RACE vs Apps Tradicionais</span>
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-300 space-y-2.5">
-                <span className="font-black text-emerald-900 uppercase text-xs sm:text-sm block">
-                  Plataforma RACE (Assinatura Semanal {WEEKLY_FEE_TEXT})
-                </span>
-                <p className="text-slate-800 font-medium">
-                  O condutor retém <strong>100% de todas as corridas</strong>. Se faturar R$ 2.500 no mês, fica com R$ 2.500 integrais, pagando apenas a mensalidade previsível.
+          {/* Painel Direto: Motoristas Cadastrados & Status PIX R$ 200 */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5 text-amber-600" />
+                  <span>Motoristas Cadastrados & Pagamento PIX R$ 200</span>
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Chave PIX Nubank: <strong className="text-amber-700 font-mono">9d9e5635-9e68-46bf-bffe-08bdae29c8ba</strong> &bull; Libere 7 dias ou Bloqueie com um clique
                 </p>
-                <div className="text-xs sm:text-sm text-emerald-800 font-bold">
-                  Retenção de motoristas: 98.4% de fidelidade
-                </div>
               </div>
-
-              <div className="bg-rose-50 p-5 rounded-2xl border border-rose-300 space-y-2.5">
-                <span className="font-black text-rose-900 uppercase text-xs sm:text-sm block">
-                  Aplicativos Convencionais (25% a 40% de taxa)
-                </span>
-                <p className="text-slate-800 font-medium">
-                  Cobram porcentagens abusivas a cada corrida, diminuindo os ganhos líquidos do motorista e gerando cancelamentos frequentes.
-                </p>
-                <div className="text-xs sm:text-sm text-slate-600">
-                  Desconto médio: R$ 600 a R$ 1.200 retidos por condutor
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('drivers')}
+                className="text-xs font-heading font-black text-amber-700 hover:text-amber-800 flex items-center gap-1 self-start sm:self-auto cursor-pointer"
+              >
+                <span>Ver Todos os {drivers.length}</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
             </div>
+
+            {drivers.length === 0 ? (
+              <div className="text-center py-8 text-slate-500 text-sm">
+                Nenhum motorista ou motoboy cadastrado no momento.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {drivers.map((driver) => {
+                  const hasPaid = driver.weeklyPlanActive && driver.status === 'online';
+                  return (
+                    <div
+                      key={driver.id}
+                      className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={driver.avatar}
+                          alt={driver.name}
+                          className="w-11 h-11 rounded-full object-cover border-2 border-amber-500 shadow-xs"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-heading font-black text-slate-950 text-sm sm:text-base">
+                              {driver.name}
+                            </h4>
+                            <span className="text-[11px] font-mono bg-white text-slate-800 px-2 py-0.5 rounded border border-slate-300 font-bold uppercase">
+                              {driver.vehiclePlate}
+                            </span>
+                            <span className="text-[11px] font-bold text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded uppercase">
+                              {driver.category}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">
+                            {driver.vehicleModel} &bull; {driver.email} &bull; {driver.phone}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200">
+                        <div className="text-left sm:text-right">
+                          <span
+                            className={`text-xs font-heading font-black px-2.5 py-1 rounded-full border inline-block ${
+                              hasPaid
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}
+                          >
+                            {hasPaid ? '✓ PIX R$ 200 Pago (Ativo)' : '⚠️ PIX R$ 200 Pendente'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onApproveWeeklyPayment && onApproveWeeklyPayment(driver)}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                            title="Liberar 7 dias e ativar condutor"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Liberar 7 dias</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onRejectWeeklyPayment) {
+                                onRejectWeeklyPayment(driver);
+                              } else {
+                                onToggleDriverStatus(driver.id);
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                            title="Bloquear condutor"
+                          >
+                            <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Bloquear</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -177,33 +177,47 @@ export default function App() {
     } catch {}
   }, []);
 
-  // 2.1 Rota Secreta para Admin: https://cruzsousaloja1-cmd.github.io/Dinho/#/admin ou #admin
+  // 3. Rota Secreta /admin: abre o AdminDashboard se o usuário for admin, senão volta para tela preta de login
   useEffect(() => {
     const checkSecretAdminRoute = () => {
       const hash = window.location.hash.toLowerCase();
-      if (hash === '#/admin' || hash === '#admin') {
-        const adminUser: AppUser = {
-          id: 'usr-admin-master',
-          name: 'Administrador Geral',
-          email: 'admin@race.com.br',
-          phone: '(11) 99999-0000',
-          role: 'admin',
-          isAdmin: true,
-          rating: 5.0,
-        };
-        setCurrentUser(adminUser);
-        try {
-          localStorage.setItem('race_current_user', JSON.stringify(adminUser));
-        } catch {}
-        setActiveTab('admin');
-        setLoginSuccessBanner('Painel de Administração liberado com sucesso via rota secreta.');
+      const path = window.location.pathname.toLowerCase();
+      const isTryingAdmin = hash === '#/admin' || hash === '#admin' || path.endsWith('/admin');
+
+      if (isTryingAdmin) {
+        let savedUser: AppUser | null = currentUser;
+        if (!savedUser) {
+          try {
+            const raw = localStorage.getItem('race_current_user');
+            if (raw) savedUser = JSON.parse(raw);
+          } catch {}
+        }
+
+        const isUserAdmin = savedUser?.email?.trim().toLowerCase() === 'admin@race.com.br';
+
+        if (isUserAdmin && savedUser) {
+          // Usuário é admin: abre o AdminDashboard
+          setCurrentUser(savedUser);
+          setActiveTab('admin');
+        } else {
+          // Não é admin: volta para a tela preta de login
+          try {
+            localStorage.removeItem('race_current_user');
+          } catch {}
+          setCurrentUser(null);
+          if (window.location.hash) {
+            try {
+              window.history.replaceState(null, '', window.location.pathname);
+            } catch {}
+          }
+        }
       }
     };
 
     checkSecretAdminRoute();
     window.addEventListener('hashchange', checkSecretAdminRoute);
     return () => window.removeEventListener('hashchange', checkSecretAdminRoute);
-  }, []);
+  }, [currentUser]);
 
   // 4. Bloqueio Automático a cada 1 minuto (Se weeklyFeeExpiresAt < now, set weeklyPlanActive = false e status = offline)
   useEffect(() => {

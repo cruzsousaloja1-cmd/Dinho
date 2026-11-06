@@ -24,13 +24,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   isDriverOnline,
   currentUser,
 }) => {
-  // 1. Verificação: currentUser?.email === 'admin@race.com.br' || currentUser?.role === 'admin' || currentUser?.isAdmin === true
-  // Se não for admin, NÃO renderizar o botão ADM
-  const isAdmin = Boolean(
-    currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
-    currentUser?.role === 'admin' ||
-    currentUser?.isAdmin === true
-  );
+  // 1. Esconder botão ADM da BottomNav para motorista, motoboy e passageiro.
+  // Só mostrar se currentUser.email === 'admin@race.com.br'
+  const isAdmin = currentUser?.email?.trim().toLowerCase() === 'admin@race.com.br';
 
   const tabs = [
     {

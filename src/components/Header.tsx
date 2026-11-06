@@ -42,11 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const isAdmin = Boolean(
-    currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
-    currentUser?.role === 'admin' ||
-    currentUser?.isAdmin === true
-  );
+  const isAdmin = currentUser?.email?.trim().toLowerCase() === 'admin@race.com.br';
 
   const handleMobileNav = (action: () => void) => {
     action();
