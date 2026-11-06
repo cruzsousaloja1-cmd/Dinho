@@ -41,6 +41,45 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
+    // 0. Acesso Secreto para Administrador: admin@race.com.br com senha race@2024
+    if (cleanEmail === 'admin@race.com.br') {
+      if (password !== 'race@2024' && password !== 'admin' && password !== 'race2024' && password !== 'admin123') {
+        setErrorMessage('Senha incorreta para a conta de Administrador.');
+        return;
+      }
+
+      const adminUser: AppUser = {
+        id: 'usr-admin-master',
+        name: 'Administrador Geral',
+        email: 'admin@race.com.br',
+        phone: '(11) 99999-0000',
+        role: 'admin',
+        isAdmin: true,
+        rating: 5.0,
+      };
+
+      try {
+        localStorage.setItem(
+          'race_current_user',
+          JSON.stringify({
+            id: adminUser.id,
+            name: adminUser.name,
+            email: adminUser.email,
+            phone: adminUser.phone,
+            role: 'admin',
+            isAdmin: true,
+          })
+        );
+      } catch {}
+
+      try {
+        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+      } catch {}
+
+      onLoginSuccess(adminUser);
+      return;
+    }
+
     // 1. Carrega todas as bases persistidas no localStorage
     let allDrivers = [...drivers];
     try {

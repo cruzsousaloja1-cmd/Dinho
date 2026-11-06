@@ -139,6 +139,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </div>
 
+      {/* Informações Bancárias PIX Oficial R$ 200 */}
+      <div className="bg-slate-950 text-white rounded-2xl p-3.5 sm:p-4 border border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-[#ff6a00]/20 border border-[#ff6a00]/40 text-[#ff6a00] flex items-center justify-center font-bold shrink-0">
+            <Wallet className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="font-heading font-black text-sm text-white block">
+              Recebimento Oficial PIX &bull; Taxa R$ 200 / semana
+            </span>
+            <span className="text-zinc-400 font-mono text-[11px]">
+              Chave PIX: <strong className="text-[#ff6a00] font-mono select-all">9d9e5635-9e68-46bf-bffe-08bdae29c8ba</strong> &bull; Banco Nubank
+            </span>
+          </div>
+        </div>
+        <div className="text-left sm:text-right shrink-0">
+          <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 px-3 py-1 rounded-full font-mono text-xs font-bold">
+            100% Repasse Livre aos Condutores
+          </span>
+        </div>
+      </div>
+
       {/* Admin Subtabs in White */}
       <div className="bg-white border border-slate-200 p-2 rounded-2xl flex items-center gap-2 shadow-sm overflow-x-auto">
         <button
@@ -550,29 +572,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-200">
+                <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-200">
                   <div className="text-right">
-                    <span className="text-xs text-slate-500 block font-mono font-bold">
-                      Plano {WEEKLY_FEE_BADGE}
+                    <span className="text-[11px] text-slate-500 block font-mono font-bold">
+                      Plano Semanal R$ 200
                     </span>
                     <span
-                      className={`text-sm font-black ${
-                        driver.weeklyPlanActive ? 'text-emerald-700' : 'text-amber-700'
+                      className={`text-xs font-black ${
+                        driver.weeklyPlanActive && driver.status === 'online'
+                          ? 'text-emerald-700'
+                          : 'text-amber-700'
                       }`}
                     >
-                      {driver.weeklyPlanActive ? 'Ativo & Regular' : 'Aguardando Pagamento'}
+                      {driver.weeklyPlanActive && driver.status === 'online'
+                        ? 'Liberado (Online 7d)'
+                        : 'Bloqueado / Pendente'}
                     </span>
                   </div>
 
+                  {/* Botão Liberar 7 dias */}
                   <button
-                    onClick={() => onToggleDriverStatus(driver.id)}
-                    className={`px-4 py-2 rounded-xl text-sm font-black transition-all cursor-pointer ${
-                      driver.status === 'online'
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                        : 'bg-slate-100 text-slate-600 border border-slate-300'
-                    }`}
+                    type="button"
+                    onClick={() => onApproveWeeklyPayment && onApproveWeeklyPayment(driver)}
+                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                    title="Liberar 7 dias com status online e 100% de repasse"
                   >
-                    {driver.status === 'online' ? 'Online' : 'Offline'}
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Liberar 7 dias</span>
+                  </button>
+
+                  {/* Botão Bloquear */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onRejectWeeklyPayment) {
+                        onRejectWeeklyPayment(driver);
+                      } else {
+                        onToggleDriverStatus(driver.id);
+                      }
+                    }}
+                    className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                    title="Bloquear motorista / deixar offline"
+                  >
+                    <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Bloquear</span>
                   </button>
                 </div>
               </div>

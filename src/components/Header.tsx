@@ -42,6 +42,12 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  const isAdmin = Boolean(
+    currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
+    currentUser?.role === 'admin' ||
+    currentUser?.isAdmin === true
+  );
+
   const handleMobileNav = (action: () => void) => {
     action();
     setIsMobileMenuOpen(false);
@@ -106,16 +112,18 @@ export const Header: React.FC<HeaderProps> = ({
               {WEEKLY_FEE_BADGE}
             </span>
           </button>
-          <button
-            onClick={() => onChangeRole('admin')}
-            className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
-              activeRole === 'admin'
-                ? 'bg-slate-950 text-white font-extrabold shadow'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-            }`}
-          >
-            Painel Admin
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => onChangeRole('admin')}
+              className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
+                activeRole === 'admin'
+                  ? 'bg-slate-950 text-white font-extrabold shadow'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+              }`}
+            >
+              Painel Admin
+            </button>
+          )}
         </div>
 
         {/* Action Buttons Desktop (md+) */}
@@ -348,31 +356,33 @@ export const Header: React.FC<HeaderProps> = ({
               <ChevronRight className="w-4 h-4 text-emerald-600" />
             </button>
 
-            {/* Painel Administrativo */}
-            <button
-              type="button"
-              onClick={() => handleMobileNav(() => onChangeRole('admin'))}
-              className={`w-full flex items-center justify-between p-3.5 rounded-2xl transition-all cursor-pointer ${
-                activeRole === 'admin'
-                  ? 'bg-slate-950 text-white shadow-xs'
-                  : 'bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                  activeRole === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 text-slate-800'
-                }`}>
-                  <ShieldCheck className="w-5 h-5" />
+            {/* Painel Administrativo - Apenas para Administrador */}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => handleMobileNav(() => onChangeRole('admin'))}
+                className={`w-full flex items-center justify-between p-3.5 rounded-2xl transition-all cursor-pointer ${
+                  activeRole === 'admin'
+                    ? 'bg-slate-950 text-white shadow-xs'
+                    : 'bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    activeRole === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 text-slate-800'
+                  }`}>
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div className="text-left">
+                    <span className="font-heading font-black text-sm block">Painel Administrativo</span>
+                    <span className={`text-xs ${activeRole === 'admin' ? 'text-zinc-300' : 'text-slate-500'}`}>
+                      Métricas, Motoristas & Aprovação PIX
+                    </span>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <span className="font-heading font-black text-sm block">Painel Administrativo</span>
-                  <span className={`text-xs ${activeRole === 'admin' ? 'text-zinc-300' : 'text-slate-500'}`}>
-                    Métricas, Motoristas & Aprovação PIX
-                  </span>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-slate-400" />
-            </button>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </button>
+            )}
 
             {/* Botão Sair / Deslogar no Menu Lateral (Requisito 3) */}
             {currentUser && onLogout && (

@@ -134,6 +134,12 @@ export default function App() {
         if (parsed && parsed.email && !parsed.email.includes('raceapp.com.br')) {
           setCurrentUser(parsed);
 
+          // Se for admin, direciona para o painel de administração
+          if (parsed.role === 'admin' || parsed.isAdmin || parsed.email.toLowerCase() === 'admin@race.com.br') {
+            setActiveTab('admin');
+            return;
+          }
+
           const isDriverOrMotoboy =
             parsed.tipo === 'driver' ||
             parsed.tipo === 'motoboy' ||
@@ -169,6 +175,34 @@ export default function App() {
         }
       }
     } catch {}
+  }, []);
+
+  // 2.1 Rota Secreta para Admin: https://cruzsousaloja1-cmd.github.io/Dinho/#/admin ou #admin
+  useEffect(() => {
+    const checkSecretAdminRoute = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (hash === '#/admin' || hash === '#admin') {
+        const adminUser: AppUser = {
+          id: 'usr-admin-master',
+          name: 'Administrador Geral',
+          email: 'admin@race.com.br',
+          phone: '(11) 99999-0000',
+          role: 'admin',
+          isAdmin: true,
+          rating: 5.0,
+        };
+        setCurrentUser(adminUser);
+        try {
+          localStorage.setItem('race_current_user', JSON.stringify(adminUser));
+        } catch {}
+        setActiveTab('admin');
+        setLoginSuccessBanner('Painel de Administração liberado com sucesso via rota secreta.');
+      }
+    };
+
+    checkSecretAdminRoute();
+    window.addEventListener('hashchange', checkSecretAdminRoute);
+    return () => window.removeEventListener('hashchange', checkSecretAdminRoute);
   }, []);
 
   // 4. Bloqueio Automático a cada 1 minuto (Se weeklyFeeExpiresAt < now, set weeklyPlanActive = false e status = offline)
@@ -558,6 +592,19 @@ export default function App() {
             localStorage.setItem('race_current_user', JSON.stringify(user));
           } catch {}
 
+          // Se for Administrador (ex: admin@race.com.br)
+          if (
+            user.role === 'admin' ||
+            user.isAdmin ||
+            user.email?.toLowerCase() === 'admin@race.com.br'
+          ) {
+            setActiveTab('admin');
+            setLoginSuccessBanner(
+              'Bem-vindo, Administrador Geral! Painel de controle e auditoria liberados.'
+            );
+            return;
+          }
+
           const isDriverOrMotoboy =
             user.role === 'driver' ||
             user.role === 'motoboy' ||
@@ -658,6 +705,8 @@ export default function App() {
         activeRole={
           activeTab === 'admin'
             ? 'admin'
+            : currentUser?.role === 'admin' || currentUser?.isAdmin || currentUser?.email?.toLowerCase() === 'admin@race.com.br'
+            ? 'admin'
             : currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy'
             ? 'driver'
             : activeTab === 'driver_portal'
@@ -667,7 +716,16 @@ export default function App() {
         onChangeRole={(role) => {
           if (role === 'passenger') setActiveTab('rides');
           if (role === 'driver') setActiveTab('driver_portal');
-          if (role === 'admin') setActiveTab('admin');
+          if (role === 'admin') {
+            const isUserAdmin = Boolean(
+              currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
+              currentUser?.role === 'admin' ||
+              currentUser?.isAdmin === true
+            );
+            if (isUserAdmin) {
+              setActiveTab('admin');
+            }
+          }
         }}
         currentUser={currentUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
@@ -888,8 +946,19 @@ export default function App() {
       {/* Ergonomic Bottom Navigation Bar */}
       <BottomNav
         activeTab={activeTab}
-        onChangeTab={(tab) => setActiveTab(tab)}
+        onChangeTab={(tab) => {
+          if (tab === 'admin') {
+            const isUserAdmin = Boolean(
+              currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
+              currentUser?.role === 'admin' ||
+              currentUser?.isAdmin === true
+            );
+            if (!isUserAdmin) return;
+          }
+          setActiveTab(tab);
+        }}
         isDriverOnline={currentDriver.status === 'online'}
+        currentUser={currentUser}
       />
 
       {/* 1. Página de Mapa Fullscreen Toda Tela Sem Nenhuma Informação por Cima */}

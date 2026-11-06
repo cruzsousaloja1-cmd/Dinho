@@ -14,6 +14,7 @@ export interface AppUser {
   rating?: number;
   password?: string;
   driverData?: Driver;
+  isAdmin?: boolean;
 }
 
 export interface CategoryInfo {

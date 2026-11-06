@@ -7,19 +7,31 @@ import {
   UserCheck 
 } from 'lucide-react';
 
+import { AppUser } from '../types';
+
 export type TabType = 'rides' | 'delivery' | 'driver_portal' | 'history' | 'admin';
 
 interface BottomNavProps {
   activeTab: TabType;
   onChangeTab: (tab: TabType) => void;
   isDriverOnline?: boolean;
+  currentUser?: AppUser | null;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   onChangeTab,
   isDriverOnline,
+  currentUser,
 }) => {
+  // 1. Verificação: currentUser?.email === 'admin@race.com.br' || currentUser?.role === 'admin' || currentUser?.isAdmin === true
+  // Se não for admin, NÃO renderizar o botão ADM
+  const isAdmin = Boolean(
+    currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
+    currentUser?.role === 'admin' ||
+    currentUser?.isAdmin === true
+  );
+
   const tabs = [
     {
       id: 'rides' as TabType,
@@ -49,12 +61,16 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       sublabel: 'Recibos & Km',
       icon: History,
     },
-    {
-      id: 'admin' as TabType,
-      label: 'Painel Admin',
-      sublabel: 'Métricas & Dados',
-      icon: ShieldCheck,
-    },
+    ...(isAdmin
+      ? [
+          {
+            id: 'admin' as TabType,
+            label: 'Painel Admin',
+            sublabel: 'Métricas & Dados',
+            icon: ShieldCheck,
+          },
+        ]
+      : []),
   ];
 
   return (
