@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Driver, LocationPoint, Ride } from '../types';
 import { 
   ArrowLeft, 
@@ -7,14 +8,13 @@ import {
   CornerUpRight, 
   CornerUpLeft, 
   ArrowUp, 
-  Compass, 
   Route, 
   Clock, 
-  Gauge, 
   CheckCircle2, 
   Play, 
   Car,
-  BellRing
+  BellRing,
+  Navigation
 } from 'lucide-react';
 import { 
   INDAIATUBA_CENTER_COORDS, 
@@ -26,7 +26,6 @@ import {
   fetchRealStreetRoute, 
   calculateBearing, 
   StreetRouteResult, 
-  RouteStep,
   INDAIATUBA_REAL_STREET_COORDINATES, 
   INDAIATUBA_REAL_STEPS 
 } from '../services/osrmRoutingService';
@@ -59,9 +58,8 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const fullPolylineRef = useRef<L.Polyline | null>(null);
 
   const stepRef = useRef(0);
-  const secondsTimerRef = useRef(180);
 
-  // Coordenadas padrão em Indaiatuba
+  // Coordenadas padrão em Indaiatuba - SP
   const pLat = pickup?.lat ?? -23.0955;
   const pLng = pickup?.lng ?? -47.2250;
   const startCarLat = -23.084087;
@@ -97,7 +95,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     registrationDate: '2024-01-01',
   };
 
-  // Rota real consultada via OSRM com ruas e curvas reais
+  // Rota real consultada via OSRM com ruas e esquinas de Indaiatuba
   const [routeData, setRouteData] = useState<StreetRouteResult>({
     coordinates: INDAIATUBA_REAL_STREET_COORDINATES,
     steps: INDAIATUBA_REAL_STEPS,
@@ -109,7 +107,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     if (driverPosition) return [driverPosition.lat, driverPosition.lng];
     return [startCarLat, startCarLng];
   });
-  const [carHeading, setCarHeading] = useState(209); // Ângulo inicial da Av. Presidente Vargas
+  const [carHeading, setCarHeading] = useState(209); // Ângulo na Av. Presidente Vargas
   const [speedKmh, setSpeedKmh] = useState(44);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
@@ -128,7 +126,6 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         setRouteData(res);
         setDistanceRemainingMeters(res.totalDistanceMeters);
         setSecondsRemaining(res.totalDurationSeconds);
-        secondsTimerRef.current = res.totalDurationSeconds;
         setCarPos(res.coordinates[0]);
       }
     });
@@ -137,7 +134,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     };
   }, [pLat, pLng]);
 
-  // 2. Inicializa Leaflet Map Fullscreen com Zoom 15 no centro de Indaiatuba
+  // 2. Inicializa Leaflet com OpenStreetMap claro oficial e container BRANCO
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -152,10 +149,9 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         zoomControl: false,
       });
 
-      // CartoDB Dark Matter estilo Uber Black / Night Mode
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-        subdomains: 'abcd',
+      // OpenStreetMap Oficial Claro - Ruas de Indaiatuba totalmente visíveis
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
         maxZoom: 19,
       }).addTo(map);
 
@@ -163,7 +159,16 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       L.control.zoom({ position: 'topright' }).addTo(map);
 
       mapInstanceRef.current = map;
-      setTimeout(() => map.invalidateSize(), 200);
+
+      // Invalida o tamanho imediatamente e em intervalos para garantir renderização perfeita
+      map.invalidateSize();
+      const t1 = setTimeout(() => map.invalidateSize(), 150);
+      const t2 = setTimeout(() => map.invalidateSize(), 400);
+
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
     }
 
     return () => {
@@ -174,7 +179,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     };
   }, []);
 
-  // 3. Desenha a rota grossa laranja #ff6a00 seguindo o asfalto das ruas
+  // 3. Desenha a rota grossa laranja #ff6a00 por cima das ruas de Indaiatuba
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || routeData.coordinates.length === 0) return;
@@ -184,7 +189,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     } else {
       routePolylineRef.current = L.polyline(routeData.coordinates, {
         color: '#ff6a00',
-        weight: 7,
+        weight: 8,
         opacity: 0.95,
         lineCap: 'round',
         lineJoin: 'round',
@@ -192,28 +197,28 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     }
   }, [routeData]);
 
-  // 4. Marcador Azul do Passageiro
+  // 4. Marcador Azul Grande do Passageiro
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
     const passengerHtml = `
       <div class="relative flex flex-col items-center">
-        <div class="absolute -top-1 w-10 h-10 rounded-full bg-blue-500/35 animate-ping"></div>
-        <div class="relative w-9 h-9 rounded-full bg-blue-600 border-2 border-white shadow-2xl flex items-center justify-center text-white text-sm font-bold">
+        <div class="absolute -top-1 w-12 h-12 rounded-full bg-blue-500/30 animate-ping"></div>
+        <div class="relative w-11 h-11 rounded-full bg-blue-600 border-3 border-white shadow-2xl flex items-center justify-center text-white text-lg font-bold">
           👤
         </div>
-        <div class="bg-blue-950/95 text-blue-200 text-[11px] px-2.5 py-0.5 rounded-full border border-blue-400 mt-1 font-bold whitespace-nowrap shadow-xl">
+        <div class="bg-blue-600 text-white font-heading font-black text-xs px-3 py-1 rounded-full border-2 border-white mt-1 whitespace-nowrap shadow-xl">
           Passageiro (Você)
         </div>
       </div>
     `;
 
     const passengerIcon = L.divIcon({
-      className: 'passenger-blue-marker',
+      className: 'passenger-marker-clean',
       html: passengerHtml,
-      iconSize: [40, 50],
-      iconAnchor: [20, 25],
+      iconSize: [48, 56],
+      iconAnchor: [24, 28],
     });
 
     if (pickupMarkerRef.current) {
@@ -223,45 +228,39 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     }
   }, [pLat, pLng]);
 
-  // 5. Marcador do Carro estilo Uber: GIRA CONFORME A CURVA com seta direcional e faróis
+  // 5. Ícone do Carro Grande com Fundo Laranja #ff6a00, Borda Branca, que GIRA nas esquinas
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
     const carHtml = `
-      <div class="relative flex items-center justify-center" style="transform: rotate(${carHeading}deg); transition: transform 0.4s ease-out;">
-        <div class="absolute w-12 h-12 rounded-full bg-[#ff6a00]/30 animate-pulse"></div>
-        <!-- Ícone do Carro Top-Down estilo Uber -->
-        <svg width="44" height="44" viewBox="0 0 48 48" fill="none" class="drop-shadow-2xl">
-          <!-- Seta Direcional na frente -->
-          <path d="M24 2 L30 13 L24 10 L18 13 Z" fill="#ffffff" />
-          <!-- Corpo do Carro -->
-          <rect x="15" y="8" width="18" height="34" rx="7" fill="#ff6a00" stroke="#ffffff" stroke-width="2"/>
-          <!-- Parabrisa dianteiro -->
-          <rect x="18" y="15" width="12" height="7" rx="2" fill="#09090b" opacity="0.95"/>
-          <!-- Teto Solar -->
-          <rect x="19" y="24" width="10" height="4" rx="1" fill="#713f12" opacity="0.8"/>
-          <!-- Vidro Traseiro -->
-          <rect x="18" y="30" width="12" height="5" rx="1.5" fill="#09090b" opacity="0.95"/>
-          <!-- Faróis dianteiros acesos -->
-          <circle cx="17" cy="9" r="2" fill="#fef08a"/>
-          <circle cx="31" cy="9" r="2" fill="#fef08a"/>
-          <!-- Lanternas traseiras -->
-          <circle cx="17" cy="41" r="2" fill="#ef4444"/>
-          <circle cx="31" cy="41" r="2" fill="#ef4444"/>
-        </svg>
-        <!-- Tag de Placa e Velocidade horizontal -->
-        <div style="transform: rotate(-${carHeading}deg); transition: transform 0.4s ease-out;" class="absolute -bottom-5 whitespace-nowrap bg-black/90 text-[#ff6a00] font-mono font-bold text-[9px] px-1.5 py-0.2 rounded border border-[#ff6a00]/80 shadow-2xl">
+      <div class="relative flex flex-col items-center justify-center">
+        <!-- Contêiner do Carro com Rotação Dinâmica -->
+        <div style="transform: rotate(${carHeading}deg); transition: transform 0.4s ease-out;" class="relative flex items-center justify-center">
+          <div class="w-13 h-13 rounded-full bg-[#ff6a00] border-3 border-white shadow-2xl flex items-center justify-center">
+            <!-- Seta Direcional na frente -->
+            <div class="absolute -top-1 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[8px] border-b-white"></div>
+            <!-- Carro Top Down em SVG -->
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2" />
+              <circle cx="7" cy="17" r="2" fill="white" />
+              <circle cx="17" cy="17" r="2" fill="white" />
+            </svg>
+          </div>
+        </div>
+
+        <!-- Placa do Veículo Limpa e Legível -->
+        <div class="bg-slate-950 text-[#ff6a00] font-mono font-black text-[10px] px-2.5 py-0.5 rounded-full border-2 border-white shadow-xl mt-1 whitespace-nowrap">
           ${effectiveDriver.vehiclePlate} • ${speedKmh} km/h
         </div>
       </div>
     `;
 
     const carIcon = L.divIcon({
-      className: 'driver-rotating-car-marker',
+      className: 'driver-rotating-car-clean',
       html: carHtml,
-      iconSize: [44, 44],
-      iconAnchor: [22, 22],
+      iconSize: [52, 64],
+      iconAnchor: [26, 32],
     });
 
     if (driverMarkerRef.current) {
@@ -279,15 +278,13 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     }
   }, [carPos, onUpdateDriverPosition]);
 
-  // 7. Timer em tempo real a cada 1 segundo (tempo diminuindo continuamente)
+  // 7. Timer em tempo real a cada 1 segundo (atualiza os segundos decrescendo)
   useEffect(() => {
     if (hasDriverArrived || isRideFinished) return;
 
     const secInterval = setInterval(() => {
       setSecondsRemaining((prevSec) => {
-        if (prevSec <= 1) {
-          return 0;
-        }
+        if (prevSec <= 1) return 0;
         return prevSec - 1;
       });
     }, 1000);
@@ -295,7 +292,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     return () => clearInterval(secInterval);
   }, [hasDriverArrived, isRideFinished]);
 
-  // 8. Simulação do Carro nas ruas: anda nas ruas reais e GIRA na esquina a cada 2s
+  // 8. Simulação do Carro nas ruas de Indaiatuba: avança e GIRA nas esquinas a cada 2s
   useEffect(() => {
     if (hasDriverArrived || isRideFinished) return;
 
@@ -323,14 +320,14 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       const pNext = coords[next];
       setCarPos(pNext);
 
-      // Calcula o ângulo exato para a curva na esquina (rotateMarker)
+      // Calcula o ângulo para virar o carro na esquina
       const heading = calculateBearing(pCurrent[0], pCurrent[1], pNext[0], pNext[1]);
       setCarHeading(heading);
 
-      // Velocidade realista (reduz na curva fechada, acelera nas avenidas de Indaiatuba)
+      // Velocidade realista (reduz na curva, acelera nas avenidas)
       const angleDiff = Math.abs(heading - carHeading);
-      const isCurve = angleDiff > 35;
-      const dynamicSpeed = isCurve ? 24 : Math.floor(40 + Math.random() * 8);
+      const isCurve = angleDiff > 30;
+      const dynamicSpeed = isCurve ? 22 : Math.floor(40 + Math.random() * 8);
       setSpeedKmh(dynamicSpeed);
 
       // Distância proporcional
@@ -342,7 +339,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     return () => clearInterval(moveInterval);
   }, [routeData, carHeading, hasDriverArrived, isRideFinished]);
 
-  // Cálculo da instrução da próxima curva para o HUD de GPS estilo Uber
+  // Cálculo da instrução da próxima curva
   const steps = routeData.steps;
   const currentStep = (() => {
     if (hasDriverArrived) {
@@ -354,7 +351,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     }
     if (distanceRemainingMeters <= 200) {
       return {
-        instruction: 'Motorista está virando a esquina para o embarque',
+        instruction: 'Motorista virando na rua de embarque',
         street: 'Embarque em 200m à direita',
         modifier: 'right',
       };
@@ -406,21 +403,21 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#000000] text-white flex flex-col w-screen h-screen overflow-hidden select-none">
-      {/* 1. HUD SUPERIOR ESTILO UBER: PRÓXIMA ESQUINA & MANOBRA */}
+    <div className="fixed inset-0 z-50 bg-white text-slate-900 flex flex-col w-screen h-screen overflow-hidden select-none">
+      {/* 1. HUD SUPERIOR ESTILO UBER (PRÓXIMA ESQUINA & MANOBRA) */}
       <div className="absolute top-4 left-4 right-4 z-[1000] flex items-start justify-between gap-3 pointer-events-none">
         {/* Botão VOLTAR */}
         <button
           type="button"
           onClick={onClose}
-          className="pointer-events-auto bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs sm:text-sm py-2.5 px-4 rounded-2xl shadow-2xl flex items-center gap-2 transition-all cursor-pointer border border-[#ff8533]"
+          className="pointer-events-auto bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs sm:text-sm py-2.5 px-4 rounded-2xl shadow-xl flex items-center gap-2 transition-all cursor-pointer border border-[#ff8533]"
         >
           <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 stroke-[3]" />
           <span>VOLTAR</span>
         </button>
 
-        {/* Card Superior Estilo Uber / Waze de Direção */}
-        <div className="pointer-events-auto flex-1 max-w-md bg-black/90 backdrop-blur-xl border-2 border-zinc-800 text-white rounded-2xl p-3 shadow-2xl flex items-center gap-3">
+        {/* Card Superior Estilo Uber de Direção */}
+        <div className="pointer-events-auto flex-1 max-w-md bg-white/95 backdrop-blur-xl border border-slate-200 text-slate-900 rounded-2xl p-3 shadow-xl flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#ff6a00] text-white flex items-center justify-center shrink-0 shadow-md">
             {currentStep.modifier === 'right' ? (
               <CornerUpRight className="w-6 h-6 stroke-[3]" />
@@ -434,19 +431,19 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             <span className="text-[10px] font-mono font-bold text-[#ff6a00] uppercase block tracking-wider">
               {distanceRemainingMeters <= 200 ? 'CHEGANDO NO EMBARQUE' : 'MANOBRA GPS'}
             </span>
-            <h3 className="font-heading font-black text-xs sm:text-sm text-white truncate">
+            <h3 className="font-heading font-black text-xs sm:text-sm text-slate-900 truncate">
               {currentStep.instruction}
             </h3>
-            <p className="text-[11px] text-zinc-400 font-medium truncate">
+            <p className="text-[11px] text-slate-500 font-medium truncate">
               {currentStep.street}
             </p>
           </div>
         </div>
 
-        {/* Badge Velocímetro & Indaiatuba */}
-        <div className="pointer-events-auto hidden sm:flex items-center gap-2 bg-black/85 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-zinc-800 text-xs">
-          <Gauge className="w-4 h-4 text-[#ff6a00]" />
-          <span className="font-mono font-bold text-white">{speedKmh} km/h</span>
+        {/* Badge Cidade: Indaiatuba - SP */}
+        <div className="pointer-events-auto hidden sm:flex items-center gap-2 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-slate-200 text-xs shadow-md">
+          <Navigation className="w-4 h-4 text-[#ff6a00]" />
+          <span className="font-heading font-bold text-slate-900">Indaiatuba - SP</span>
         </div>
       </div>
 
@@ -455,7 +452,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         <button
           type="button"
           onClick={handleCenterOnCar}
-          className="w-11 h-11 bg-black/90 hover:bg-[#ff6a00] border border-zinc-800 active:scale-95 text-[#ff6a00] hover:text-white rounded-2xl shadow-2xl flex items-center justify-center transition-all cursor-pointer"
+          className="w-11 h-11 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-[#ff6a00] rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer"
           title="Centralizar no Carro"
         >
           <Crosshair className="w-5 h-5" />
@@ -464,36 +461,40 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         <button
           type="button"
           onClick={handleViewFullRoute}
-          className="w-11 h-11 bg-black/90 hover:bg-[#ff6a00] border border-zinc-800 active:scale-95 text-amber-400 hover:text-white rounded-2xl shadow-2xl flex items-center justify-center transition-all cursor-pointer"
+          className="w-11 h-11 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-slate-800 hover:text-[#ff6a00] rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer"
           title="Ver Trajeto Total de Indaiatuba"
         >
           <Route className="w-5 h-5" />
         </button>
       </div>
 
-      {/* MAPA FULLSCREEN LEAFLET RESTRICTO A INDAIATUBA */}
-      <div ref={mapContainerRef} className="w-full h-full flex-1 z-0" />
+      {/* MAPA FULLSCREEN LEAFLET COM FUNDO BRANCO E RUAS CLARAS */}
+      <div 
+        ref={mapContainerRef} 
+        className="w-full h-full flex-1 z-0 bg-white" 
+        style={{ width: '100vw', height: '100vh', background: '#ffffff' }}
+      />
 
       {/* 3. CARD DE GPS EM TEMPO REAL ESTILO UBER (EMBAIXO DO MAPA) */}
       <div className="absolute bottom-4 sm:bottom-6 left-3 right-3 sm:left-6 sm:right-6 max-w-lg mx-auto z-[1000] pointer-events-auto">
-        <div className="bg-zinc-950/95 backdrop-blur-2xl border-2 border-zinc-800 text-white rounded-3xl p-4 sm:p-5 shadow-[0_12px_40px_rgba(0,0,0,0.85)] space-y-3.5">
+        <div className="bg-white/95 backdrop-blur-2xl border border-slate-200 text-slate-900 rounded-3xl p-4 sm:p-5 shadow-[0_12px_40px_rgba(0,0,0,0.15)] space-y-3.5">
           {/* Header do Card com Status */}
-          <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-[#ff6a00]/20 border border-[#ff6a00]/40 flex items-center justify-center text-[#ff6a00] font-black shrink-0">
+              <div className="w-11 h-11 rounded-2xl bg-[#ff6a00]/15 border border-[#ff6a00]/30 flex items-center justify-center text-[#ff6a00] font-black shrink-0">
                 <Car className="w-6 h-6" />
               </div>
               <div>
-                <h4 className="font-heading font-black text-sm sm:text-base text-white">
+                <h4 className="font-heading font-black text-sm sm:text-base text-slate-950">
                   {hasDriverArrived
                     ? '📍 Motorista Chegou ao Local!'
                     : distanceRemainingMeters <= 200
                     ? '🚨 Motorista está chegando - 200m'
                     : '🚗 Motorista a Caminho'}
                 </h4>
-                <p className="text-xs text-zinc-400 font-medium">
+                <p className="text-xs text-slate-600 font-medium">
                   {effectiveDriver.vehicleModel} &bull;{' '}
-                  <strong className="text-white font-mono bg-zinc-800 px-1.5 py-0.5 rounded text-[11px]">
+                  <strong className="text-slate-900 font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[11px] border border-slate-200">
                     {effectiveDriver.vehiclePlate}
                   </strong>
                 </p>
@@ -505,7 +506,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
               <div className="text-xl sm:text-2xl font-heading font-black text-[#ff6a00]">
                 {minutesLeft > 0 ? `${minutesLeft} min` : 'Agora'}
               </div>
-              <div className="text-[11px] font-mono text-zinc-400">
+              <div className="text-[11px] font-mono text-slate-500 font-bold">
                 {distanceKmFormatted} km restantes
               </div>
             </div>
@@ -513,15 +514,15 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
           {/* ALERTA ESPECIAL QUANDO CHEGAR PERTO: "Motorista está chegando - 200m" */}
           {distanceRemainingMeters <= 200 && !hasDriverArrived && (
-            <div className="bg-amber-950/70 border-2 border-[#ff6a00] rounded-2xl p-3 flex items-center gap-3 animate-pulse">
-              <div className="w-8 h-8 rounded-full bg-[#ff6a00] text-black flex items-center justify-center shrink-0">
+            <div className="bg-amber-50 border-2 border-[#ff6a00] rounded-2xl p-3 flex items-center gap-3 animate-pulse">
+              <div className="w-8 h-8 rounded-full bg-[#ff6a00] text-white flex items-center justify-center shrink-0 shadow">
                 <BellRing className="w-4 h-4 stroke-[2.5]" />
               </div>
               <div>
-                <span className="font-heading font-black text-xs sm:text-sm text-white block">
+                <span className="font-heading font-black text-xs sm:text-sm text-slate-950 block">
                   Motorista está chegando - 200m
                 </span>
-                <span className="text-[11px] text-amber-200 font-medium">
+                <span className="text-[11px] text-amber-900 font-medium">
                   Dirija-se ao ponto de embarque na calçada
                 </span>
               </div>
@@ -530,12 +531,12 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
           {/* QUANDO CHEGAR A 0m: "Motorista chegou!" + botão "Iniciar corrida" */}
           {hasDriverArrived && !isRideInProgress && (
-            <div className="bg-emerald-950/60 border border-emerald-500/50 rounded-2xl p-4 text-center space-y-3">
-              <div className="flex items-center justify-center gap-2 text-emerald-400 font-heading font-black text-base sm:text-lg">
-                <CheckCircle2 className="w-5 h-5" />
+            <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 text-center space-y-3">
+              <div className="flex items-center justify-center gap-2 text-emerald-800 font-heading font-black text-base sm:text-lg">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                 <span>Motorista Chegou!</span>
               </div>
-              <p className="text-xs text-zinc-300 font-medium">
+              <p className="text-xs text-slate-600 font-medium">
                 O veículo prata ({effectiveDriver.vehiclePlate}) está te aguardando no local.
               </p>
               <button
@@ -554,7 +555,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             <button
               type="button"
               onClick={handleViewFullRoute}
-              className="flex-1 py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-amber-400 border border-zinc-700 font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+              className="flex-1 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <Route className="w-4 h-4 text-[#ff6a00]" />
               <span>Ver trajeto total</span>
@@ -563,9 +564,9 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             <button
               type="button"
               onClick={handleCenterOnCar}
-              className="py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+              className="py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
             >
-              <Crosshair className="w-4 h-4" />
+              <Crosshair className="w-4 h-4 text-amber-400" />
               <span>Seguir Carro</span>
             </button>
           </div>

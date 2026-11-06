@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Driver, LocationPoint, RideStatus } from '../types';
 import { Compass, Crosshair, Navigation, ShieldCheck } from 'lucide-react';
 
@@ -55,19 +56,22 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         zoomControl: false,
       });
 
-      // CartoDB Voyager light tiles for crisp white/light theme
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-        subdomains: 'abcd',
+      // OpenStreetMap Oficial Claro
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
         maxZoom: 19,
       }).addTo(map);
 
       mapInstanceRef.current = map;
 
       // Invalidate size shortly after mount to ensure crisp full-container rendering
+      map.invalidateSize();
       setTimeout(() => {
         map.invalidateSize();
-      }, 250);
+      }, 150);
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 350);
 
       // Handle map clicks
       map.on('click', (e) => {

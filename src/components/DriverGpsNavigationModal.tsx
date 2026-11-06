@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { 
   ArrowLeft, 
   CornerUpRight, 
@@ -79,7 +80,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     };
   }, []);
 
-  // 1. Inicializa o mapa Leaflet estilo Waze / Uber Driver
+  // 1. Inicializa o mapa Leaflet estilo Waze / Uber Driver com OpenStreetMap claro
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -94,15 +95,16 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         zoomControl: false,
       });
 
-      // CartoDB Dark Matter estilo GPS Noturno profissional
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-        subdomains: 'abcd',
+      // OpenStreetMap Oficial Claro
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
         maxZoom: 19,
       }).addTo(map);
 
       mapInstanceRef.current = map;
-      setTimeout(() => map.invalidateSize(), 200);
+      map.invalidateSize();
+      setTimeout(() => map.invalidateSize(), 150);
+      setTimeout(() => map.invalidateSize(), 350);
     }
 
     return () => {
@@ -342,8 +344,12 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         </button>
       </div>
 
-      {/* CANVAS DO MAPA FULLSCREEN */}
-      <div ref={mapContainerRef} className="w-full h-full flex-1 z-0" />
+      {/* CANVAS DO MAPA FULLSCREEN CLARO */}
+      <div 
+        ref={mapContainerRef} 
+        className="w-full h-full flex-1 z-0 bg-white" 
+        style={{ width: '100vw', height: '100vh', background: '#ffffff' }}
+      />
 
       {/* BARRA INFERIOR UBER DRIVER DE TELEMETRIA */}
       <div className="absolute bottom-4 sm:bottom-6 left-3 right-3 sm:left-6 sm:right-6 max-w-xl mx-auto z-[1000]">
