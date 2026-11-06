@@ -52,9 +52,11 @@ import {
   FileCheck,
   Building2,
   UserCheck2,
-  CheckCircle
+  CheckCircle,
+  Navigation
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
 
 interface DriverPartnerPortalProps {
   currentDriver: Driver;
@@ -86,6 +88,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [isOnline, setIsOnline] = useState(currentDriver.status === 'online');
   const [acceptedRideNotice, setAcceptedRideNotice] = useState<string | null>(null);
   const [comfortWarning, setComfortWarning] = useState<string | null>(null);
+  const [isDriverGpsOpen, setIsDriverGpsOpen] = useState(false);
 
   // Driver's own PIX key where they receive 100% of ride earnings
   const [driverPixKey, setDriverPixKey] = useState<string>(
@@ -686,30 +689,39 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 <div className="space-y-2 text-sm text-slate-800">
                   <div className="flex items-center gap-2.5 font-medium">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                    <span>Embarque: Rua Bela Cintra, 890 - Consolação</span>
+                    <span>Embarque: Av. Presidente Vargas, 1200 - Cidade Nova, Indaiatuba</span>
                   </div>
                   <div className="flex items-center gap-2.5 font-medium">
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
-                    <span>Destino: Shopping Morumbi - Av. Roque Petroni Jr.</span>
+                    <span>Destino: Parque Ecológico de Indaiatuba - Marginal do Parque</span>
                   </div>
                 </div>
 
                 {acceptedRideNotice && (
-                  <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-3.5 rounded-xl font-bold text-sm flex items-center justify-between animate-fade-in">
+                  <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-3.5 rounded-xl font-bold text-sm flex items-center justify-between animate-fade-in flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                       <span>{acceptedRideNotice}</span>
                     </div>
-                    <button
-                      onClick={() => setAcceptedRideNotice(null)}
-                      className="text-xs text-emerald-700 hover:text-emerald-900 font-bold ml-2 cursor-pointer"
-                    >
-                      ✕
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setIsDriverGpsOpen(true)}
+                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-heading font-black cursor-pointer flex items-center gap-1 shadow-xs"
+                      >
+                        <Navigation className="w-3.5 h-3.5" />
+                        <span>Abrir GPS</span>
+                      </button>
+                      <button
+                        onClick={() => setAcceptedRideNotice(null)}
+                        className="text-xs text-emerald-700 hover:text-emerald-900 font-bold ml-1 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
                 )}
 
-                <div className="flex items-center gap-3 pt-2">
+                <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
                   <button
                     onClick={() => {
                       onUpdateDriver({
@@ -718,19 +730,30 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         earningsWeek: currentDriver.earningsWeek + 28.5,
                         totalRides: currentDriver.totalRides + 1,
                       });
-                      setAcceptedRideNotice('Corrida aceita com sucesso! Rota enviada para o GPS. Ganhos de R$ 28,50 (100% livres) creditados.');
+                      setAcceptedRideNotice('Corrida aceita! Rota enviada para o GPS. Ganhos de R$ 28,50 creditados.');
+                      setIsDriverGpsOpen(true);
                       try {
                         confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
                       } catch {}
-                      setTimeout(() => setAcceptedRideNotice(null), 6000);
                     }}
-                    className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black py-3.5 rounded-xl text-sm transition-all cursor-pointer shadow active:scale-95 text-center border border-amber-400"
+                    className="w-full sm:flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black py-3.5 rounded-xl text-sm transition-all cursor-pointer shadow active:scale-95 text-center border border-amber-400 flex items-center justify-center gap-2"
                   >
-                    ACEITAR CORRIDA (R$ 28,50)
+                    <Navigation className="w-4 h-4" />
+                    <span>ACEITAR E ABRIR GPS (R$ 28,50)</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsDriverGpsOpen(true)}
+                    className="w-full sm:w-auto px-4 py-3.5 bg-slate-950 hover:bg-zinc-800 text-white rounded-xl text-xs sm:text-sm font-heading font-bold cursor-pointer border border-zinc-800 flex items-center justify-center gap-2 shadow-xs"
+                  >
+                    <Navigation className="w-4 h-4 text-emerald-400" />
+                    <span>Navegação GPS (Waze/Uber)</span>
+                  </button>
+
                   <button
                     onClick={onOpenSupport}
-                    className="px-4 py-3.5 bg-white hover:bg-slate-100 text-slate-800 rounded-xl text-sm font-bold cursor-pointer border border-slate-300"
+                    className="w-full sm:w-auto px-3.5 py-3.5 bg-white hover:bg-slate-100 text-slate-800 rounded-xl text-xs sm:text-sm font-bold cursor-pointer border border-slate-300"
                   >
                     Suporte 24h
                   </button>
@@ -1680,6 +1703,23 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             )}
           </div>
         </div>
+      )}
+
+      {/* Modal de Navegação GPS estilo Waze / Uber Driver para o Condutor */}
+      {isDriverGpsOpen && (
+        <DriverGpsNavigationModal
+          driver={currentDriver}
+          onClose={() => setIsDriverGpsOpen(false)}
+          onCompleteRide={() => {
+            onUpdateDriver({
+              ...currentDriver,
+              earningsToday: currentDriver.earningsToday + 28.5,
+              earningsWeek: currentDriver.earningsWeek + 28.5,
+              totalRides: currentDriver.totalRides + 1,
+            });
+            setIsDriverGpsOpen(false);
+          }}
+        />
       )}
     </div>
   );
