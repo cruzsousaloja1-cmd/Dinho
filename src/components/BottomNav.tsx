@@ -1,7 +1,6 @@
 import React from 'react';
 import { 
   Car, 
-  Package, 
   ShieldCheck, 
   History, 
   UserCheck 
@@ -37,15 +36,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       badge: 'R$2,50/km',
     },
     {
-      id: 'delivery' as TabType,
-      label: 'Entregas',
-      sublabel: 'Flash Motoboy',
-      icon: Package,
-      badge: 'R$2,00/km',
-    },
-    {
       id: 'driver_portal' as TabType,
-      label: 'Condutor',
+      label: 'Motorista',
       sublabel: 'R$200 Semanal',
       icon: UserCheck,
       isHighlight: true,
