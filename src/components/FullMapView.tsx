@@ -504,10 +504,10 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             {/* Distância e tempo grande estilo Uber */}
             <div className="text-right">
               <div className="text-xl sm:text-2xl font-heading font-black text-[#ff6a00]">
-                {minutesLeft > 0 ? `${minutesLeft} min` : 'Agora'}
+                Chega em {minutesLeft > 0 ? `${minutesLeft} min` : '3 min'}
               </div>
-              <div className="text-[11px] font-mono text-slate-500 font-bold">
-                {distanceKmFormatted} km restantes
+              <div className="text-[11px] font-mono text-slate-600 font-bold">
+                {distanceKmFormatted} km de distância
               </div>
             </div>
           </div>
@@ -550,21 +550,31 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             </div>
           )}
 
-          {/* Botões de Ação na Base */}
+          {/* Botões de Ação na Base incluindo Botão Voltar */}
           <div className="flex items-center gap-2 pt-1">
             <button
               type="button"
+              onClick={onClose}
+              className="py-2.5 px-4 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 border border-[#ff8533] uppercase tracking-wider"
+              title="Voltar às Opções de Corrida"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleViewFullRoute}
-              className="flex-1 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+              className="flex-1 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
             >
               <Route className="w-4 h-4 text-[#ff6a00]" />
-              <span>Ver trajeto total</span>
+              <span>Ver trajeto</span>
             </button>
 
             <button
               type="button"
               onClick={handleCenterOnCar}
-              className="py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+              className="py-2.5 px-3.5 bg-slate-900 hover:bg-slate-800 text-white font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
             >
               <Crosshair className="w-4 h-4 text-amber-400" />
               <span>Seguir Carro</span>

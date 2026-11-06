@@ -275,68 +275,61 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[180px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+    <div className="relative w-full h-full min-h-[160px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Real Map Canvas */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
       {/* Floating GPS HUD overlay */}
-      <div className="absolute top-3 left-3 z-[400] flex flex-wrap items-center gap-2 pointer-events-none">
-        <div className="bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-xl border border-slate-200 flex items-center gap-2.5 text-xs sm:text-sm text-slate-800 shadow-md">
-          <span className="w-3 h-3 rounded-full bg-emerald-500 radar-pulse" />
-          <span className="font-heading font-extrabold text-amber-700 tracking-wide text-xs sm:text-sm">
+      <div className="absolute top-2 left-2 z-[400] flex items-center gap-1.5 pointer-events-none">
+        <div className="bg-white/95 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-200 flex items-center gap-1.5 text-xs text-slate-800 shadow-sm">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse" />
+          <span className="font-heading font-black text-amber-700 tracking-wide text-[11px]">
             INDAIATUBA - SP
           </span>
-          <span className="text-xs text-slate-500 border-l border-slate-200 pl-2 font-mono">
-            GPS Ativo
+          <span className="text-[10px] text-slate-500 border-l border-slate-200 pl-1.5 font-mono">
+            GPS
           </span>
-        </div>
-
-        <div className="hidden sm:flex bg-white/95 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-200 items-center gap-1.5 text-xs sm:text-sm text-slate-700 font-medium shadow-md">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span>Monitoramento 24h</span>
         </div>
       </div>
 
       {/* Selection Mode helper tip */}
       {selectionMode && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[400] bg-amber-500 text-slate-950 px-5 py-2 rounded-full font-extrabold text-sm shadow-xl animate-bounce flex items-center gap-2 border border-amber-300">
-          <Crosshair className="w-4 h-4" />
-          <span>Toque no mapa para marcar {selectionMode === 'pickup' ? 'o ponto de embarque' : 'o destino final'}</span>
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 z-[400] bg-amber-500 text-slate-950 px-3 py-1 rounded-full font-bold text-xs shadow-md animate-bounce flex items-center gap-1.5 border border-amber-300">
+          <Crosshair className="w-3.5 h-3.5" />
+          <span>Toque no mapa para marcar {selectionMode === 'pickup' ? 'embarque' : 'destino'}</span>
         </div>
       )}
 
       {/* Floating GPS Controls */}
-      <div className="absolute bottom-4 right-4 z-[400] flex flex-col gap-2">
+      <div className="absolute bottom-2 right-2 z-[400] flex flex-col gap-1.5">
         <button
+          type="button"
           onClick={handleCenterOnUser}
           title="Minha Localização"
-          className="w-12 h-12 bg-white hover:bg-slate-50 active:scale-95 text-amber-600 rounded-xl border border-slate-300 shadow-xl flex items-center justify-center transition-all cursor-pointer"
+          className="w-8 h-8 bg-white hover:bg-slate-50 active:scale-95 text-amber-600 rounded-lg border border-slate-300 shadow-md flex items-center justify-center transition-all cursor-pointer"
         >
-          <Navigation className="w-5 h-5" />
+          <Navigation className="w-4 h-4" />
         </button>
 
         <button
+          type="button"
           onClick={() => mapInstanceRef.current?.setView(defaultCenter, INDAIATUBA_DEFAULT_ZOOM)}
           title="Centro de Indaiatuba"
-          className="w-12 h-12 bg-white hover:bg-slate-50 active:scale-95 text-slate-700 rounded-xl border border-slate-300 shadow-xl flex items-center justify-center transition-all cursor-pointer"
+          className="w-8 h-8 bg-white hover:bg-slate-50 active:scale-95 text-slate-700 rounded-lg border border-slate-300 shadow-md flex items-center justify-center transition-all cursor-pointer"
         >
-          <Compass className="w-5 h-5" />
+          <Compass className="w-4 h-4" />
         </button>
       </div>
 
       {/* Live Active Legend */}
-      <div className="absolute bottom-3 left-3 z-[400] bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-xl border border-slate-200 flex items-center gap-3.5 text-xs sm:text-sm text-slate-800 shadow-md font-medium">
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-amber-500" />
-          <span className="font-semibold">Carros</span>
+      <div className="absolute bottom-2 left-2 z-[400] bg-white/95 backdrop-blur-md px-2 py-0.5 rounded-lg border border-slate-200 flex items-center gap-2 text-[10px] text-slate-700 shadow-sm font-semibold">
+        <div className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-amber-500" />
+          <span>Carro</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-cyan-500" />
-          <span className="font-semibold">Moto Táxi</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-purple-500" />
-          <span className="font-semibold">Entregas Flash</span>
+        <div className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-cyan-500" />
+          <span>Moto</span>
         </div>
       </div>
     </div>

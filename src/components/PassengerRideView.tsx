@@ -12,6 +12,8 @@ import {
   searchAddressAutocomplete, 
   calculateDistanceKm, 
   reverseGeocodeCoords,
+  hasAddressNumber,
+  extractAddressNumber,
   AddressSuggestion, 
   POPULAR_DATABASE_LOCATIONS 
 } from '../services/addressSearchService';
@@ -38,7 +40,9 @@ import {
   Zap,
   ArrowRight,
   Power,
-  Maximize2
+  Maximize2,
+  AlertTriangle,
+  Route
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -83,8 +87,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'race_pay'>('pix');
-  const [pickupInput, setPickupInput] = useState(pickup?.address || 'Av. Paulista, 1578 - Bela Vista');
-  const [destInput, setDestInput] = useState(destination?.address || 'Aeroporto de Congonhas - SP');
+  const [pickupInput, setPickupInput] = useState(
+    pickup?.address || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP'
+  );
+  const [destInput, setDestInput] = useState(
+    destination?.address || 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba-SP'
+  );
+
+  // Address validation banner state
+  const [addressValidationError, setAddressValidationError] = useState<string | null>(null);
 
   // Automatic search and suggestions state
   const [pickupSuggestions, setPickupSuggestions] = useState<AddressSuggestion[]>([]);
@@ -105,7 +116,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   // Calculate actual dynamic distance between points
   const dynamicDistanceKm = pickup && destination
     ? calculateDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng)
-    : 6.4;
+    : 3.8;
 
   // Keep inputs synced when pickup/destination change from map clicks
   useEffect(() => {
@@ -123,6 +134,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   // Handle Automatic Search for Pickup
   const handlePickupChange = (value: string) => {
     setPickupInput(value);
+    if (addressValidationError) setAddressValidationError(null);
     setActiveDropdown('pickup');
 
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
@@ -143,6 +155,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   // Handle Automatic Search for Destination
   const handleDestChange = (value: string) => {
     setDestInput(value);
+    if (addressValidationError) setAddressValidationError(null);
     setActiveDropdown('destination');
 
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
@@ -162,20 +175,21 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
   // Select a suggestion
   const handleSelectSuggestion = (type: 'pickup' | 'destination', suggestion: AddressSuggestion) => {
+    if (addressValidationError) setAddressValidationError(null);
     if (type === 'pickup') {
       setPickup({
         address: suggestion.label,
         lat: suggestion.lat,
         lng: suggestion.lng,
       });
-      setPickupInput(suggestion.mainText);
+      setPickupInput(suggestion.label);
     } else {
       setDestination({
         address: suggestion.label,
         lat: suggestion.lat,
         lng: suggestion.lng,
       });
-      setDestInput(suggestion.mainText);
+      setDestInput(suggestion.label);
     }
     setActiveDropdown(null);
   };
@@ -184,19 +198,20 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const handleUseCurrentLocation = () => {
     setIsLocatingUser(true);
     setGpsDetectedNotice(null);
+    if (addressValidationError) setAddressValidationError(null);
 
     const onCoordsResolved = async (lat: number, lng: number) => {
       try {
-        const resolvedAddress = await reverseGeocodeCoords(lat, lng);
+        const geoResult = await reverseGeocodeCoords(lat, lng);
         setPickup({
-          address: resolvedAddress,
+          address: geoResult.fullAddress,
           lat,
           lng,
         });
-        setPickupInput(resolvedAddress);
-        setGpsDetectedNotice(resolvedAddress);
+        setPickupInput(geoResult.fullAddress);
+        setGpsDetectedNotice(geoResult.fullAddress);
       } catch {
-        const fallback = 'Av. Paulista, 1578 - Bela Vista, São Paulo - SP';
+        const fallback = 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP';
         setPickup({ address: fallback, lat, lng });
         setPickupInput(fallback);
         setGpsDetectedNotice(fallback);
@@ -207,7 +222,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     };
 
     if (!navigator.geolocation) {
-      onCoordsResolved(-23.0903, -47.2180);
+      onCoordsResolved(-23.0842, -47.2118);
       return;
     }
 
@@ -216,29 +231,46 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         onCoordsResolved(pos.coords.latitude, pos.coords.longitude);
       },
       () => {
-        // Fallback default position: Centro de Indaiatuba - SP
-        onCoordsResolved(-23.0903, -47.2180);
+        // Fallback default position: Av. Presidente Vargas, 1250, Centro de Indaiatuba - SP
+        onCoordsResolved(-23.0842, -47.2118);
       },
       { timeout: 7000, enableHighAccuracy: true }
     );
   };
 
   const handleRequestRideWithCategory = (catId?: VehicleCategory) => {
+    // 3. Validação estrita: se endereço não tiver número, mostrar alerta e bloquear pedido
+    if (!hasAddressNumber(pickupInput)) {
+      setAddressValidationError('Coloque o número do endereço de saída (embarque) para o motorista te achar.');
+      const el = document.getElementById('route-details');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
+    if (!hasAddressNumber(destInput)) {
+      setAddressValidationError('Coloque o número do endereço de chegada (destino) para o motorista te achar.');
+      const el = document.getElementById('route-details');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
+    setAddressValidationError(null);
+
     const finalCategory = catId || selectedCategory;
     setSelectedCategory(finalCategory);
 
     const calculated = calculateFare(finalCategory, dynamicDistanceKm);
 
     const finalPickup: LocationPoint = pickup || {
-      address: pickupInput || 'Parque Ecológico de Indaiatuba',
-      lat: -23.0955,
-      lng: -47.2250,
+      address: pickupInput || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP',
+      lat: -23.0842,
+      lng: -47.2118,
     };
 
     const finalDest: LocationPoint = destination || {
-      address: destInput || 'Jardim Morada do Sol, Indaiatuba',
-      lat: -23.1180,
-      lng: -47.2380,
+      address: destInput || 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba-SP',
+      lat: -23.0805,
+      lng: -47.2050,
     };
 
     // Find a matching driver or use first available
@@ -249,7 +281,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     const newRide: Ride = {
       id: `RCE-${Math.floor(1000 + Math.random() * 9000)}`,
       passengerName: 'Você (Passageiro RACE)',
-      passengerPhone: '(11) 99887-1122',
+      passengerPhone: '(19) 99887-1122',
       passengerRating: 5.0,
       driver: matchedDriver,
       category: finalCategory,
@@ -615,42 +647,25 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
       )}
 
-      {/* Acesso ao Mapa em Tela Cheia (Página Única Sem Informações na Tela) */}
-      {onOpenFullMap && (
-        <div className="bg-[#0a0a0a] text-white border-2 border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-[#ff6a00]/20 border border-[#ff6a00]/40 text-[#ff6a00] flex items-center justify-center shrink-0">
-              <MapPin className="w-6 h-6 text-[#ff6a00]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-heading font-black text-white text-base sm:text-lg">
-                  Mapa GPS em Tela Cheia
-                </h3>
-                <span className="text-[10px] font-mono font-bold bg-[#ff6a00] text-white px-2 py-0.5 rounded-full uppercase">
-                  Toda a Tela
-                </span>
-              </div>
-              <p className="text-xs sm:text-sm text-zinc-400 font-medium mt-0.5">
-                Veja ruas, rotas e carros ao vivo em 100% da tela sem nenhuma informação por cima
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onOpenFullMap}
-            className="bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs sm:text-sm py-3 px-5 rounded-2xl shadow-xl flex items-center justify-center gap-2 border border-[#ff8533] cursor-pointer transition-all shrink-0 uppercase tracking-wider"
-          >
-            <Maximize2 className="w-4 h-4" />
-            <span>Abrir Mapa Tela Cheia</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       {/* Route Selector Input Box with Automatic Search */}
       <div id="route-details" className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+        {/* Banner de Erro de Validação de Número */}
+        {addressValidationError && (
+          <div className="bg-rose-50 border-2 border-rose-400 p-4 rounded-2xl flex items-center justify-between text-rose-950 font-bold text-xs sm:text-sm shadow-md animate-bounce">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+              <span>{addressValidationError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAddressValidationError(null)}
+              className="text-rose-700 hover:text-rose-950 p-1 cursor-pointer font-bold text-sm"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center justify-between pb-2 border-b border-slate-200">
           <div>
             <h2 className="font-heading font-black text-slate-950 text-xl sm:text-2xl flex items-center gap-2.5">
@@ -658,7 +673,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               <span>Para onde vamos hoje?</span>
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 font-medium mt-0.5">
-              Informe o ponto de embarque e destino para calcular o trajeto no mapa
+              Informe o ponto de embarque e destino com o número exato para o trajeto em Indaiatuba
             </p>
           </div>
           <span className="text-xs sm:text-sm font-mono text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 font-extrabold shrink-0">
@@ -672,7 +687,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wide">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-xs"></span>
-              <span>Endereço de Saída / Embarque</span>
+              <span>Endereço de Saída / Embarque (Com Número)</span>
             </label>
             <button
               type="button"
@@ -704,8 +719,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   setActiveDropdown('pickup');
                   if (!pickupSuggestions.length) setPickupSuggestions(POPULAR_DATABASE_LOCATIONS.slice(0, 4));
                 }}
-                placeholder="Digite o endereço de saída ou clique em 'Meu GPS' acima..."
-                className="w-full bg-white border-2 border-slate-300 hover:border-emerald-400 focus:border-emerald-600 rounded-2xl px-4 py-3.5 text-base sm:text-lg text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 font-bold pr-11 shadow-xs transition-all"
+                placeholder="Ex: Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP"
+                className={`w-full bg-white border-2 ${
+                  !hasAddressNumber(pickupInput) && pickupInput.trim().length > 3
+                    ? 'border-amber-400 focus:border-amber-500'
+                    : 'border-slate-300 hover:border-emerald-400 focus:border-emerald-600'
+                } rounded-2xl px-4 py-3.5 text-base sm:text-lg text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 font-bold pr-11 shadow-xs transition-all`}
               />
               {isSearchingPickup && (
                 <Loader2 className="w-5 h-5 text-emerald-600 animate-spin absolute right-3.5 top-4" />
@@ -726,6 +745,43 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               )}
             </div>
           </div>
+
+          {/* 3. Alerta de Validação: Se endereço não tiver número */}
+          {!hasAddressNumber(pickupInput) && pickupInput.trim().length > 3 && (
+            <div className="mt-2.5 p-3.5 bg-amber-50 border-2 border-amber-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs sm:text-sm text-amber-950 font-bold animate-fade-in shadow-xs">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>Coloque o número do endereço para o motorista te achar</span>
+              </div>
+              <div className="flex items-center gap-1.5 self-end sm:self-center">
+                <input
+                  id="pickup-number-input"
+                  type="text"
+                  placeholder="Nº"
+                  defaultValue="1250"
+                  className="w-20 px-2.5 py-1.5 bg-white border-2 border-amber-400 rounded-xl text-xs font-black text-slate-900 focus:outline-none text-center"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const inputEl = document.getElementById('pickup-number-input') as HTMLInputElement;
+                    const num = inputEl?.value?.trim() || '1250';
+                    const updated = `${pickupInput}, ${num} - Indaiatuba-SP`;
+                    setPickupInput(updated);
+                    setPickup({
+                      address: updated,
+                      lat: pickup?.lat ?? -23.0842,
+                      lng: pickup?.lng ?? -47.2118,
+                    });
+                    if (addressValidationError) setAddressValidationError(null);
+                  }}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 rounded-xl font-black text-xs cursor-pointer shadow-xs transition-all uppercase"
+                >
+                  Inserir Nº
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Endereço de Saída detectado pelo Meu GPS */}
           {gpsDetectedNotice && (
@@ -750,7 +806,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           {activeDropdown === 'pickup' && (
             <div className="absolute left-0 right-0 top-full z-50 bg-white border-2 border-emerald-400 rounded-2xl shadow-2xl mt-1 overflow-hidden divide-y divide-slate-100 max-h-64 overflow-y-auto">
               <div className="bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-900 flex items-center justify-between">
-                <span>Sugestões Automáticas de Embarque</span>
+                <span>Sugestões Automáticas com Número (Indaiatuba-SP)</span>
                 <button
                   type="button"
                   onClick={() => setActiveDropdown(null)}
@@ -769,7 +825,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <span className="font-bold text-slate-900 text-sm sm:text-base block">
-                      {sug.mainText}
+                      {sug.label}
                     </span>
                     <span className="text-xs sm:text-sm text-slate-500 block truncate">
                       {sug.secondaryText}
@@ -787,7 +843,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wide">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0 shadow-xs"></span>
-              <span>Endereço de Chegada / Destino</span>
+              <span>Endereço de Chegada / Destino (Com Número)</span>
             </label>
           </div>
 
@@ -805,8 +861,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   setActiveDropdown('destination');
                   if (!destSuggestions.length) setDestSuggestions(POPULAR_DATABASE_LOCATIONS.slice(0, 4));
                 }}
-                placeholder="Digite o endereço de destino / chegada (busca automática)..."
-                className="w-full bg-white border-2 border-slate-300 hover:border-amber-400 focus:border-amber-500 rounded-2xl px-4 py-3.5 text-base sm:text-lg text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-amber-500/10 font-bold pr-11 shadow-xs transition-all"
+                placeholder="Ex: Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba-SP"
+                className={`w-full bg-white border-2 ${
+                  !hasAddressNumber(destInput) && destInput.trim().length > 3
+                    ? 'border-amber-400 focus:border-amber-500'
+                    : 'border-slate-300 hover:border-amber-400 focus:border-amber-500'
+                } rounded-2xl px-4 py-3.5 text-base sm:text-lg text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-amber-500/10 font-bold pr-11 shadow-xs transition-all`}
               />
               {isSearchingDest && (
                 <Loader2 className="w-5 h-5 text-amber-600 animate-spin absolute right-3.5 top-4" />
@@ -827,11 +887,48 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </div>
           </div>
 
+          {/* 3. Alerta de Validação: Se endereço não tiver número */}
+          {!hasAddressNumber(destInput) && destInput.trim().length > 3 && (
+            <div className="mt-2.5 p-3.5 bg-amber-50 border-2 border-amber-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs sm:text-sm text-amber-950 font-bold animate-fade-in shadow-xs">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>Coloque o número do endereço para o motorista te achar</span>
+              </div>
+              <div className="flex items-center gap-1.5 self-end sm:self-center">
+                <input
+                  id="dest-number-input"
+                  type="text"
+                  placeholder="Nº"
+                  defaultValue="350"
+                  className="w-20 px-2.5 py-1.5 bg-white border-2 border-amber-400 rounded-xl text-xs font-black text-slate-900 focus:outline-none text-center"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const inputEl = document.getElementById('dest-number-input') as HTMLInputElement;
+                    const num = inputEl?.value?.trim() || '350';
+                    const updated = `${destInput}, ${num} - Indaiatuba-SP`;
+                    setDestInput(updated);
+                    setDestination({
+                      address: updated,
+                      lat: destination?.lat ?? -23.0805,
+                      lng: destination?.lng ?? -47.2050,
+                    });
+                    if (addressValidationError) setAddressValidationError(null);
+                  }}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 rounded-xl font-black text-xs cursor-pointer shadow-xs transition-all uppercase"
+                >
+                  Inserir Nº
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Dropdown de Busca Automática para Destino */}
           {activeDropdown === 'destination' && (
             <div className="absolute left-0 right-0 top-full z-50 bg-white border-2 border-amber-400 rounded-2xl shadow-2xl mt-1 overflow-hidden divide-y divide-slate-100 max-h-64 overflow-y-auto">
               <div className="bg-amber-50 px-3.5 py-1.5 text-xs font-bold text-amber-900 flex items-center justify-between">
-                <span>Sugestões Automáticas de Destino</span>
+                <span>Sugestões Automáticas com Número (Indaiatuba-SP)</span>
                 <button
                   type="button"
                   onClick={() => setActiveDropdown(null)}
@@ -850,7 +947,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   <Navigation className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <span className="font-bold text-slate-900 text-xs sm:text-sm block">
-                      {sug.mainText}
+                      {sug.label}
                     </span>
                     <span className="text-xs text-slate-500 block truncate">
                       {sug.secondaryText}
@@ -866,7 +963,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         <div className="pt-1">
           <p className="text-xs text-slate-500 font-extrabold mb-2 uppercase tracking-wider flex items-center gap-1.5">
             <Search className="w-3.5 h-3.5 text-slate-400" />
-            <span>Destinos Frequentes com 1 Clique</span>
+            <span>Destinos Frequentes de Indaiatuba com Número</span>
           </p>
           <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
             {POPULAR_DATABASE_LOCATIONS.slice(0, 5).map((loc) => (
@@ -875,18 +972,73 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 type="button"
                 onClick={() => {
                   setDestination({ address: loc.label, lat: loc.lat, lng: loc.lng });
-                  setDestInput(loc.mainText);
+                  setDestInput(loc.label);
                   setActiveDropdown(null);
+                  if (addressValidationError) setAddressValidationError(null);
                 }}
                 className="shrink-0 bg-slate-50 hover:bg-amber-50 border border-slate-300 hover:border-amber-400 text-slate-800 hover:text-amber-900 text-xs sm:text-sm font-semibold px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm"
               >
                 <Clock className="w-3.5 h-3.5 text-slate-500" />
-                <span className="truncate max-w-[170px]">{loc.mainText}</span>
+                <span className="truncate max-w-[200px]">{loc.mainText}</span>
               </button>
             ))}
           </div>
         </div>
       </div>
+
+      {/* MINI-MAPA COMPACTO (180px de altura) com botão para abrir tela cheia */}
+      {mapElement && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm space-y-2 animate-fade-in">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse" />
+              <span className="font-heading font-black text-slate-900 text-xs sm:text-sm">
+                Mini-Mapa de Indaiatuba-SP
+              </span>
+            </div>
+            {onOpenFullMap && (
+              <button
+                type="button"
+                onClick={onOpenFullMap}
+                className="bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs py-1.5 px-3 rounded-xl shadow-md flex items-center gap-1.5 border border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Ver mapa em tela cheia</span>
+              </button>
+            )}
+          </div>
+
+          {/* Container do Mini-Map exatamente com 180px de altura */}
+          <div className="w-full h-[180px] rounded-xl overflow-hidden relative border border-slate-200 shadow-inner group">
+            {mapElement}
+            {onOpenFullMap && (
+              <button
+                type="button"
+                onClick={onOpenFullMap}
+                className="absolute top-2.5 right-2.5 z-[500] bg-white/95 hover:bg-white text-slate-950 font-black text-[11px] px-3 py-1.5 rounded-xl shadow-lg border border-slate-300 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                title="Abrir mapa em tela cheia"
+              >
+                <Maximize2 className="w-3.5 h-3.5 text-[#ff6a00]" />
+                <span>Tela Cheia</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] text-slate-600 px-1 font-mono">
+            <span>Chega em ~{Math.max(Math.round(dynamicDistanceKm * 2.2), 3)} min • {dynamicDistanceKm} km</span>
+            {onOpenFullMap && (
+              <button
+                type="button"
+                onClick={onOpenFullMap}
+                className="text-[#ff6a00] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <Maximize2 className="w-3 h-3" />
+                <span>Ver rota completa</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Category Selection Cards with Dedicated "Confirmar" Button on each option */}
       <div className="space-y-3">

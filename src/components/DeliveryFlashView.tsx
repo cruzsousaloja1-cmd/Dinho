@@ -148,11 +148,11 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
 
     const onCoordsResolved = async (lat: number, lng: number) => {
       try {
-        const resolvedAddress = await reverseGeocodeCoords(lat, lng);
-        if (setPickup) setPickup({ address: resolvedAddress, lat, lng });
-        setPickupInput(resolvedAddress);
+        const geoResult = await reverseGeocodeCoords(lat, lng);
+        if (setPickup) setPickup({ address: geoResult.fullAddress, lat, lng });
+        setPickupInput(geoResult.fullAddress);
       } catch {
-        const fallback = 'Av. Paulista, 1578 - Bela Vista, São Paulo - SP';
+        const fallback = 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP';
         if (setPickup) setPickup({ address: fallback, lat, lng });
         setPickupInput(fallback);
       } finally {

@@ -99,16 +99,16 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [loginSuccessBanner, setLoginSuccessBanner] = useState<string | null>(null);
 
-  // Map and Route States (Foco exclusivo em Indaiatuba - SP)
+  // Map and Route States (Foco exclusivo em Indaiatuba - SP com número)
   const [pickup, setPickup] = useState<LocationPoint | null>({
-    address: 'Parque Ecológico de Indaiatuba - Av. Eng. Fábio Roberto Barnabé',
-    lat: -23.0955,
-    lng: -47.2250,
+    address: 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP',
+    lat: -23.0842,
+    lng: -47.2118,
   });
   const [destination, setDestination] = useState<LocationPoint | null>({
-    address: 'Jardim Morada do Sol - Rua Ário Barnabé, 800, Indaiatuba',
-    lat: -23.1180,
-    lng: -47.2380,
+    address: 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba-SP',
+    lat: -23.0805,
+    lng: -47.2050,
   });
   const [mapSelectionMode, setMapSelectionMode] = useState<'pickup' | 'destination' | null>(null);
 
@@ -879,7 +879,7 @@ export default function App() {
       <SosModal
         isOpen={isSosOpen}
         onClose={() => setIsSosOpen(false)}
-        currentLocation={pickup?.address || 'Av. Paulista, 1578 - São Paulo / SP'}
+        currentLocation={pickup?.address || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP'}
       />
 
       {/* Share Platform Modal */}
