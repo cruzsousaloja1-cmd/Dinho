@@ -162,7 +162,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
     };
 
     if (!navigator.geolocation) {
-      onCoordsResolved(-23.5615, -46.6558);
+      onCoordsResolved(-23.0903, -47.2180);
       return;
     }
 
@@ -171,7 +171,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
         onCoordsResolved(pos.coords.latitude, pos.coords.longitude);
       },
       () => {
-        onCoordsResolved(-23.5615, -46.6558);
+        onCoordsResolved(-23.0903, -47.2180);
       },
       { timeout: 7000, enableHighAccuracy: true }
     );
@@ -183,15 +183,15 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
     ) || availableMotoboys[0];
 
     const finalPickup: LocationPoint = pickup || {
-      address: pickupInput,
-      lat: -23.5650,
-      lng: -46.6520,
+      address: pickupInput || 'Parque Ecológico de Indaiatuba',
+      lat: -23.0955,
+      lng: -47.2250,
     };
 
     const finalDest: LocationPoint = destination || {
-      address: destInput,
-      lat: -23.5630,
-      lng: -46.6690,
+      address: destInput || 'Jardim Morada do Sol, Indaiatuba',
+      lat: -23.1180,
+      lng: -47.2380,
       contactName: recipientName,
       contactPhone: recipientPhone,
     };

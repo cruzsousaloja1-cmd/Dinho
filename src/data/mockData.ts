@@ -17,8 +17,8 @@ export const DEFAULT_NEW_DRIVER: Driver = {
   rating: 5.0,
   totalRides: 0,
   status: 'offline',
-  lat: -23.5615,
-  lng: -46.6558,
+  lat: -23.0903,
+  lng: -47.2180,
   weeklyPlanActive: false,
   weeklyPlanExpiresAt: null,
   weeklyFeePaidAt: null,
@@ -37,13 +37,13 @@ export const INITIAL_DRIVERS: Driver[] = [];
 export const INITIAL_RIDES_HISTORY: Ride[] = [];
 
 export const POPULAR_LOCATIONS = [
-  { label: 'Av. Paulista, 1000 - Bela Vista', lat: -23.5650, lng: -46.6520 },
-  { label: 'Av. Brigadeiro Faria Lima, 2200 - Pinheiros', lat: -23.5780, lng: -46.6900 },
-  { label: 'Parque Ibirapuera - Portão 7', lat: -23.5874, lng: -46.6576 },
-  { label: 'Aeroporto de Congonhas - Embarque', lat: -23.6273, lng: -46.6565 },
-  { label: 'Rua Oscar Freire, 500 - Cerqueira César', lat: -23.5640, lng: -46.6670 },
-  { label: 'Estação da Luz - Centro Histórico', lat: -23.5350, lng: -46.6350 },
-  { label: 'Shopping Eldorado - Av. Rebouças', lat: -23.5710, lng: -46.6980 },
+  { label: 'Av. Presidente Vargas, 1200 - Cidade Nova', lat: -23.0842, lng: -47.2118 },
+  { label: 'Parque Ecológico de Indaiatuba - Portão Principal', lat: -23.0955, lng: -47.2250 },
+  { label: 'Praça Prudente de Moraes - Centro', lat: -23.0903, lng: -47.2180 },
+  { label: 'Rua Ário Barnabé, 800 - Jd. Morada do Sol', lat: -23.1180, lng: -47.2380 },
+  { label: 'Polo Shopping Indaiatuba - Alameda Filtros Mann', lat: -23.0682, lng: -47.2024 },
+  { label: 'Hospital HAOC - Av. Francisco de Paula Leite', lat: -23.0890, lng: -47.2135 },
+  { label: 'Rodoviária de Indaiatuba - Jardim Belo Horizonte', lat: -23.0760, lng: -47.2070 },
 ];
 
 export const INITIAL_NOTIFICATIONS: PushNotification[] = [

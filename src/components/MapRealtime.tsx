@@ -3,6 +3,14 @@ import L from 'leaflet';
 import { Driver, LocationPoint, RideStatus } from '../types';
 import { Compass, Crosshair, Navigation, ShieldCheck } from 'lucide-react';
 
+import { 
+  INDAIATUBA_CENTER_COORDS, 
+  INDAIATUBA_BOUNDS, 
+  INDAIATUBA_MIN_ZOOM, 
+  INDAIATUBA_MAX_ZOOM, 
+  INDAIATUBA_DEFAULT_ZOOM 
+} from '../config/indaiatuba';
+
 interface MapRealtimeProps {
   drivers: Driver[];
   pickup: LocationPoint | null;
@@ -30,8 +38,8 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
   const destMarkerRef = useRef<L.Marker | null>(null);
   const routePolylineRef = useRef<L.Polyline | null>(null);
 
-  // Default initial center: São Paulo / Paulista corridor
-  const defaultCenter: [number, number] = [-23.5615, -46.6558];
+  // Centro fixo oficial: Indaiatuba-SP
+  const defaultCenter = INDAIATUBA_CENTER_COORDS;
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -39,7 +47,11 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, {
         center: defaultCenter,
-        zoom: 14,
+        zoom: INDAIATUBA_DEFAULT_ZOOM,
+        minZoom: INDAIATUBA_MIN_ZOOM,
+        maxZoom: INDAIATUBA_MAX_ZOOM,
+        maxBounds: INDAIATUBA_BOUNDS,
+        maxBoundsViscosity: 1.0, // Impede de arrastar para fora de Indaiatuba
         zoomControl: false,
       });
 
@@ -268,10 +280,10 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         <div className="bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-xl border border-slate-200 flex items-center gap-2.5 text-xs sm:text-sm text-slate-800 shadow-md">
           <span className="w-3 h-3 rounded-full bg-emerald-500 radar-pulse" />
           <span className="font-heading font-extrabold text-amber-700 tracking-wide text-xs sm:text-sm">
-            GPS EM TEMPO REAL
+            INDAIATUBA - SP
           </span>
           <span className="text-xs text-slate-500 border-l border-slate-200 pl-2 font-mono">
-            Telemetria 18ms
+            GPS Ativo
           </span>
         </div>
 
@@ -300,8 +312,8 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         </button>
 
         <button
-          onClick={() => mapInstanceRef.current?.setView(defaultCenter, 14)}
-          title="Visão Geral Central"
+          onClick={() => mapInstanceRef.current?.setView(defaultCenter, INDAIATUBA_DEFAULT_ZOOM)}
+          title="Centro de Indaiatuba"
           className="w-12 h-12 bg-white hover:bg-slate-50 active:scale-95 text-slate-700 rounded-xl border border-slate-300 shadow-xl flex items-center justify-center transition-all cursor-pointer"
         >
           <Compass className="w-5 h-5" />

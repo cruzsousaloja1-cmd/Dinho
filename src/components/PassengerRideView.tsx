@@ -207,7 +207,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     };
 
     if (!navigator.geolocation) {
-      onCoordsResolved(-23.5615, -46.6558);
+      onCoordsResolved(-23.0903, -47.2180);
       return;
     }
 
@@ -216,8 +216,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         onCoordsResolved(pos.coords.latitude, pos.coords.longitude);
       },
       () => {
-        // Fallback default position
-        onCoordsResolved(-23.5615, -46.6558);
+        // Fallback default position: Centro de Indaiatuba - SP
+        onCoordsResolved(-23.0903, -47.2180);
       },
       { timeout: 7000, enableHighAccuracy: true }
     );
@@ -230,15 +230,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     const calculated = calculateFare(finalCategory, dynamicDistanceKm);
 
     const finalPickup: LocationPoint = pickup || {
-      address: pickupInput || 'Av. Paulista, 1578',
-      lat: -23.5615,
-      lng: -46.6558,
+      address: pickupInput || 'Parque Ecológico de Indaiatuba',
+      lat: -23.0955,
+      lng: -47.2250,
     };
 
     const finalDest: LocationPoint = destination || {
-      address: destInput || 'Aeroporto de Congonhas',
-      lat: -23.6273,
-      lng: -46.6565,
+      address: destInput || 'Jardim Morada do Sol, Indaiatuba',
+      lat: -23.1180,
+      lng: -47.2380,
     };
 
     // Find a matching driver or use first available

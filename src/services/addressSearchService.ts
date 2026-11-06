@@ -7,23 +7,63 @@ export interface AddressSuggestion {
   lng: number;
 }
 
-// Banco de dados instantâneo com locais populares, avenidas, estações e bairros no Brasil
+// Banco de dados instantâneo com locais populares, avenidas, praças e bairros de Indaiatuba - SP
 export const POPULAR_DATABASE_LOCATIONS: AddressSuggestion[] = [
   {
-    id: 'loc-1',
-    label: 'Av. Paulista, 1578 - Bela Vista, São Paulo - SP (MASP)',
-    mainText: 'Av. Paulista, 1578',
-    secondaryText: 'Bela Vista, São Paulo - SP • Em frente ao MASP',
-    lat: -23.5615,
-    lng: -46.6558,
+    id: 'ind-1',
+    label: 'Av. Presidente Vargas, 1200 - Cidade Nova, Indaiatuba - SP',
+    mainText: 'Av. Presidente Vargas, 1200',
+    secondaryText: 'Cidade Nova, Indaiatuba - SP • Corredor Gastronômico',
+    lat: -23.0842,
+    lng: -47.2118,
   },
   {
-    id: 'loc-2',
-    label: 'Aeroporto de Congonhas - Terminal de Passageiros, São Paulo - SP',
-    mainText: 'Aeroporto de Congonhas',
-    secondaryText: 'Terminal de Embarque • Av. Washington Luís',
-    lat: -23.6273,
-    lng: -46.6565,
+    id: 'ind-2',
+    label: 'Parque Ecológico de Indaiatuba - Av. Eng. Fábio Roberto Barnabé',
+    mainText: 'Parque Ecológico de Indaiatuba',
+    secondaryText: 'Av. Eng. Fábio Roberto Barnabé • Cartão Postal de Indaiatuba',
+    lat: -23.0955,
+    lng: -47.2250,
+  },
+  {
+    id: 'ind-3',
+    label: 'Centro de Indaiatuba - Praça Prudente de Moraes, Centro',
+    mainText: 'Praça Prudente de Moraes (Centro)',
+    secondaryText: 'Centro Histórico & Igreja Matriz Nossa Senhora da Candelária',
+    lat: -23.0903,
+    lng: -47.2180,
+  },
+  {
+    id: 'ind-4',
+    label: 'Jardim Morada do Sol - Rua Ário Barnabé, 800, Indaiatuba - SP',
+    mainText: 'Rua Ário Barnabé, 800',
+    secondaryText: 'Jardim Morada do Sol, Indaiatuba - SP • Polo Comercial',
+    lat: -23.1180,
+    lng: -47.2380,
+  },
+  {
+    id: 'ind-5',
+    label: 'Polo Shopping Indaiatuba - Alameda Filtros Mann, 670, Jardim Tropical',
+    mainText: 'Polo Shopping Indaiatuba',
+    secondaryText: 'Jardim Tropical, Indaiatuba - SP',
+    lat: -23.0682,
+    lng: -47.2024,
+  },
+  {
+    id: 'ind-6',
+    label: 'HAOC - Hospital Augusto de Oliveira Camargo, Av. Francisco de Paula Leite, 399',
+    mainText: 'Hospital HAOC',
+    secondaryText: 'Av. Francisco de Paula Leite, 399 - Jardim Santa Cruz',
+    lat: -23.0890,
+    lng: -47.2135,
+  },
+  {
+    id: 'ind-7',
+    label: 'Terminal Rodoviário de Indaiatuba - Rua Alberto Santos Dumont',
+    mainText: 'Rodoviária de Indaiatuba',
+    secondaryText: 'Jardim Belo Horizonte, Indaiatuba - SP',
+    lat: -23.0760,
+    lng: -47.2070,
   },
   {
     id: 'loc-3',
@@ -207,11 +247,11 @@ export async function searchAddressAutocomplete(query: string): Promise<AddressS
   return [
     {
       id: `custom-1`,
-      label: `${trimmed}, São Paulo - SP`,
+      label: `${trimmed}, Indaiatuba - SP`,
       mainText: trimmed,
-      secondaryText: 'Localização pesquisada • São Paulo / SP',
-      lat: -23.5615 + (Math.random() - 0.5) * 0.04,
-      lng: -46.6558 + (Math.random() - 0.5) * 0.04,
+      secondaryText: 'Localização pesquisada • Indaiatuba / SP',
+      lat: -23.0903 + (Math.random() - 0.5) * 0.02,
+      lng: -47.2180 + (Math.random() - 0.5) * 0.02,
     },
   ];
 }

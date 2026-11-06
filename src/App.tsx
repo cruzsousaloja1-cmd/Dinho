@@ -99,21 +99,24 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [loginSuccessBanner, setLoginSuccessBanner] = useState<string | null>(null);
 
-  // Map and Route States
+  // Map and Route States (Foco exclusivo em Indaiatuba - SP)
   const [pickup, setPickup] = useState<LocationPoint | null>({
-    address: 'Av. Paulista, 1578 - MASP',
-    lat: -23.5615,
-    lng: -46.6558,
+    address: 'Parque Ecológico de Indaiatuba - Av. Eng. Fábio Roberto Barnabé',
+    lat: -23.0955,
+    lng: -47.2250,
   });
   const [destination, setDestination] = useState<LocationPoint | null>({
-    address: 'Aeroporto de Congonhas - Terminal',
-    lat: -23.6273,
-    lng: -46.6565,
+    address: 'Jardim Morada do Sol - Rua Ário Barnabé, 800, Indaiatuba',
+    lat: -23.1180,
+    lng: -47.2380,
   });
   const [mapSelectionMode, setMapSelectionMode] = useState<'pickup' | 'destination' | null>(null);
 
-  // Animated driver position along simulated route
-  const [driverPosition, setDriverPosition] = useState<{ lat: number; lng: number } | undefined>(undefined);
+  // Animated driver position along simulated route (Início na Av. Presidente Vargas, Indaiatuba)
+  const [driverPosition, setDriverPosition] = useState<{ lat: number; lng: number } | undefined>({
+    lat: -23.0842,
+    lng: -47.2118,
+  });
 
   // Modals & Push Notifications
   const [isSupportOpen, setIsSupportOpen] = useState(false);
@@ -983,8 +986,12 @@ export default function App() {
           destination={destination}
           activeDriver={activeRide?.driver || (drivers.length > 0 ? drivers[0] : null)}
           activeRide={activeRide}
-          driverPosition={driverPosition}
-          onUpdateDriverPosition={(pos) => setDriverPosition(pos)}
+          onUpdateDriverPosition={(pos) => {
+            setDriverPosition((prev) => {
+              if (prev && prev.lat === pos.lat && prev.lng === pos.lng) return prev;
+              return pos;
+            });
+          }}
         />
       )}
     </div>

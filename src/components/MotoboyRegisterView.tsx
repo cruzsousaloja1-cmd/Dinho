@@ -68,8 +68,8 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
       rating: 5.0,
       totalRides: 0,
       status: 'offline', // Offline até pagar a taxa semanal de R$ 200
-      lat: -23.5615,
-      lng: -46.6558,
+      lat: -23.0903,
+      lng: -47.2180,
       weeklyPlanActive: false,
       weeklyPlanExpiresAt: null,
       weeklyFeePaidAt: null,
