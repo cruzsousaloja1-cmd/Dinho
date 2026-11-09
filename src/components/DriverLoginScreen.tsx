@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Driver, AppUser } from '../types';
-import { Eye, EyeOff, AlertTriangle, UserPlus, Car, Bike } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle, UserPlus, Car, Bike, Package, ArrowRight, Sparkles } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PassengerRegisterView } from './PassengerRegisterView';
 import { DriverRegisterView } from './DriverRegisterView';
 import { MotoboyRegisterView } from './MotoboyRegisterView';
+import { CategoryRegisterView, CategoryRegisterKey } from './CategoryRegisterView';
 
 interface DriverLoginScreenProps {
   drivers: Driver[];
@@ -24,8 +25,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   onRegisterPassengerSuccess,
 }) => {
   const [viewMode, setViewMode] = useState<
-    'login' | 'register_driver' | 'register_motoboy' | 'register_passenger'
+    'login' | 'register_category' | 'register_driver' | 'register_motoboy' | 'register_passenger'
   >('login');
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState<CategoryRegisterKey>('motorista_economico');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -234,6 +236,23 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     );
   };
 
+  // Se estiver em modo Cadastro por Categoria Específica (Econômico, Confort, Motoboy Passageiro, Motoboy Entregas)
+  if (viewMode === 'register_category' && selectedCategoryKey) {
+    return (
+      <CategoryRegisterView
+        categoryKey={selectedCategoryKey}
+        existingDrivers={drivers}
+        onRegisterSuccess={(user, newDriver) => {
+          onRegisterDriverSuccess(user, newDriver);
+        }}
+        onBackToOptions={() => {
+          setErrorMessage(null);
+          setViewMode('login');
+        }}
+      />
+    );
+  }
+
   // Se estiver em modo Cadastro de Passageiro
   if (viewMode === 'register_passenger') {
     return (
@@ -357,52 +376,157 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             ENTRAR
           </button>
 
-          {/* Opções de Cadastro: Motorista, Motoboy, Passageiro */}
-          <div className="space-y-2.5 pt-2">
-            <div className="text-center">
-              <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">
-                Ou crie sua conta gratuita:
+          {/* CADASTRO POR CATEGORIA NO RACE: 4 CARDS GRANDES CLICÁVEIS */}
+          <div className="space-y-3 pt-3 border-t border-zinc-800/80">
+            <div className="text-center space-y-0.5">
+              <span className="text-xs text-[#ff6a00] font-heading font-black uppercase tracking-wider block">
+                CADASTRO POR CATEGORIA NO RACE
               </span>
+              <p className="text-[11px] text-zinc-400">
+                Toque na categoria para abrir o cadastro direto:
+              </p>
             </div>
 
-            {/* Botão 1: "Criar conta de motorista" (Carro) laranja */}
-            <button
-              type="button"
-              onClick={() => {
-                setErrorMessage(null);
-                setViewMode('register_driver');
-              }}
-              className="w-full py-3 px-4 rounded-xl text-center text-[#ff6a00] hover:bg-[#ff6a00]/10 border border-[#ff6a00]/40 text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Car className="w-4 h-4" />
-              <span>Criar conta de motorista (Carro)</span>
-            </button>
+            <div className="grid grid-cols-1 gap-2.5">
+              {/* 1. Motorista Econômico */}
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setSelectedCategoryKey('motorista_economico');
+                  setViewMode('register_category');
+                }}
+                className="w-full p-3.5 bg-[#121212] hover:bg-[#1a1a1a] active:scale-[0.99] border-2 border-zinc-800 hover:border-zinc-600 rounded-2xl transition-all cursor-pointer text-left flex items-center justify-between group shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Car className="w-6 h-6 text-zinc-400" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="flex items-center gap-2">
+                      <span className="font-heading font-black text-white text-sm sm:text-base">
+                        Motorista Econômico
+                      </span>
+                      <span className="bg-zinc-800 text-zinc-300 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                        R$ 2,50/km
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-400 font-medium truncate mt-0.5">
+                      Carro comum - ganhe com corridas baratas em Indaiatuba
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-zinc-500 group-hover:text-white shrink-0 ml-2" />
+              </button>
 
-            {/* Botão 2: "Criar conta de motoboy" (Moto / Entregas) */}
-            <button
-              type="button"
-              onClick={() => {
-                setErrorMessage(null);
-                setViewMode('register_motoboy');
-              }}
-              className="w-full py-3 px-4 rounded-xl text-center text-amber-400 hover:bg-amber-400/10 border border-amber-400/40 text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Bike className="w-4 h-4" />
-              <span>Criar conta de motoboy (Flash & Entregas)</span>
-            </button>
+              {/* 2. Motorista Confort */}
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setSelectedCategoryKey('motorista_confort');
+                  setViewMode('register_category');
+                }}
+                className="w-full p-3.5 bg-[#141210] hover:bg-[#1f1a14] active:scale-[0.99] border-2 border-[#ff6a00]/40 hover:border-[#ff6a00] rounded-2xl transition-all cursor-pointer text-left flex items-center justify-between group shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-[#ff6a00]/15 border border-[#ff6a00]/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Car className="w-6 h-6 text-[#ff6a00]" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="flex items-center gap-2">
+                      <span className="font-heading font-black text-white text-sm sm:text-base">
+                        Motorista Confort
+                      </span>
+                      <span className="bg-[#ff6a00] text-black text-[10px] px-2 py-0.5 rounded-full font-mono font-black">
+                        Carro 2020+
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-400 font-medium truncate mt-0.5">
+                      Carro novo - corridas com mais conforto e preço maior
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-[#ff6a00] shrink-0 ml-2" />
+              </button>
 
-            {/* Botão 3: "Criar conta de passageiro" branco / outline */}
-            <button
-              type="button"
-              onClick={() => {
-                setErrorMessage(null);
-                setViewMode('register_passenger');
-              }}
-              className="w-full py-3 px-4 rounded-xl text-center text-white hover:bg-white/10 border border-zinc-600 hover:border-zinc-400 text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
-            >
-              <UserPlus className="w-4 h-4 text-zinc-300" />
-              <span>Criar conta de passageiro</span>
-            </button>
+              {/* 3. Motoboy Passageiro */}
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setSelectedCategoryKey('motoboy_passageiro');
+                  setViewMode('register_category');
+                }}
+                className="w-full p-3.5 bg-[#0e161a] hover:bg-[#121f26] active:scale-[0.99] border-2 border-cyan-800/40 hover:border-cyan-500 rounded-2xl transition-all cursor-pointer text-left flex items-center justify-between group shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-cyan-950/40 border border-cyan-700/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Bike className="w-6 h-6 text-cyan-400" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="flex items-center gap-2">
+                      <span className="font-heading font-black text-white text-sm sm:text-base">
+                        Motoboy Passageiro
+                      </span>
+                      <span className="bg-cyan-900/60 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                        R$ 1,80/km
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-400 font-medium truncate mt-0.5">
+                      Moto para levar passageiro rápido
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-cyan-400 shrink-0 ml-2" />
+              </button>
+
+              {/* 4. Motoboy Entregas */}
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setSelectedCategoryKey('motoboy_entregas');
+                  setViewMode('register_category');
+                }}
+                className="w-full p-3.5 bg-[#18140c] hover:bg-[#241c0e] active:scale-[0.99] border-2 border-amber-800/40 hover:border-amber-500 rounded-2xl transition-all cursor-pointer text-left flex items-center justify-between group shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-amber-950/40 border border-amber-700/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Package className="w-6 h-6 text-amber-400" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="flex items-center gap-2">
+                      <span className="font-heading font-black text-white text-sm sm:text-base">
+                        Motoboy Entregas
+                      </span>
+                      <span className="bg-amber-900/60 text-amber-300 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                        R$ 2,00/km
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-400 font-medium truncate mt-0.5">
+                      Moto para entregar encomendas em Indaiatuba
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-amber-400 shrink-0 ml-2" />
+              </button>
+            </div>
+
+            {/* Botão Sou Passageiro */}
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setViewMode('register_passenger');
+                }}
+                className="w-full py-3 px-4 rounded-xl text-center text-white hover:bg-white/10 border border-zinc-700 hover:border-zinc-500 text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+              >
+                <UserPlus className="w-4 h-4 text-zinc-300" />
+                <span>Sou passageiro - Criar conta de passageiro</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

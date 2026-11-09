@@ -147,7 +147,11 @@ export default function App() {
             parsed.tipo === 'driver' ||
             parsed.tipo === 'motoboy' ||
             parsed.role === 'driver' ||
-            parsed.role === 'motoboy';
+            parsed.role === 'motoboy' ||
+            parsed.tipo === 'motorista_economico' ||
+            parsed.tipo === 'motorista_confort' ||
+            parsed.tipo === 'motoboy_passageiro' ||
+            parsed.tipo === 'motoboy_entregas';
 
           if (isDriverOrMotoboy) {
             // Restaura dados do motorista/motoboy
@@ -626,7 +630,11 @@ export default function App() {
             user.role === 'driver' ||
             user.role === 'motoboy' ||
             user.tipo === 'driver' ||
-            user.tipo === 'motoboy';
+            user.tipo === 'motoboy' ||
+            user.tipo === 'motorista_economico' ||
+            user.tipo === 'motorista_confort' ||
+            user.tipo === 'motoboy_passageiro' ||
+            user.tipo === 'motoboy_entregas';
 
           if (isDriverOrMotoboy && driver) {
             setCurrentDriver(driver);
@@ -667,11 +675,18 @@ export default function App() {
           try {
             localStorage.setItem('race_current_user', JSON.stringify(user));
           } catch {}
-          // 1. Redirecionar DIRETO para as opções de corridas, sem pedir login de novo
-          // Motorista -> vai para tela "Aguardando corridas" + aviso assinatura R$200/semana PIX
-          setActiveTab('rides');
+          // 2. Fazer login automático e ir DIRETO para tela de assinatura R$200/semana PIX
+          setActiveTab('driver_portal');
+          const catLabel =
+            newDriver.category === 'economica'
+              ? 'Motorista Econômico'
+              : newDriver.category === 'confort'
+              ? 'Motorista Confort'
+              : newDriver.category === 'moto_passageiro'
+              ? 'Motoboy Passageiro'
+              : 'Motoboy Entregas';
           setLoginSuccessBanner(
-            `Cadastro de Motorista (${newDriver.name}) realizado com sucesso! Você entrou direto na Central de Corridas (Aguardando Corridas). ⚠️ ATENÇÃO: Assinatura semanal de R$ 200 pendente. Chave PIX: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba.`
+            `Cadastro de ${catLabel} (${newDriver.name}) concluído com sucesso! Efetue a ativação da assinatura semanal de R$ 200 via PIX (Chave: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba) para liberar seu status online com 100% dos ganhos livres!`
           );
         }}
         onRegisterMotoboySuccess={(user, newMotoboy) => {
@@ -681,11 +696,14 @@ export default function App() {
           try {
             localStorage.setItem('race_current_user', JSON.stringify(user));
           } catch {}
-          // 1. Redirecionar DIRETO para as opções de corridas, sem pedir login de novo
-          // Motoboy -> vai para tela "Aguardando corridas" + aviso assinatura R$200/semana PIX
-          setActiveTab('rides');
+          // 2. Fazer login automático e ir DIRETO para tela de assinatura R$200/semana PIX
+          setActiveTab('driver_portal');
+          const catLabel =
+            newMotoboy.category === 'moto_entrega'
+              ? 'Motoboy Entregas'
+              : 'Motoboy Passageiro';
           setLoginSuccessBanner(
-            `Cadastro de Motoboy Parceiro (${newMotoboy.name}) realizado com sucesso! Você entrou direto na Central de Corridas (Aguardando Corridas & Entregas Flash). ⚠️ ATENÇÃO: Assinatura semanal de R$ 200 pendente. Chave PIX: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba.`
+            `Cadastro de ${catLabel} (${newMotoboy.name}) concluído com sucesso! Efetue a ativação da assinatura semanal de R$ 200 via PIX (Chave: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba) para liberar seu status online com 100% dos ganhos livres!`
           );
         }}
         onRegisterPassengerSuccess={(newUser) => {

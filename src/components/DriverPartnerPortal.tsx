@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Driver, Ride, VehicleCategory, PendingPayment } from '../types';
+import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
 import { 
   WEEKLY_FEE, 
@@ -19,6 +19,191 @@ import {
   COMFORT_POPULAR_MODELS, 
   ComfortValidationResult 
 } from '../services/vehicleValidationService';
+
+interface CategoryGuideInfo {
+  id: VehicleCategory;
+  title: string;
+  tagline: string;
+  badge: string;
+  badgeColor: string;
+  pricePerKm: string;
+  earningsDescription: string;
+  activitiesList: string[];
+  driverRequirements: string[];
+  vehicleRequirements: string[];
+  mandatoryEquipment: string[];
+}
+
+const CATEGORY_GUIDES: Record<VehicleCategory, CategoryGuideInfo> = {
+  economica: {
+    id: 'economica',
+    title: 'Motorista Econômico',
+    tagline: 'Transporte de passageiros em carro de passeio 4 portas',
+    badge: 'R$ 2,50/km • 100% dos Ganhos Livres',
+    badgeColor: 'bg-zinc-800 text-zinc-200 border-zinc-700',
+    pricePerKm: 'R$ 2,50',
+    earningsDescription: '100% de todo valor pago pelo passageiro vai direto para você. Zero comissão retida (0% vs 25% a 40% da Uber/99).',
+    activitiesList: [
+      'Atendimento a chamados diários no Centro, bairros e condomínios de Indaiatuba.',
+      'Transporte individual ou familiar de passageiros (trabalho, compras, compromissos).',
+      'Liberdade total para definir seus horários de início e parada sem metas obrigatórias.',
+      'Recebimento imediato direto na sua conta bancária via PIX ou em dinheiro.',
+    ],
+    driverRequirements: [
+      'CNH Definitiva Categoria B com anotação EAR ("Exerce Atividade Remunerada").',
+      'Idade mínima de 21 anos completos.',
+      'Atestado de Antecedentes Criminais sem restrições.',
+      'Comprovante de residência em Indaiatuba ou cidades vizinhas.',
+    ],
+    vehicleRequirements: [
+      'Veículo de passeio 4 portas com ar-condicionado em pleno funcionamento.',
+      'Capacidade legal para 5 ocupantes (motorista + 4 passageiros).',
+      'Ano de fabricação a partir de 2012 em bom estado de conservação mecânica e visual.',
+      'Documento do veículo (CRLV) devidamente licenciado e regular.',
+    ],
+    mandatoryEquipment: [
+      'Suporte automotivo firme e articulado para celular no painel ou para-brisa.',
+      'Carregador veicular rápido com cabos USB-C e Lightning.',
+      'Ar-condicionado sempre pronto e limpo para acionamento a pedido do passageiro.',
+      'Pneus em ótimo estado de segurança (acima do limite TWI) e estepe operacional.',
+    ],
+  },
+  confort: {
+    id: 'confort',
+    title: 'Motorista Confort',
+    tagline: 'Corridas premium em Sedãs Médios, Compactos Novos e SUVs',
+    badge: 'R$ 3,50/km • Alta Rentabilidade',
+    badgeColor: 'bg-[#ff6a00]/20 text-[#ff6a00] border-[#ff6a00]/40',
+    pricePerKm: 'R$ 3,50',
+    earningsDescription: 'Tarifa valorizada de R$ 3,50/km com 100% dos ganhos livres para o condutor. Fature até 40% a mais por km rodado com menor desgaste.',
+    activitiesList: [
+      'Atendimento executivo em Indaiatuba, transfer para Viracopos, hotéis e centro empresarial.',
+      'Corridas nos condomínios de alto padrão de Indaiatuba (Helvetia, Parque Suíça, Mosteiro de Itaici, etc.).',
+      'Passageiros que prezam por silêncio, ar-condicionado constante, espaço e pontualidade.',
+      'Viagens mais longas e ticket médio significativamente maior.',
+    ],
+    driverRequirements: [
+      'CNH Categoria B definitiva com anotação EAR ativa.',
+      'Postura executiva, pontualidade britânica e atendimento cortês.',
+      'Nota mínima de avaliação 4.85 estrelas no histórico de atendimento.',
+      'Certidão negativa de antecedentes criminais atualizada.',
+    ],
+    vehicleRequirements: [
+      'Sedãs Médios e SUVs (Corolla, Civic, HR-V, Compass, Tracker, T-Cross, Renegade) ano 2018+.',
+      'Sedãs Populares Novos (Voyage, Cronos, Onix Plus, Virtus, Etios) ano 2019+.',
+      'Compactos Premium Novos (Polo, Argo) ano 2023+.',
+      'Regra geral: ano de fabricação 2020 ou superior para aprovação imediata.',
+      'Porta-malas sempre limpo e 100% desocupado para malas e bagagens.',
+    ],
+    mandatoryEquipment: [
+      'Ar-condicionado obrigatoriamente ligado e refrigerando em todas as corridas.',
+      'Suporte profissional de celular com carregamento por indução ou cabo turbo.',
+      'Veículo impecável: estofamento higienizado, sem odores e lataria polida.',
+      'Água mineral e balas lacradas cortesia (diferencial altamente recomendado).',
+    ],
+  },
+  moto_passageiro: {
+    id: 'moto_passageiro',
+    title: 'Motoboy Passageiro (Moto Táxi)',
+    tagline: 'Transporte individual ágil de passageiros em motocicleta 150cc+',
+    badge: 'R$ 1,80/km • Velocidade no Trânsito',
+    badgeColor: 'bg-cyan-100 text-cyan-900 border-cyan-300',
+    pricePerKm: 'R$ 1,80',
+    earningsDescription: '100% dos ganhos livres para o motociclista. Com baixíssimo consumo de combustível (40 a 50 km/L), sua margem líquida diária é excelente!',
+    activitiesList: [
+      'Transporte individual ágil de passageiros que precisam chegar rápido ao destino.',
+      'Agilidade no trânsito de Indaiatuba nos horários de pico (7h-9h e 17h-19h).',
+      'Corridas curtas e médias com embarque e desembarque imediato sem dificuldade de vaga.',
+      'Sem repasse de porcentagem: todo valor da corrida é recebido integralmente por você.',
+    ],
+    driverRequirements: [
+      'CNH Definitiva Categoria A com anotação EAR ("Exerce Atividade Remunerada").',
+      'Idade mínima de 21 anos.',
+      'Prática de pilotagem defensiva e histórico responsável de trânsito.',
+      'Atestado de Antecedentes Criminais sem anotações judiciais.',
+    ],
+    vehicleRequirements: [
+      'Motocicleta com motor a partir de 150cc em perfeitas condições mecânicas.',
+      'Pneus dianteiro e traseiro novos ou com boa profundidade de borracha.',
+      'Freios regulados, farol, lanterna de freio, setas e buzina 100% funcionando.',
+      'CRLV da motocicleta regularizado e licenciado.',
+      'Escapamento regulamentar de acordo com as normas de ruído do Detran/Contran.',
+    ],
+    mandatoryEquipment: [
+      '2 Capacetes certificados pelo INMETRO com selo e adesivos refletivos (1 para você e 1 exclusivo para o passageiro com fita jugular e viseira cristal limpa).',
+      'Kit de toucas higiênicas descartáveis para fornecer a todo e qualquer passageiro.',
+      'Colete ou jaqueta com faixas retrorrefletivas de segurança para alta visibilidade.',
+      'Suporte de guidão firme e impermeável com trava anti-queda para celular.',
+    ],
+  },
+  moto_entrega: {
+    id: 'moto_entrega',
+    title: 'Motoboy Entregas (Flash & Delivery)',
+    tagline: 'Entrega expressa de mercadorias, pacotes e encomendas até 20kg',
+    badge: 'R$ 2,00/km • Encomendas Flash',
+    badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
+    pricePerKm: 'R$ 2,00',
+    earningsDescription: '100% do frete de entrega vai direto para seu bolso. Assinatura semanal fixa de R$ 200, sem comissão por pacote entregue.',
+    activitiesList: [
+      'Coleta e entrega expressa ponto a ponto de pacotes, documentos, peças e compras em Indaiatuba.',
+      'Atendimento a farmácias, autopeças, escritórios, e-commerce e comércio local.',
+      'Sem transporte de passageiros: foco total na integridade da encomenda e rota otimizada.',
+      'Confirmação de entrega segura com código de 4 dígitos digitado pelo destinatário.',
+    ],
+    driverRequirements: [
+      'CNH Categoria A definitiva com anotação EAR ("Exerce Atividade Remunerada").',
+      'Pontualidade na coleta e zelo absoluto com embalagens e produtos frágeis.',
+      'Atestado de Antecedentes Criminais limpo.',
+      'Conhecimento das ruas, avenidas e zonas comerciais de Indaiatuba.',
+    ],
+    vehicleRequirements: [
+      'Motocicleta de 125cc a 300cc em dia com a documentação (CRLV).',
+      'Suporte metálico traseiro reforçado para baú ou fixação segura de mochila/bag.',
+      'Pneus e sistema de freios preparados para tráfego contínuo com carga até 20kg.',
+    ],
+    mandatoryEquipment: [
+      'Baú homologado (80L, 90L ou 120L) com tranca/cadeado OU Mochila Bag Térmica impermeável para até 20kg.',
+      'Capa de chuva completa impermeável e polainas para operação em tempo chuvoso.',
+      'Rede elástica interna para estabilizar encomendas menores dentro do baú.',
+      'Capacete INMETRO com viseira cristal transparente e adesivos refletivos.',
+    ],
+  },
+};
+
+const CATEGORY_PRESETS: Record<VehicleCategory, { name: string; year: string; highlight?: string }[]> = {
+  economica: [
+    { name: 'Chevrolet Onix', year: '2021', highlight: 'Econômico' },
+    { name: 'Fiat Argo', year: '2022', highlight: 'Econômico' },
+    { name: 'Hyundai HB20', year: '2020', highlight: 'Econômico' },
+    { name: 'Renault Kwid', year: '2021', highlight: 'Compacto' },
+    { name: 'VW Gol 1.0', year: '2019', highlight: 'Popular' },
+    { name: 'Ford Ka 1.0', year: '2018', highlight: 'Popular' },
+  ],
+  confort: [
+    { name: 'Toyota Corolla Sedã', year: '2023', highlight: 'Sedã Médio 2018+' },
+    { name: 'Honda Civic Sedã', year: '2022', highlight: 'Sedã Médio 2018+' },
+    { name: 'Jeep Compass', year: '2023', highlight: 'SUV Médio 2018+' },
+    { name: 'VW T-Cross', year: '2022', highlight: 'SUV Compacto 2018+' },
+    { name: 'Honda HR-V', year: '2021', highlight: 'SUV 2018+' },
+    { name: 'VW Voyage', year: '2020', highlight: 'Sedã Popular 2019+' },
+    { name: 'Fiat Cronos', year: '2021', highlight: 'Sedã Popular 2019+' },
+    { name: 'VW Polo TSI', year: '2023', highlight: 'Premium 2023+' },
+  ],
+  moto_passageiro: [
+    { name: 'Honda CG 160 Titan', year: '2022', highlight: '160cc Mais Usada' },
+    { name: 'Yamaha Fazer 250', year: '2023', highlight: '250cc Conforto' },
+    { name: 'Honda NXR 160 Bros', year: '2021', highlight: 'Trail Conforto' },
+    { name: 'Yamaha Factor 150', year: '2022', highlight: '150cc Econômica' },
+    { name: 'Honda CB 300F Twister', year: '2023', highlight: 'Potência' },
+  ],
+  moto_entrega: [
+    { name: 'Honda CG 160 Start', year: '2022', highlight: 'Ideal para Baú' },
+    { name: 'Honda Biz 125', year: '2021', highlight: 'Praticidade Carga' },
+    { name: 'Yamaha Factor 150', year: '2022', highlight: 'Econômica' },
+    { name: 'Honda NXR 160 Bros', year: '2020', highlight: 'Reforçada' },
+    { name: 'Honda Pop 110i', year: '2022', highlight: 'Baú 80L' },
+  ],
+};
 import { 
   UserCheck, 
   ShieldCheck, 
@@ -27,6 +212,7 @@ import {
   CheckCircle2, 
   Car, 
   Bike, 
+  Package,
   Power, 
   CreditCard, 
   QrCode, 
@@ -120,12 +306,29 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regCpf, setRegCpf] = useState('');
   const [regCnh, setRegCnh] = useState('');
-  const [regCategory, setRegCategory] = useState<VehicleCategory>('confort');
-  const [regModel, setRegModel] = useState('Toyota Corolla Sedã');
+  const [regCategory, setRegCategory] = useState<VehicleCategory>('economica');
+  const [regModel, setRegModel] = useState('Chevrolet Onix');
   const [regPlate, setRegPlate] = useState('RCE9C40');
-  const [regYear, setRegYear] = useState('2024');
+  const [regYear, setRegYear] = useState('2021');
+  const [regColor, setRegColor] = useState('Prata');
+  const [regPixKey, setRegPixKey] = useState('');
+  const [regTrunkType, setRegTrunkType] = useState('Baú 80 Litros');
+  const [regHelmetConfirmed, setRegHelmetConfirmed] = useState(true);
+  const [regAcConfirmed, setRegAcConfirmed] = useState(true);
   const [regError, setRegError] = useState<string | null>(null);
   const [registeredSuccess, setRegisteredSuccess] = useState(false);
+
+  const handleCategoryChange = (newCat: VehicleCategory) => {
+    setRegCategory(newCat);
+    setRegError(null);
+    setComfortWarning(null);
+    // Auto-fill default vehicle for that category if using another category's default
+    const presets = CATEGORY_PRESETS[newCat];
+    if (presets && presets.length > 0) {
+      setRegModel(presets[0].name);
+      setRegYear(presets[0].year);
+    }
+  };
 
   // Live evaluation of Confort eligibility
   const comfortCheck: ComfortValidationResult = validateComfortEligibility(
@@ -255,9 +458,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
   };
 
-  const handleSelectPresetModel = (model: { name: string; minYear: number }) => {
+  const handleSelectPresetModel = (model: { name: string; year?: string; minYear?: number }) => {
     setRegModel(model.name);
-    setRegYear(model.minYear.toString());
+    if (model.year) {
+      setRegYear(model.year);
+    } else if (model.minYear) {
+      setRegYear(model.minYear.toString());
+    }
   };
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
@@ -280,6 +487,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       return;
     }
 
+    if (regCategory === 'moto_passageiro' && !regHelmetConfirmed) {
+      setRegError('Para exercer a atividade de Moto Táxi, é obrigatório possuir 2 capacetes INMETRO e fornecer toucas higiênicas.');
+      return;
+    }
+
     const yearNum = parseInt(regYear, 10) || 2023;
     let finalCategory = regCategory;
     let comfortEligible = false;
@@ -292,7 +504,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         // Did not meet year requirement for Confort!
         finalCategory = 'economica';
         comfortEligible = false;
-        reason = `Não elegível para Confort: ${check.ruleDescription} Veículo direcionado para RACE Econômica.`;
+        reason = `Não atende exigência de ano Confort: ${check.ruleDescription}. Homologado em RACE Econômica.`;
         setComfortWarning(
           `Aviso Confort: Seu veículo (${regModel} ano ${yearNum}) não atende à exigência mínima do modelo Confort (${check.ruleDescription}). Seu cadastro foi automaticamente homologado na categoria RACE Econômica (R$ 2,50/km) com 100% dos ganhos livres!`
         );
@@ -305,16 +517,18 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     const newDriver: Driver = {
       id: `drv-${Math.floor(100 + Math.random() * 900)}`,
       name: regName,
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      avatar: (finalCategory === 'moto_passageiro' || finalCategory === 'moto_entrega')
+        ? 'https://images.unsplash.com/photo-1557862921-37829c790f19?w=150&auto=format&fit=crop&q=80'
+        : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
       phone: regPhone,
       email: regEmail,
       password: regPassword,
       cpf: regCpf,
-      cnh: `${regCnh || '09283719280'} (EAR Aprovado)`,
+      cnh: `${regCnh || '09283719280'} (EAR Ativo)`,
       category: finalCategory,
       vehicleModel: regModel,
       vehiclePlate: regPlate.toUpperCase(),
-      vehicleColor: 'Prata',
+      vehicleColor: regColor || 'Prata',
       vehicleYear: yearNum,
       rating: 5.0,
       totalRides: 0,
@@ -326,6 +540,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       weeklyFeeExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       weeklyPlanPrice: WEEKLY_FEE,
+      pixKey: regPixKey.trim() || regCpf,
+      trunkType: finalCategory === 'moto_entrega' ? regTrunkType : undefined,
       earningsToday: 0,
       earningsWeek: 0,
       cnhVerified: true,
@@ -335,6 +551,29 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       comfortEligible,
       comfortEligibilityReason: reason,
     };
+
+    // Auto-login persistence
+    const userRole: UserRole = (finalCategory === 'moto_passageiro' || finalCategory === 'moto_entrega') ? 'motoboy' : 'driver';
+    const userTipo: UserTipo = 
+      finalCategory === 'economica' ? 'motorista_economico' :
+      finalCategory === 'confort' ? 'motorista_confort' :
+      finalCategory === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas';
+
+    const loggedUser: AppUser = {
+      id: newDriver.id,
+      name: newDriver.name,
+      email: newDriver.email,
+      phone: newDriver.phone,
+      role: userRole,
+      tipo: userTipo,
+      avatar: newDriver.avatar,
+      rating: newDriver.rating,
+      driverData: newDriver,
+    };
+
+    try {
+      localStorage.setItem('race_current_user', JSON.stringify(loggedUser));
+    } catch {}
 
     onRegisterDriver(newDriver);
     setRegisteredSuccess(true);
@@ -346,13 +585,6 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       });
     } catch {
       // safe
-    }
-
-    // Direct transition to ride attendance page
-    if (onNavigateToRides) {
-      setTimeout(() => {
-        onNavigateToRides();
-      }, 1200);
     }
   };
 
@@ -524,18 +756,33 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg">
                       {currentDriver.name}
                     </h3>
+                    {currentDriver.category === 'economica' && (
+                      <span className="bg-slate-100 text-slate-800 text-xs font-black px-2 py-0.5 rounded-md border border-slate-300 flex items-center gap-1">
+                        <Car className="w-3.5 h-3.5 text-slate-600" /> Motorista Econômico
+                      </span>
+                    )}
                     {currentDriver.category === 'confort' && (
-                      <span className="bg-purple-100 text-purple-800 text-xs font-black px-2 py-0.5 rounded-md border border-purple-200 flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5" /> Confort Liberado
+                      <span className="bg-[#ff6a00]/15 text-[#ff6a00] text-xs font-black px-2 py-0.5 rounded-md border border-[#ff6a00]/30 flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5" /> Motorista Confort
+                      </span>
+                    )}
+                    {currentDriver.category === 'moto_passageiro' && (
+                      <span className="bg-cyan-100 text-cyan-800 text-xs font-black px-2 py-0.5 rounded-md border border-cyan-200 flex items-center gap-1">
+                        <Bike className="w-3.5 h-3.5" /> Motoboy Passageiro
+                      </span>
+                    )}
+                    {currentDriver.category === 'moto_entrega' && (
+                      <span className="bg-amber-100 text-amber-900 text-xs font-black px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                        <Package className="w-3.5 h-3.5" /> Motoboy Entregas {currentDriver.trunkType ? `(${currentDriver.trunkType})` : ''}
                       </span>
                     )}
                   </div>
                   <p className="text-sm text-amber-700 font-mono font-bold">
-                    {currentDriver.vehicleModel} ({currentDriver.vehicleYear}) • {currentDriver.vehiclePlate}
+                    {currentDriver.vehicleModel} {currentDriver.vehicleYear ? `(${currentDriver.vehicleYear})` : ''} • {currentDriver.vehiclePlate}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-sm text-slate-600 font-semibold">
@@ -901,440 +1148,702 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         </div>
       )}
 
-      {/* SUBTAB 3: REGISTRATION OF NEW DRIVER / MOTOBOY COM LOGIN, SENHA E EXIGÊNCIAS CONFORT */}
-      {activeSubTab === 'register' && (
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-7 shadow-md space-y-6">
-          <div className="border-b border-slate-200 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center font-bold border border-amber-300">
-                <UserCheck className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
-                  Cadastro de Novo Parceiro (Motorista / Motoboy)
-                </h3>
-                <p className="text-sm text-slate-600 font-medium mt-0.5">
-                  Crie seu login e senha, valide os dados do veículo e garanta 100% dos ganhos das corridas!
-                </p>
+      {/* SUBTAB 3: REGISTRATION BY CATEGORY WITH ALL REQUIRED OPERATIONAL INFORMATION */}
+      {activeSubTab === 'register' && (() => {
+        const selectedGuide = CATEGORY_GUIDES[regCategory] || CATEGORY_GUIDES.economica;
+        const presets = CATEGORY_PRESETS[regCategory] || [];
+
+        return (
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-7 shadow-md space-y-6">
+            {/* Header da Aba de Cadastro */}
+            <div className="border-b border-slate-200 pb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-amber-500/20 text-[#ff6a00] rounded-2xl flex items-center justify-center font-bold border border-[#ff6a00]/30 shadow-xs shrink-0">
+                  <UserCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
+                    Novo Cadastro de Parceiro RACE - Indaiatuba
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-600 font-medium mt-0.5">
+                    Escolha a sua categoria de atuação para conferir todas as exigências, regras, remuneração e preencher o cadastro para exercer as atividades.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Banner oficial das Exigências do Modelo Confort */}
-          <div className="bg-purple-50/70 border-2 border-purple-300 rounded-3xl p-5 sm:p-6 space-y-3">
-            <div className="flex items-center gap-2.5">
-              <Sparkles className="w-5 h-5 text-purple-700" />
-              <h4 className="font-heading font-black text-purple-950 text-base sm:text-lg">
-                Exigências Oficiais do Modelo RACE Confort para Liberação
-              </h4>
-            </div>
-            <p className="text-xs sm:text-sm text-purple-950 font-medium">
-              Para manter o padrão de qualidade, espaço e sofisticação da categoria Confort, aplicamos os seguintes critérios obrigatórios de ano e modelo:
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-              <div className="bg-white p-3.5 rounded-2xl border border-purple-200 shadow-sm space-y-1">
-                <span className="font-black text-xs text-purple-900 uppercase block font-mono">
-                  1. Sedãs Populares
+            {/* SELETOR DAS 4 OPÇÕES DE CATEGORIA */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-heading font-black uppercase tracking-wider text-slate-700">
+                  Selecione a Categoria de Atividade para Cadastro:
                 </span>
-                <p className="text-xs font-bold text-slate-900">
-                  Etios Sedan, Voyage, Prisma, Logan e Cobalt
-                </p>
-                <div className="text-xs font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded w-fit">
-                  A partir de 2019
-                </div>
-              </div>
-
-              <div className="bg-white p-3.5 rounded-2xl border border-purple-200 shadow-sm space-y-1">
-                <span className="font-black text-xs text-purple-900 uppercase block font-mono">
-                  2. Compactos Premium
+                <span className="text-[11px] font-mono font-bold text-[#ff6a00] bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                  100% dos Ganhos Livres
                 </span>
-                <p className="text-xs font-bold text-slate-900">
-                  Argo e Polo
-                </p>
-                <div className="text-xs font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded w-fit">
-                  A partir de 2023
-                </div>
               </div>
 
-              <div className="bg-white p-3.5 rounded-2xl border border-purple-200 shadow-sm space-y-1">
-                <span className="font-black text-xs text-purple-900 uppercase block font-mono">
-                  3. SUVs, CR-V e Sedãs Médios
-                </span>
-                <p className="text-xs font-bold text-slate-900">
-                  Honda CR-V, HR-V, Corolla Sedã, Civic Sedã, SUVs
-                </p>
-                <div className="text-xs font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded w-fit">
-                  A partir de 2018
-                </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  {
+                    id: 'economica' as VehicleCategory,
+                    title: 'Motorista Econômico',
+                    desc: 'Carro comum 4 portas',
+                    rate: 'R$ 2,50/km',
+                    icon: Car,
+                    accent: 'border-slate-800 bg-slate-900 text-white',
+                    inactive: 'border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-400',
+                  },
+                  {
+                    id: 'confort' as VehicleCategory,
+                    title: 'Motorista Confort',
+                    desc: 'Carro novo 2020+ (Sedã/SUV)',
+                    rate: 'R$ 3,50/km',
+                    icon: Sparkles,
+                    accent: 'border-[#ff6a00] bg-gradient-to-br from-[#ff6a00] to-orange-600 text-white',
+                    inactive: 'border-orange-200 bg-orange-50/50 text-slate-800 hover:border-orange-400',
+                  },
+                  {
+                    id: 'moto_passageiro' as VehicleCategory,
+                    title: 'Motoboy Passageiro',
+                    desc: 'Moto táxi rápida (150cc+)',
+                    rate: 'R$ 1,80/km',
+                    icon: Bike,
+                    accent: 'border-cyan-600 bg-gradient-to-br from-cyan-600 to-teal-700 text-white',
+                    inactive: 'border-cyan-200 bg-cyan-50/50 text-slate-800 hover:border-cyan-400',
+                  },
+                  {
+                    id: 'moto_entrega' as VehicleCategory,
+                    title: 'Motoboy Entregas',
+                    desc: 'Flash & Delivery até 20kg',
+                    rate: 'R$ 2,00/km',
+                    icon: Package,
+                    accent: 'border-amber-600 bg-gradient-to-br from-amber-600 to-yellow-600 text-white',
+                    inactive: 'border-amber-200 bg-amber-50/50 text-slate-800 hover:border-amber-400',
+                  },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const isSelected = regCategory === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleCategoryChange(item.id)}
+                      className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer relative shadow-xs flex flex-col justify-between gap-3 ${
+                        isSelected ? `${item.accent} shadow-md scale-[1.02]` : item.inactive
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isSelected ? 'bg-white/20 text-white' : 'bg-white text-slate-900 border border-slate-200 shadow-xs'}`}>
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        {isSelected && (
+                          <span className="w-5 h-5 rounded-full bg-white text-slate-950 flex items-center justify-center font-bold text-xs shadow-xs">
+                            ✓
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-heading font-black text-xs sm:text-sm leading-snug">
+                          {item.title}
+                        </div>
+                        <div className={`text-[11px] font-medium leading-tight mt-0.5 ${isSelected ? 'text-white/80' : 'text-slate-600'}`}>
+                          {item.desc}
+                        </div>
+                        <div className={`text-xs font-mono font-black mt-2 inline-block px-2 py-0.5 rounded ${isSelected ? 'bg-black/30 text-white' : 'bg-white text-slate-900 border border-slate-200'}`}>
+                          {item.rate}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          </div>
 
-          {comfortWarning && (
-            <div className="bg-purple-50 border-2 border-purple-300 text-purple-950 text-xs sm:text-sm p-4 rounded-2xl font-bold flex items-center gap-2.5 shadow-sm">
-              <Sparkles className="w-5 h-5 text-purple-700 shrink-0" />
-              <span>{comfortWarning}</span>
-            </div>
-          )}
-
-          {registeredSuccess ? (
-            <div className="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-6 sm:p-7 text-center space-y-4 shadow-md">
-              <div className="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto shadow-inner">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
-              <h4 className="font-heading font-black text-slate-900 text-xl sm:text-2xl">
-                Cadastro e Credenciais Criados com Sucesso!
-              </h4>
-              <p className="text-sm sm:text-base text-slate-700 max-w-lg mx-auto font-medium">
-                Seu login (<strong className="font-mono text-slate-950">{regEmail}</strong>) e senha foram salvos com criptografia. Seu plano de R$ 300 semanal está ativo com <strong className="text-emerald-700 font-black">100% dos ganhos livres</strong>.
-              </p>
-              
-              <div className="bg-white border border-emerald-300 rounded-2xl p-4 max-w-md mx-auto text-xs sm:text-sm text-emerald-950 font-bold flex items-center gap-2 justify-center shadow-xs">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 radar-pulse" />
-                <span>Entrando direto na Página de Atendimento de Corridas...</span>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRegisteredSuccess(false);
-                    if (onNavigateToRides) onNavigateToRides();
-                  }}
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black text-sm sm:text-base px-7 py-3.5 rounded-2xl transition-all cursor-pointer shadow-md border border-amber-400 flex items-center justify-center gap-2 active:scale-95"
-                >
-                  <span>IR DIRETO PARA ATENDIMENTO DE CORRIDAS</span>
-                  <ArrowRight className="w-5 h-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRegisteredSuccess(false);
-                    setActiveSubTab('dashboard');
-                  }}
-                  className="bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs sm:text-sm px-5 py-3 rounded-2xl transition-all cursor-pointer border border-slate-300"
-                >
-                  Ver Meu Painel Condutor
-                </button>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleRegisterSubmit} className="space-y-5">
-              {regError && (
-                <div className="bg-rose-50 border border-rose-300 text-rose-800 text-sm p-4 rounded-2xl font-bold flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-                  <span>{regError}</span>
-                </div>
-              )}
-
-              {/* Seção 1: Credenciais de Acesso (Login e Senha) */}
-              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-                <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-                  <Lock className="w-5 h-5 text-amber-700" />
-                  <h4 className="font-heading font-black text-slate-950 text-base">
-                    1. Dados de Acesso (Login e Senha do Condutor)
+            {/* PAINEL OFICIAL DE INFORMAÇÕES DA CATEGORIA SELECIONADA */}
+            <div className="bg-slate-50 border-2 border-slate-300 rounded-3xl p-5 sm:p-6 space-y-5">
+              {/* Banner Topo da Categoria */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
+                      Informações Oficiais para Atuação
+                    </span>
+                    <span className={`text-xs font-heading font-black px-2.5 py-0.5 rounded-full border ${selectedGuide.badgeColor}`}>
+                      {selectedGuide.badge}
+                    </span>
+                  </div>
+                  <h4 className="font-heading font-black text-slate-950 text-lg sm:text-xl mt-1">
+                    {selectedGuide.title} — {selectedGuide.tagline}
                   </h4>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                  <div>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      Login / E-mail de Acesso *
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={regEmail}
-                      onChange={(e) => setRegEmail(e.target.value)}
-                      placeholder="seu.email@exemplo.com"
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                    />
+                <div className="bg-white border border-slate-300 rounded-2xl p-3 shrink-0 flex items-center gap-3">
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Tarifa Oficial</span>
+                    <span className="text-base sm:text-lg font-heading font-black text-[#ff6a00]">{selectedGuide.pricePerKm}/km</span>
+                  </div>
+                  <div className="h-8 w-px bg-slate-200" />
+                  <div className="text-left">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Repasse</span>
+                    <span className="text-xs font-heading font-black text-emerald-700">100% Livre</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3 Blocos Rápidos: Remuneração, Assinatura e Área */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-1">
+                  <div className="flex items-center gap-2 text-emerald-700 font-heading font-black text-xs uppercase">
+                    <DollarSign className="w-4 h-4" />
+                    <span>Ganhos 100% Livres</span>
+                  </div>
+                  <p className="text-xs text-slate-700 font-medium">
+                    {selectedGuide.earningsDescription}
+                  </p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-1">
+                  <div className="flex items-center gap-2 text-[#ff6a00] font-heading font-black text-xs uppercase">
+                    <QrCode className="w-4 h-4" />
+                    <span>Plano Semanal Fixo</span>
+                  </div>
+                  <p className="text-xs text-slate-700 font-medium">
+                    Apenas <strong>{WEEKLY_FEE_TEXT}</strong> via PIX (<span className="font-mono text-[11px] font-bold text-slate-900">{RACE_PIX_KEY}</span>). Corridas ilimitadas nos 7 dias.
+                  </p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-1">
+                  <div className="flex items-center gap-2 text-blue-700 font-heading font-black text-xs uppercase">
+                    <Navigation className="w-4 h-4" />
+                    <span>Área de Atuação</span>
+                  </div>
+                  <p className="text-xs text-slate-700 font-medium">
+                    Município de <strong>Indaiatuba-SP</strong>: Centro, bairros, distritos industriais e condomínios fechados.
+                  </p>
+                </div>
+              </div>
+
+              {/* 4 Cards Detalhados de Exigências Operacionais */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Atividades Práticas */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center gap-2 text-slate-900 font-heading font-black text-xs uppercase border-b border-slate-100 pb-1.5">
+                    <Clock className="w-4 h-4 text-amber-600" />
+                    <span>1. Rotina de Atividades na Prática</span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {selectedGuide.activitiesList.map((item, idx) => (
+                      <li key={idx} className="text-xs text-slate-700 flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* 2. Exigências do Condutor */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center gap-2 text-slate-900 font-heading font-black text-xs uppercase border-b border-slate-100 pb-1.5">
+                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                    <span>2. Exigências do Condutor (Documentos)</span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {selectedGuide.driverRequirements.map((item, idx) => (
+                      <li key={idx} className="text-xs text-slate-700 flex items-start gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* 3. Requisitos do Veículo / Moto */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center gap-2 text-slate-900 font-heading font-black text-xs uppercase border-b border-slate-100 pb-1.5">
+                    <Car className="w-4 h-4 text-blue-600" />
+                    <span>3. Critérios Obrigatórios do Veículo</span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {selectedGuide.vehicleRequirements.map((item, idx) => (
+                      <li key={idx} className="text-xs text-slate-700 flex items-start gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* 4. Equipamentos Obrigatórios */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center gap-2 text-slate-900 font-heading font-black text-xs uppercase border-b border-slate-100 pb-1.5">
+                    <ShieldCheck className="w-4 h-4 text-purple-600" />
+                    <span>4. Equipamentos Obrigatórios para Rodar</span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {selectedGuide.mandatoryEquipment.map((item, idx) => (
+                      <li key={idx} className="text-xs text-slate-700 flex items-start gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-purple-600 mt-0.5 shrink-0" />
+                        <span className="font-medium">{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Banner Confort Específico (Regulamento de Modelos 2020+) */}
+              {regCategory === 'confort' && (
+                <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-purple-950 font-heading font-black text-xs uppercase">
+                    <Sparkles className="w-4 h-4 text-purple-700" />
+                    <span>Regulamento Específico Confort (Ano Mínimo Obrigatório)</span>
+                  </div>
+                  <p className="text-xs text-purple-950 font-medium">
+                    Para manter a nota média e o padrão executivo: <strong>Sedãs Médios e SUVs</strong> (2018+), <strong>Sedãs Populares</strong> como Voyage e Cronos (2019+) e <strong>Compactos Premium</strong> como Polo e Argo (2023+). Regra geral para outros modelos: <strong>2020 ou superior</strong>.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {comfortWarning && (
+              <div className="bg-amber-50 border-2 border-amber-300 text-amber-950 text-xs sm:text-sm p-4 rounded-2xl font-bold flex items-center gap-2.5 shadow-sm">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>{comfortWarning}</span>
+              </div>
+            )}
+
+            {/* SUCESSO DE CADASTRO */}
+            {registeredSuccess ? (
+              <div className="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-6 sm:p-7 text-center space-y-5 shadow-md">
+                <div className="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                  <CheckCircle2 className="w-10 h-10" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-heading font-black text-slate-900 text-xl sm:text-2xl">
+                    Cadastro de {selectedGuide.title} Criado com Sucesso!
+                  </h4>
+                  <p className="text-sm sm:text-base text-slate-700 max-w-lg mx-auto font-medium">
+                    Suas credenciais de acesso (<strong className="font-mono text-slate-950">{regEmail}</strong>) e dados do veículo foram homologados.
+                  </p>
+                </div>
+
+                {/* Chave PIX oficial para ativação */}
+                <div className="bg-white border-2 border-emerald-300 rounded-2xl p-4 max-w-md mx-auto text-left space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between text-xs font-heading font-black text-slate-700">
+                    <span>ASSINATURA SEMANAL RACE ({WEEKLY_DAYS} DIAS)</span>
+                    <span className="text-emerald-700 font-mono">{WEEKLY_FEE_TEXT}</span>
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                    <span className="font-mono text-xs font-bold text-slate-900 select-all truncate">
+                      {RACE_PIX_KEY}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyRacePixKey}
+                      className="ml-2 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-heading font-black flex items-center gap-1 cursor-pointer transition-all shrink-0"
+                    >
+                      {copiedRacePix ? <Check className="w-3.5 h-3.5 text-emerald-800" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedRacePix ? 'Copiado!' : 'Copiar'}</span>
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Banco: {RACE_PIX_BANK} • Titular: {RACE_PIX_NAME}
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegisteredSuccess(false);
+                      setActiveSubTab('subscription');
+                    }}
+                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black text-sm sm:text-base px-7 py-3.5 rounded-2xl transition-all cursor-pointer shadow-md border border-amber-400 flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <span>VER DETALHES DA ASSINATURA / COMPROVANTE</span>
+                    <ArrowRight className="w-5 h-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegisteredSuccess(false);
+                      setActiveSubTab('dashboard');
+                    }}
+                    className="bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs sm:text-sm px-5 py-3 rounded-2xl transition-all cursor-pointer border border-slate-300"
+                  >
+                    Ir para Meu Painel Condutor
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* FORMULÁRIO DE CADASTRO ADAPTADO PARA A CATEGORIA */
+              <form onSubmit={handleRegisterSubmit} className="space-y-5">
+                {regError && (
+                  <div className="bg-rose-50 border border-rose-300 text-rose-800 text-sm p-4 rounded-2xl font-bold flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                    <span>{regError}</span>
+                  </div>
+                )}
+
+                {/* Seção 1: Credenciais de Acesso */}
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                  <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <Lock className="w-5 h-5 text-amber-700" />
+                    <h4 className="font-heading font-black text-slate-950 text-base">
+                      1. Dados de Acesso (Login e Senha do Parceiro)
+                    </h4>
                   </div>
 
-                  <div>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      Senha de Acesso (mín. 6 dígitos) *
-                    </label>
-                    <div className="relative">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        Login / E-mail de Acesso *
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                        placeholder="seu.email@exemplo.com"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        Senha de Acesso (mín. 6 dígitos) *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showRegPassword ? 'text' : 'password'}
+                          required
+                          value={regPassword}
+                          onChange={(e) => setRegPassword(e.target.value)}
+                          placeholder="Crie sua senha segura"
+                          className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRegPassword(!showRegPassword)}
+                          className="absolute right-3 top-3 text-slate-400 hover:text-slate-800 cursor-pointer"
+                        >
+                          {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        Confirmar Senha *
+                      </label>
                       <input
                         type={showRegPassword ? 'text' : 'password'}
                         required
-                        value={regPassword}
-                        onChange={(e) => setRegPassword(e.target.value)}
-                        placeholder="Crie uma senha forte"
-                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium pr-10"
+                        value={regConfirmPassword}
+                        onChange={(e) => setRegConfirmPassword(e.target.value)}
+                        placeholder="Repita sua senha"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowRegPassword(!showRegPassword)}
-                        className="absolute right-3 top-3 text-slate-400 hover:text-slate-800 cursor-pointer"
-                      >
-                        {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
                     </div>
                   </div>
-
-                  <div>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      Confirmar Senha *
-                    </label>
-                    <input
-                      type={showRegPassword ? 'text' : 'password'}
-                      required
-                      value={regConfirmPassword}
-                      onChange={(e) => setRegConfirmPassword(e.target.value)}
-                      placeholder="Repita sua senha"
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Seção 2: Dados Pessoais & Documentos */}
-              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-                <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-                  <UserCheck className="w-5 h-5 text-amber-700" />
-                  <h4 className="font-heading font-black text-slate-950 text-base">
-                    2. Dados Pessoais e Habilitação
-                  </h4>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                  <div>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      Nome Completo *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={regName}
-                      onChange={(e) => setRegName(e.target.value)}
-                      placeholder="Ex: Gabriel Moreira"
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      WhatsApp / Telefone *
-                    </label>
-                    <input
-                      type="tel"
-                      required
-                      value={regPhone}
-                      onChange={(e) => setRegPhone(e.target.value)}
-                      placeholder="(11) 98765-4321"
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      CPF *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={regCpf}
-                      onChange={(e) => setRegCpf(e.target.value)}
-                      placeholder="000.000.000-00"
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-3">
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      Número da CNH (com EAR ativo) *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={regCnh}
-                      onChange={(e) => setRegCnh(e.target.value)}
-                      placeholder="Ex: 01234567890 - Categoria B (Exerce Atividade Remunerada)"
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Seção 3: Veículo e Validação do Modelo Confort */}
-              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                  <div className="flex items-center gap-2">
-                    <Car className="w-5 h-5 text-amber-700" />
+                {/* Seção 2: Dados Pessoais & Documentos */}
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                  <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <UserCheck className="w-5 h-5 text-amber-700" />
                     <h4 className="font-heading font-black text-slate-950 text-base">
-                      3. Modalidade e Dados do Veículo
+                      2. Dados Pessoais, Habilitação e Recebimento
                     </h4>
                   </div>
-                  <span className="text-xs font-mono font-bold text-purple-900 bg-purple-100 px-2.5 py-0.5 rounded-full">
-                    Auditoria Automática Confort
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        Nome Completo *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                        placeholder="Ex: João da Silva"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        WhatsApp / Celular com DDD *
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        value={regPhone}
+                        onChange={(e) => setRegPhone(e.target.value)}
+                        placeholder="(19) 98765-4321"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        CPF do Titular *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regCpf}
+                        onChange={(e) => setRegCpf(e.target.value)}
+                        placeholder="000.000.000-00"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        Número da CNH (com EAR "Exerce Atividade Remunerada" Ativo) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regCnh}
+                        onChange={(e) => setRegCnh(e.target.value)}
+                        placeholder={
+                          regCategory === 'moto_passageiro' || regCategory === 'moto_entrega'
+                            ? 'Ex: 01234567890 - Categoria A (EAR Ativo)'
+                            : 'Ex: 01234567890 - Categoria B (EAR Ativo)'
+                        }
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        Sua Chave PIX Pessoal (para receber 100%)
+                      </label>
+                      <input
+                        type="text"
+                        value={regPixKey}
+                        onChange={(e) => setRegPixKey(e.target.value)}
+                        placeholder="CPF, E-mail ou Celular"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção 3: Veículo e Equipamentos da Categoria Selecionada */}
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Car className="w-5 h-5 text-amber-700" />
+                      <h4 className="font-heading font-black text-slate-950 text-base">
+                        3. Dados do Veículo & Equipamentos de {selectedGuide.title}
+                      </h4>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-slate-700 bg-white px-2.5 py-0.5 rounded-full border border-slate-300">
+                      Categoria Ativa: {selectedGuide.title}
+                    </span>
+                  </div>
+
+                  {/* Modelos Sugeridos da Categoria para Seleção Rápida */}
+                  {presets.length > 0 && (
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 block mb-1.5">
+                        Modelos Populares de {selectedGuide.title} (Clique para preencher rápido):
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {presets.map((pm, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => handleSelectPresetModel(pm)}
+                            className={`text-xs px-2.5 py-1.5 rounded-lg border font-semibold cursor-pointer transition-all ${
+                              regModel === pm.name
+                                ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                                : 'bg-white text-slate-700 border-slate-300 hover:border-amber-500'
+                            }`}
+                          >
+                            {pm.name} {pm.year ? `(${pm.year})` : ''} {pm.highlight ? `• ${pm.highlight}` : ''}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
+                    <div className="sm:col-span-2">
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        {regCategory === 'moto_passageiro' || regCategory === 'moto_entrega'
+                          ? 'Modelo da Motocicleta (ex: Honda CG 160 Titan) *'
+                          : 'Modelo do Veículo (ex: Toyota Corolla / Onix / Argo) *'}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regModel}
+                        onChange={(e) => setRegModel(e.target.value)}
+                        placeholder="Ex: Honda CG 160 / Toyota Corolla / Onix"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        Ano de Fabricação *
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        value={regYear}
+                        onChange={(e) => setRegYear(e.target.value)}
+                        placeholder="Ex: 2022"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        Placa do Veículo *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regPlate}
+                        onChange={(e) => setRegPlate(e.target.value)}
+                        placeholder="ABC-1234 ou Mercosul"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium uppercase"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                        Cor Predominante *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regColor}
+                        onChange={(e) => setRegColor(e.target.value)}
+                        placeholder="Ex: Prata, Preto, Branco, Cinza, Vermelho"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+
+                    {/* Campo Específico para Motoboy de Entregas: Tipo de Baú / Bag */}
+                    {regCategory === 'moto_entrega' && (
+                      <div className="sm:col-span-2">
+                        <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
+                          Tipo de Compartimento de Carga / Baú *
+                        </label>
+                        <select
+                          value={regTrunkType}
+                          onChange={(e) => setRegTrunkType(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium cursor-pointer"
+                        >
+                          <option value="Baú 80 Litros">Baú Homologado 80 Litros</option>
+                          <option value="Baú 90 Litros">Baú Homologado 90 Litros</option>
+                          <option value="Baú 120 Litros">Baú Homologado 120 Litros</option>
+                          <option value="Mochila / Bag Térmica (até 20kg)">Mochila / Bag Térmica Impermeável (até 20kg)</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Declaração de Equipamento para Motoboy Passageiro */}
+                  {regCategory === 'moto_passageiro' && (
+                    <div className="bg-cyan-50 border border-cyan-300 rounded-xl p-3.5 flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        id="helmet_check"
+                        checked={regHelmetConfirmed}
+                        onChange={(e) => setRegHelmetConfirmed(e.target.checked)}
+                        className="mt-1 w-4 h-4 text-cyan-600 rounded border-cyan-400 cursor-pointer"
+                      />
+                      <label htmlFor="helmet_check" className="text-xs sm:text-sm text-cyan-950 font-medium cursor-pointer">
+                        <strong>Declaração Obrigatória:</strong> Confirmo que possuo 2 capacetes regulamentados pelo INMETRO com viseira transparente e selo de segurança, e fornecerei toucas higiênicas descartáveis a cada passageiro transportado.
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Confirmação de Ar-Condicionado para Motoristas */}
+                  {(regCategory === 'economica' || regCategory === 'confort') && (
+                    <div className="bg-slate-100 border border-slate-300 rounded-xl p-3.5 flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        id="ac_check"
+                        checked={regAcConfirmed}
+                        onChange={(e) => setRegAcConfirmed(e.target.checked)}
+                        className="mt-1 w-4 h-4 text-amber-600 rounded border-slate-400 cursor-pointer"
+                      />
+                      <label htmlFor="ac_check" className="text-xs sm:text-sm text-slate-900 font-medium cursor-pointer">
+                        <strong>Padrão de Conforto:</strong> Confirmo que meu veículo possui 4 portas, 5 lugares e ar-condicionado em pleno funcionamento para acionamento durante as viagens.
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Validador Visual do Modelo Confort em Tempo Real */}
+                  {regCategory === 'confort' && (
+                    <div
+                      className={`p-4 rounded-2xl border-2 transition-all space-y-1.5 ${
+                        comfortCheck.eligible
+                          ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
+                          : 'bg-amber-50 border-amber-400 text-amber-950'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {comfortCheck.eligible ? (
+                            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                          )}
+                          <span className="font-heading font-black text-sm sm:text-base">
+                            {comfortCheck.eligible
+                              ? 'VEÍCULO APROVADO PARA O MODELO CONFORT'
+                              : 'RESTRIÇÃO DE ANO PARA O MODELO CONFORT'}
+                          </span>
+                        </div>
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-white border shadow-sm">
+                          Ano mínimo: {comfortCheck.minYearRequired}+
+                        </span>
+                      </div>
+
+                      <p className="text-xs sm:text-sm font-medium">
+                        {comfortCheck.feedbackMessage}
+                      </p>
+
+                      <div className="text-xs text-slate-600 border-t border-slate-200/80 pt-1.5 mt-1">
+                        <strong>Critério aplicado:</strong> {comfortCheck.ruleDescription}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Selo de Auditoria e Criptografia */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm text-slate-700 font-medium">
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <span>Auditoria automática de antecedentes criminais, dados veiculares e CNH com EAR</span>
+                  </div>
+                  <span className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200 shrink-0">
+                    Criptografia Segura
                   </span>
                 </div>
 
-                {/* Category Choice */}
-                <div>
-                  <label className="text-xs sm:text-sm font-bold text-slate-700 block mb-2">
-                    Categoria Desejada para Cadastro
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {[
-                      { id: 'confort' as VehicleCategory, label: 'Carro Confort (R$ 3,50/km)', icon: Sparkles, highlight: true },
-                      { id: 'economica' as VehicleCategory, label: 'Carro Econômico (R$ 2,50/km)', icon: Car },
-                      { id: 'moto_passageiro' as VehicleCategory, label: 'Moto Passageiro (R$ 1,80/km)', icon: Bike },
-                      { id: 'moto_entrega' as VehicleCategory, label: 'Moto Entrega Flash (R$ 2,00/km)', icon: Bike },
-                    ].map((cat) => {
-                      const Icon = cat.icon;
-                      const isSelected = regCategory === cat.id;
-                      return (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          onClick={() => setRegCategory(cat.id)}
-                          className={`p-3.5 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            isSelected
-                              ? cat.id === 'confort'
-                                ? 'bg-purple-100 border-purple-600 text-purple-950 font-black shadow-md'
-                                : 'bg-amber-100 border-amber-500 text-amber-950 font-black shadow-md'
-                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <Icon className="w-5 h-5" />
-                          <span className="text-xs sm:text-sm text-center leading-tight">{cat.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Modelos Sugeridos do Regulamento para Seleção Rápida */}
-                <div>
-                  <label className="text-xs sm:text-sm font-bold text-slate-700 block mb-1.5">
-                    Modelos de Referência Confort (Clique para preencher rápido):
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {COMFORT_POPULAR_MODELS.map((pm, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => handleSelectPresetModel(pm)}
-                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-semibold cursor-pointer transition-all ${
-                          regModel === pm.name
-                            ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
-                            : 'bg-white text-slate-700 border-slate-300 hover:border-purple-400'
-                        }`}
-                      >
-                        {pm.name} ({pm.minYear}+)
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                  <div className="sm:col-span-2">
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      Modelo do Veículo (ex: Toyota Corolla Sedã / Honda CR-V / Voyage / Polo) *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={regModel}
-                      onChange={(e) => setRegModel(e.target.value)}
-                      placeholder="Ex: Toyota Corolla Sedã / Honda CR-V / Voyage / Argo"
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      Ano de Fabricação *
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      value={regYear}
-                      onChange={(e) => setRegYear(e.target.value)}
-                      placeholder="Ex: 2024"
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700 mb-1 block">
-                      Placa do Veículo *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={regPlate}
-                      onChange={(e) => setRegPlate(e.target.value)}
-                      placeholder="ABC-1234 ou Mercosul"
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                    />
-                  </div>
-                </div>
-
-                {/* Validador Visual do Modelo Confort em Tempo Real */}
-                {regCategory === 'confort' && (
-                  <div
-                    className={`p-4 rounded-2xl border-2 transition-all space-y-1.5 ${
-                      comfortCheck.eligible
-                        ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
-                        : 'bg-amber-50 border-amber-400 text-amber-950'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {comfortCheck.eligible ? (
-                          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                        ) : (
-                          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                        )}
-                        <span className="font-heading font-black text-sm sm:text-base">
-                          {comfortCheck.eligible
-                            ? 'VEÍCULO APROVADO PARA O MODELO CONFORT'
-                            : 'RESTRIÇÃO DE ANO PARA O MODELO CONFORT'}
-                        </span>
-                      </div>
-                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-white border shadow-sm">
-                        Ano mínimo: {comfortCheck.minYearRequired}+
-                      </span>
-                    </div>
-
-                    <p className="text-xs sm:text-sm font-medium">
-                      {comfortCheck.feedbackMessage}
-                    </p>
-
-                    <div className="text-xs text-slate-600 border-t border-slate-200/80 pt-1.5 mt-1">
-                      <strong>Critério aplicado:</strong> {comfortCheck.ruleDescription}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Document verification badge */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center justify-between text-xs sm:text-sm text-slate-700 font-medium">
-                <div className="flex items-center gap-2.5">
-                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                  <span>Auditoria automática de antecedentes criminais e CNH com EAR</span>
-                </div>
-                <span className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
-                  Criptografia Segura
-                </span>
-              </div>
-
-              {/* Submit button */}
-              <button
-                type="submit"
-                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black py-4 rounded-xl transition-all cursor-pointer shadow-md text-sm sm:text-base border border-amber-400"
-              >
-                CRIAR LOGIN, SENHA E FINALIZAR CADASTRO NO PLANO {WEEKLY_FEE_BADGE}
-              </button>
-            </form>
-          )}
-        </div>
-      )}
+                {/* Botão de Finalização com Categoria Específica */}
+                <button
+                  type="submit"
+                  className="w-full bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 text-sm sm:text-base border border-orange-500 uppercase tracking-wider active:scale-[0.99]"
+                >
+                  FINALIZAR CADASTRO DE {selectedGuide.title.toUpperCase()} & ATIVAR ATIVIDADES ({WEEKLY_FEE_BADGE})
+                </button>
+              </form>
+            )}
+          </div>
+        );
+      })()}
 
       {/* SUBTAB 4: SUBSCRIPTION PLAN (R$ 200 SEMANAL) */}
       {activeSubTab === 'subscription' && (

@@ -1,7 +1,14 @@
 export type VehicleCategory = 'economica' | 'confort' | 'moto_passageiro' | 'moto_entrega';
 
 export type UserRole = 'passenger' | 'driver' | 'motoboy' | 'admin';
-export type UserTipo = 'driver' | 'motoboy' | 'passenger';
+export type UserTipo = 
+  | 'driver' 
+  | 'motoboy' 
+  | 'passenger' 
+  | 'motorista_economico' 
+  | 'motorista_confort' 
+  | 'motoboy_passageiro' 
+  | 'motoboy_entregas';
 
 export interface AppUser {
   id: string;
@@ -74,6 +81,7 @@ export interface Driver {
   password?: string;
   comfortEligible?: boolean;
   comfortEligibilityReason?: string;
+  trunkType?: string; // Tipo de baú para motoboy de entregas
 }
 
 export interface LocationPoint {

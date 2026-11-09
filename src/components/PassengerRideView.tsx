@@ -586,12 +586,19 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       {(currentUser?.role === 'driver' ||
         currentUser?.role === 'motoboy' ||
         currentUser?.tipo === 'driver' ||
-        currentUser?.tipo === 'motoboy') && (
+        currentUser?.tipo === 'motoboy' ||
+        currentUser?.tipo === 'motorista_economico' ||
+        currentUser?.tipo === 'motorista_confort' ||
+        currentUser?.tipo === 'motoboy_passageiro' ||
+        currentUser?.tipo === 'motoboy_entregas') && (
         <div className="bg-slate-950 text-white border-2 border-[#ff6a00] rounded-3xl p-5 sm:p-6 shadow-xl space-y-4 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-[#ff6a00]/20 border border-[#ff6a00]/50 text-[#ff6a00] flex items-center justify-center shrink-0">
-                {currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy' ? (
+                {currentUser?.role === 'motoboy' || 
+                 currentUser?.tipo === 'motoboy' ||
+                 currentUser?.tipo === 'motoboy_passageiro' ||
+                 currentUser?.tipo === 'motoboy_entregas' ? (
                   <Bike className="w-6 h-6" />
                 ) : (
                   <Car className="w-6 h-6" />
@@ -603,13 +610,21 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     Aguardando Corridas & Chamados
                   </h3>
                   <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-[#ff6a00] text-black uppercase font-mono">
-                    {currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy'
+                    {currentUser?.tipo === 'motorista_economico'
+                      ? 'Econômico'
+                      : currentUser?.tipo === 'motorista_confort'
+                      ? 'Confort'
+                      : currentUser?.tipo === 'motoboy_passageiro'
+                      ? 'Moto Táxi'
+                      : currentUser?.tipo === 'motoboy_entregas'
+                      ? 'Entregas Flash'
+                      : currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy'
                       ? 'Motoboy'
                       : 'Motorista'}
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-zinc-300 font-medium">
-                  {currentUser?.name} &bull; 100% de Repasse Livre ao Condutor
+                  {currentUser?.name} &bull; Categoria Oficial Cadastrada &bull; 100% dos Ganhos Livres
                 </p>
               </div>
             </div>
