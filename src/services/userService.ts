@@ -33,9 +33,9 @@ export function getUserRidesStorageKey(email: string): string {
 
 /**
  * Salva a conta do usuário no localStorage com ID único por e-mail: race_user_${email}
- * e atualiza race_current_user com { id, name, email, tipo, placa }
+ * e atualiza race_current_user com { id, name, email, tipo, placa } apenas se setActiveSession for true
  */
-export function saveUserAccount(account: StoredUserAccount): void {
+export function saveUserAccount(account: StoredUserAccount, setActiveSession: boolean = true): void {
   const cleanEmail = normalizeEmail(account.email);
   if (!cleanEmail) return;
 
@@ -51,7 +51,7 @@ export function saveUserAccount(account: StoredUserAccount): void {
     // 1. Salvar no localStorage com id único race_user_${email}
     localStorage.setItem(userKey, JSON.stringify(normalizedAccount));
 
-    // 2. Salvar race_current_user com id, nome, email, tipo, placa
+    // 2. Preparar payload do usuário
     const currentUserPayload: AppUser = {
       id: normalizedAccount.id,
       name: normalizedAccount.name,
@@ -64,7 +64,11 @@ export function saveUserAccount(account: StoredUserAccount): void {
       rating: normalizedAccount.rating || 5.0,
       driverData: normalizedAccount.driverData,
     };
-    localStorage.setItem('race_current_user', JSON.stringify(currentUserPayload));
+
+    // Salvar race_current_user com id, nome, email, tipo, placa se setActiveSession for true
+    if (setActiveSession) {
+      localStorage.setItem('race_current_user', JSON.stringify(currentUserPayload));
+    }
 
     // 3. Atualizar listas globais para acesso exclusivo do Admin (admin@race.com.br)
     if (normalizedAccount.driverData) {

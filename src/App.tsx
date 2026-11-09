@@ -710,41 +710,9 @@ export default function App() {
         }}
         onRegisterDriverSuccess={(user, newDriver) => {
           handleRegisterDriver(newDriver);
-          setCurrentUser(user);
-          setCurrentDriver(newDriver);
-          try {
-            localStorage.setItem('race_current_user', JSON.stringify(user));
-          } catch {}
-          // 2. Fazer login automático e ir DIRETO para tela de assinatura R$200/semana PIX
-          setActiveTab('driver_portal');
-          const catLabel =
-            newDriver.category === 'economica'
-              ? 'Motorista Econômico'
-              : newDriver.category === 'confort'
-              ? 'Motorista Confort'
-              : newDriver.category === 'moto_passageiro'
-              ? 'Motoboy Passageiro'
-              : 'Motoboy Entregas';
-          setLoginSuccessBanner(
-            `Cadastro de ${catLabel} (${newDriver.name}) concluído com sucesso! Efetue a ativação da assinatura semanal de R$ 200 via PIX (Chave: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba) para liberar seu status online com 100% dos ganhos livres!`
-          );
         }}
         onRegisterMotoboySuccess={(user, newMotoboy) => {
           handleRegisterDriver(newMotoboy);
-          setCurrentUser(user);
-          setCurrentDriver(newMotoboy);
-          try {
-            localStorage.setItem('race_current_user', JSON.stringify(user));
-          } catch {}
-          // 2. Fazer login automático e ir DIRETO para tela de assinatura R$200/semana PIX
-          setActiveTab('driver_portal');
-          const catLabel =
-            newMotoboy.category === 'moto_entrega'
-              ? 'Motoboy Entregas'
-              : 'Motoboy Passageiro';
-          setLoginSuccessBanner(
-            `Cadastro de ${catLabel} (${newMotoboy.name}) concluído com sucesso! Efetue a ativação da assinatura semanal de R$ 200 via PIX (Chave: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba) para liberar seu status online com 100% dos ganhos livres!`
-          );
         }}
         onRegisterPassengerSuccess={(newUser) => {
           setPassengers((prev) => {
@@ -754,15 +722,6 @@ export default function App() {
             } catch {}
             return next;
           });
-          setCurrentUser(newUser);
-          try {
-            localStorage.setItem('race_current_user', JSON.stringify(newUser));
-          } catch {}
-          // 1. Passageiro -> vai direto para tela "Pedir corrida" com mapa
-          setActiveTab('rides');
-          setLoginSuccessBanner(
-            `Bem-vindo(a) à RACE, ${newUser.name}! Sua conta de passageiro foi criada com sucesso. Peça sua corrida ou entrega agora.`
-          );
         }}
       />
     );

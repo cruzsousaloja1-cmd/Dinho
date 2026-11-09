@@ -63,7 +63,7 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       password: password,
     };
 
-    // Salva no localStorage com ID único race_user_${email} e race_current_user
+    // Salva no localStorage com ID único race_user_${email} (sem logar automaticamente)
     saveUserAccount({
       id: newPassenger.id,
       name: newPassenger.name,
@@ -77,7 +77,7 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       rating: 5.0,
       rides: [],
       createdAt: new Date().toISOString(),
-    });
+    }, false);
 
     try {
       confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });

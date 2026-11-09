@@ -214,7 +214,7 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       driverData: newDriver,
     };
 
-    // Salva no localStorage isolado por usuário: race_user_${email} e race_current_user
+    // Salva no localStorage isolado por usuário: race_user_${email} (sem logar automaticamente)
     saveUserAccount({
       id: newDriver.id,
       name: newDriver.name,
@@ -229,7 +229,7 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       driverData: newDriver,
       rides: [],
       createdAt: new Date().toISOString(),
-    });
+    }, false);
 
     try {
       confetti({ particleCount: 75, spread: 80, origin: { y: 0.6 } });
