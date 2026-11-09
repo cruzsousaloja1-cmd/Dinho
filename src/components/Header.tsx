@@ -44,6 +44,18 @@ export const Header: React.FC<HeaderProps> = ({
 
   const isAdmin = currentUser?.email?.trim().toLowerCase() === 'admin@race.com.br';
 
+  const isUserDriver = Boolean(
+    currentUser && (
+      currentUser.role === 'driver' ||
+      currentUser.role === 'motoboy' ||
+      Boolean(currentUser.driverData) ||
+      currentUser.tipo === 'motorista_economico' ||
+      currentUser.tipo === 'motorista_confort' ||
+      currentUser.tipo === 'motoboy_passageiro' ||
+      currentUser.tipo === 'motoboy_entregas'
+    )
+  );
+
   const handleMobileNav = (action: () => void) => {
     action();
     setIsMobileMenuOpen(false);
@@ -80,47 +92,49 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Quick Role Switcher in Header (Desktop md+) */}
-        <div className="hidden lg:flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-sm font-bold shadow-inner">
-          <button
-            onClick={() => onChangeRole('passenger')}
-            className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
-              activeRole === 'passenger'
-                ? 'bg-slate-950 text-white font-extrabold shadow'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-            }`}
-          >
-            Passageiro
-          </button>
-          <button
-            onClick={() => onChangeRole('driver')}
-            className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
-              activeRole === 'driver'
-                ? 'bg-slate-950 text-white font-extrabold shadow'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-            }`}
-          >
-            <span>Motorista / Motoboy</span>
-            <span className={`text-xs px-2 py-0.5 rounded-md font-mono font-bold ${
-              activeRole === 'driver'
-                ? 'bg-emerald-500 text-slate-950'
-                : 'bg-emerald-100 text-emerald-800'
-            }`}>
-              {WEEKLY_FEE_BADGE}
-            </span>
-          </button>
-          {isAdmin && (
+        {isUserDriver && (
+          <div className="hidden lg:flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-sm font-bold shadow-inner">
             <button
-              onClick={() => onChangeRole('admin')}
+              onClick={() => onChangeRole('passenger')}
               className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
-                activeRole === 'admin'
+                activeRole === 'passenger'
                   ? 'bg-slate-950 text-white font-extrabold shadow'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
               }`}
             >
-              Painel Admin
+              Sou passageiro
             </button>
-          )}
-        </div>
+            <button
+              onClick={() => onChangeRole('driver')}
+              className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                activeRole === 'driver'
+                  ? 'bg-[#ff6a00] text-white font-extrabold shadow'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+              }`}
+            >
+              <span>Sou motorista</span>
+              <span className={`text-xs px-2 py-0.5 rounded-md font-mono font-bold ${
+                activeRole === 'driver'
+                  ? 'bg-white text-slate-950'
+                  : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {WEEKLY_FEE_BADGE}
+              </span>
+            </button>
+            {isAdmin && (
+              <button
+                onClick={() => onChangeRole('admin')}
+                className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
+                  activeRole === 'admin'
+                    ? 'bg-slate-950 text-white font-extrabold shadow'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                }`}
+              >
+                Painel Admin
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Action Buttons Desktop (md+) */}
         <div className="hidden md:flex items-center gap-2 sm:gap-2.5">
@@ -258,6 +272,42 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Barra de alternância rápida: Sou passageiro / Sou motorista (Visível para quem é motorista) */}
+      {isUserDriver && (
+        <div className="bg-slate-950 text-white px-3 sm:px-6 py-2 border-t border-slate-800 flex items-center justify-between gap-2 shadow-inner">
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            <span className="text-zinc-400 hidden xs:inline">Modo:</span>
+            <span className="text-[#ff6a00] font-heading font-black uppercase text-xs">
+              {activeRole === 'passenger' ? 'Passageiro' : 'Motorista'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => onChangeRole('passenger')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-heading font-black transition-all cursor-pointer ${
+                activeRole === 'passenger'
+                  ? 'bg-[#ff6a00] text-white shadow-sm ring-2 ring-[#ff6a00]/30'
+                  : 'bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700'
+              }`}
+            >
+              Sou passageiro
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeRole('driver')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-heading font-black transition-all cursor-pointer ${
+                activeRole === 'driver'
+                  ? 'bg-[#ff6a00] text-white shadow-sm ring-2 ring-[#ff6a00]/30'
+                  : 'bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700'
+              }`}
+            >
+              Sou motorista
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Menu Lateral / Drawer Móvel Responsivo (Botão 3 Pontinhos) */}
       {isMobileMenuOpen && (

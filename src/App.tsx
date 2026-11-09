@@ -18,6 +18,7 @@ import { MapRealtime } from './components/MapRealtime';
 import { PassengerRideView } from './components/PassengerRideView';
 import { DeliveryFlashView } from './components/DeliveryFlashView';
 import { DriverPartnerPortal } from './components/DriverPartnerPortal';
+import { DriverWorkSelectionView } from './components/DriverWorkSelectionView';
 import { AdminDashboard } from './components/AdminDashboard';
 import { RideHistoryView } from './components/RideHistoryView';
 import { Support24hModal } from './components/Support24hModal';
@@ -727,6 +728,18 @@ export default function App() {
     );
   }
 
+  const isUserDriver = Boolean(
+    currentUser && (
+      currentUser.role === 'driver' ||
+      currentUser.role === 'motoboy' ||
+      Boolean(currentUser.driverData) ||
+      currentUser.tipo === 'motorista_economico' ||
+      currentUser.tipo === 'motorista_confort' ||
+      currentUser.tipo === 'motoboy_passageiro' ||
+      currentUser.tipo === 'motoboy_entregas'
+    )
+  );
+
   return (
     <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans pb-28 selection:bg-slate-900 selection:text-white w-full max-w-full overflow-x-hidden box-border">
       {/* Prominent RACE Brand Header */}
@@ -814,39 +827,68 @@ export default function App() {
 
         {/* 3. Condutor & Cadastro (Plano Semanal R$ 200 e 100% dos Ganhos) */}
         {activeTab === 'driver_portal' && (
-          <DriverPartnerPortal
-            currentDriver={currentDriver}
-            currentUser={currentUser}
-            rides={getIsolatedUserRides(currentUser)}
-            onUpdateDriver={handleUpdateDriver}
-            onRegisterDriver={(newDriver) => {
-              handleRegisterDriver(newDriver);
-            }}
-            onLoginDriverSuccess={(user, driver) => {
-              setCurrentUser(user);
-              if (driver) setCurrentDriver(driver);
-              try {
-                localStorage.setItem('race_current_user', JSON.stringify(user));
-              } catch {}
-              setLoginSuccessBanner(
-                `Bem-vindo(a), ${user.name}! Login efetuado com sucesso com 100% dos ganhos livres.`
-              );
-            }}
-            onNavigateToRides={() => {
-              setActiveTab('rides');
-              setLoginSuccessBanner(
-                `Você entrou direto na página de atendimento de corridas! Seu status está ONLINE para atender chamados.`
-              );
-            }}
-            onOpenSupport={() => setIsSupportOpen(true)}
-            onOpenShare={() => setIsShareOpen(true)}
-            onShowSubscriptionExpiredModal={() => {
-              setExpiredModalDriver(currentDriver);
-              setSubscriptionExpiredModalOpen(true);
-            }}
-            onRenewWeeklyPlan={handleRenewWeeklyPlan}
-            onTriggerToast={(title, msg, type) => triggerPush(title, msg, type || 'financial')}
-          />
+          isUserDriver ? (
+            <DriverPartnerPortal
+              currentDriver={currentDriver}
+              currentUser={currentUser}
+              rides={getIsolatedUserRides(currentUser)}
+              onUpdateDriver={handleUpdateDriver}
+              onRegisterDriver={(newDriver) => {
+                handleRegisterDriver(newDriver);
+              }}
+              onLoginDriverSuccess={(user, driver) => {
+                setCurrentUser(user);
+                if (driver) setCurrentDriver(driver);
+                try {
+                  localStorage.setItem('race_current_user', JSON.stringify(user));
+                } catch {}
+                setLoginSuccessBanner(
+                  `Bem-vindo(a), ${user.name}! Login efetuado com sucesso com 100% dos ganhos livres.`
+                );
+              }}
+              onNavigateToRides={() => {
+                setActiveTab('rides');
+                setLoginSuccessBanner(
+                  `Você alternou para a página de pedidos de corrida (Passageiro).`
+                );
+              }}
+              onOpenSupport={() => setIsSupportOpen(true)}
+              onOpenShare={() => setIsShareOpen(true)}
+              onShowSubscriptionExpiredModal={() => {
+                setExpiredModalDriver(currentDriver);
+                setSubscriptionExpiredModalOpen(true);
+              }}
+              onRenewWeeklyPlan={handleRenewWeeklyPlan}
+              onTriggerToast={(title, msg, type) => triggerPush(title, msg, type || 'financial')}
+            />
+          ) : (
+            <DriverWorkSelectionView
+              currentUser={currentUser!}
+              onCompleteDriverRegister={(newDriver) => {
+                handleRegisterDriver(newDriver);
+                const isMoto = newDriver.category === 'moto_entrega' || newDriver.category === 'moto_passageiro';
+                const updatedUser: AppUser = {
+                  ...currentUser!,
+                  role: isMoto ? 'motoboy' : 'driver',
+                  tipo: newDriver.category === 'economica' ? 'motorista_economico' :
+                        newDriver.category === 'confort' ? 'motorista_confort' :
+                        newDriver.category === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas',
+                  placa: newDriver.vehiclePlate,
+                  driverData: newDriver,
+                };
+                setCurrentUser(updatedUser);
+                setCurrentDriver(newDriver);
+                try {
+                  localStorage.setItem('race_current_user', JSON.stringify(updatedUser));
+                } catch {}
+                setLoginSuccessBanner(
+                  `Parabéns, ${newDriver.name}! Cadastro de motorista homologado com sucesso!`
+                );
+              }}
+              onBackToRides={() => setActiveTab('rides')}
+              onRenewWeeklyPlan={handleRenewWeeklyPlan}
+            />
+          )
         )}
 
         {/* 4. Histórico Completo & Recibos - APENAS dados do próprio usuário */}
