@@ -31,6 +31,14 @@ import { AppUser } from './types';
 import { AlertTriangle, CheckCircle2, X, QrCode } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { WEEKLY_FEE, WEEKLY_FEE_TEXT, COMMISSION, WEEKLY_FEE_BADGE } from './config/pricing';
+import { 
+  getIsolatedUserRides, 
+  saveIsolatedRide, 
+  saveUserAccount, 
+  getUserAccount, 
+  normalizeEmail,
+  ADMIN_EMAIL 
+} from './services/userService';
 
 export default function App() {
   // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
@@ -52,17 +60,16 @@ export default function App() {
     return INITIAL_DRIVERS;
   });
 
+  // currentDriver carrega estritamente os dados do motorista autenticado (ou padrão novo)
   const [currentDriver, setCurrentDriver] = useState<Driver>(() => {
     try {
-      const stored = localStorage.getItem('race_registered_drivers');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (
-          Array.isArray(parsed) &&
-          parsed.length > 0 &&
-          !parsed.some((d: any) => d.email?.includes('raceapp.com.br') || d.id === 'drv-01')
-        ) {
-          return parsed[0];
+      const storedUser = localStorage.getItem('race_current_user');
+      if (storedUser) {
+        const u = JSON.parse(storedUser);
+        if (u && u.driverData) return u.driverData;
+        if (u && u.email) {
+          const acc = getUserAccount(u.email);
+          if (acc && acc.driverData) return acc.driverData;
         }
       }
     } catch {}
@@ -154,10 +161,9 @@ export default function App() {
             parsed.tipo === 'motoboy_entregas';
 
           if (isDriverOrMotoboy) {
-            // Restaura dados do motorista/motoboy
-            const storedDrivers = localStorage.getItem('race_registered_drivers');
-            const driverList: Driver[] = storedDrivers ? JSON.parse(storedDrivers) : [];
-            const matched = driverList.find((d) => d.email.toLowerCase() === parsed.email.toLowerCase()) || parsed.driverData;
+            // Restaura dados ISOLADOS deste motorista/motoboy
+            const userAcc = getUserAccount(parsed.email);
+            const matched = userAcc?.driverData || parsed.driverData;
             if (matched) {
               const now = new Date();
               const expiresDate = matched.weeklyFeeExpiresAt
@@ -354,10 +360,13 @@ export default function App() {
     if (!activeRide) return;
     const finalizedRide: Ride = {
       ...activeRide,
+      passengerId: currentUser?.id,
+      passengerEmail: currentUser?.email,
       ratingGivenToDriver: rating,
       ratingComment: comment,
     };
     setRidesHistory((prev) => [finalizedRide, ...prev]);
+    saveIsolatedRide(finalizedRide, currentUser);
     setActiveRide(null);
 
     // Update driver rating
@@ -427,6 +436,25 @@ export default function App() {
       return next;
     });
     setCurrentDriver(newDriver);
+
+    // Sincroniza a conta isolada do condutor
+    saveUserAccount({
+      id: newDriver.id,
+      name: newDriver.name,
+      email: newDriver.email,
+      phone: newDriver.phone,
+      password: newDriver.password,
+      role: (newDriver.category === 'moto_passageiro' || newDriver.category === 'moto_entrega') ? 'motoboy' : 'driver',
+      tipo: newDriver.category === 'economica' ? 'motorista_economico' :
+            newDriver.category === 'confort' ? 'motorista_confort' :
+            newDriver.category === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas',
+      placa: newDriver.vehiclePlate,
+      avatar: newDriver.avatar,
+      rating: newDriver.rating,
+      driverData: newDriver,
+      createdAt: new Date().toISOString(),
+    });
+
     triggerPush(
       '🎉 Bem-vindo à RACE!',
       `Cadastro de ${newDriver.name} concluído com sucesso. Ative sua assinatura semanal de ${WEEKLY_FEE_TEXT} para começar a receber corridas com 100% dos ganhos livres!`,
@@ -443,6 +471,18 @@ export default function App() {
       } catch {}
       return next;
     });
+
+    // Sincroniza a conta isolada do condutor em race_user_${email}
+    if (updated.email) {
+      const userAcc = getUserAccount(updated.email);
+      if (userAcc) {
+        saveUserAccount({
+          ...userAcc,
+          driverData: updated,
+          placa: updated.vehiclePlate,
+        });
+      }
+    }
   };
 
   const handleToggleDriverStatus = (driverId: string) => {
@@ -765,11 +805,12 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onLogout={() => {
-          // 3. Limpar localStorage e voltar para tela preta
+          // Limpar localStorage e deslogar condutor
           try {
             localStorage.removeItem('race_current_user');
           } catch {}
           setCurrentUser(null);
+          setCurrentDriver(DEFAULT_NEW_DRIVER);
           setActiveTab('rides');
           triggerPush('Sessão Encerrada', 'Você saiu da sua conta RACE.', 'system');
         }}
@@ -816,6 +857,8 @@ export default function App() {
         {activeTab === 'driver_portal' && (
           <DriverPartnerPortal
             currentDriver={currentDriver}
+            currentUser={currentUser}
+            rides={getIsolatedUserRides(currentUser)}
             onUpdateDriver={handleUpdateDriver}
             onRegisterDriver={(newDriver) => {
               handleRegisterDriver(newDriver);
@@ -825,6 +868,7 @@ export default function App() {
                 email: newDriver.email,
                 phone: newDriver.phone,
                 role: 'driver',
+                placa: newDriver.vehiclePlate,
                 driverData: newDriver,
               });
               setActiveTab('rides');
@@ -849,22 +893,39 @@ export default function App() {
           />
         )}
 
-        {/* 4. Histórico Completo & Recibos */}
+        {/* 4. Histórico Completo & Recibos - APENAS dados do próprio usuário */}
         {activeTab === 'history' && (
-          <RideHistoryView rides={ridesHistory} />
+          <RideHistoryView rides={getIsolatedUserRides(currentUser)} />
         )}
 
-        {/* 5. Painel Administrativo Master */}
+        {/* 5. Painel Administrativo Master - APENAS admin@race.com.br */}
         {activeTab === 'admin' && (
-          <AdminDashboard
-            drivers={drivers}
-            rides={ridesHistory}
-            onApproveDriver={handleApproveDriver}
-            onToggleDriverStatus={handleToggleDriverStatus}
-            onOpenShare={() => setIsShareOpen(true)}
-            onApproveWeeklyPayment={handleApproveWeeklyPayment}
-            onRejectWeeklyPayment={handleRejectWeeklyPayment}
-          />
+          (currentUser?.email?.toLowerCase() === ADMIN_EMAIL || currentUser?.role === 'admin' || currentUser?.isAdmin) ? (
+            <AdminDashboard
+              drivers={drivers}
+              rides={ridesHistory}
+              onApproveDriver={handleApproveDriver}
+              onToggleDriverStatus={handleToggleDriverStatus}
+              onOpenShare={() => setIsShareOpen(true)}
+              onApproveWeeklyPayment={handleApproveWeeklyPayment}
+              onRejectWeeklyPayment={handleRejectWeeklyPayment}
+            />
+          ) : (
+            <div className="text-center py-12 p-6 bg-zinc-950 border-2 border-[#ff6a00] rounded-3xl text-white space-y-3 shadow-xl">
+              <AlertTriangle className="w-12 h-12 text-[#ff6a00] mx-auto animate-pulse" />
+              <h3 className="text-xl font-heading font-black text-white">Acesso Exclusivo da Administração</h3>
+              <p className="text-sm text-zinc-300 max-w-md mx-auto">
+                Apenas o login oficial <strong>{ADMIN_EMAIL}</strong> tem permissão para auditar a frota geral, conferir comprovantes PIX e gerenciar todos os motoristas de Indaiatuba.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveTab('rides')}
+                className="mt-4 px-6 py-2.5 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-sm rounded-xl cursor-pointer"
+              >
+                Voltar para Corridas
+              </button>
+            </div>
+          )
         )}
       </main>
 

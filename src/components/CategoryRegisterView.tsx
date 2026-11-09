@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppUser, Driver, VehicleCategory, UserTipo } from '../types';
 import { WEEKLY_FEE } from '../config/pricing';
+import { saveUserAccount } from '../services/userService';
 import { 
   Car, 
   Bike, 
@@ -206,48 +207,29 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       phone: newDriver.phone,
       role: config.role,
       tipo: config.userTipo,
+      placa: newDriver.vehiclePlate,
       avatar: newDriver.avatar,
       rating: 5.0,
       password: password,
       driverData: newDriver,
     };
 
-    // Salva no localStorage com login automático
-    try {
-      localStorage.setItem('race_current_user', JSON.stringify({
-        id: appUser.id,
-        name: appUser.name,
-        email: appUser.email,
-        phone: appUser.phone,
-        tipo: config.userTipo,
-        role: config.role,
-        avatar: appUser.avatar,
-        driverData: newDriver,
-      }));
-
-      const existingUsers = JSON.parse(localStorage.getItem('race_users') || '[]');
-      const updatedUsers = [
-        {
-          id: appUser.id,
-          name: appUser.name,
-          email: appUser.email,
-          phone: appUser.phone,
-          tipo: config.userTipo,
-          role: config.role,
-          password: password,
-          createdAt: new Date().toISOString(),
-        },
-        ...existingUsers.filter((u: any) => u.email?.toLowerCase() !== cleanEmail),
-      ];
-      localStorage.setItem('race_users', JSON.stringify(updatedUsers));
-
-      const existingDriversList = JSON.parse(localStorage.getItem('race_registered_drivers') || '[]');
-      const updatedDrivers = [
-        newDriver,
-        ...existingDriversList.filter((d: any) => d.email?.toLowerCase() !== cleanEmail),
-      ];
-      localStorage.setItem('race_registered_drivers', JSON.stringify(updatedDrivers));
-    } catch {}
+    // Salva no localStorage isolado por usuário: race_user_${email} e race_current_user
+    saveUserAccount({
+      id: newDriver.id,
+      name: newDriver.name,
+      email: newDriver.email,
+      phone: newDriver.phone,
+      role: config.role,
+      tipo: config.userTipo,
+      placa: newDriver.vehiclePlate,
+      password: password,
+      avatar: newDriver.avatar,
+      rating: 5.0,
+      driverData: newDriver,
+      rides: [],
+      createdAt: new Date().toISOString(),
+    });
 
     try {
       confetti({ particleCount: 75, spread: 80, origin: { y: 0.6 } });

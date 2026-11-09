@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppUser } from '../types';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { saveUserAccount } from '../services/userService';
 
 interface PassengerRegisterViewProps {
   onRegisterSuccess: (user: AppUser) => void;
@@ -62,41 +63,21 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       password: password,
     };
 
-    try {
-      // Salva no localStorage race_current_user com id, nome, email, tipo: passenger
-      localStorage.setItem('race_current_user', JSON.stringify({
-        id: newPassenger.id,
-        name: newPassenger.name,
-        email: newPassenger.email,
-        phone: newPassenger.phone,
-        tipo: 'passenger',
-        role: 'passenger',
-        avatar: newPassenger.avatar,
-      }));
-
-      // Salva em race_users
-      const existingUsers = JSON.parse(localStorage.getItem('race_users') || '[]');
-      const updatedUsers = [
-        {
-          id: newPassenger.id,
-          name: newPassenger.name,
-          email: newPassenger.email,
-          phone: newPassenger.phone,
-          tipo: 'passenger',
-          role: 'passenger',
-          password: password,
-          createdAt: new Date().toISOString(),
-        },
-        ...existingUsers.filter((u: any) => u.email?.toLowerCase() !== cleanEmail),
-      ];
-      localStorage.setItem('race_users', JSON.stringify(updatedUsers));
-
-      // Salva em race_registered_passengers
-      const stored = localStorage.getItem('race_registered_passengers');
-      const list: AppUser[] = stored ? JSON.parse(stored) : [];
-      const updated = [newPassenger, ...list.filter((p) => p.id !== newPassenger.id)];
-      localStorage.setItem('race_registered_passengers', JSON.stringify(updated));
-    } catch {}
+    // Salva no localStorage com ID único race_user_${email} e race_current_user
+    saveUserAccount({
+      id: newPassenger.id,
+      name: newPassenger.name,
+      email: newPassenger.email,
+      phone: newPassenger.phone,
+      role: 'passenger',
+      tipo: 'passenger',
+      placa: '',
+      password: password,
+      avatar: newPassenger.avatar,
+      rating: 5.0,
+      rides: [],
+      createdAt: new Date().toISOString(),
+    });
 
     try {
       confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });

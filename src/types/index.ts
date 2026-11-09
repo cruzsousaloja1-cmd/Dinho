@@ -17,6 +17,7 @@ export interface AppUser {
   phone: string;
   role: UserRole;
   tipo?: UserTipo;
+  placa?: string;
   avatar?: string;
   rating?: number;
   password?: string;
@@ -104,6 +105,8 @@ export type RideStatus =
 
 export interface Ride {
   id: string;
+  passengerId?: string;
+  passengerEmail?: string;
   passengerName: string;
   passengerPhone: string;
   passengerRating: number;

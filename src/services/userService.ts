@@ -1,0 +1,338 @@
+import { AppUser, Driver, Ride, UserRole, UserTipo } from '../types';
+import { WEEKLY_FEE } from '../config/pricing';
+
+export interface StoredUserAccount {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: UserRole;
+  tipo?: UserTipo;
+  placa?: string;
+  password?: string;
+  avatar?: string;
+  rating?: number;
+  driverData?: Driver;
+  rides?: Ride[];
+  createdAt: string;
+}
+
+export const ADMIN_EMAIL = 'admin@race.com.br';
+
+export function normalizeEmail(email: string): string {
+  return (email || '').trim().toLowerCase();
+}
+
+export function getUserStorageKey(email: string): string {
+  return `race_user_${normalizeEmail(email)}`;
+}
+
+export function getUserRidesStorageKey(email: string): string {
+  return `race_rides_${normalizeEmail(email)}`;
+}
+
+/**
+ * Salva a conta do usuário no localStorage com ID único por e-mail: race_user_${email}
+ * e atualiza race_current_user com { id, name, email, tipo, placa }
+ */
+export function saveUserAccount(account: StoredUserAccount): void {
+  const cleanEmail = normalizeEmail(account.email);
+  if (!cleanEmail) return;
+
+  const userKey = getUserStorageKey(cleanEmail);
+  const normalizedAccount: StoredUserAccount = {
+    ...account,
+    email: cleanEmail,
+    placa: account.placa || account.driverData?.vehiclePlate || '',
+    createdAt: account.createdAt || new Date().toISOString(),
+  };
+
+  try {
+    // 1. Salvar no localStorage com id único race_user_${email}
+    localStorage.setItem(userKey, JSON.stringify(normalizedAccount));
+
+    // 2. Salvar race_current_user com id, nome, email, tipo, placa
+    const currentUserPayload: AppUser = {
+      id: normalizedAccount.id,
+      name: normalizedAccount.name,
+      email: normalizedAccount.email,
+      phone: normalizedAccount.phone,
+      role: normalizedAccount.role,
+      tipo: normalizedAccount.tipo,
+      placa: normalizedAccount.placa,
+      avatar: normalizedAccount.avatar,
+      rating: normalizedAccount.rating || 5.0,
+      driverData: normalizedAccount.driverData,
+    };
+    localStorage.setItem('race_current_user', JSON.stringify(currentUserPayload));
+
+    // 3. Atualizar listas globais para acesso exclusivo do Admin (admin@race.com.br)
+    if (normalizedAccount.driverData) {
+      const storedDrivers = localStorage.getItem('race_registered_drivers');
+      const driversList: Driver[] = storedDrivers ? JSON.parse(storedDrivers) : [];
+      const updatedDrivers = [
+        normalizedAccount.driverData,
+        ...driversList.filter((d) => normalizeEmail(d.email) !== cleanEmail),
+      ];
+      localStorage.setItem('race_registered_drivers', JSON.stringify(updatedDrivers));
+    } else if (normalizedAccount.role === 'passenger') {
+      const storedPassengers = localStorage.getItem('race_registered_passengers');
+      const passList: AppUser[] = storedPassengers ? JSON.parse(storedPassengers) : [];
+      const updatedPass = [
+        currentUserPayload,
+        ...passList.filter((p) => normalizeEmail(p.email) !== cleanEmail),
+      ];
+      localStorage.setItem('race_registered_passengers', JSON.stringify(updatedPass));
+    }
+  } catch (err) {
+    console.error('Erro ao salvar conta de usuário:', err);
+  }
+}
+
+/**
+ * Recupera os dados isolados do usuário pelo e-mail
+ */
+export function getUserAccount(email: string): StoredUserAccount | null {
+  const cleanEmail = normalizeEmail(email);
+  if (!cleanEmail) return null;
+
+  try {
+    const raw = localStorage.getItem(getUserStorageKey(cleanEmail));
+    if (raw) {
+      return JSON.parse(raw);
+    }
+
+    // Fallback de migração para cadastros anteriores
+    const storedDrivers = localStorage.getItem('race_registered_drivers');
+    if (storedDrivers) {
+      const drivers: Driver[] = JSON.parse(storedDrivers);
+      const matched = drivers.find((d) => normalizeEmail(d.email) === cleanEmail);
+      if (matched) {
+        const isMoto = matched.category === 'moto_entrega' || matched.category === 'moto_passageiro';
+        const migrated: StoredUserAccount = {
+          id: matched.id,
+          name: matched.name,
+          email: cleanEmail,
+          phone: matched.phone,
+          role: isMoto ? 'motoboy' : 'driver',
+          tipo: matched.category === 'economica' ? 'motorista_economico' :
+                matched.category === 'confort' ? 'motorista_confort' :
+                matched.category === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas',
+          placa: matched.vehiclePlate,
+          password: matched.password,
+          avatar: matched.avatar,
+          rating: matched.rating,
+          driverData: matched,
+          createdAt: matched.registrationDate || new Date().toISOString(),
+        };
+        localStorage.setItem(getUserStorageKey(cleanEmail), JSON.stringify(migrated));
+        return migrated;
+      }
+    }
+
+    const storedPassengers = localStorage.getItem('race_registered_passengers');
+    if (storedPassengers) {
+      const passengers: AppUser[] = JSON.parse(storedPassengers);
+      const matched = passengers.find((p) => normalizeEmail(p.email) === cleanEmail);
+      if (matched) {
+        const migrated: StoredUserAccount = {
+          id: matched.id,
+          name: matched.name,
+          email: cleanEmail,
+          phone: matched.phone,
+          role: 'passenger',
+          tipo: 'passenger',
+          placa: '',
+          password: matched.password,
+          avatar: matched.avatar,
+          rating: matched.rating || 5.0,
+          createdAt: new Date().toISOString(),
+        };
+        localStorage.setItem(getUserStorageKey(cleanEmail), JSON.stringify(migrated));
+        return migrated;
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao ler conta de usuário:', err);
+  }
+
+  return null;
+}
+
+/**
+ * Validação segura de login por e-mail e senha
+ */
+export function verifyUserLogin(
+  emailInput: string,
+  passwordInput: string
+): { success: boolean; error?: string; user?: AppUser; driver?: Driver } {
+  const cleanEmail = normalizeEmail(emailInput);
+  if (!cleanEmail || !passwordInput) {
+    return { success: false, error: 'Por favor, informe seu e-mail e sua senha.' };
+  }
+
+  // 0. Conta Mestre de Administrador (admin@race.com.br)
+  if (cleanEmail === ADMIN_EMAIL) {
+    const validAdminPass = ['race123', 'race@2024', 'admin', 'admin123'];
+    if (!validAdminPass.includes(passwordInput)) {
+      return { success: false, error: 'Senha incorreta para a conta de Administrador (use race123).' };
+    }
+
+    const adminUser: AppUser = {
+      id: 'usr-admin-master',
+      name: 'Administrador Geral',
+      email: ADMIN_EMAIL,
+      phone: '(19) 99999-0000',
+      role: 'admin',
+      isAdmin: true,
+      placa: 'ADMIN-01',
+      rating: 5.0,
+    };
+
+    try {
+      localStorage.setItem('race_current_user', JSON.stringify(adminUser));
+    } catch {}
+
+    return { success: true, user: adminUser };
+  }
+
+  // 1. Busca os dados daquele usuário específico
+  const account = getUserAccount(cleanEmail);
+  if (!account) {
+    return { success: false, error: 'Usuário não encontrado. Verifique seu e-mail ou crie uma conta.' };
+  }
+
+  // 2. Valida a senha
+  if (account.password && account.password !== passwordInput) {
+    return { success: false, error: 'Senha incorreta para esta conta.' };
+  }
+
+  // 3. Monta o AppUser com dados isolados
+  const userPayload: AppUser = {
+    id: account.id,
+    name: account.name,
+    email: account.email,
+    phone: account.phone,
+    role: account.role,
+    tipo: account.tipo,
+    placa: account.placa || account.driverData?.vehiclePlate || '',
+    avatar: account.avatar,
+    rating: account.rating || 5.0,
+    driverData: account.driverData,
+  };
+
+  try {
+    localStorage.setItem('race_current_user', JSON.stringify(userPayload));
+  } catch {}
+
+  return { success: true, user: userPayload, driver: account.driverData };
+}
+
+/**
+ * Retorna as corridas isoladas do usuário autenticado
+ * Motorista/Motoboy: só as corridas DELE
+ * Passageiro: só as corridas que ELE pediu
+ * Admin: todas as corridas
+ */
+export function getIsolatedUserRides(currentUser: AppUser | null): Ride[] {
+  if (!currentUser) return [];
+
+  const cleanEmail = normalizeEmail(currentUser.email);
+
+  // Admin vê todas as corridas registradas
+  if (currentUser.role === 'admin' || currentUser.isAdmin || cleanEmail === ADMIN_EMAIL) {
+    try {
+      const allRidesRaw = localStorage.getItem('race_rides_history');
+      if (allRidesRaw) return JSON.parse(allRidesRaw);
+    } catch {}
+    return [];
+  }
+
+  // Usuário comum: carregar APENAS as corridas DELE
+  try {
+    // 1. Verifica no storage isolado do usuário
+    const isolatedRaw = localStorage.getItem(getUserRidesStorageKey(cleanEmail));
+    if (isolatedRaw) {
+      const parsed: Ride[] = JSON.parse(isolatedRaw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+
+    // 2. Se não houver storage isolado ainda, filtra da base geral
+    const allRidesRaw = localStorage.getItem('race_rides_history');
+    if (allRidesRaw) {
+      const allRides: Ride[] = JSON.parse(allRidesRaw);
+      const isDriverOrMotoboy = currentUser.role === 'driver' || currentUser.role === 'motoboy';
+
+      const filtered = allRides.filter((ride) => {
+        if (isDriverOrMotoboy) {
+          return (
+            ride.driver?.id === currentUser.id ||
+            normalizeEmail(ride.driver?.email || '') === cleanEmail
+          );
+        } else {
+          return (
+            (ride as any).passengerId === currentUser.id ||
+            normalizeEmail((ride as any).passengerEmail || '') === cleanEmail ||
+            ride.passengerPhone === currentUser.phone
+          );
+        }
+      });
+
+      // Salva no storage isolado para manter a performance
+      if (filtered.length > 0) {
+        localStorage.setItem(getUserRidesStorageKey(cleanEmail), JSON.stringify(filtered));
+      }
+      return filtered;
+    }
+  } catch (err) {
+    console.error('Erro ao ler histórico isolado:', err);
+  }
+
+  return [];
+}
+
+/**
+ * Salva uma nova corrida nos dados isolados do usuário e no histórico geral para o Admin
+ */
+export function saveIsolatedRide(ride: Ride, currentUser: AppUser | null): void {
+  try {
+    // 1. Salva no histórico geral da plataforma (apenas para o Admin auditar)
+    const allRidesRaw = localStorage.getItem('race_rides_history');
+    const allRides: Ride[] = allRidesRaw ? JSON.parse(allRidesRaw) : [];
+    const nextAll = [ride, ...allRides.filter((r) => r.id !== ride.id)];
+    localStorage.setItem('race_rides_history', JSON.stringify(nextAll));
+
+    // 2. Salva no storage isolado do passageiro
+    const passEmail = normalizeEmail((ride as any).passengerEmail || currentUser?.email || '');
+    if (passEmail && passEmail !== ADMIN_EMAIL) {
+      const passKey = getUserRidesStorageKey(passEmail);
+      const passRidesRaw = localStorage.getItem(passKey);
+      const passRides: Ride[] = passRidesRaw ? JSON.parse(passRidesRaw) : [];
+      const nextPassRides = [ride, ...passRides.filter((r) => r.id !== ride.id)];
+      localStorage.setItem(passKey, JSON.stringify(nextPassRides));
+    }
+
+    // 3. Salva no storage isolado do motorista
+    const driverEmail = normalizeEmail(ride.driver?.email || '');
+    if (driverEmail && driverEmail !== ADMIN_EMAIL) {
+      const drvKey = getUserRidesStorageKey(driverEmail);
+      const drvRidesRaw = localStorage.getItem(drvKey);
+      const drvRides: Ride[] = drvRidesRaw ? JSON.parse(drvRidesRaw) : [];
+      const nextDrvRides = [ride, ...drvRides.filter((r) => r.id !== ride.id)];
+      localStorage.setItem(drvKey, JSON.stringify(nextDrvRides));
+
+      // Atualiza também os ganhos no registro isolado do motorista
+      const drvAccount = getUserAccount(driverEmail);
+      if (drvAccount && drvAccount.driverData) {
+        drvAccount.driverData.earningsToday = (drvAccount.driverData.earningsToday || 0) + ride.price;
+        drvAccount.driverData.earningsWeek = (drvAccount.driverData.earningsWeek || 0) + ride.price;
+        drvAccount.driverData.totalRides = (drvAccount.driverData.totalRides || 0) + 1;
+        saveUserAccount(drvAccount);
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao salvar corrida isolada:', err);
+  }
+}

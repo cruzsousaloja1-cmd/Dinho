@@ -6,6 +6,7 @@ import { PassengerRegisterView } from './PassengerRegisterView';
 import { DriverRegisterView } from './DriverRegisterView';
 import { MotoboyRegisterView } from './MotoboyRegisterView';
 import { CategoryRegisterView, CategoryRegisterKey } from './CategoryRegisterView';
+import { verifyUserLogin } from '../services/userService';
 
 interface DriverLoginScreenProps {
   drivers: Driver[];
@@ -43,197 +44,18 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    // 0. Acesso Secreto para Administrador: admin@race.com.br com senha race123
-    if (cleanEmail === 'admin@race.com.br') {
-      if (password !== 'race123' && password !== 'race@2024' && password !== 'admin' && password !== 'admin123') {
-        setErrorMessage('Senha incorreta para a conta de Administrador (use race123).');
-        return;
-      }
-
-      const adminUser: AppUser = {
-        id: 'usr-admin-master',
-        name: 'Administrador Geral',
-        email: 'admin@race.com.br',
-        phone: '(11) 99999-0000',
-        role: 'admin',
-        isAdmin: true,
-        rating: 5.0,
-      };
-
-      try {
-        localStorage.setItem(
-          'race_current_user',
-          JSON.stringify({
-            id: adminUser.id,
-            name: adminUser.name,
-            email: adminUser.email,
-            phone: adminUser.phone,
-            role: 'admin',
-            isAdmin: true,
-          })
-        );
-      } catch {}
-
-      try {
-        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
-      } catch {}
-
-      onLoginSuccess(adminUser);
+    // Valida credenciais e carrega dados isolados daquele usuário
+    const result = verifyUserLogin(cleanEmail, password);
+    if (!result.success || !result.user) {
+      setErrorMessage(result.error || 'Erro ao realizar login.');
       return;
     }
 
-    // 1. Carrega todas as bases persistidas no localStorage
-    let allDrivers = [...drivers];
     try {
-      const stored = localStorage.getItem('race_registered_drivers');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          allDrivers = [...parsed, ...allDrivers.filter((d) => !parsed.some((p: any) => p.id === d.id))];
-        }
-      }
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
     } catch {}
 
-    let allPassengers = [...passengers];
-    try {
-      const stored = localStorage.getItem('race_registered_passengers');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          allPassengers = [...parsed, ...allPassengers.filter((p) => !parsed.some((x: any) => x.id === p.id))];
-        }
-      }
-    } catch {}
-
-    // 2. Verifica se é MOTORISTA ou MOTOBOY
-    const matchedDriver = allDrivers.find((d) => d.email.toLowerCase() === cleanEmail);
-    if (matchedDriver) {
-      if (matchedDriver.password && matchedDriver.password !== password) {
-        setErrorMessage('Senha incorreta para esta conta de parceiro.');
-        return;
-      }
-
-      const now = new Date();
-      const expiresDate = matchedDriver.weeklyFeeExpiresAt
-        ? new Date(matchedDriver.weeklyFeeExpiresAt)
-        : matchedDriver.weeklyPlanExpiresAt
-        ? new Date(matchedDriver.weeklyPlanExpiresAt)
-        : null;
-      const isSubActive = Boolean(matchedDriver.weeklyPlanActive && expiresDate && expiresDate > now);
-
-      const targetDriver: Driver = {
-        ...matchedDriver,
-        status: isSubActive ? 'online' : 'offline',
-      };
-
-      const isMoto = targetDriver.category === 'moto_entrega' || targetDriver.category === 'moto_passageiro';
-      const userTipo = isMoto ? 'motoboy' : 'driver';
-
-      const appUser: AppUser = {
-        id: targetDriver.id,
-        name: targetDriver.name,
-        email: targetDriver.email,
-        phone: targetDriver.phone,
-        role: isMoto ? 'motoboy' : 'driver',
-        tipo: userTipo,
-        avatar: targetDriver.avatar,
-        rating: targetDriver.rating,
-        driverData: targetDriver,
-      };
-
-      // Salva login persistente no localStorage
-      try {
-        localStorage.setItem(
-          'race_current_user',
-          JSON.stringify({
-            id: appUser.id,
-            name: appUser.name,
-            email: appUser.email,
-            phone: appUser.phone,
-            tipo: userTipo,
-            role: appUser.role,
-            avatar: appUser.avatar,
-            driverData: targetDriver,
-          })
-        );
-      } catch {}
-
-      try {
-        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-      } catch {}
-
-      onLoginSuccess(appUser, targetDriver);
-      return;
-    }
-
-    // 3. Em seguida verifica se é PASSAGEIRO
-    const matchedPassenger = allPassengers.find((p) => p.email.toLowerCase() === cleanEmail);
-    if (matchedPassenger) {
-      if (matchedPassenger.password && matchedPassenger.password !== password) {
-        setErrorMessage('Senha incorreta para esta conta de passageiro.');
-        return;
-      }
-
-      const appUser: AppUser = {
-        ...matchedPassenger,
-        tipo: 'passenger',
-        role: 'passenger',
-      };
-
-      // Salva login persistente no localStorage
-      try {
-        localStorage.setItem(
-          'race_current_user',
-          JSON.stringify({
-            id: appUser.id,
-            name: appUser.name,
-            email: appUser.email,
-            phone: appUser.phone,
-            tipo: 'passenger',
-            role: 'passenger',
-            avatar: appUser.avatar,
-          })
-        );
-      } catch {}
-
-      try {
-        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-      } catch {}
-
-      onLoginSuccess(appUser);
-      return;
-    }
-
-    // 4. Se não achou nas listas separadas, busca em race_users genérico
-    try {
-      const storedUsers = localStorage.getItem('race_users');
-      if (storedUsers) {
-        const usersList: any[] = JSON.parse(storedUsers);
-        const genericMatch = usersList.find((u) => u.email?.toLowerCase() === cleanEmail);
-        if (genericMatch) {
-          if (genericMatch.password && genericMatch.password !== password) {
-            setErrorMessage('Senha incorreta.');
-            return;
-          }
-          const appUser: AppUser = {
-            id: genericMatch.id,
-            name: genericMatch.name,
-            email: genericMatch.email,
-            phone: genericMatch.phone,
-            role: genericMatch.role || (genericMatch.tipo === 'motoboy' ? 'motoboy' : genericMatch.tipo === 'driver' ? 'driver' : 'passenger'),
-            tipo: genericMatch.tipo || 'passenger',
-          };
-          localStorage.setItem('race_current_user', JSON.stringify(appUser));
-          onLoginSuccess(appUser);
-          return;
-        }
-      }
-    } catch {}
-
-    // Não encontrado em nenhuma das bases
-    setErrorMessage(
-      'Nenhuma conta encontrada com este e-mail. Crie sua conta de motorista, motoboy ou passageiro abaixo.'
-    );
+    onLoginSuccess(result.user, result.driver);
   };
 
   // Se estiver em modo Cadastro por Categoria Específica (Econômico, Confort, Motoboy Passageiro, Motoboy Entregas)
