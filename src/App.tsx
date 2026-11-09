@@ -821,18 +821,15 @@ export default function App() {
             onUpdateDriver={handleUpdateDriver}
             onRegisterDriver={(newDriver) => {
               handleRegisterDriver(newDriver);
-              setCurrentUser({
-                id: newDriver.id,
-                name: newDriver.name,
-                email: newDriver.email,
-                phone: newDriver.phone,
-                role: 'driver',
-                placa: newDriver.vehiclePlate,
-                driverData: newDriver,
-              });
-              setActiveTab('rides');
+            }}
+            onLoginDriverSuccess={(user, driver) => {
+              setCurrentUser(user);
+              if (driver) setCurrentDriver(driver);
+              try {
+                localStorage.setItem('race_current_user', JSON.stringify(user));
+              } catch {}
               setLoginSuccessBanner(
-                `Cadastro de ${newDriver.name} homologado com login e senha! Você entrou direto na página de atendimento de corridas com 100% dos ganhos livres.`
+                `Bem-vindo(a), ${user.name}! Login efetuado com sucesso com 100% dos ganhos livres.`
               );
             }}
             onNavigateToRides={() => {

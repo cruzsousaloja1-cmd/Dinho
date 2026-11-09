@@ -251,6 +251,7 @@ interface DriverPartnerPortalProps {
   rides?: Ride[];
   onUpdateDriver: (driver: Driver) => void;
   onRegisterDriver: (newDriver: Driver) => void;
+  onLoginDriverSuccess?: (user: AppUser, driver?: Driver) => void;
   onAcceptIncomingRide?: (ride: Ride) => void;
   onOpenSupport: () => void;
   onOpenShare?: () => void;
@@ -266,6 +267,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   rides = [],
   onUpdateDriver,
   onRegisterDriver,
+  onLoginDriverSuccess,
   onOpenSupport,
   onOpenShare,
   onNavigateToRides,
@@ -302,6 +304,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginFeedback, setLoginFeedback] = useState<string | null>(null);
+  const [loginSuccessNotice, setLoginSuccessNotice] = useState<string | null>(null);
 
   // Registration form state
   const [regName, setRegName] = useState('');
@@ -442,7 +445,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
 
     setLoginFeedback(null);
+    setLoginSuccessNotice(null);
     const loggedUser = verification.user;
+
+    if (onLoginDriverSuccess) {
+      onLoginDriverSuccess(loggedUser, verification.driver || loggedUser.driverData || currentDriver);
+    }
+
     if (verification.driver) {
       onUpdateDriver(verification.driver);
     } else if (loggedUser.driverData) {
@@ -568,14 +577,14 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       comfortEligibilityReason: reason,
     };
 
-    // Auto-login persistence com isolamento de conta
+    // Determinar perfil e tipo para isolamento no sistema
     const userRole: UserRole = (finalCategory === 'moto_passageiro' || finalCategory === 'moto_entrega') ? 'motoboy' : 'driver';
     const userTipo: UserTipo = 
       finalCategory === 'economica' ? 'motorista_economico' :
       finalCategory === 'confort' ? 'motorista_confort' :
       finalCategory === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas';
 
-    // Salvar no localStorage com id único race_user_${email} e race_current_user com id, nome, email, tipo, placa
+    // Salvar no localStorage com id único race_user_${email} SEM auto-login (setActiveSession = false)
     saveUserAccount({
       id: newDriver.id,
       name: newDriver.name,
@@ -589,10 +598,20 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       rating: newDriver.rating,
       driverData: newDriver,
       createdAt: new Date().toISOString(),
-    });
+    }, false);
 
     onRegisterDriver(newDriver);
-    setRegisteredSuccess(true);
+    setRegisteredSuccess(false);
+
+    // Conforme solicitado: após cadastro, entrar com login e senha dentro do aplicativo
+    setLoginEmail(newDriver.email);
+    setLoginPassword('');
+    setLoginFeedback(null);
+    setLoginSuccessNotice(
+      `Cadastro de condutor (${newDriver.name}) realizado com sucesso! Para sua segurança, digite sua senha para entrar na sua conta.`
+    );
+    setActiveSubTab('login');
+
     try {
       confetti({
         particleCount: 70,
@@ -1343,6 +1362,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               App do Motorista
             </p>
           </div>
+
+          {loginSuccessNotice && (
+            <div className="bg-emerald-950/80 border border-emerald-500/80 text-emerald-200 text-xs sm:text-sm p-3.5 rounded-xl font-medium flex items-start gap-2.5">
+              <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              <span>{loginSuccessNotice}</span>
+            </div>
+          )}
 
           {loginFeedback && (
             <div className="bg-red-950/80 border border-red-500/80 text-red-200 text-xs sm:text-sm p-3.5 rounded-xl font-medium flex items-center gap-2">
