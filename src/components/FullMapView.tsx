@@ -14,7 +14,10 @@ import {
   Play, 
   Car,
   BellRing,
-  Navigation
+  Navigation,
+  Volume2,
+  VolumeX,
+  Check
 } from 'lucide-react';
 import { 
   INDAIATUBA_CENTER_COORDS, 
@@ -29,6 +32,15 @@ import {
   INDAIATUBA_REAL_STREET_COORDINATES, 
   INDAIATUBA_REAL_STEPS 
 } from '../services/osrmRoutingService';
+import {
+  isAudioEnabled,
+  toggleAudio,
+  notifyDriverArrived,
+  notifyDriverAccepted,
+  notifyRideFinished,
+  playChimeSound,
+  speakText
+} from '../services/audioNotificationService';
 
 interface FullMapViewProps {
   onClose: () => void;
@@ -117,6 +129,78 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const [hasDriverArrived, setHasDriverArrived] = useState(false);
   const [isRideInProgress, setIsRideInProgress] = useState(false);
   const [isRideFinished, setIsRideFinished] = useState(false);
+
+  // Estados de Áudio e Voz (Web Speech API + Chime Ding)
+  const [audioEnabled, setAudioEnabledState] = useState(() => isAudioEnabled());
+  const [audioToast, setAudioToast] = useState<string | null>(null);
+
+  // Verifica se é Motoboy ou Motorista de Carro
+  const isMotoboy =
+    effectiveDriver.category === 'moto_passageiro' ||
+    effectiveDriver.category === 'moto_entrega' ||
+    activeRide?.category === 'moto_passageiro' ||
+    activeRide?.category === 'moto_entrega';
+
+  // Refs de controle para evitar repetições desnecessárias da voz
+  const hasAnnouncedAcceptedRef = useRef(false);
+  const hasAnnouncedArrivedRef = useRef(false);
+  const hasAnnouncedFinishedRef = useRef(false);
+
+  // Sincroniza estado do áudio com eventos globais
+  useEffect(() => {
+    const handleSync = (e: any) => {
+      if (e?.detail?.enabled !== undefined) {
+        setAudioEnabledState(e.detail.enabled);
+      } else {
+        setAudioEnabledState(isAudioEnabled());
+      }
+    };
+    window.addEventListener('race_audio_toggle', handleSync);
+    return () => window.removeEventListener('race_audio_toggle', handleSync);
+  }, []);
+
+  // Alterna o áudio (Ligar / Silenciar)
+  const handleToggleAudio = () => {
+    const next = toggleAudio();
+    setAudioEnabledState(next);
+    const msg = next ? '🔊 Áudio e Voz Ligados' : '🔇 Áudio Silenciado';
+    setAudioToast(msg);
+    setTimeout(() => setAudioToast(null), 2500);
+    if (next) {
+      playChimeSound();
+    }
+  };
+
+  // Botão para testar o áudio manualmente
+  const handleTestAudioArrival = () => {
+    notifyDriverArrived(isMotoboy);
+    setAudioToast(isMotoboy ? '🔊 "Seu motoboy chegou"' : '🔊 "Seu motorista chegou"');
+    setTimeout(() => setAudioToast(null), 3000);
+  };
+
+  // 1. Áudio: Quando motorista/motoboy aceitou e está a caminho (ao abrir o mapa com a corrida ativa)
+  useEffect(() => {
+    if (!hasAnnouncedAcceptedRef.current && (activeRide || !hasDriverArrived)) {
+      hasAnnouncedAcceptedRef.current = true;
+      notifyDriverAccepted(isMotoboy);
+    }
+  }, [isMotoboy]);
+
+  // 2. Áudio Automático: Quando chegar no ponto de embarque (distância <= 100m ou hasDriverArrived = true)
+  useEffect(() => {
+    if ((distanceRemainingMeters <= 100 || hasDriverArrived) && !hasAnnouncedArrivedRef.current) {
+      hasAnnouncedArrivedRef.current = true;
+      notifyDriverArrived(isMotoboy);
+    }
+  }, [distanceRemainingMeters, hasDriverArrived, isMotoboy]);
+
+  // 3. Áudio: Quando a corrida terminar
+  useEffect(() => {
+    if (isRideFinished && !hasAnnouncedFinishedRef.current) {
+      hasAnnouncedFinishedRef.current = true;
+      notifyRideFinished();
+    }
+  }, [isRideFinished]);
 
   // 1. Busca rota real pelas ruas via OSRM ao iniciar
   useEffect(() => {
@@ -447,13 +531,34 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         </div>
       </div>
 
-      {/* BOTÕES RÁPIDOS LATERAIS */}
+      {/* TOAST DE FEEDBACK DE ÁUDIO */}
+      {audioToast && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[1001] bg-slate-950/90 backdrop-blur-md text-white font-heading font-black text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border border-[#ff6a00] flex items-center gap-2 animate-bounce">
+          <span>{audioToast}</span>
+        </div>
+      )}
+
+      {/* BOTÕES RÁPIDOS LATERAIS (ÁUDIO, SEGUIR CARRO E ROTA) */}
       <div className="absolute top-24 right-4 z-[1000] flex flex-col gap-2.5">
+        {/* Botão de Som / Voz Ligar/Desligar */}
+        <button
+          type="button"
+          onClick={handleToggleAudio}
+          className={`w-11 h-11 border active:scale-95 rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer ${
+            audioEnabled
+              ? 'bg-[#ff6a00] text-white border-[#ff8533] hover:bg-[#e05e00]'
+              : 'bg-white text-slate-400 border-slate-300 hover:text-slate-600 hover:bg-slate-50'
+          }`}
+          title={audioEnabled ? 'Áudio ATIVADO (clique para mutar)' : 'Áudio MUTADO (clique para ativar som)'}
+        >
+          {audioEnabled ? <Volume2 className="w-5 h-5 stroke-[2.5]" /> : <VolumeX className="w-5 h-5 stroke-[2.5]" />}
+        </button>
+
         <button
           type="button"
           onClick={handleCenterOnCar}
           className="w-11 h-11 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-[#ff6a00] rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer"
-          title="Centralizar no Carro"
+          title="Centralizar no Veículo"
         >
           <Crosshair className="w-5 h-5" />
         </button>
@@ -486,11 +591,15 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
               </div>
               <div>
                 <h4 className="font-heading font-black text-sm sm:text-base text-slate-950">
-                  {hasDriverArrived
-                    ? '📍 Motorista Chegou ao Local!'
+                  {isRideFinished
+                    ? '🏁 Viagem Finalizada!'
+                    : isRideInProgress
+                    ? '🛣️ Viagem em Andamento'
+                    : hasDriverArrived
+                    ? (isMotoboy ? '📍 Motoboy Chegou ao Local!' : '📍 Motorista Chegou ao Local!')
                     : distanceRemainingMeters <= 200
-                    ? '🚨 Motorista está chegando - 200m'
-                    : '🚗 Motorista a Caminho'}
+                    ? (isMotoboy ? '🚨 Motoboy chegando - 200m' : '🚨 Motorista chegando - 200m')
+                    : (isMotoboy ? '🏍️ Motoboy a Caminho' : '🚗 Motorista a Caminho')}
                 </h4>
                 <p className="text-xs text-slate-600 font-medium">
                   {effectiveDriver.vehicleModel} &bull;{' '}
@@ -504,41 +613,60 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             {/* Distância e tempo grande estilo Uber */}
             <div className="text-right">
               <div className="text-xl sm:text-2xl font-heading font-black text-[#ff6a00]">
-                Chega em {minutesLeft > 0 ? `${minutesLeft} min` : '3 min'}
+                {isRideFinished
+                  ? 'Chegou!'
+                  : minutesLeft > 0
+                  ? `Chega em ${minutesLeft} min`
+                  : 'No local'}
               </div>
               <div className="text-[11px] font-mono text-slate-600 font-bold">
-                {distanceKmFormatted} km de distância
+                {isRideFinished ? 'Destino alcançado' : `${distanceKmFormatted} km de distância`}
               </div>
             </div>
           </div>
 
-          {/* ALERTA ESPECIAL QUANDO CHEGAR PERTO: "Motorista está chegando - 200m" */}
-          {distanceRemainingMeters <= 200 && !hasDriverArrived && (
-            <div className="bg-amber-50 border-2 border-[#ff6a00] rounded-2xl p-3 flex items-center gap-3 animate-pulse">
-              <div className="w-8 h-8 rounded-full bg-[#ff6a00] text-white flex items-center justify-center shrink-0 shadow">
-                <BellRing className="w-4 h-4 stroke-[2.5]" />
-              </div>
-              <div>
-                <span className="font-heading font-black text-xs sm:text-sm text-slate-950 block">
-                  Motorista está chegando - 200m
-                </span>
-                <span className="text-[11px] text-amber-900 font-medium">
-                  Dirija-se ao ponto de embarque na calçada
-                </span>
+          {/* ALERTA ESPECIAL QUANDO CHEGAR PERTO: "Motorista/Motoboy está chegando - 200m" */}
+          {distanceRemainingMeters <= 200 && !hasDriverArrived && !isRideInProgress && !isRideFinished && (
+            <div className="bg-amber-50 border-2 border-[#ff6a00] rounded-2xl p-3 flex items-center justify-between gap-3 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-[#ff6a00] text-white flex items-center justify-center shrink-0 shadow">
+                  <BellRing className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div>
+                  <span className="font-heading font-black text-xs sm:text-sm text-slate-950 block">
+                    {isMotoboy ? 'Motoboy está chegando - 200m' : 'Motorista está chegando - 200m'}
+                  </span>
+                  <span className="text-[11px] text-amber-900 font-medium">
+                    Dirija-se ao ponto de embarque na calçada
+                  </span>
+                </div>
               </div>
             </div>
           )}
 
-          {/* QUANDO CHEGAR A 0m: "Motorista chegou!" + botão "Iniciar corrida" */}
-          {hasDriverArrived && !isRideInProgress && (
+          {/* QUANDO CHEGAR A 0m / NO LOCAL: "Motorista/Motoboy chegou!" + botão para ouvir áudio novamente + "Iniciar corrida" */}
+          {hasDriverArrived && !isRideInProgress && !isRideFinished && (
             <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 text-center space-y-3">
               <div className="flex items-center justify-center gap-2 text-emerald-800 font-heading font-black text-base sm:text-lg">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <span>Motorista Chegou!</span>
+                <span>{isMotoboy ? 'Motoboy Chegou!' : 'Motorista Chegou!'}</span>
               </div>
               <p className="text-xs text-slate-600 font-medium">
-                O veículo prata ({effectiveDriver.vehiclePlate}) está te aguardando no local.
+                O {isMotoboy ? 'motoboy' : 'veículo'} ({effectiveDriver.vehiclePlate}) está te aguardando no local de embarque.
               </p>
+              
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestAudioArrival}
+                  className="py-1.5 px-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Repetir áudio avisando chegada"
+                >
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <span>Ouvir aviso de voz</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={handleStartRide}
@@ -547,6 +675,44 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                 <Play className="w-5 h-5 fill-white" />
                 <span>INICIAR CORRIDA</span>
               </button>
+            </div>
+          )}
+
+          {/* QUANDO CORRIDA EM ANDAMENTO: Botão para concluir corrida e testar "Você chegou ao seu destino" */}
+          {isRideInProgress && !isRideFinished && (
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-heading font-black text-blue-900 flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+                  Viagem em deslocamento para o destino
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRideInProgress(false);
+                  setIsRideFinished(true);
+                  setDistanceRemainingMeters(0);
+                  setSecondsRemaining(0);
+                }}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>FINALIZAR VIAGEM (CHEGADA AO DESTINO)</span>
+              </button>
+            </div>
+          )}
+
+          {/* QUANDO A CORRIDA FOI CONCLUÍDA */}
+          {isRideFinished && (
+            <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 text-center space-y-2.5">
+              <div className="flex items-center justify-center gap-2 text-emerald-800 font-heading font-black text-base">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <span>Você chegou ao seu destino!</span>
+              </div>
+              <p className="text-xs text-slate-600 font-medium">
+                Viagem concluída com segurança em Indaiatuba.
+              </p>
             </div>
           )}
 
@@ -560,6 +726,21 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Voltar</span>
+            </button>
+
+            {/* Botão de Som Rápido na Barra Inferior */}
+            <button
+              type="button"
+              onClick={handleToggleAudio}
+              className={`py-2.5 px-3 border font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                audioEnabled
+                  ? 'bg-amber-50 text-amber-900 border-amber-300'
+                  : 'bg-slate-100 text-slate-500 border-slate-300'
+              }`}
+              title="Ligar ou desligar som e voz"
+            >
+              {audioEnabled ? <Volume2 className="w-4 h-4 text-[#ff6a00]" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+              <span className="hidden sm:inline">{audioEnabled ? 'Som Ligado' : 'Som Mudo'}</span>
             </button>
 
             <button

@@ -42,9 +42,18 @@ import {
   Power,
   Maximize2,
   AlertTriangle,
-  Route
+  Route,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import {
+  isAudioEnabled,
+  toggleAudio,
+  notifyDriverArrived,
+  notifyDriverAccepted,
+  notifyRideFinished
+} from '../services/audioNotificationService';
 
 interface PassengerRideViewProps {
   onStartRide: (ride: Ride) => void;
@@ -327,9 +336,30 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     onSubmitRating(ratingVal, commentFull || 'Excelente viagem com a RACE!');
   };
 
+  // Audio state
+  const [audioEnabled, setAudioEnabledState] = useState(() => isAudioEnabled());
+
+  useEffect(() => {
+    const handleAudioSync = (e: any) => {
+      if (e?.detail?.enabled !== undefined) {
+        setAudioEnabledState(e.detail.enabled);
+      } else {
+        setAudioEnabledState(isAudioEnabled());
+      }
+    };
+    window.addEventListener('race_audio_toggle', handleAudioSync);
+    return () => window.removeEventListener('race_audio_toggle', handleAudioSync);
+  }, []);
+
+  const handleToggleAudio = () => {
+    const next = toggleAudio();
+    setAudioEnabledState(next);
+  };
+
   // If a ride is active, show the Map Hero with overlays on top of the map
   if (activeRide) {
     const isCompleted = activeRide.status === 'completed';
+    const isMotoRide = activeRide.category === 'moto_passageiro' || activeRide.category === 'moto_entrega';
 
     return (
       <div className="space-y-4">
@@ -341,8 +371,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 radar-pulse" />
               <div>
                 <h3 className="font-heading font-black text-slate-950 text-lg sm:text-xl">
-                  {activeRide.status === 'driver_assigned' && 'Motorista a Caminho'}
-                  {activeRide.status === 'driver_arriving' && 'Motorista Chegando no Embarque'}
+                  {activeRide.status === 'driver_assigned' && (isMotoRide ? 'Motoboy a Caminho' : 'Motorista a Caminho')}
+                  {activeRide.status === 'driver_arriving' && (isMotoRide ? 'Motoboy Chegando no Embarque' : 'Motorista Chegando no Embarque')}
                   {activeRide.status === 'in_progress' && 'Viagem em Andamento'}
                   {activeRide.status === 'completed' && 'Viagem Concluída com Sucesso!'}
                 </h3>
@@ -352,12 +382,29 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               </div>
             </div>
 
-            <div className="text-right">
-              <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
-                {formatBRL(activeRide.price)}
-              </div>
-              <div className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                100% ao Condutor
+            <div className="flex items-center gap-3">
+              {/* Botão de Som no Header da Corrida Ativa */}
+              <button
+                type="button"
+                onClick={handleToggleAudio}
+                className={`py-2 px-3 rounded-2xl border flex items-center gap-1.5 transition-all text-xs font-heading font-bold cursor-pointer ${
+                  audioEnabled
+                    ? 'bg-amber-50 text-amber-950 border-amber-300 shadow-sm'
+                    : 'bg-slate-100 text-slate-500 border-slate-300'
+                }`}
+                title={audioEnabled ? 'Áudio ATIVADO (clique para silenciar)' : 'Áudio MUTADO (clique para ativar som)'}
+              >
+                {audioEnabled ? <Volume2 className="w-4 h-4 text-[#ff6a00]" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+                <span className="hidden sm:inline">{audioEnabled ? 'Voz Ativa' : 'Mudo'}</span>
+              </button>
+
+              <div className="text-right">
+                <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
+                  {formatBRL(activeRide.price)}
+                </div>
+                <div className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  100% ao Condutor
+                </div>
               </div>
             </div>
           </div>
@@ -402,6 +449,19 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isMoto = activeRide.category === 'moto_passageiro' || activeRide.category === 'moto_entrega';
+                    notifyDriverArrived(isMoto);
+                  }}
+                  className="px-3 py-2.5 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-heading font-black text-xs flex items-center gap-1.5 transition-all shadow cursor-pointer active:scale-95"
+                  title="Ouvir aviso de voz de chegada"
+                >
+                  <Volume2 className="w-4 h-4 text-[#ff6a00]" />
+                  <span className="hidden sm:inline">Aviso Voz</span>
+                </button>
+
                 <a
                   href={`tel:${activeRide.driver.phone}`}
                   className="w-12 h-12 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-700 flex items-center justify-center transition-all shadow cursor-pointer active:scale-95"

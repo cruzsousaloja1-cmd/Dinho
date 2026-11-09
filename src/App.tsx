@@ -40,6 +40,11 @@ import {
   normalizeEmail,
   ADMIN_EMAIL 
 } from './services/userService';
+import {
+  notifyDriverAccepted,
+  notifyDriverArrived,
+  notifyRideFinished
+} from './services/audioNotificationService';
 
 export default function App() {
   // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
@@ -333,6 +338,12 @@ export default function App() {
   // Passenger requests a ride
   const handleStartRide = (ride: Ride) => {
     setActiveRide(ride);
+    const isMotoboy =
+      ride.category === 'moto_passageiro' ||
+      ride.category === 'moto_entrega' ||
+      ride.driver?.category === 'moto_passageiro' ||
+      ride.driver?.category === 'moto_entrega';
+    notifyDriverAccepted(isMotoboy);
     triggerPush(
       '🚗 Corrida Confirmada!',
       `Seu motorista ${ride.driver?.name} está a caminho em um ${ride.driver?.vehicleModel} (${ride.driver?.vehiclePlate}).`,
@@ -349,6 +360,7 @@ export default function App() {
       completedAt: new Date().toISOString(),
     };
     setActiveRide(updatedRide);
+    notifyRideFinished();
     triggerPush(
       '🏁 Viagem Finalizada!',
       `Total de R$ ${activeRide.price.toFixed(2)} repassado integralmente ao motorista (100%). Por favor, avalie sua experiência!`,
@@ -407,6 +419,7 @@ export default function App() {
   // Delivery Flash order
   const handleStartDelivery = (ride: Ride) => {
     setActiveRide(ride);
+    notifyDriverAccepted(true); // Notificação com voz para motoboy a caminho
     triggerPush(
       '📦 RACE Flash Acionado!',
       `O motoboy ${ride.driver?.name} foi despachado para coleta. Código de entrega: ${ride.deliveryDetails?.deliveryCode}.`,
