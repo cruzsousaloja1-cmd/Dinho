@@ -6,6 +6,8 @@ export interface StoredUserAccount {
   name: string;
   email: string;
   phone: string;
+  whatsapp?: string;
+  login?: string;
   role: UserRole;
   tipo?: UserTipo;
   placa?: string;
@@ -57,6 +59,8 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
       name: normalizedAccount.name,
       email: normalizedAccount.email,
       phone: normalizedAccount.phone,
+      whatsapp: normalizedAccount.whatsapp || normalizedAccount.phone,
+      login: normalizedAccount.login || normalizedAccount.email,
       role: normalizedAccount.role,
       tipo: normalizedAccount.tipo,
       placa: normalizedAccount.placa,
@@ -200,10 +204,32 @@ export function verifyUserLogin(
     return { success: true, user: adminUser };
   }
 
-  // 1. Busca os dados daquele usuário específico
-  const account = getUserAccount(cleanEmail);
+  // 1. Busca os dados daquele usuário específico (por e-mail ou por login)
+  let account = getUserAccount(cleanEmail);
   if (!account) {
-    return { success: false, error: 'Usuário não encontrado. Verifique seu e-mail ou crie uma conta.' };
+    // Procura por username/login
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('race_user_')) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed: StoredUserAccount = JSON.parse(raw);
+            if (
+              (parsed.login && parsed.login.trim().toLowerCase() === cleanEmail) ||
+              (parsed.phone && parsed.phone.replace(/\D/g, '') === cleanEmail.replace(/\D/g, ''))
+            ) {
+              account = parsed;
+              break;
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  if (!account) {
+    return { success: false, error: 'Usuário não encontrado. Verifique seu e-mail/login ou crie uma conta.' };
   }
 
   // 2. Valida a senha
@@ -217,6 +243,8 @@ export function verifyUserLogin(
     name: account.name,
     email: account.email,
     phone: account.phone,
+    whatsapp: account.whatsapp || account.phone,
+    login: account.login || account.email,
     role: account.role,
     tipo: account.tipo,
     placa: account.placa || account.driverData?.vehiclePlate || '',
@@ -340,3 +368,153 @@ export function saveIsolatedRide(ride: Ride, currentUser: AppUser | null): void 
     console.error('Erro ao salvar corrida isolada:', err);
   }
 }
+
+/**
+ * Remove um cadastro individual (motorista ou passageiro)
+ */
+export function deleteUserAccount(email: string, id?: string): void {
+  const cleanEmail = normalizeEmail(email);
+  if (!cleanEmail || cleanEmail === ADMIN_EMAIL) return;
+
+  try {
+    // 1. Remove a chave única race_user_${email}
+    localStorage.removeItem(getUserStorageKey(cleanEmail));
+
+    // 2. Remove as corridas isoladas daquele usuário
+    localStorage.removeItem(getUserRidesStorageKey(cleanEmail));
+
+    // 3. Remove da lista de motoristas cadastrados
+    const storedDrivers = localStorage.getItem('race_registered_drivers');
+    if (storedDrivers) {
+      const drivers: Driver[] = JSON.parse(storedDrivers);
+      const filtered = drivers.filter(
+        (d) => normalizeEmail(d.email) !== cleanEmail && (id ? d.id !== id : true)
+      );
+      localStorage.setItem('race_registered_drivers', JSON.stringify(filtered));
+    }
+
+    // 4. Remove da lista de passageiros cadastrados
+    const storedPassengers = localStorage.getItem('race_registered_passengers');
+    if (storedPassengers) {
+      const passengers: AppUser[] = JSON.parse(storedPassengers);
+      const filtered = passengers.filter(
+        (p) => normalizeEmail(p.email) !== cleanEmail && (id ? p.id !== id : true)
+      );
+      localStorage.setItem('race_registered_passengers', JSON.stringify(filtered));
+    }
+
+    // 5. Se for o usuário logado atualmente (e não for admin), limpa a sessão
+    const currentRaw = localStorage.getItem('race_current_user');
+    if (currentRaw) {
+      const current = JSON.parse(currentRaw);
+      if (normalizeEmail(current.email) === cleanEmail) {
+        localStorage.removeItem('race_current_user');
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao remover cadastro:', err);
+  }
+}
+
+/**
+ * Remove TODOS os cadastros de motoristas e passageiros (Apenas Admin)
+ */
+export function deleteAllUserAccounts(): void {
+  try {
+    // 1. Percorre todas as chaves do localStorage e remove race_user_* (exceto admin)
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('race_user_') || key.startsWith('race_rides_'))) {
+        if (!key.includes(ADMIN_EMAIL)) {
+          keysToRemove.push(key);
+        }
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+
+    // 2. Limpa a lista de motoristas registrados
+    localStorage.setItem('race_registered_drivers', JSON.stringify([]));
+
+    // 3. Limpa a lista de passageiros registrados
+    localStorage.setItem('race_registered_passengers', JSON.stringify([]));
+
+    // 4. Se o usuário atual não for o admin, limpa race_current_user
+    const currentRaw = localStorage.getItem('race_current_user');
+    if (currentRaw) {
+      const cur = JSON.parse(currentRaw);
+      if (normalizeEmail(cur.email) !== ADMIN_EMAIL) {
+        localStorage.removeItem('race_current_user');
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao remover todos os cadastros:', err);
+  }
+}
+
+/**
+ * Ativa TODOS os cadastros de motoristas/motoboys (libera 7 dias de plano semanal + status online)
+ */
+export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const updatedDrivers = currentDrivers.map((driver) => {
+    const updated: Driver = {
+      ...driver,
+      weeklyFeePaidAt: now.toISOString(),
+      weeklyFeeExpiresAt: expiresAt.toISOString(),
+      weeklyPlanExpiresAt: expiresAt.toISOString(),
+      weeklyPlanActive: true,
+      weeklyPlanPrice: 200,
+      status: 'online',
+      cnhVerified: true,
+      vehicleVerified: true,
+      pendingPayment: driver.pendingPayment
+        ? {
+            ...driver.pendingPayment,
+            status: 'approved',
+          }
+        : null,
+    };
+
+    // Atualiza também a conta isolada race_user_${email}
+    if (driver.email) {
+      const cleanEmail = normalizeEmail(driver.email);
+      const acc = getUserAccount(cleanEmail);
+      if (acc) {
+        saveUserAccount(
+          {
+            ...acc,
+            driverData: updated,
+            placa: updated.vehiclePlate,
+          },
+          false // Não substitui a sessão do admin
+        );
+      }
+    }
+
+    return updated;
+  });
+
+  try {
+    localStorage.setItem('race_registered_drivers', JSON.stringify(updatedDrivers));
+  } catch {}
+
+  return updatedDrivers;
+}
+
+/**
+ * Retorna todos os passageiros cadastrados no sistema
+ */
+export function getAllRegisteredPassengers(): AppUser[] {
+  try {
+    const stored = localStorage.getItem('race_registered_passengers');
+    if (stored) {
+      const list: AppUser[] = JSON.parse(stored);
+      if (Array.isArray(list)) return list;
+    }
+  } catch {}
+  return [];
+}
+

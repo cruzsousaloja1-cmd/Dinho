@@ -15,6 +15,8 @@ export interface AppUser {
   name: string;
   email: string;
   phone: string;
+  whatsapp?: string;
+  login?: string;
   role: UserRole;
   tipo?: UserTipo;
   placa?: string;

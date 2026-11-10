@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Driver, Ride } from '../types';
+import { AppUser, Driver, Ride } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
 import { WEEKLY_FEE, WEEKLY_FEE_TEXT, WEEKLY_FEE_BADGE, RACE_PIX_BANK } from '../config/pricing';
 import { 
@@ -24,7 +24,12 @@ import {
   AlertTriangle,
   Phone,
   Calendar,
-  Check
+  Check,
+  Trash2,
+  CheckCheck,
+  UserCheck,
+  UserX,
+  X
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -35,6 +40,11 @@ interface AdminDashboardProps {
   onOpenShare?: () => void;
   onApproveWeeklyPayment?: (driver: Driver) => void;
   onRejectWeeklyPayment?: (driver: Driver) => void;
+  passengers?: AppUser[];
+  onRemoveDriver?: (driverId: string, email: string) => void;
+  onRemovePassenger?: (passengerId: string, email: string) => void;
+  onActivateAllDrivers?: () => void;
+  onRemoveAllAccounts?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -45,11 +55,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onOpenShare,
   onApproveWeeklyPayment,
   onRejectWeeklyPayment,
+  passengers = [],
+  onRemoveDriver,
+  onRemovePassenger,
+  onActivateAllDrivers,
+  onRemoveAllAccounts,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'drivers' | 'rides' | 'reports'>('overview');
+  const [cadastrosSubTab, setCadastrosSubTab] = useState<'drivers' | 'passengers'>('drivers');
   const [driverFilterCategory, setDriverFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewProofImage, setPreviewProofImage] = useState<string | null>(null);
+
+  // Modais de confirmação de remoção
+  const [isConfirmRemoveAllModalOpen, setIsConfirmRemoveAllModalOpen] = useState(false);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    type: 'driver' | 'passenger';
+    id: string;
+    name: string;
+    email: string;
+  } | null>(null);
+  const [actionToast, setActionToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setActionToast(msg);
+    setTimeout(() => setActionToast(null), 3500);
+  };
 
   const pendingDrivers = drivers.filter(
     (d) => d.pendingPayment && d.pendingPayment.status === 'pending'
@@ -68,8 +99,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const matchesSearch =
       d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.vehiclePlate.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.vehicleModel.toLowerCase().includes(searchQuery.toLowerCase());
+      d.vehicleModel.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.email && d.email.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesCategory && matchesSearch;
+  });
+
+  const filteredPassengers = passengers.filter((p) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.email || '').toLowerCase().includes(q) ||
+      (p.phone || '').toLowerCase().includes(q)
+    );
   });
 
   const exportReportCSV = () => {
@@ -189,13 +230,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('drivers')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
             activeTab === 'drivers'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          Gestão de Condutores ({drivers.length})
+          <Users className="w-4 h-4 text-amber-900" />
+          <span>Gestão de Cadastros ({drivers.length + passengers.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('rides')}
@@ -570,130 +612,336 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 3: DRIVERS & MOTOBOYS MANAGEMENT */}
+      {/* TAB 3: GESTÃO DE CADASTROS (MOTORISTAS, MOTOBOYS E PASSAGEIROS) */}
       {activeTab === 'drivers' && (
         <div className="space-y-4">
+          {/* Toast de feedback de ação */}
+          {actionToast && (
+            <div className="bg-slate-950 text-white border-2 border-[#ff6a00] p-3.5 rounded-2xl flex items-center justify-between shadow-lg animate-bounce">
+              <span className="font-heading font-black text-xs sm:text-sm flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                {actionToast}
+              </span>
+              <button
+                type="button"
+                onClick={() => setActionToast(null)}
+                className="text-zinc-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* BARRA DE AÇÕES GERAIS: ATIVAR TODOS E REMOVER TODOS */}
+          <div className="bg-gradient-to-r from-slate-950 to-zinc-900 text-white border border-zinc-800 rounded-3xl p-5 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-[#ff6a00]/20 border border-[#ff6a00]/40 flex items-center justify-center text-[#ff6a00]">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-base sm:text-lg text-white">
+                    Ações de Cadastros no RACE
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    {drivers.length} condutores cadastrados • {activeWeeklySubs} ativos • {passengers.length} passageiros
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap w-full md:w-auto">
+              {/* Botão ATIVAR TODOS OS CADASTROS */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onActivateAllDrivers) {
+                    onActivateAllDrivers();
+                    showToast('✅ Todos os motoristas foram ativados com 7 dias liberados e status ONLINE!');
+                  }
+                }}
+                className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                title="Ativar e liberar todos os motoristas com 7 dias de plano semanal"
+              >
+                <CheckCheck className="w-4 h-4" />
+                <span>Ativar Todos os Cadastros ({drivers.length})</span>
+              </button>
+
+              {/* Botão REMOVER TODOS OS CADASTROS */}
+              <button
+                type="button"
+                onClick={() => setIsConfirmRemoveAllModalOpen(true)}
+                className="flex-1 sm:flex-none px-4 py-2.5 bg-rose-700 hover:bg-rose-600 active:scale-95 text-white font-heading font-black text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                title="Remover todos os cadastros"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Remover Todos</span>
+              </button>
+            </div>
+          </div>
+
+          {/* SUB-ABAS: MOTORISTAS/MOTOBOYS VS PASSAGEIROS */}
+          <div className="bg-white border border-slate-200 p-1.5 rounded-2xl flex items-center gap-2 shadow-xs">
+            <button
+              type="button"
+              onClick={() => setCadastrosSubTab('drivers')}
+              className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                cadastrosSubTab === 'drivers'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Motoristas & Motoboys ({drivers.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCadastrosSubTab('passengers')}
+              className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                cadastrosSubTab === 'passengers'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Passageiros Cadastrados ({passengers.length})</span>
+            </button>
+          </div>
+
           {/* Filters & Search */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-5 flex flex-col sm:flex-row items-center gap-3.5 shadow-md">
+          <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center gap-3.5 shadow-md">
             <div className="relative flex-1 w-full">
               <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-3.5" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar por nome, placa do veículo ou modelo..."
+                placeholder={
+                  cadastrosSubTab === 'drivers'
+                    ? 'Buscar por nome, placa do veículo, modelo ou e-mail...'
+                    : 'Buscar por nome, telefone ou e-mail de passageiro...'
+                }
                 className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-11 pr-4 py-2.5 text-sm sm:text-base text-slate-950 placeholder-slate-400 focus:outline-none focus:border-amber-500 font-medium"
               />
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Filter className="w-5 h-5 text-slate-500" />
-              <select
-                value={driverFilterCategory}
-                onChange={(e) => setDriverFilterCategory(e.target.value)}
-                className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-amber-500 font-medium"
-              >
-                <option value="all">Todas as Categorias</option>
-                <option value="economica">Econômica (R$ 2,50/km)</option>
-                <option value="confort">Confort (R$ 3,50/km)</option>
-                <option value="moto_passageiro">Moto Passageiro (R$ 1,80/km)</option>
-                <option value="moto_entrega">Moto Entrega Flash (R$ 2,00/km)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Drivers List */}
-          <div className="space-y-3.5">
-            {filteredDrivers.map((driver) => (
-              <div
-                key={driver.id}
-                className="bg-white border border-slate-200 rounded-3xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md hover:border-slate-300 transition-all"
-              >
-                <div className="flex items-center gap-4">
-                  <img
-                    src={driver.avatar}
-                    alt={driver.name}
-                    className="w-14 h-14 rounded-full object-cover border-2 border-amber-500 shadow-sm"
-                  />
-                  <div>
-                    <div className="flex items-center gap-2.5">
-                      <h4 className="font-heading font-black text-slate-900 text-base sm:text-lg">
-                        {driver.name}
-                      </h4>
-                      <span className="text-xs font-mono bg-slate-100 text-slate-900 px-2.5 py-0.5 rounded border border-slate-300 font-bold">
-                        {driver.vehiclePlate}
-                      </span>
-                      <span className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
-                        ⭐ {driver.rating.toFixed(2)}
-                      </span>
-                      {driver.category === 'confort' && (
-                        <span className="text-xs bg-purple-100 text-purple-900 border border-purple-200 px-2 py-0.5 rounded font-black flex items-center gap-1">
-                          ✨ Confort Aprovado
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-slate-600 font-medium mt-1">
-                      {driver.vehicleModel} ({driver.vehicleYear}) • {driver.cnh}
-                    </p>
-                    <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500 font-medium">
-                      <span>Tel: {driver.phone}</span>
-                      <span>•</span>
-                      <span>Login: <strong className="text-slate-800">{driver.email}</strong></span>
-                      <span>•</span>
-                      <span>{driver.totalRides} corridas</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-200">
-                  <div className="text-right">
-                    <span className="text-[11px] text-slate-500 block font-mono font-bold">
-                      Plano Semanal R$ 200
-                    </span>
-                    <span
-                      className={`text-xs font-black ${
-                        driver.weeklyPlanActive && driver.status === 'online'
-                          ? 'text-emerald-700'
-                          : 'text-amber-700'
-                      }`}
-                    >
-                      {driver.weeklyPlanActive && driver.status === 'online'
-                        ? 'Liberado (Online 7d)'
-                        : 'Bloqueado / Pendente'}
-                    </span>
-                  </div>
-
-                  {/* Botão Liberar 7 dias */}
-                  <button
-                    type="button"
-                    onClick={() => onApproveWeeklyPayment && onApproveWeeklyPayment(driver)}
-                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
-                    title="Liberar 7 dias com status online e 100% de repasse"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Liberar 7 dias</span>
-                  </button>
-
-                  {/* Botão Bloquear */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onRejectWeeklyPayment) {
-                        onRejectWeeklyPayment(driver);
-                      } else {
-                        onToggleDriverStatus(driver.id);
-                      }
-                    }}
-                    className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
-                    title="Bloquear motorista / deixar offline"
-                  >
-                    <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Bloquear</span>
-                  </button>
-                </div>
+            {cadastrosSubTab === 'drivers' && (
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Filter className="w-5 h-5 text-slate-500" />
+                <select
+                  value={driverFilterCategory}
+                  onChange={(e) => setDriverFilterCategory(e.target.value)}
+                  className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-amber-500 font-medium"
+                >
+                  <option value="all">Todas as Categorias</option>
+                  <option value="economica">Econômica (R$ 2,50/km)</option>
+                  <option value="confort">Confort (R$ 3,50/km)</option>
+                  <option value="moto_passageiro">Moto Passageiro (R$ 1,80/km)</option>
+                  <option value="moto_entrega">Moto Entrega Flash (R$ 2,00/km)</option>
+                </select>
               </div>
-            ))}
+            )}
           </div>
+
+          {/* LISTA DE MOTORISTAS & MOTOBOYS */}
+          {cadastrosSubTab === 'drivers' && (
+            <div className="space-y-3.5">
+              {filteredDrivers.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center text-slate-500">
+                  <p className="font-heading font-bold text-base">Nenhum motorista ou motoboy encontrado.</p>
+                  <p className="text-xs mt-1">Cadastre novos motoristas na aba Motorista &gt; Novo Cadastro.</p>
+                </div>
+              ) : (
+                filteredDrivers.map((driver) => (
+                  <div
+                    key={driver.id}
+                    className="bg-white border border-slate-200 rounded-3xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md hover:border-slate-300 transition-all"
+                  >
+                    <div className="flex items-center gap-4">
+                      <img
+                        src={driver.avatar}
+                        alt={driver.name}
+                        className="w-14 h-14 rounded-full object-cover border-2 border-amber-500 shadow-sm"
+                      />
+                      <div>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <h4 className="font-heading font-black text-slate-900 text-base sm:text-lg">
+                            {driver.name}
+                          </h4>
+                          <span className="text-xs font-mono bg-slate-100 text-slate-900 px-2.5 py-0.5 rounded border border-slate-300 font-bold">
+                            {driver.vehiclePlate}
+                          </span>
+                          <span className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
+                            ⭐ {driver.rating.toFixed(2)}
+                          </span>
+                          {driver.category === 'confort' && (
+                            <span className="text-xs bg-purple-100 text-purple-900 border border-purple-200 px-2 py-0.5 rounded font-black flex items-center gap-1">
+                              ✨ Confort
+                            </span>
+                          )}
+                          <span className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono font-bold">
+                            {driver.category === 'economica' ? 'Econômica' :
+                             driver.category === 'confort' ? 'Confort' :
+                             driver.category === 'moto_passageiro' ? 'Moto Passageiro' : 'Moto Entrega'}
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-600 font-medium mt-1">
+                          {driver.vehicleModel} ({driver.vehicleYear}) • CNH: {driver.cnh}
+                        </p>
+                        <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500 font-medium flex-wrap">
+                          <span>Tel: {driver.phone}</span>
+                          <span>•</span>
+                          <span>Login: <strong className="text-slate-800">{driver.email}</strong></span>
+                          <span>•</span>
+                          <span>{driver.totalRides} corridas</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-200">
+                      <div className="text-right mr-1">
+                        <span className="text-[11px] text-slate-500 block font-mono font-bold">
+                          Plano Semanal R$ 200
+                        </span>
+                        <span
+                          className={`text-xs font-black ${
+                            driver.weeklyPlanActive && driver.status === 'online'
+                              ? 'text-emerald-700'
+                              : 'text-amber-700'
+                          }`}
+                        >
+                          {driver.weeklyPlanActive && driver.status === 'online'
+                            ? 'Liberado (Online 7d)'
+                            : 'Bloqueado / Pendente'}
+                        </span>
+                      </div>
+
+                      {/* Botão ATIVAR */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onApproveWeeklyPayment) {
+                            onApproveWeeklyPayment(driver);
+                            showToast(`✅ Cadastro de ${driver.name} ativado com sucesso!`);
+                          }
+                        }}
+                        className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                        title="Ativar motorista e liberar 7 dias online"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Ativar</span>
+                      </button>
+
+                      {/* Botão Bloquear */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onRejectWeeklyPayment) {
+                            onRejectWeeklyPayment(driver);
+                          } else {
+                            onToggleDriverStatus(driver.id);
+                          }
+                          showToast(`Status de ${driver.name} alterado.`);
+                        }}
+                        className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                        title="Bloquear motorista / deixar offline"
+                      >
+                        <XCircle className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Bloquear</span>
+                      </button>
+
+                      {/* Botão REMOVER */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteConfirmTarget({
+                            type: 'driver',
+                            id: driver.id,
+                            name: driver.name,
+                            email: driver.email,
+                          });
+                        }}
+                        className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                        title="Remover cadastro permanentemente"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Remover</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* LISTA DE PASSAGEIROS CADASTRADOS */}
+          {cadastrosSubTab === 'passengers' && (
+            <div className="space-y-3.5">
+              {filteredPassengers.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center text-slate-500">
+                  <p className="font-heading font-bold text-base">Nenhum passageiro cadastrado no momento.</p>
+                  <p className="text-xs mt-1">Novos passageiros aparecem aqui assim que criam conta no aplicativo.</p>
+                </div>
+              ) : (
+                filteredPassengers.map((pass) => (
+                  <div
+                    key={pass.id}
+                    className="bg-white border border-slate-200 rounded-3xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md hover:border-slate-300 transition-all"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-13 h-13 rounded-full bg-blue-100 text-blue-700 font-heading font-black text-lg flex items-center justify-center border-2 border-blue-300 shadow-sm shrink-0">
+                        {pass.name ? pass.name.charAt(0).toUpperCase() : 'P'}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <h4 className="font-heading font-black text-slate-900 text-base sm:text-lg">
+                            {pass.name}
+                          </h4>
+                          <span className="text-xs bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-0.5 rounded font-mono font-bold">
+                            Passageiro
+                          </span>
+                          <span className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
+                            ⭐ {(pass.rating || 5.0).toFixed(1)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-xs text-slate-600 font-medium flex-wrap">
+                          <span>E-mail: <strong className="text-slate-900">{pass.email}</strong></span>
+                          <span>•</span>
+                          <span>Tel: {pass.phone || 'Não informado'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-200">
+                      <span className="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Conta Ativa</span>
+                      </span>
+
+                      {/* Botão REMOVER PASSAGEIRO */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteConfirmTarget({
+                            type: 'passenger',
+                            id: pass.id,
+                            name: pass.name,
+                            email: pass.email,
+                          });
+                        }}
+                        className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                        title="Remover cadastro de passageiro"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Remover</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -838,6 +1086,90 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             >
               Fechar Visualização
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação: Remover Todos os Cadastros */}
+      {isConfirmRemoveAllModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border-2 border-rose-500 animate-scale-up">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div className="text-center space-y-2">
+              <h4 className="font-heading font-black text-slate-950 text-lg">
+                Remover Todos os Cadastros?
+              </h4>
+              <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed">
+                Esta ação irá excluir permanentemente <strong>todos os cadastros</strong> de motoristas e passageiros do sistema. O acesso oficial da administração (<strong className="text-slate-900">admin@race.com.br</strong>) continuará preservado.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsConfirmRemoveAllModalOpen(false)}
+                className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onRemoveAllAccounts) {
+                    onRemoveAllAccounts();
+                  }
+                  setIsConfirmRemoveAllModalOpen(false);
+                  showToast('🗑️ Todos os cadastros foram removidos.');
+                }}
+                className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95"
+              >
+                Sim, Remover Todos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação: Remover Cadastro Individual */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-300 animate-scale-up">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div className="text-center space-y-2">
+              <h4 className="font-heading font-black text-slate-950 text-lg">
+                Remover Cadastro?
+              </h4>
+              <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed">
+                Deseja realmente excluir o cadastro de <strong>{deleteConfirmTarget.name}</strong> (<span className="text-slate-900 font-mono">{deleteConfirmTarget.email}</span>)? Esta ação não poderá ser desfeita.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget(null)}
+                className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (deleteConfirmTarget.type === 'driver') {
+                    if (onRemoveDriver) onRemoveDriver(deleteConfirmTarget.id, deleteConfirmTarget.email);
+                  } else {
+                    if (onRemovePassenger) onRemovePassenger(deleteConfirmTarget.id, deleteConfirmTarget.email);
+                  }
+                  showToast(`🗑️ Cadastro de ${deleteConfirmTarget.name} removido com sucesso.`);
+                  setDeleteConfirmTarget(null);
+                }}
+                className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95"
+              >
+                Sim, Remover
+              </button>
+            </div>
           </div>
         </div>
       )}

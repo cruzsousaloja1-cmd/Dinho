@@ -402,8 +402,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
                   {formatBRL(activeRide.price)}
                 </div>
-                <div className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  100% ao Condutor
+                <div className="text-xs text-slate-700 font-bold bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                  Preço Final Estimado
                 </div>
               </div>
             </div>
@@ -499,7 +499,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md space-y-4">
           <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-3 text-xs text-emerald-950 font-bold flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Total repassado integralmente ao motorista (100%) - Race cobra apenas R$200 por semana</span>
+            <span>Trajeto monitorado com segurança 24h e rastreamento oficial em Indaiatuba</span>
           </div>
 
           <div className="space-y-3 text-xs sm:text-sm">
@@ -1061,73 +1061,47 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
       </div>
 
-      {/* MINI-MAPA COMPACTO (180px de altura) com botão para abrir tela cheia */}
-      {mapElement && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm space-y-2 animate-fade-in">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse" />
-              <span className="font-heading font-black text-slate-900 text-xs sm:text-sm">
-                Mini-Mapa de Indaiatuba-SP
-              </span>
-            </div>
-            {onOpenFullMap && (
-              <button
-                type="button"
-                onClick={onOpenFullMap}
-                className="bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs py-1.5 px-3 rounded-xl shadow-md flex items-center gap-1.5 border border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span>Ver mapa em tela cheia</span>
-              </button>
-            )}
+      {/* BOTÃO VER MAPA NA TELA CHEIA (Sem mini mapa) */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 animate-fade-in">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-orange-100 text-[#ff6a00] flex items-center justify-center font-bold shrink-0 border border-orange-200 shadow-xs">
+            <Maximize2 className="w-5 h-5 stroke-[2.5]" />
           </div>
-
-          {/* Container do Mini-Map exatamente com 180px de altura */}
-          <div className="w-full h-[180px] rounded-xl overflow-hidden relative border border-slate-200 shadow-inner group">
-            {mapElement}
-            {onOpenFullMap && (
-              <button
-                type="button"
-                onClick={onOpenFullMap}
-                className="absolute top-2.5 right-2.5 z-[500] bg-white/95 hover:bg-white text-slate-950 font-black text-[11px] px-3 py-1.5 rounded-xl shadow-lg border border-slate-300 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 active:scale-95"
-                title="Abrir mapa em tela cheia"
-              >
-                <Maximize2 className="w-3.5 h-3.5 text-[#ff6a00]" />
-                <span>Tela Cheia</span>
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between text-[11px] text-slate-600 px-1 font-mono">
-            <span>Chega em ~{Math.max(Math.round(dynamicDistanceKm * 2.2), 3)} min • {dynamicDistanceKm} km</span>
-            {onOpenFullMap && (
-              <button
-                type="button"
-                onClick={onOpenFullMap}
-                className="text-[#ff6a00] hover:underline font-bold flex items-center gap-1 cursor-pointer"
-              >
-                <Maximize2 className="w-3 h-3" />
-                <span>Ver rota completa</span>
-              </button>
-            )}
+          <div>
+            <h4 className="font-heading font-black text-slate-900 text-sm sm:text-base">
+              Mapa de Indaiatuba em Tempo Real
+            </h4>
+            <p className="text-xs text-slate-500 font-medium">
+              Acompanhe seu trajeto, trânsito e carros ao vivo em tela cheia
+            </p>
           </div>
         </div>
-      )}
 
-      {/* Category Selection Cards with Dedicated "Confirmar" Button on each option */}
+        {onOpenFullMap && (
+          <button
+            type="button"
+            onClick={onOpenFullMap}
+            className="w-full sm:w-auto bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs sm:text-sm py-3 px-5 rounded-xl shadow-md flex items-center justify-center gap-2 border border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
+          >
+            <Maximize2 className="w-4 h-4" />
+            <span>VER MAPA NA TELA CHEIA</span>
+          </button>
+        )}
+      </div>
+
+      {/* Opções de Corrida para Passageiro (Preço Total, sem taxas por km nem dados de motorista) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <label className="text-sm font-heading font-black text-slate-900 uppercase tracking-wider">
-            Opções de Corrida RACE (Cálculo Automático por Km)
+            Escolha sua Categoria de Viagem
           </label>
-          <span className="text-xs sm:text-sm text-amber-700 font-mono font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+          <span className="text-xs sm:text-sm text-slate-700 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
             Distância da rota: {dynamicDistanceKm} km
           </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          {/* 1. Econômica - R$ 2,50/km */}
+          {/* 1. Econômica */}
           {(() => {
             const cat = VEHICLE_CATEGORIES.economica;
             const fare = calculateFare('economica', dynamicDistanceKm);
@@ -1153,12 +1127,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
                             {cat.name}
                           </span>
-                          <span className="bg-amber-500 text-slate-950 font-black text-xs px-2 py-0.5 rounded font-mono shadow-sm">
-                            R$ 2,50/km
+                          <span className="bg-emerald-100 text-emerald-800 font-bold text-[11px] px-2 py-0.5 rounded-full border border-emerald-300 font-mono shadow-2xs">
+                            Mais Pedida
                           </span>
                         </div>
                         <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
-                          {cat.capacity} • {cat.estimatedTimeMin} min
+                          {cat.capacity} &bull; {cat.estimatedTimeMin} min de espera
                         </p>
                       </div>
                     </div>
@@ -1167,13 +1141,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <span className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
                         {formatBRL(fare.totalPrice)}
                       </span>
-                      <p className="text-xs text-slate-500 font-medium">Base R$5 + km</p>
+                      <p className="text-xs text-slate-500 font-medium">Preço Final</p>
                     </div>
                   </div>
 
                   <div className="mt-3 text-xs text-slate-600 border-t border-slate-200 pt-2 flex items-center justify-between font-medium">
                     <span>{cat.tagline}</span>
-                    <span className="text-emerald-700 font-bold">100% ao motorista</span>
+                    <span className="text-slate-500 font-mono">Ar-condicionado</span>
                   </div>
                 </div>
 
@@ -1193,7 +1167,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             );
           })()}
 
-          {/* 2. Confort - R$ 3,50/km */}
+          {/* 2. Confort */}
           {(() => {
             const cat = VEHICLE_CATEGORIES.confort;
             const fare = calculateFare('confort', dynamicDistanceKm);
@@ -1219,12 +1193,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
                             {cat.name}
                           </span>
-                          <span className="bg-purple-600 text-white font-black text-xs px-2 py-0.5 rounded font-mono shadow-sm">
-                            R$ 3,50/km
+                          <span className="bg-purple-100 text-purple-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-purple-300 font-mono shadow-2xs">
+                            Mais Conforto
                           </span>
                         </div>
                         <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
-                          Sedans e SUVs novos • {cat.estimatedTimeMin} min
+                          Sedans e SUVs novos &bull; {cat.estimatedTimeMin} min
                         </p>
                       </div>
                     </div>
@@ -1233,13 +1207,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <span className="font-heading font-black text-purple-900 text-xl sm:text-2xl">
                         {formatBRL(fare.totalPrice)}
                       </span>
-                      <p className="text-xs text-slate-500 font-medium">Base R$7 + km</p>
+                      <p className="text-xs text-slate-500 font-medium">Preço Final</p>
                     </div>
                   </div>
 
                   <div className="mt-3 text-xs text-slate-600 border-t border-slate-200 pt-2 flex items-center justify-between font-medium">
                     <span>{cat.tagline}</span>
-                    <span className="text-emerald-700 font-bold">100% ao motorista</span>
+                    <span className="text-purple-700 font-bold">Mais espaço</span>
                   </div>
                 </div>
 
@@ -1259,7 +1233,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             );
           })()}
 
-          {/* 3. Motoboy Passageiro - R$ 1,80/km */}
+          {/* 3. Motoboy Passageiro */}
           {(() => {
             const cat = VEHICLE_CATEGORIES.moto_passageiro;
             const fare = calculateFare('moto_passageiro', dynamicDistanceKm);
@@ -1285,12 +1259,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
                             {cat.name}
                           </span>
-                          <span className="bg-cyan-600 text-white font-black text-xs px-2 py-0.5 rounded font-mono shadow-sm">
-                            R$ 1,80/km
+                          <span className="bg-cyan-100 text-cyan-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-cyan-300 font-mono shadow-2xs">
+                            Mais Rápido
                           </span>
                         </div>
                         <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
-                          Mais rápido no trânsito • {cat.estimatedTimeMin} min
+                          Rápido no trânsito &bull; {cat.estimatedTimeMin} min
                         </p>
                       </div>
                     </div>
@@ -1299,13 +1273,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <span className="font-heading font-black text-cyan-900 text-xl sm:text-2xl">
                         {formatBRL(fare.totalPrice)}
                       </span>
-                      <p className="text-xs text-slate-500 font-medium">Capacete incluso</p>
+                      <p className="text-xs text-slate-500 font-medium">Preço Final</p>
                     </div>
                   </div>
 
                   <div className="mt-3 text-xs text-slate-600 border-t border-slate-200 pt-2 flex items-center justify-between font-medium">
                     <span>{cat.tagline}</span>
-                    <span className="text-emerald-700 font-bold">100% ao motoboy</span>
+                    <span className="text-cyan-700 font-bold">Capacete incluso</span>
                   </div>
                 </div>
 
@@ -1325,7 +1299,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             );
           })()}
 
-          {/* 4. Motoboy Entrega Flash - R$ 2,00/km */}
+          {/* 4. Motoboy Entrega Flash */}
           {(() => {
             const cat = VEHICLE_CATEGORIES.moto_entrega;
             const fare = calculateFare('moto_entrega', dynamicDistanceKm);
@@ -1351,12 +1325,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
                             {cat.name}
                           </span>
-                          <span className="bg-amber-500 text-slate-950 font-black text-xs px-2 py-0.5 rounded font-mono shadow-sm">
-                            R$ 2,00/km
+                          <span className="bg-amber-100 text-amber-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-amber-300 font-mono shadow-2xs">
+                            Flash Delivery
                           </span>
                         </div>
                         <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
-                          Delivery & Encomendas • {cat.estimatedTimeMin} min
+                          Delivery & Encomendas &bull; {cat.estimatedTimeMin} min
                         </p>
                       </div>
                     </div>
@@ -1365,13 +1339,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <span className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
                         {formatBRL(fare.totalPrice)}
                       </span>
-                      <p className="text-xs text-slate-500 font-medium">Baú até 20kg</p>
+                      <p className="text-xs text-slate-500 font-medium">Preço Final</p>
                     </div>
                   </div>
 
                   <div className="mt-3 text-xs text-slate-600 border-t border-slate-200 pt-2 flex items-center justify-between font-medium">
                     <span>{cat.tagline}</span>
-                    <span className="text-emerald-700 font-bold">100% ao motoboy</span>
+                    <span className="text-amber-700 font-bold">Baú até 20kg</span>
                   </div>
                 </div>
 

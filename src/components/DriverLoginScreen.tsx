@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Driver, AppUser } from '../types';
-import { Eye, EyeOff, AlertTriangle, UserPlus, LogIn, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { Driver, AppUser, VehicleCategory } from '../types';
+import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
 
@@ -13,45 +13,58 @@ interface DriverLoginScreenProps {
   onRegisterPassengerSuccess: (user: AppUser) => void;
 }
 
+type RegistrationRole = 'passenger' | 'driver' | 'motoboy';
+
 export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   drivers,
   passengers = [],
   onLoginSuccess,
+  onRegisterDriverSuccess,
+  onRegisterMotoboySuccess,
   onRegisterPassengerSuccess,
 }) => {
-  // 1 cadastro só para entrar, depois escolhe como trabalhar dentro do app
-  const [viewMode, setViewMode] = useState<'login' | 'register'>('login');
+  // Tela inicial: 'selection' (escolher tipo ou login), 'login' (entrar com credenciais), 'register' (formulário de 5 campos)
+  const [viewMode, setViewMode] = useState<'selection' | 'login' | 'register'>('selection');
+  const [regRole, setRegRole] = useState<RegistrationRole>('passenger');
 
   // Estados do formulário de login
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginIdentifier, setLoginIdentifier] = useState(''); // Aceita E-mail ou Login
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginErrorMessage, setLoginErrorMessage] = useState<string | null>(null);
 
-  // Estados do cadastro único (Nome, Email, Celular, Senha)
+  // Estados do cadastro com 5 campos: Nome, E-mail, WhatsApp, Login, Senha
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
-  const [regPhone, setRegPhone] = useState('');
+  const [regWhatsApp, setRegWhatsApp] = useState('');
+  const [regLogin, setRegLogin] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regErrorMessage, setRegErrorMessage] = useState<string | null>(null);
+
+  // Iniciar fluxo de cadastro para a categoria escolhida
+  const handleStartRegister = (role: RegistrationRole) => {
+    setRegRole(role);
+    setRegErrorMessage(null);
+    setViewMode('register');
+  };
 
   // Submit de Login
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoginErrorMessage(null);
 
-    const cleanEmail = loginEmail.trim().toLowerCase();
-    if (!cleanEmail || !loginPassword) {
-      setLoginErrorMessage('Por favor, informe seu e-mail e sua senha.');
+    const cleanIdentifier = loginIdentifier.trim();
+    if (!cleanIdentifier || !loginPassword) {
+      setLoginErrorMessage('Por favor, informe seu Login ou E-mail e sua senha.');
       return;
     }
 
-    // Valida credenciais e carrega dados isolados daquele usuário
-    const result = verifyUserLogin(cleanEmail, loginPassword);
+    // Valida credenciais (suporta email ou login username)
+    const result = verifyUserLogin(cleanIdentifier, loginPassword);
     if (!result.success || !result.user) {
-      setLoginErrorMessage(result.error || 'E-mail ou senha incorretos.');
+      setLoginErrorMessage(result.error || 'Credenciais inválidas. Verifique seu login e senha.');
       return;
     }
 
@@ -62,17 +75,18 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     onLoginSuccess(result.user, result.driver);
   };
 
-  // Submit do Cadastro Único (Nome, Email, Celular, Senha) -> Login automático como PASSAGEIRO
+  // Submit do Cadastro com 5 campos (Nome, E-mail, WhatsApp, Login, Senha)
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setRegErrorMessage(null);
 
     const cleanName = regName.trim();
     const cleanEmail = regEmail.trim().toLowerCase();
-    const cleanPhone = regPhone.trim();
+    const cleanWhatsApp = regWhatsApp.trim();
+    const cleanLogin = regLogin.trim().toLowerCase();
 
-    if (!cleanName || !cleanEmail || !cleanPhone || !regPassword) {
-      setRegErrorMessage('Por favor, preencha todos os campos obrigatórios (*).');
+    if (!cleanName || !cleanEmail || !cleanWhatsApp || !cleanLogin || !regPassword) {
+      setRegErrorMessage('Por favor, preencha todos os 5 campos obrigatórios (*).');
       return;
     }
 
@@ -86,38 +100,94 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    // Verifica se já existe conta com esse e-mail
-    const existing = getUserAccount(cleanEmail);
-    if (existing) {
+    // Verifica se já existe conta com esse e-mail ou login
+    const existingEmail = getUserAccount(cleanEmail);
+    if (existingEmail) {
       setRegErrorMessage('Já existe uma conta cadastrada com este e-mail. Faça login para continuar.');
       return;
     }
 
+    const existingLogin = getUserAccount(cleanLogin);
+    if (existingLogin) {
+      setRegErrorMessage('Este login de usuário já está em uso. Por favor, escolha outro login.');
+      return;
+    }
+
+    const isPassengerRole = regRole === 'passenger';
+    const isDriverRole = regRole === 'driver';
+    const isMotoboyRole = regRole === 'motoboy';
+
+    // Criação do novo motorista/motoboy se aplicável
+    let newDriverObj: Driver | undefined = undefined;
+    if (isDriverRole || isMotoboyRole) {
+      const driverId = isMotoboyRole ? `moto-${Date.now().toString().slice(-6)}` : `drv-${Date.now().toString().slice(-6)}`;
+      const category: VehicleCategory = isMotoboyRole ? 'moto_passageiro' : 'economica';
+
+      newDriverObj = {
+        id: driverId,
+        name: cleanName,
+        phone: cleanWhatsApp,
+        email: cleanEmail,
+        avatar: isMotoboyRole
+          ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=150&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        rating: 5.0,
+        totalRides: 0,
+        vehicleModel: isMotoboyRole ? 'Honda CG 160 Fan' : 'Chevrolet Onix 1.0',
+        vehiclePlate: isMotoboyRole ? 'MTO-1A23' : 'RCE-2B34',
+        vehicleColor: isMotoboyRole ? 'Vermelha' : 'Branco',
+        vehicleYear: 2023,
+        cpf: '123.456.789-00',
+        cnh: '99887766554',
+        category,
+        weeklyPlanActive: false, // Inicia pendente de pagamento R$ 200/semana
+        weeklyPlanPrice: 200,
+        weeklyPlanExpiresAt: null,
+        weeklyFeeExpiresAt: null,
+        status: 'offline', // Ativado após pagamento PIX
+        earningsToday: 0,
+        earningsWeek: 0,
+        cnhVerified: true,
+        vehicleVerified: true,
+        criminalRecordClear: true,
+        lat: -23.0842,
+        lng: -47.2118,
+        registrationDate: new Date().toISOString(),
+      };
+    }
+
     const newUser: AppUser = {
-      id: `psg-${Date.now().toString().slice(-6)}`,
+      id: isPassengerRole ? `psg-${Date.now().toString().slice(-6)}` : newDriverObj!.id,
       name: cleanName,
       email: cleanEmail,
-      phone: cleanPhone,
-      role: 'passenger',
-      tipo: 'passenger',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      phone: cleanWhatsApp,
+      whatsapp: cleanWhatsApp,
+      login: cleanLogin,
+      role: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
+      tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy_passageiro' : 'motorista_economico',
+      placa: newDriverObj?.vehiclePlate || '',
+      avatar: newDriverObj?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
       rating: 5.0,
       password: regPassword,
+      driverData: newDriverObj,
     };
 
-    // 1. Salva no localStorage com ID único race_user_${email} e race_current_user (com tipo inicial = passageiro)
+    // Salva no localStorage isolado com chave race_user_${email} e define race_current_user
     saveUserAccount({
       id: newUser.id,
       name: newUser.name,
       email: newUser.email,
       phone: newUser.phone,
-      role: 'passenger',
-      tipo: 'passenger',
-      placa: '',
+      whatsapp: newUser.whatsapp,
+      login: newUser.login,
+      role: newUser.role,
+      tipo: newUser.tipo,
+      placa: newUser.placa,
       password: regPassword,
       avatar: newUser.avatar,
       rating: 5.0,
       rides: [],
+      driverData: newDriverObj,
       createdAt: new Date().toISOString(),
     }, true);
 
@@ -125,10 +195,21 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });
     } catch {}
 
-    onRegisterPassengerSuccess(newUser);
-
-    // 2. Faz login automático imediatamente como passageiro (entra no app para pedir corrida)
-    onLoginSuccess(newUser);
+    if (isPassengerRole) {
+      onRegisterPassengerSuccess(newUser);
+      // Passageiro entra direto na busca de corridas
+      onLoginSuccess(newUser);
+    } else if (isMotoboyRole) {
+      if (onRegisterMotoboySuccess && newDriverObj) {
+        onRegisterMotoboySuccess(newUser, newDriverObj);
+      }
+      onLoginSuccess(newUser, newDriverObj);
+    } else {
+      if (newDriverObj) {
+        onRegisterDriverSuccess(newUser, newDriverObj);
+      }
+      onLoginSuccess(newUser, newDriverObj);
+    }
   };
 
   return (
@@ -147,9 +228,132 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           </p>
         </div>
 
-        {/* 1. MODO LOGIN */}
+        {/* 1. TELA PRINCIPAL: ESCOLHER ENTRE OS 3 CADASTROS OU ENTRAR */}
+        {viewMode === 'selection' && (
+          <div className="space-y-6">
+            <div className="text-center space-y-1 pb-1">
+              <h2 className="text-xl sm:text-2xl font-heading font-black text-white uppercase tracking-tight">
+                Seja Bem-Vindo(a)
+              </h2>
+              <p className="text-xs text-zinc-400 font-medium">
+                Escolha abaixo como deseja se cadastrar na plataforma RACE:
+              </p>
+            </div>
+
+            {/* Os 3 Botões de Cadastro Oficiais */}
+            <div className="space-y-3">
+              {/* 1. Cadastro de Passageiro */}
+              <button
+                type="button"
+                onClick={() => handleStartRegister('passenger')}
+                className="w-full p-4 rounded-2xl bg-[#121212] hover:bg-[#1a1a1a] border-2 border-emerald-500/60 hover:border-emerald-400 active:scale-[0.99] text-left transition-all cursor-pointer flex items-center justify-between group shadow-lg"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <User className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading font-black text-white text-base sm:text-lg group-hover:text-emerald-300 transition-colors">
+                      Cadastro de Passageiro
+                    </h3>
+                    <p className="text-xs text-zinc-400 font-medium">
+                      Peça corridas e viagens em Indaiatuba direto no app
+                    </p>
+                  </div>
+                </div>
+                <span className="text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider hidden sm:block">
+                  Entrar
+                </span>
+              </button>
+
+              {/* 2. Cadastro de Motorista */}
+              <button
+                type="button"
+                onClick={() => handleStartRegister('driver')}
+                className="w-full p-4 rounded-2xl bg-[#121212] hover:bg-[#1a1a1a] border-2 border-[#ff6a00]/70 hover:border-[#ff6a00] active:scale-[0.99] text-left transition-all cursor-pointer flex items-center justify-between group shadow-lg"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-[#ff6a00]/15 text-[#ff6a00] border border-[#ff6a00]/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Car className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading font-black text-white text-base sm:text-lg group-hover:text-[#ff8533] transition-colors">
+                      Cadastro de Motorista
+                    </h3>
+                    <p className="text-xs text-zinc-400 font-medium">
+                      Carro próprio &bull; 100% de repasse &bull; R$200/semana
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[#ff6a00] text-xs font-mono font-bold uppercase tracking-wider hidden sm:block">
+                  Trabalhar
+                </span>
+              </button>
+
+              {/* 3. Cadastro de Motoboy */}
+              <button
+                type="button"
+                onClick={() => handleStartRegister('motoboy')}
+                className="w-full p-4 rounded-2xl bg-[#121212] hover:bg-[#1a1a1a] border-2 border-cyan-500/60 hover:border-cyan-400 active:scale-[0.99] text-left transition-all cursor-pointer flex items-center justify-between group shadow-lg"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Bike className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading font-black text-white text-base sm:text-lg group-hover:text-cyan-300 transition-colors">
+                      Cadastro de Motoboy
+                    </h3>
+                    <p className="text-xs text-zinc-400 font-medium">
+                      Moto táxi ou entregas &bull; 100% dos ganhos livres
+                    </p>
+                  </div>
+                </div>
+                <span className="text-cyan-400 text-xs font-mono font-bold uppercase tracking-wider hidden sm:block">
+                  Trabalhar
+                </span>
+              </button>
+            </div>
+
+            {/* Divisor com Botão de Login para quem já possui conta */}
+            <div className="pt-4 border-t border-zinc-800 text-center space-y-3">
+              <p className="text-xs text-zinc-400 font-medium">
+                Já possui cadastro no RACE?
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginErrorMessage(null);
+                  setViewMode('login');
+                }}
+                className="w-full py-4 px-5 rounded-2xl bg-[#161616] hover:bg-[#202020] border border-zinc-700 hover:border-zinc-500 text-white font-heading font-black text-base transition-all cursor-pointer shadow-md uppercase tracking-wider"
+              >
+                ENTRAR COM LOGIN E SENHA
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 2. MODO LOGIN (Login ou E-mail + Senha) */}
         {viewMode === 'login' && (
           <div className="space-y-6">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginErrorMessage(null);
+                  setViewMode('selection');
+                }}
+                className="text-zinc-400 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Voltar às opções</span>
+              </button>
+              <span className="text-[11px] font-mono font-bold text-[#ff6a00] uppercase">
+                Acesso Seguro
+              </span>
+            </div>
+
             {loginErrorMessage && (
               <div className="bg-red-950/80 border border-red-500/80 text-red-200 text-xs sm:text-sm p-3.5 rounded-2xl font-medium flex items-center gap-2.5 shadow-sm">
                 <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
@@ -160,14 +364,14 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
-                  E-MAIL
+                  LOGIN OU E-MAIL
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   required
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="seu.email@exemplo.com"
+                  value={loginIdentifier}
+                  onChange={(e) => setLoginIdentifier(e.target.value)}
+                  placeholder="Seu login de usuário ou e-mail"
                   className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3.5 text-base focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
                 />
               </div>
@@ -199,57 +403,78 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 type="submit"
                 className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-lg py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-5"
               >
-                ENTRAR
+                ENTRAR NO RACE
               </button>
             </form>
 
-            {/* SÓ 1 BOTÃO DE CADASTRO: "Novo Cadastro" / "Criar conta" */}
-            <div className="pt-4 border-t border-zinc-800/80 text-center space-y-3">
+            {/* Atalhos para criar conta */}
+            <div className="pt-4 border-t border-zinc-800 text-center space-y-2">
               <p className="text-xs text-zinc-400 font-medium">
-                Primeira vez no RACE? Crie sua conta em 30 segundos:
+                Ainda não tem conta? Escolha seu cadastro:
               </p>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setRegErrorMessage(null);
-                  setViewMode('register');
-                }}
-                className="w-full py-4 px-5 rounded-2xl bg-[#141414] hover:bg-[#1f1f1f] active:scale-[0.99] border-2 border-[#ff6a00]/50 hover:border-[#ff6a00] text-white font-heading font-black text-base transition-all cursor-pointer flex items-center justify-center gap-2.5 shadow-md group"
-              >
-                <UserPlus className="w-5 h-5 text-[#ff6a00] group-hover:scale-110 transition-transform" />
-                <span>Novo Cadastro / Criar conta</span>
-              </button>
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleStartRegister('passenger')}
+                  className="p-2.5 rounded-xl bg-[#141414] hover:bg-[#1f1f1f] border border-emerald-500/40 text-emerald-400 font-heading font-black text-xs transition-all cursor-pointer"
+                >
+                  Passageiro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleStartRegister('driver')}
+                  className="p-2.5 rounded-xl bg-[#141414] hover:bg-[#1f1f1f] border border-[#ff6a00]/40 text-[#ff6a00] font-heading font-black text-xs transition-all cursor-pointer"
+                >
+                  Motorista
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleStartRegister('motoboy')}
+                  className="p-2.5 rounded-xl bg-[#141414] hover:bg-[#1f1f1f] border border-cyan-500/40 text-cyan-400 font-heading font-black text-xs transition-all cursor-pointer"
+                >
+                  Motoboy
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* 2. MODO CADASTRO ÚNICO (Nome, Email, Celular, Senha) */}
+        {/* 3. MODO CADASTRO COM OS 5 CAMPOS (Nome, E-mail, WhatsApp, Login, Senha) */}
         {viewMode === 'register' && (
           <div className="space-y-5">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <button
                 type="button"
                 onClick={() => {
-                  setLoginErrorMessage(null);
-                  setViewMode('login');
+                  setRegErrorMessage(null);
+                  setViewMode('selection');
                 }}
                 className="text-zinc-400 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span>Voltar para Login</span>
+                <span>Voltar às opções</span>
               </button>
-              <span className="text-[11px] font-mono font-bold text-[#ff6a00] uppercase">
-                Cadastro Único
+              <span className={`text-[11px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border ${
+                regRole === 'passenger'
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                  : regRole === 'driver'
+                  ? 'bg-[#ff6a00]/20 text-[#ff6a00] border-[#ff6a00]/40'
+                  : 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
+              }`}>
+                {regRole === 'passenger' ? 'Passageiro' : regRole === 'driver' ? 'Motorista' : 'Motoboy'}
               </span>
             </div>
 
             <div className="space-y-1">
               <h2 className="text-2xl font-heading font-black text-white tracking-tight">
-                CRIAR CONTA RACE
+                {regRole === 'passenger' && 'CADASTRO DE PASSAGEIRO'}
+                {regRole === 'driver' && 'CADASTRO DE MOTORISTA'}
+                {regRole === 'motoboy' && 'CADASTRO DE MOTOBOY'}
               </h2>
               <p className="text-xs text-zinc-400 font-medium">
-                Preencha seus dados para entrar e começar a usar o app imediatamente:
+                {regRole === 'passenger' && 'Preencha os 5 campos abaixo para entrar direto na busca de corridas:'}
+                {regRole === 'driver' && 'Preencha os 5 campos para liberar sua conta de motorista com 100% dos ganhos:'}
+                {regRole === 'motoboy' && 'Preencha os 5 campos para rodar como motoboy em passageiro ou entregas:'}
               </p>
             </div>
 
@@ -260,10 +485,11 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
+            <form onSubmit={handleRegisterSubmit} className="space-y-3">
+              {/* 1. Nome Completo */}
               <div className="space-y-1">
                 <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
-                  Nome Completo *
+                  1. Nome Completo *
                 </label>
                 <input
                   type="text"
@@ -271,13 +497,14 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                   value={regName}
                   onChange={(e) => setRegName(e.target.value)}
                   placeholder="Ex: João da Silva"
-                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
+                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
                 />
               </div>
 
+              {/* 2. E-mail */}
               <div className="space-y-1">
                 <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
-                  E-mail *
+                  2. E-mail *
                 </label>
                 <input
                   type="email"
@@ -285,28 +512,45 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                   value={regEmail}
                   onChange={(e) => setRegEmail(e.target.value)}
                   placeholder="seu.email@exemplo.com"
-                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
+                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
                 />
               </div>
 
+              {/* 3. WhatsApp */}
               <div className="space-y-1">
                 <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
-                  Celular / WhatsApp *
+                  3. WhatsApp / Celular *
                 </label>
                 <input
                   type="tel"
                   required
-                  value={regPhone}
-                  onChange={(e) => setRegPhone(e.target.value)}
+                  value={regWhatsApp}
+                  onChange={(e) => setRegWhatsApp(e.target.value)}
                   placeholder="(19) 99999-9999"
-                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
+                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
                 />
               </div>
 
+              {/* 4. Login */}
+              <div className="space-y-1">
+                <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                  4. Login (Nome de Usuário) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={regLogin}
+                  onChange={(e) => setRegLogin(e.target.value)}
+                  placeholder="Ex: joao.indaiatuba"
+                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium font-mono"
+                />
+              </div>
+
+              {/* 5. Senha */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div className="space-y-1">
                   <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
-                    Senha (mín. 6) *
+                    5. Senha (mín. 6) *
                   </label>
                   <div className="relative">
                     <input
@@ -315,7 +559,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-[#ff6a00] transition-colors pr-10 font-medium"
+                      className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors pr-10 font-medium"
                     />
                     <button
                       type="button"
@@ -337,24 +581,37 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                     value={regConfirmPassword}
                     onChange={(e) => setRegConfirmPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
+                    className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
                   />
                 </div>
               </div>
 
-              <div className="p-3 bg-[#111111] border border-zinc-800 rounded-2xl text-[11px] text-zinc-400 space-y-1">
-                <div className="flex items-center gap-1.5 text-zinc-300 font-bold">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#ff6a00]" />
-                  <span>Login automático imediato como Passageiro</span>
+              {/* Aviso da Assinatura para Motorista/Motoboy */}
+              {(regRole === 'driver' || regRole === 'motoboy') && (
+                <div className="p-3.5 bg-amber-950/40 border border-amber-500/50 rounded-2xl text-xs text-amber-200 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-400">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Plano Semanal: R$ 200/semana (100% dos Ganhos Livres)</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-300">
+                    Chave PIX Oficial:{' '}
+                    <span className="font-mono font-bold text-[#ff6a00] select-all">
+                      9d9e5635-9e68-46bf-bffe-08bdae29c8ba
+                    </span>
+                  </p>
                 </div>
-                <p>
-                  Você poderá pedir corridas e, se quiser trabalhar, escolher sua categoria de motorista a qualquer momento na aba <strong>"Motorista"</strong> dentro do app.
-                </p>
-              </div>
+              )}
+
+              {regRole === 'passenger' && (
+                <div className="p-3 bg-emerald-950/30 border border-emerald-500/40 rounded-2xl text-[11px] text-emerald-200 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Ao cadastrar, você entra direto na busca de corridas no mapa!</span>
+                </div>
+              )}
 
               <button
                 type="submit"
-                className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-lg py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-3"
+                className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-3"
               >
                 CRIAR CONTA E ENTRAR
               </button>

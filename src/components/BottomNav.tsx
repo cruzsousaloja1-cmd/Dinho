@@ -1,6 +1,9 @@
 import React from 'react';
 import { 
   Car, 
+  MoreHorizontal, 
+  Clock, 
+  User, 
   ShieldCheck, 
   History, 
   UserCheck 
@@ -8,7 +11,14 @@ import {
 
 import { AppUser } from '../types';
 
-export type TabType = 'rides' | 'delivery' | 'driver_portal' | 'history' | 'admin';
+export type TabType = 
+  | 'rides' 
+  | 'delivery' 
+  | 'driver_portal' 
+  | 'history' 
+  | 'admin'
+  | 'passenger_options'
+  | 'passenger_account';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -23,17 +33,85 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   isDriverOnline,
   currentUser,
 }) => {
-  // 1. Esconder botão ADM da BottomNav para motorista, motoboy e passageiro.
-  // Só mostrar se currentUser.email === 'admin@race.com.br'
+  // Identifica se é Motorista/Motoboy ou Administrador
+  const isDriverOrMotoboy = Boolean(
+    currentUser?.role === 'driver' ||
+    currentUser?.role === 'motoboy' ||
+    currentUser?.driverData
+  );
   const isAdmin = currentUser?.email?.trim().toLowerCase() === 'admin@race.com.br';
+  const isPassenger = !isDriverOrMotoboy && !isAdmin;
 
-  const tabs = [
+  // 1. BARRA EXCLUSIVA DO PASSAGEIRO: SÓ 4 BOTÕES (CORRIDA, OPÇÃO, ATIVIDADE, CONTA)
+  // Sem botão Motorista, sem ADM, sem Entregas, sem valor por km ou ganhos
+  if (isPassenger) {
+    const passengerTabs = [
+      {
+        id: 'rides' as TabType,
+        label: 'CORRIDA',
+        icon: Car,
+      },
+      {
+        id: 'passenger_options' as TabType,
+        label: 'OPÇÃO',
+        icon: MoreHorizontal,
+      },
+      {
+        id: 'history' as TabType,
+        label: 'ATIVIDADE',
+        icon: Clock,
+      },
+      {
+        id: 'passenger_account' as TabType,
+        label: 'CONTA',
+        icon: User,
+      },
+    ];
+
+    return (
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-3 py-2 shadow-[0_-8px_20px_rgba(0,0,0,0.06)]">
+        <div className="max-w-md mx-auto flex items-center justify-around gap-2">
+          {passengerTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onChangeTab(tab.id)}
+                className={`relative flex flex-col items-center justify-center flex-1 py-2 px-1 rounded-2xl transition-all duration-200 cursor-pointer ${
+                  isActive
+                    ? 'text-[#ff6a00] bg-orange-50 font-black border border-[#ff6a00]/30 shadow-xs scale-105'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <div
+                  className={`p-1 rounded-xl transition-transform ${
+                    isActive ? 'text-[#ff6a00]' : 'text-slate-600'
+                  }`}
+                >
+                  <Icon className="w-6 h-6 stroke-[2.5]" />
+                </div>
+
+                <span className="text-[11px] sm:text-xs font-heading font-black mt-0.5 tracking-wider uppercase">
+                  {tab.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    );
+  }
+
+  // 2. BARRA DO MOTORISTA / MOTOBOY / ADMIN (Mantém barra com Motorista, Ganhos, etc.)
+  const driverTabs = [
     {
       id: 'rides' as TabType,
       label: 'Corridas',
-      sublabel: 'Carro / Moto',
+      sublabel: 'Atendimento',
       icon: Car,
-      badge: 'R$2,50/km',
     },
     {
       id: 'driver_portal' as TabType,
@@ -46,7 +124,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     {
       id: 'history' as TabType,
       label: 'Histórico',
-      sublabel: 'Recibos & Km',
+      sublabel: 'Ganhos & Corridas',
       icon: History,
     },
     ...(isAdmin
@@ -54,7 +132,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           {
             id: 'admin' as TabType,
             label: 'Painel Admin',
-            sublabel: 'Métricas & Dados',
+            sublabel: 'Gestão Geral',
             icon: ShieldCheck,
           },
         ]
@@ -64,13 +142,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-3 py-2 shadow-[0_-8px_20px_rgba(0,0,0,0.06)]">
       <div className="max-w-2xl mx-auto flex items-center justify-around gap-1.5">
-        {tabs.map((tab) => {
+        {driverTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
 
           return (
             <button
               key={tab.id}
+              type="button"
               onClick={() => onChangeTab(tab.id)}
               className={`relative flex flex-col items-center justify-center flex-1 py-2 px-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
                 isActive
@@ -78,13 +157,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              {/* Highlight badge for Category Price / R$300 */}
-              {tab.badge && (
-                <span className="hidden xs:block absolute -top-2.5 text-[10px] font-mono font-extrabold bg-white border border-slate-300 text-amber-700 px-1.5 py-0.2 rounded-full shadow-sm">
-                  {tab.badge}
-                </span>
-              )}
-
               {/* Online Indicator if driver is active */}
               {tab.onlineDot !== undefined && (
                 <span

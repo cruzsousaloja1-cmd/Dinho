@@ -28,6 +28,8 @@ import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
 import { DriverLoginScreen } from './components/DriverLoginScreen';
 import { FullMapView } from './components/FullMapView';
+import { PassengerOptionsView } from './components/PassengerOptionsView';
+import { PassengerAccountView } from './components/PassengerAccountView';
 import { AppUser } from './types';
 import { AlertTriangle, CheckCircle2, X, QrCode } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -38,7 +40,11 @@ import {
   saveUserAccount, 
   getUserAccount, 
   normalizeEmail,
-  ADMIN_EMAIL 
+  ADMIN_EMAIL,
+  deleteUserAccount,
+  deleteAllUserAccounts,
+  activateAllDriverAccounts,
+  getAllRegisteredPassengers
 } from './services/userService';
 import {
   notifyDriverAccepted,
@@ -83,6 +89,7 @@ export default function App() {
   });
   const [ridesHistory, setRidesHistory] = useState<Ride[]>(INITIAL_RIDES_HISTORY);
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
 
   // Registered Passengers State
   const [passengers, setPassengers] = useState<AppUser[]>(() => {
@@ -619,6 +626,46 @@ export default function App() {
     );
   };
 
+  // Admin Management: Remover Motorista Individual
+  const handleRemoveDriver = (driverId: string, email: string) => {
+    deleteUserAccount(email, driverId);
+    setDrivers((prev) => prev.filter((d) => d.id !== driverId && normalizeEmail(d.email) !== normalizeEmail(email)));
+    triggerPush('🗑️ Cadastro Removido', `O cadastro do motorista ${email} foi excluído com sucesso.`, 'system');
+  };
+
+  // Admin Management: Remover Passageiro Individual
+  const handleRemovePassenger = (passengerId: string, email: string) => {
+    deleteUserAccount(email, passengerId);
+    setPassengers((prev) => prev.filter((p) => p.id !== passengerId && normalizeEmail(p.email) !== normalizeEmail(email)));
+    triggerPush('🗑️ Passageiro Removido', `O cadastro do passageiro ${email} foi excluído com sucesso.`, 'system');
+  };
+
+  // Admin Management: Ativar TODOS os motoristas/motoboys
+  const handleActivateAllDrivers = () => {
+    const updated = activateAllDriverAccounts(drivers);
+    setDrivers(updated);
+    triggerPush(
+      '✅ Todos os Cadastros Ativados',
+      `Todos os ${updated.length} condutores foram ativados com 7 dias liberados e status ONLINE!`,
+      'financial'
+    );
+    try {
+      confetti({ particleCount: 80, spread: 90, origin: { y: 0.6 } });
+    } catch {}
+  };
+
+  // Admin Management: Remover TODOS os cadastros
+  const handleRemoveAllAccounts = () => {
+    deleteAllUserAccounts();
+    setDrivers([]);
+    setPassengers([]);
+    triggerPush(
+      '🗑️ Todos os Cadastros Removidos',
+      'Todos os cadastros de motoristas e passageiros foram excluídos do sistema.',
+      'system'
+    );
+  };
+
   // Auth success handler: "Após realização de cadastro com login e senha todos entrarão no aplicativo direto na página de atendimento de corridas"
   const handleAuthSuccess = (user: AppUser, driver?: Driver) => {
     setCurrentUser(user);
@@ -636,6 +683,16 @@ export default function App() {
       `Olá ${user.name}! Você entrou direto na Central de Atendimento de Corridas RACE.`,
       'system'
     );
+  };
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('race_current_user');
+    } catch {}
+    setCurrentUser(null);
+    setCurrentDriver(DEFAULT_NEW_DRIVER);
+    setActiveTab('rides');
+    triggerPush('Sessão Encerrada', 'Você saiu da sua conta RACE.', 'system');
   };
 
   const unreadNotifsCount = notifications.filter((n) => !n.read).length;
@@ -789,16 +846,7 @@ export default function App() {
         }}
         currentUser={currentUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
-        onLogout={() => {
-          // Limpar localStorage e deslogar condutor
-          try {
-            localStorage.removeItem('race_current_user');
-          } catch {}
-          setCurrentUser(null);
-          setCurrentDriver(DEFAULT_NEW_DRIVER);
-          setActiveTab('rides');
-          triggerPush('Sessão Encerrada', 'Você saiu da sua conta RACE.', 'system');
-        }}
+        onLogout={handleLogout}
       />
 
       {/* Main Layout Container */}
@@ -907,6 +955,29 @@ export default function App() {
         {/* 4. Histórico Completo & Recibos - APENAS dados do próprio usuário */}
         {activeTab === 'history' && (
           <RideHistoryView rides={getIsolatedUserRides(currentUser)} />
+        )}
+
+        {/* 5. Opções de Categoria para Passageiro (4 Categorias) */}
+        {activeTab === 'passenger_options' && (
+          <PassengerOptionsView
+            selectedCategory={selectedCategory}
+            onSelectCategory={(cat) => setSelectedCategory(cat)}
+            onNavigateToRides={() => setActiveTab('rides')}
+          />
+        )}
+
+        {/* 6. Conta & Perfil do Passageiro (Nome, E-mail, WhatsApp, Login, Endereço com Meu GPS, Sair) */}
+        {activeTab === 'passenger_account' && (
+          <PassengerAccountView
+            currentUser={currentUser}
+            currentAddress={pickup?.address}
+            pickup={pickup}
+            onUpdateAddress={(addr, lat, lng) => setPickup({ address: addr, lat, lng })}
+            onLogout={handleLogout}
+            onNavigateToHistory={() => setActiveTab('history')}
+            onOpenSupport={() => setIsSupportOpen(true)}
+            onOpenShare={() => setIsShareOpen(true)}
+          />
         )}
 
         {/* 5. Painel Administrativo Master - APENAS admin@race.com.br */}
