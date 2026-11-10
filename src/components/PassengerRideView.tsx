@@ -1216,35 +1216,19 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
       </div>
 
-      {/* BOTÃO VER MAPA NA TELA CHEIA (Sem mini mapa) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 animate-fade-in">
-        <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-orange-100 text-[#ff6a00] flex items-center justify-center font-bold shrink-0 border border-orange-200 shadow-xs">
-            <Maximize2 className="w-5 h-5 stroke-[2.5]" />
-          </div>
-          <div>
-            <h4 className="font-heading font-black text-slate-900 text-sm sm:text-base">
-              Mapa de Indaiatuba em Tempo Real
-            </h4>
-            <p className="text-xs text-slate-500 font-medium">
-              Acompanhe seu trajeto, trânsito e carros ao vivo em tela cheia
-            </p>
-          </div>
-        </div>
+      {/* SOMENTE O BOTÃO: "VER O MAPA TELA INTEIRA" (LARANJA, GRANDE, SEM MINI MAPA NEM BOLINHAS) */}
+      {onOpenFullMap && (
+        <button
+          type="button"
+          onClick={onOpenFullMap}
+          className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider my-3"
+        >
+          <Maximize2 className="w-6 h-6 stroke-[2.5]" />
+          <span>VER O MAPA TELA INTEIRA</span>
+        </button>
+      )}
 
-        {onOpenFullMap && (
-          <button
-            type="button"
-            onClick={onOpenFullMap}
-            className="w-full sm:w-auto bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs sm:text-sm py-3 px-5 rounded-xl shadow-md flex items-center justify-center gap-2 border border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
-          >
-            <Maximize2 className="w-4 h-4" />
-            <span>VER MAPA NA TELA CHEIA</span>
-          </button>
-        )}
-      </div>
-
-      {/* Opções de Corrida para Passageiro (Preço Total, sem taxas por km nem dados de motorista) */}
+      {/* Opções de Corrida para Passageiro (4 Opções: Motorista Econômico, Motorista Confort, Motoboy Passageiro, Motoboy Entregas) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <label className="text-sm font-heading font-black text-slate-900 uppercase tracking-wider">
@@ -1256,7 +1240,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          {/* 1. Econômica */}
+          {/* 1. Motorista Econômico */}
           {(() => {
             const cat = VEHICLE_CATEGORIES.economica;
             const fare = calculateFare('economica', dynamicDistanceKm);
@@ -1280,7 +1264,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                            {cat.name}
+                            Motorista Econômico
                           </span>
                           <span className="bg-emerald-100 text-emerald-800 font-bold text-[11px] px-2 py-0.5 rounded-full border border-emerald-300 font-mono shadow-2xs">
                             Mais Pedida
@@ -1306,7 +1290,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   </div>
                 </div>
 
-                {/* Botão Confirmar dedicado para a opção Econômica */}
+                {/* Botão Confirmar dedicado para a opção Motorista Econômico */}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -1316,13 +1300,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400"
                 >
                   <CheckCircle2 className="w-5 h-5 fill-slate-950 text-amber-400" />
-                  <span>Confirmar RACE Econômica ({formatBRL(fare.totalPrice)})</span>
+                  <span>Confirmar Motorista Econômico ({formatBRL(fare.totalPrice)})</span>
                 </button>
               </div>
             );
           })()}
 
-          {/* 2. Confort */}
+          {/* 2. Motorista Confort */}
           {(() => {
             const cat = VEHICLE_CATEGORIES.confort;
             const fare = calculateFare('confort', dynamicDistanceKm);
@@ -1346,7 +1330,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                            {cat.name}
+                            Motorista Confort
                           </span>
                           <span className="bg-purple-100 text-purple-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-purple-300 font-mono shadow-2xs">
                             Mais Conforto
@@ -1372,7 +1356,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   </div>
                 </div>
 
-                {/* Botão Confirmar dedicado para a opção Confort */}
+                {/* Botão Confirmar dedicado para a opção Motorista Confort */}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -1382,7 +1366,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-purple-700 hover:bg-purple-600 text-white border border-purple-600"
                 >
                   <CheckCircle2 className="w-5 h-5 fill-white text-purple-700" />
-                  <span>Confirmar RACE Confort ({formatBRL(fare.totalPrice)})</span>
+                  <span>Confirmar Motorista Confort ({formatBRL(fare.totalPrice)})</span>
                 </button>
               </div>
             );
@@ -1412,7 +1396,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                            {cat.name}
+                            Motoboy Passageiro
                           </span>
                           <span className="bg-cyan-100 text-cyan-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-cyan-300 font-mono shadow-2xs">
                             Mais Rápido
@@ -1448,13 +1432,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-cyan-600 hover:bg-cyan-500 text-white border border-cyan-500"
                 >
                   <CheckCircle2 className="w-5 h-5 fill-white text-cyan-600" />
-                  <span>Confirmar Moto Passageiro ({formatBRL(fare.totalPrice)})</span>
+                  <span>Confirmar Motoboy Passageiro ({formatBRL(fare.totalPrice)})</span>
                 </button>
               </div>
             );
           })()}
 
-          {/* 4. Motoboy Entrega Flash */}
+          {/* 4. Motoboy Entregas */}
           {(() => {
             const cat = VEHICLE_CATEGORIES.moto_entrega;
             const fare = calculateFare('moto_entrega', dynamicDistanceKm);
@@ -1478,7 +1462,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                            {cat.name}
+                            Motoboy Entregas
                           </span>
                           <span className="bg-amber-100 text-amber-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-amber-300 font-mono shadow-2xs">
                             Flash Delivery
@@ -1504,7 +1488,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   </div>
                 </div>
 
-                {/* Botão Confirmar dedicado para Motoboy Entrega Flash */}
+                {/* Botão Confirmar dedicado para Motoboy Entregas */}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -1514,7 +1498,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-105 text-slate-950 border border-amber-400"
                 >
                   <CheckCircle2 className="w-5 h-5 fill-slate-950 text-amber-400" />
-                  <span>Confirmar Moto Entrega Flash ({formatBRL(fare.totalPrice)})</span>
+                  <span>Confirmar Motoboy Entregas ({formatBRL(fare.totalPrice)})</span>
                 </button>
               </div>
             );

@@ -98,10 +98,9 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         zoomControl: false,
       });
 
-      // CartoDB Voyager - Ruas nítidas com nomes, praças e Parque Ecológico
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; CartoDB &copy; OpenStreetMap',
-        subdomains: 'abcd',
+      // OpenStreetMap Oficial Claro - Ruas nítidas com nomes
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
         maxZoom: 19,
       }).addTo(map);
 
@@ -242,33 +241,14 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     }
   }, [carPos, carHeading, speedKmh, driver.vehiclePlate, isMotoboy]);
 
-  // 4. Simulação de condução suave a cada 500ms com interpolação e curvas realistas
+  // 4. Simulação de condução suave pelas ruas a cada 1 segundo com curvas realistas
   useEffect(() => {
     if (rideCompleted) return;
 
-    const rawCoords = routeData.coordinates;
-    if (rawCoords.length < 2) return;
-
-    // Sub-segmentação para movimento contínuo a cada 500ms
-    const smoothCoords: [number, number][] = [];
-    const factor = 3;
-    for (let i = 0; i < rawCoords.length - 1; i++) {
-      const p1 = rawCoords[i];
-      const p2 = rawCoords[i + 1];
-      smoothCoords.push(p1);
-      for (let s = 1; s < factor; s++) {
-        const frac = s / factor;
-        const lat = p1[0] + (p2[0] - p1[0]) * frac;
-        const lng = p1[1] + (p2[1] - p1[1]) * frac;
-        smoothCoords.push([lat, lng]);
-      }
-    }
-    smoothCoords.push(rawCoords[rawCoords.length - 1]);
+    const coords = routeData.coordinates;
+    if (coords.length < 2) return;
 
     const interval = setInterval(() => {
-      const coords = smoothCoords;
-      if (coords.length === 0) return;
-
       const prev = stepRef.current;
       const next = prev + 1;
 
@@ -304,9 +284,9 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
       // Centraliza a visão do GPS suavemente no carro
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.setView(nextPoint, 16, { animate: true, duration: 0.45 });
+        mapInstanceRef.current.setView(nextPoint, 16, { animate: true, duration: 0.8 });
       }
-    }, 500);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [routeData, carHeading, rideCompleted]);

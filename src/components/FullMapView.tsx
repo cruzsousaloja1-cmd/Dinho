@@ -235,11 +235,10 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         zoomControl: false,
       });
 
-      // CartoDB Voyager Oficial - Estilo Google Maps / Uber com ruas, praças e Parque Ecológico nítidos
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+      // OpenStreetMap Oficial Claro - Ruas de Indaiatuba com nomes bem nítidos (Av. Presidente Vargas, Av. dos Trabalhadores, Rua 15 de Novembro, etc.)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
+        maxZoom: 19,
       }).addTo(map);
 
       // Controle de zoom no topo direito
@@ -266,32 +265,18 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     };
   }, []);
 
-  // 3. Rota Laranja Grossa #ff6a00 com Borda Branca estilo Google Maps / Uber
+  // 3. Rota Laranja #ff6a00 Grossa por cima das ruas
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || routeData.coordinates.length === 0) return;
 
-    // Borda Branca Externa
-    if (routePolylineBorderRef.current) {
-      routePolylineBorderRef.current.setLatLngs(routeData.coordinates);
-    } else {
-      routePolylineBorderRef.current = L.polyline(routeData.coordinates, {
-        color: '#ffffff',
-        weight: 10,
-        opacity: 1.0,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(map);
-    }
-
-    // Linha Laranja Grossa #ff6a00 Central
     if (routePolylineRef.current) {
       routePolylineRef.current.setLatLngs(routeData.coordinates);
     } else {
       routePolylineRef.current = L.polyline(routeData.coordinates, {
         color: '#ff6a00',
-        weight: 6,
-        opacity: 1.0,
+        weight: 7,
+        opacity: 0.95,
         lineCap: 'round',
         lineJoin: 'round',
       }).addTo(map);
@@ -428,33 +413,14 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     return () => clearInterval(secInterval);
   }, [hasDriverArrived, isRideFinished]);
 
-  // 8. Simulação do Carro em Movimento Suave a Cada 500ms (não pulando, virando nas esquinas)
+  // 8. Simulação do Carro em Movimento Suave pelas Ruas a Cada 1 Segundo (virando nas esquinas)
   useEffect(() => {
     if (hasDriverArrived || isRideFinished) return;
 
-    // Interpolação suave dos pontos para não pular (movimento contínuo a cada 500ms)
-    const rawCoords = routeData.coordinates;
-    if (rawCoords.length < 2) return;
-
-    const smoothCoords: [number, number][] = [];
-    const factor = 3; // 3 micropassos entre cada vértice da rua
-    for (let i = 0; i < rawCoords.length - 1; i++) {
-      const p1 = rawCoords[i];
-      const p2 = rawCoords[i + 1];
-      smoothCoords.push(p1);
-      for (let s = 1; s < factor; s++) {
-        const frac = s / factor;
-        const lat = p1[0] + (p2[0] - p1[0]) * frac;
-        const lng = p1[1] + (p2[1] - p1[1]) * frac;
-        smoothCoords.push([lat, lng]);
-      }
-    }
-    smoothCoords.push(rawCoords[rawCoords.length - 1]);
+    const coords = routeData.coordinates;
+    if (coords.length < 2) return;
 
     const moveInterval = setInterval(() => {
-      const coords = smoothCoords;
-      if (coords.length === 0) return;
-
       const prev = stepRef.current;
       const next = prev + 1;
 
@@ -479,7 +445,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       const heading = calculateBearing(pCurrent[0], pCurrent[1], pNext[0], pNext[1]);
       setCarHeading(heading);
 
-      // Velocidade realista
+      // Velocidade realista (reduz nas curvas, acelera nas retas)
       const angleDiff = Math.abs(heading - carHeading);
       const isCurve = angleDiff > 25;
       const dynamicSpeed = isCurve ? 22 : Math.floor(40 + Math.random() * 8);
@@ -489,7 +455,12 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       const remainingPct = (coords.length - 1 - next) / (coords.length - 1);
       const distLeft = Math.round(remainingPct * routeData.totalDistanceMeters);
       setDistanceRemainingMeters(distLeft);
-    }, 500);
+
+      // Acompanha a visão do mapa suavemente no carro
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.panTo(pNext, { animate: true, duration: 0.8 });
+      }
+    }, 1000);
 
     return () => clearInterval(moveInterval);
   }, [routeData, carHeading, hasDriverArrived, isRideFinished]);

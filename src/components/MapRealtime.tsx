@@ -57,11 +57,10 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         zoomControl: false,
       });
 
-      // CartoDB Voyager Oficial - Estilo Google Maps / Uber com ruas nítidas
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+      // OpenStreetMap Oficial Claro - Ruas nítidas com nomes
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
+        maxZoom: 19,
       }).addTo(map);
 
       mapInstanceRef.current = map;
