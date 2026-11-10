@@ -141,9 +141,17 @@ export const Header: React.FC<HeaderProps> = ({
           {/* User Account / Login & Cadastrar */}
           {currentUser ? (
             <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-300 rounded-xl px-2.5 py-1.5 shadow-xs">
-              <div className="w-6 h-6 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center">
-                {currentUser.name.charAt(0).toUpperCase()}
-              </div>
+              {currentUser.avatar ? (
+                <img
+                  src={currentUser.avatar}
+                  alt={currentUser.name}
+                  className="w-7 h-7 rounded-full object-cover border border-amber-500 shadow-2xs"
+                />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center">
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+              )}
               <div className="text-left hidden lg:block">
                 <span className="text-xs font-black text-slate-950 block leading-tight truncate max-w-[100px]">
                   {currentUser.name.split(' ')[0]}
@@ -316,9 +324,17 @@ export const Header: React.FC<HeaderProps> = ({
           {currentUser ? (
             <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-slate-900 text-white font-bold text-sm flex items-center justify-center">
-                  {currentUser.name.charAt(0).toUpperCase()}
-                </div>
+                {currentUser.avatar ? (
+                  <img
+                    src={currentUser.avatar}
+                    alt={currentUser.name}
+                    className="w-10 h-10 rounded-full object-cover border-2 border-amber-500 shadow-sm"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-slate-900 text-white font-bold text-sm flex items-center justify-center">
+                    {currentUser.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div>
                   <h4 className="font-heading font-black text-slate-950 text-sm">
                     {currentUser.name}

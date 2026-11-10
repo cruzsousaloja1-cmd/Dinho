@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Driver, AppUser, VehicleCategory } from '../types';
-import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
 
@@ -42,6 +42,24 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regErrorMessage, setRegErrorMessage] = useState<string | null>(null);
+
+  // Foto de perfil do cadastro (Galeria do Celular ou Câmera)
+  const [regAvatar, setRegAvatar] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const base64String = uploadEvent.target?.result as string;
+      if (base64String) {
+        setRegAvatar(base64String);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Iniciar fluxo de cadastro para a categoria escolhida
   const handleStartRegister = (role: RegistrationRole) => {
@@ -117,6 +135,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     const isDriverRole = regRole === 'driver';
     const isMotoboyRole = regRole === 'motoboy';
 
+    const defaultAvatar = isPassengerRole
+      ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
+      : isMotoboyRole
+      ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=150&auto=format&fit=crop&q=80'
+      : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+    const chosenAvatar = regAvatar || defaultAvatar;
+
     // Criação do novo motorista/motoboy se aplicável
     let newDriverObj: Driver | undefined = undefined;
     if (isDriverRole || isMotoboyRole) {
@@ -128,9 +153,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         name: cleanName,
         phone: cleanWhatsApp,
         email: cleanEmail,
-        avatar: isMotoboyRole
-          ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=150&auto=format&fit=crop&q=80'
-          : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        avatar: chosenAvatar,
         rating: 5.0,
         totalRides: 0,
         vehicleModel: isMotoboyRole ? 'Honda CG 160 Fan' : 'Chevrolet Onix 1.0',
@@ -166,7 +189,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       role: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
       tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy_passageiro' : 'motorista_economico',
       placa: newDriverObj?.vehiclePlate || '',
-      avatar: newDriverObj?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      avatar: chosenAvatar,
       rating: 5.0,
       password: regPassword,
       driverData: newDriverObj,
@@ -486,6 +509,65 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             )}
 
             <form onSubmit={handleRegisterSubmit} className="space-y-3">
+              {/* Círculo de Foto da Galeria do Celular no Topo do Cadastro */}
+              <div className="flex flex-col items-center justify-center py-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoSelect}
+                  className="hidden"
+                  id="reg-avatar-input"
+                />
+
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="relative group cursor-pointer"
+                >
+                  <div className={`w-24 h-24 sm:w-28 sm:h-28 rounded-full border-3 flex items-center justify-center overflow-hidden transition-all shadow-xl ${
+                    regAvatar
+                      ? 'border-[#ff6a00] bg-zinc-900 ring-4 ring-[#ff6a00]/25'
+                      : 'border-dashed border-zinc-500 hover:border-[#ff6a00] bg-[#141414] hover:bg-zinc-800'
+                  }`}>
+                    {regAvatar ? (
+                      <img
+                        src={regAvatar}
+                        alt="Foto do perfil"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-zinc-400 group-hover:text-white transition-colors p-2 text-center">
+                        <Camera className="w-8 h-8 text-[#ff6a00] mb-1 group-hover:scale-110 transition-transform" />
+                        <span className="text-[11px] font-heading font-black uppercase tracking-wider text-zinc-300">
+                          Adicionar foto
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                    className="absolute bottom-0 right-0 p-2 rounded-full bg-[#ff6a00] hover:bg-[#e05e00] text-white shadow-lg border-2 border-black transition-all cursor-pointer active:scale-90"
+                    title={regAvatar ? "Trocar foto da galeria" : "Tirar ou escolher foto"}
+                  >
+                    <Camera className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-2 text-xs font-heading font-black text-[#ff6a00] hover:text-[#ff8533] transition-colors cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>{regAvatar ? 'Trocar foto' : 'Adicionar foto da Galeria'}</span>
+                </button>
+              </div>
+
               {/* 1. Nome Completo */}
               <div className="space-y-1">
                 <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">

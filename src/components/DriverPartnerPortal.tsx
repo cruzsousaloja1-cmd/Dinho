@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
@@ -240,7 +240,8 @@ import {
   Building2,
   UserCheck2,
   CheckCircle,
-  Navigation
+  Navigation,
+  Camera
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
@@ -283,6 +284,65 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [acceptedRideNotice, setAcceptedRideNotice] = useState<string | null>(null);
   const [comfortWarning, setComfortWarning] = useState<string | null>(null);
   const [isDriverGpsOpen, setIsDriverGpsOpen] = useState(false);
+
+  // Galeria de Fotos: Perfil, CNH e Foto do Veículo
+  const driverAvatarInputRef = useRef<HTMLInputElement>(null);
+  const cnhDocInputRef = useRef<HTMLInputElement>(null);
+  const vehicleDocInputRef = useRef<HTMLInputElement>(null);
+
+  const [cnhDocPreview, setCnhDocPreview] = useState<string | null>(null);
+  const [vehicleDocPreview, setVehicleDocPreview] = useState<string | null>(null);
+
+  const handleDriverAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        const updated: Driver = {
+          ...currentDriver,
+          avatar: base64,
+        };
+        onUpdateDriver(updated);
+
+        if (currentUser && currentUser.email) {
+          const userAcc = getUserAccount(currentUser.email);
+          if (userAcc) {
+            saveUserAccount({
+              ...userAcc,
+              avatar: base64,
+              driverData: updated,
+            }, true);
+          }
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCnhDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) setCnhDocPreview(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleVehicleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) setVehicleDocPreview(base64);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Driver's own PIX key where they receive 100% of ride earnings
   const [driverPixKey, setDriverPixKey] = useState<string>(
@@ -1263,22 +1323,75 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           {dashboardSection === 'perfil' && (
             <div className="space-y-4">
               <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-md space-y-5">
-                <div className="flex items-center gap-4 border-b border-slate-200 pb-4">
-                  <img
-                    src={currentDriver.avatar}
-                    alt={currentDriver.name}
-                    className="w-20 h-20 rounded-full object-cover border-4 border-amber-500 shadow-md"
-                  />
-                  <div>
-                    <h3 className="font-heading font-black text-xl text-slate-950">{currentDriver.name}</h3>
-                    <p className="text-xs sm:text-sm text-slate-500 font-mono">{currentDriver.email}</p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-300">
-                        CNH EAR Homologada
-                      </span>
-                      <span className="bg-slate-100 text-slate-800 text-xs font-bold px-2.5 py-0.5 rounded-full border border-slate-300">
-                        ★ {currentDriver.rating.toFixed(2)}
-                      </span>
+                <input
+                  ref={driverAvatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleDriverAvatarUpload}
+                  className="hidden"
+                  id="driver-profile-photo-input"
+                />
+                <input
+                  ref={cnhDocInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCnhDocUpload}
+                  className="hidden"
+                  id="driver-cnh-photo-input"
+                />
+                <input
+                  ref={vehicleDocInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleVehicleDocUpload}
+                  className="hidden"
+                  id="driver-vehicle-photo-input"
+                />
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                  <div className="flex items-center gap-4">
+                    <div 
+                      onClick={() => driverAvatarInputRef.current?.click()}
+                      className="relative group cursor-pointer shrink-0"
+                    >
+                      <img
+                        src={currentDriver.avatar}
+                        alt={currentDriver.name}
+                        className="w-20 h-20 rounded-full object-cover border-4 border-amber-500 shadow-md group-hover:opacity-90 transition-opacity"
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          driverAvatarInputRef.current?.click();
+                        }}
+                        className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#ff6a00] hover:bg-[#e05e00] text-white shadow-md border-2 border-white transition-all cursor-pointer active:scale-95"
+                        title="Trocar foto pela galeria do celular"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div>
+                      <h3 className="font-heading font-black text-xl text-slate-950">{currentDriver.name}</h3>
+                      <p className="text-xs sm:text-sm text-slate-500 font-mono">{currentDriver.email}</p>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => driverAvatarInputRef.current?.click()}
+                          className="text-xs font-heading font-black text-[#ff6a00] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span>Trocar foto de perfil</span>
+                        </button>
+                        <span className="text-slate-300">•</span>
+                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                          CNH EAR Homologada
+                        </span>
+                        <span className="bg-slate-100 text-slate-800 text-xs font-bold px-2 py-0.5 rounded-full border border-slate-300">
+                          ★ {currentDriver.rating.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1307,6 +1420,80 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                     <span className="text-[11px] font-bold text-slate-500 uppercase block">Cor do Veículo</span>
                     <span className="font-bold text-slate-900">{currentDriver.vehicleColor || 'Prata'}</span>
+                  </div>
+                </div>
+
+                {/* Documentos & Fotos do Motorista (CNH, Veículo, etc.) */}
+                <div className="space-y-3 pt-2 border-t border-slate-200">
+                  <h4 className="font-heading font-black text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
+                    <FileCheck className="w-4 h-4 text-[#ff6a00]" />
+                    <span>Documentos e Fotos do Veículo</span>
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* CNH com foto */}
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between space-y-2">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-heading font-black text-slate-900">
+                            Foto da CNH com EAR
+                          </span>
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            Validada
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1 font-mono">
+                          Número: {currentDriver.cnh || '99887766554'}
+                        </p>
+                      </div>
+
+                      {cnhDocPreview && (
+                        <div className="w-full h-24 rounded-xl overflow-hidden border border-slate-300 mt-2">
+                          <img src={cnhDocPreview} alt="Preview CNH" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => cnhDocInputRef.current?.click()}
+                        className="w-full py-2.5 px-3 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-heading font-black text-slate-800 transition-all cursor-pointer flex items-center justify-center gap-2 mt-2"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-[#ff6a00]" />
+                        <span>{cnhDocPreview ? 'Trocar Foto da CNH' : 'Atualizar Foto da CNH'}</span>
+                      </button>
+                    </div>
+
+                    {/* Foto do Veículo (Carro / Moto) */}
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between space-y-2">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-heading font-black text-slate-900">
+                            Foto do Veículo ({currentDriver.vehicleModel})
+                          </span>
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            Regular
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1 font-mono">
+                          Placa: {currentDriver.vehiclePlate} &bull; Cor: {currentDriver.vehicleColor}
+                        </p>
+                      </div>
+
+                      {vehicleDocPreview && (
+                        <div className="w-full h-24 rounded-xl overflow-hidden border border-slate-300 mt-2">
+                          <img src={vehicleDocPreview} alt="Preview Veículo" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => vehicleDocInputRef.current?.click()}
+                        className="w-full py-2.5 px-3 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-heading font-black text-slate-800 transition-all cursor-pointer flex items-center justify-center gap-2 mt-2"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-[#ff6a00]" />
+                        <span>{vehicleDocPreview ? 'Trocar Foto do Veículo' : 'Atualizar Foto do Veículo'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 

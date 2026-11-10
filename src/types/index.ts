@@ -111,6 +111,7 @@ export interface Ride {
   passengerEmail?: string;
   passengerName: string;
   passengerPhone: string;
+  passengerAvatar?: string;
   passengerRating: number;
   driver?: Driver;
   category: VehicleCategory;

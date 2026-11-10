@@ -289,9 +289,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
     const newRide: Ride = {
       id: `RCE-${Math.floor(1000 + Math.random() * 9000)}`,
-      passengerName: 'Você (Passageiro RACE)',
-      passengerPhone: '(19) 99887-1122',
-      passengerRating: 5.0,
+      passengerId: currentUser?.id,
+      passengerEmail: currentUser?.email,
+      passengerName: currentUser?.name || 'Você (Passageiro RACE)',
+      passengerPhone: currentUser?.whatsapp || currentUser?.phone || '(19) 99887-1122',
+      passengerAvatar: currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      passengerRating: currentUser?.rating || 5.0,
       driver: matchedDriver,
       category: finalCategory,
       pickup: finalPickup,
@@ -472,6 +475,41 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               </div>
             </div>
           )}
+
+          {/* Passenger Details com Foto (Passageiro e Motorista veem a foto um do outro) */}
+          <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200 flex items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="relative shrink-0">
+                <img
+                  src={activeRide.passengerAvatar || currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'}
+                  alt={activeRide.passengerName}
+                  className="w-13 h-13 rounded-full object-cover border-2 border-emerald-500 shadow-md"
+                />
+                <span className="absolute -bottom-1 -right-1 bg-white text-slate-900 border border-slate-300 text-[10px] px-1.5 py-0.2 rounded-full font-bold flex items-center shadow">
+                  ★ {activeRide.passengerRating.toFixed(1)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-mono font-bold text-emerald-800 uppercase block">
+                  Passageiro Solicitante
+                </span>
+                <h5 className="font-heading font-black text-slate-900 text-sm sm:text-base">
+                  {activeRide.passengerName}
+                </h5>
+                <p className="text-xs text-slate-600 font-mono">
+                  {activeRide.passengerPhone}
+                </p>
+              </div>
+            </div>
+
+            <a
+              href={`tel:${activeRide.passengerPhone}`}
+              className="w-11 h-11 rounded-2xl bg-white hover:bg-slate-100 border border-slate-300 text-emerald-700 flex items-center justify-center transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
+              title="Ligar para o passageiro"
+            >
+              <Phone className="w-4 h-4" />
+            </a>
+          </div>
 
           {/* Ações da corrida */}
           {!isCompleted && (

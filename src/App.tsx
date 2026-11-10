@@ -977,6 +977,9 @@ export default function App() {
             onNavigateToHistory={() => setActiveTab('history')}
             onOpenSupport={() => setIsSupportOpen(true)}
             onOpenShare={() => setIsShareOpen(true)}
+            onUpdateAvatar={(avatarBase64) => {
+              setCurrentUser((prev) => (prev ? { ...prev, avatar: avatarBase64 } : null));
+            }}
           />
         )}
 

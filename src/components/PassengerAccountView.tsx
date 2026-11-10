@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AppUser, LocationPoint } from '../types';
 import { 
   User, 
@@ -14,9 +14,11 @@ import {
   Share2, 
   Headphones, 
   Star,
-  KeyRound
+  KeyRound,
+  Camera
 } from 'lucide-react';
 import { reverseGeocodeCoords } from '../services/addressSearchService';
+import { saveUserAccount, getUserAccount } from '../services/userService';
 
 interface PassengerAccountViewProps {
   currentUser: AppUser | null;
@@ -27,6 +29,7 @@ interface PassengerAccountViewProps {
   onNavigateToHistory: () => void;
   onOpenSupport?: () => void;
   onOpenShare?: () => void;
+  onUpdateAvatar?: (avatarBase64: string) => void;
 }
 
 export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
@@ -38,9 +41,57 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   onNavigateToHistory,
   onOpenSupport,
   onOpenShare,
+  onUpdateAvatar,
 }) => {
   const [gpsStatus, setGpsStatus] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
+  const [userAvatar, setUserAvatar] = useState<string>(
+    currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
+  );
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        setUserAvatar(base64);
+
+        if (currentUser && currentUser.email) {
+          const userAcc = getUserAccount(currentUser.email);
+          if (userAcc) {
+            saveUserAccount({
+              ...userAcc,
+              avatar: base64,
+            }, true);
+          } else {
+            saveUserAccount({
+              id: currentUser.id,
+              name: currentUser.name,
+              email: currentUser.email,
+              phone: currentUser.phone,
+              whatsapp: currentUser.whatsapp,
+              login: currentUser.login,
+              role: currentUser.role,
+              tipo: currentUser.tipo,
+              avatar: base64,
+              rating: currentUser.rating || 5.0,
+              createdAt: new Date().toISOString(),
+            }, true);
+          }
+        }
+
+        if (onUpdateAvatar) {
+          onUpdateAvatar(base64);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const [activeAddress, setActiveAddress] = useState(
     pickup?.address || currentAddress || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP'
   );
@@ -102,9 +153,39 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       {/* 1. Header do Perfil do Passageiro */}
       <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-amber-500 to-[#ff6a00] text-white font-heading font-black text-2xl flex items-center justify-center border-3 border-white shadow-lg shrink-0">
-            {displayName.charAt(0).toUpperCase()}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarFileChange}
+            className="hidden"
+            id="passenger-avatar-file-input"
+          />
+
+          <div 
+            onClick={() => fileInputRef.current?.click()}
+            className="relative group cursor-pointer shrink-0"
+          >
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-3 border-[#ff6a00] overflow-hidden shadow-lg bg-zinc-900 ring-4 ring-[#ff6a00]/20 flex items-center justify-center">
+              <img
+                src={userAvatar}
+                alt={displayName}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#ff6a00] hover:bg-[#e05e00] text-white shadow-md border-2 border-white transition-all cursor-pointer active:scale-95"
+              title="Trocar foto pela galeria do celular"
+            >
+              <Camera className="w-3.5 h-3.5" />
+            </button>
           </div>
+
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
@@ -115,6 +196,18 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                 Passageiro Ativo
               </span>
             </div>
+
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-xs font-heading font-black text-[#ff6a00] hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Camera className="w-3 h-3" />
+                <span>Trocar foto</span>
+              </button>
+            </div>
+
             <div className="flex items-center gap-3 mt-1 text-xs text-slate-600 font-medium">
               <span className="flex items-center gap-1 text-amber-600 font-bold">
                 <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
