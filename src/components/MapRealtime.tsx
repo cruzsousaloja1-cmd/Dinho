@@ -37,6 +37,7 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const pickupMarkerRef = useRef<L.Marker | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
+  const routePolylineBorderRef = useRef<L.Polyline | null>(null);
   const routePolylineRef = useRef<L.Polyline | null>(null);
 
   // Centro fixo oficial: Indaiatuba-SP
@@ -47,8 +48,8 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
 
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, {
-        center: defaultCenter,
-        zoom: INDAIATUBA_DEFAULT_ZOOM,
+        center: [-23.0903, -47.2180],
+        zoom: 16,
         minZoom: INDAIATUBA_MIN_ZOOM,
         maxZoom: INDAIATUBA_MAX_ZOOM,
         maxBounds: INDAIATUBA_BOUNDS,
@@ -56,10 +57,11 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         zoomControl: false,
       });
 
-      // OpenStreetMap Oficial Claro
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap',
-        maxZoom: 19,
+      // CartoDB Voyager Oficial - Estilo Google Maps / Uber com ruas nítidas
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
+        subdomains: 'abcd',
+        maxZoom: 20,
       }).addTo(map);
 
       mapInstanceRef.current = map;
@@ -97,7 +99,7 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
     };
   }, []);
 
-  // Update drivers markers on map
+  // Update drivers markers on map with REAL TOP-DOWN VEHICLES (no circles, no balls)
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -114,41 +116,65 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
 
     driversToShow.forEach((drv) => {
       const isBike = drv.category.includes('moto');
-      const isDelivery = drv.category === 'moto_entrega';
       const pos: [number, number] =
         activeDriver?.id === drv.id && driverPosition
           ? [driverPosition.lat, driverPosition.lng]
           : [drv.lat, drv.lng];
 
-      const iconHtml = `
-        <div class="relative flex items-center justify-center transform transition-transform hover:scale-110">
-          <div class="absolute w-10 h-10 rounded-full ${
-            isDelivery
-              ? 'bg-purple-500/25'
-              : isBike
-              ? 'bg-cyan-500/25'
-              : 'bg-amber-500/25'
-          } animate-ping"></div>
-          <div class="relative w-9 h-9 rounded-full shadow-lg border-2 ${
-            isDelivery
-              ? 'bg-purple-600 border-white text-white'
-              : isBike
-              ? 'bg-cyan-600 border-white text-white'
-              : 'bg-amber-500 border-white text-slate-950'
-          } flex items-center justify-center font-bold text-sm shadow-md">
-            ${isDelivery ? '📦' : isBike ? '🏍️' : '🚗'}
+      const vehicleSvg = isBike
+        ? `
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.45));">
+            <svg width="44" height="44" viewBox="0 0 48 48" fill="none">
+              <rect x="22" y="3" width="4" height="9" rx="2" fill="#18181b" stroke="#ffffff" stroke-width="0.8" />
+              <line x1="12" y1="12" x2="36" y2="12" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" />
+              <rect x="10" y="10.5" width="4" height="3" rx="1.5" fill="#ff6a00" />
+              <rect x="34" y="10.5" width="4" height="3" rx="1.5" fill="#ff6a00" />
+              <ellipse cx="24" cy="5" rx="2.5" ry="1.5" fill="#ffffff" />
+              <path d="M21 14C21 13 22 12.5 24 12.5C26 12.5 27 13 27 14L28 20C28 21 26.5 22 24 22C21.5 22 20 21 20 20L21 14Z" fill="#ff6a00" stroke="#ffffff" stroke-width="1" />
+              <circle cx="24" cy="25" r="5" fill="#18181b" stroke="#ffffff" stroke-width="1.2" />
+              <path d="M21.5 22.5C22.5 21.8 25.5 21.8 26.5 22.5" stroke="#ff6a00" stroke-width="2" stroke-linecap="round" />
+              <rect x="21" y="29" width="6" height="8" rx="3" fill="#27272a" />
+              <rect x="22" y="36" width="4" height="9" rx="2" fill="#18181b" stroke="#ffffff" stroke-width="0.8" />
+            </svg>
           </div>
-          <span class="absolute -bottom-6 text-xs whitespace-nowrap bg-white text-slate-900 px-2 py-0.5 rounded-md font-mono font-bold border border-slate-300 shadow-md">
+          <span style="font-family: monospace; font-size: 10px; font-weight: 800; background: #09090b; color: #ff6a00; border: 1.5px solid #ffffff; padding: 1px 6px; border-radius: 9999px; white-space: nowrap; box-shadow: 0 3px 5px rgba(0,0,0,0.3); margin-top: -2px;">
             ${drv.vehiclePlate}
           </span>
         </div>
-      `;
+        `
+        : `
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.45));">
+            <svg width="44" height="44" viewBox="0 0 48 48" fill="none">
+              <rect x="7" y="10" width="4" height="8" rx="2" fill="#18181b" />
+              <rect x="37" y="10" width="4" height="8" rx="2" fill="#18181b" />
+              <rect x="7" y="30" width="4" height="8" rx="2" fill="#18181b" />
+              <rect x="37" y="30" width="4" height="8" rx="2" fill="#18181b" />
+              <rect x="6" y="15" width="4" height="3" rx="1.5" fill="#e05e00" stroke="#ffffff" stroke-width="0.8" />
+              <rect x="38" y="15" width="4" height="3" rx="1.5" fill="#e05e00" stroke="#ffffff" stroke-width="0.8" />
+              <path d="M14 12C14 7 17 4 24 4C31 4 34 7 34 12V36C34 41 31 44 24 44C17 44 14 41 14 36V12Z" fill="#ff6a00" stroke="#ffffff" stroke-width="1.8" />
+              <ellipse cx="16.5" cy="6.5" rx="2" ry="1.2" fill="#ffffff" />
+              <ellipse cx="31.5" cy="6.5" rx="2" ry="1.2" fill="#ffffff" />
+              <path d="M16 14C17 12 20 11 24 11C28 11 31 12 32 14L31 18H17L16 14Z" fill="#09090b" stroke="#3f3f46" stroke-width="0.8" />
+              <rect x="17.5" y="19" width="13" height="12" rx="2" fill="#e05e00" />
+              <rect x="19" y="21" width="10" height="7" rx="1.5" fill="#18181b" opacity="0.85" />
+              <path d="M17 32H31L32 35C31 36.5 28 37 24 37C20 37 17 36.5 16 35L17 32Z" fill="#09090b" stroke="#3f3f46" stroke-width="0.8" />
+              <rect x="15.5" y="42" width="4.5" height="1.8" rx="0.9" fill="#ef4444" />
+              <rect x="28" y="42" width="4.5" height="1.8" rx="0.9" fill="#ef4444" />
+            </svg>
+          </div>
+          <span style="font-family: monospace; font-size: 10px; font-weight: 800; background: #09090b; color: #ff6a00; border: 1.5px solid #ffffff; padding: 1px 6px; border-radius: 9999px; white-space: nowrap; box-shadow: 0 3px 5px rgba(0,0,0,0.3); margin-top: -2px;">
+            ${drv.vehiclePlate}
+          </span>
+        </div>
+        `;
 
       const customIcon = L.divIcon({
-        className: 'custom-driver-icon',
-        html: iconHtml,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
+        className: 'real-topdown-vehicle',
+        html: vehicleSvg,
+        iconSize: [44, 58],
+        iconAnchor: [22, 22],
       });
 
       if (markersRef.current[drv.id]) {
@@ -226,7 +252,7 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
       destMarkerRef.current = null;
     }
 
-    // Route Polyline
+    // Route Polyline com borda branca e linha laranja #ff6a00
     if (pickup && destination) {
       const midLat = (pickup.lat + destination.lat) / 2 + 0.003;
       const midLng = (pickup.lng + destination.lng) / 2 - 0.004;
@@ -237,22 +263,43 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         [destination.lat, destination.lng],
       ];
 
+      // Borda branca externa
+      if (routePolylineBorderRef.current) {
+        routePolylineBorderRef.current.setLatLngs(routePoints);
+      } else {
+        routePolylineBorderRef.current = L.polyline(routePoints, {
+          color: '#ffffff',
+          weight: 10,
+          opacity: 1,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }).addTo(map);
+      }
+
+      // Linha laranja grossa principal
       if (routePolylineRef.current) {
         routePolylineRef.current.setLatLngs(routePoints);
       } else {
         routePolylineRef.current = L.polyline(routePoints, {
-          color: '#d97706',
-          weight: 5,
-          opacity: 0.9,
-          dashArray: '8, 8',
+          color: '#ff6a00',
+          weight: 6,
+          opacity: 1,
+          lineCap: 'round',
+          lineJoin: 'round',
         }).addTo(map);
       }
 
       const bounds = L.latLngBounds(routePoints);
       map.fitBounds(bounds, { padding: [50, 50] });
-    } else if (routePolylineRef.current) {
-      routePolylineRef.current.remove();
-      routePolylineRef.current = null;
+    } else {
+      if (routePolylineBorderRef.current) {
+        routePolylineBorderRef.current.remove();
+        routePolylineBorderRef.current = null;
+      }
+      if (routePolylineRef.current) {
+        routePolylineRef.current.remove();
+        routePolylineRef.current = null;
+      }
     }
   }, [pickup, destination]);
 

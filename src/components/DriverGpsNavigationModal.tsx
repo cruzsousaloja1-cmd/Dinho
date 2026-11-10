@@ -45,8 +45,11 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const carMarkerRef = useRef<L.Marker | null>(null);
+  const routePolylineBorderRef = useRef<L.Polyline | null>(null);
   const routePolylineRef = useRef<L.Polyline | null>(null);
   const stepRef = useRef(0);
+
+  const isMotoboy = driver.category === 'moto_passageiro' || driver.category === 'moto_entrega';
 
   const [routeData, setRouteData] = useState<StreetRouteResult>({
     coordinates: INDAIATUBA_REAL_STREET_COORDINATES,
@@ -80,13 +83,13 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     };
   }, []);
 
-  // 1. Inicializa o mapa Leaflet estilo Waze / Uber Driver com OpenStreetMap claro
+  // 1. Inicializa o mapa Leaflet estilo Google Maps / Uber com CartoDB Voyager
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, {
-        center: INDAIATUBA_CENTER_COORDS,
+        center: [-23.0903, -47.2180],
         zoom: 16,
         minZoom: INDAIATUBA_MIN_ZOOM,
         maxZoom: INDAIATUBA_MAX_ZOOM,
@@ -95,9 +98,10 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         zoomControl: false,
       });
 
-      // OpenStreetMap Oficial Claro
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap',
+      // CartoDB Voyager - Ruas nítidas com nomes, praças e Parque Ecológico
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; CartoDB &copy; OpenStreetMap',
+        subdomains: 'abcd',
         maxZoom: 19,
       }).addTo(map);
 
@@ -115,69 +119,119 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     };
   }, []);
 
-  // 2. Traça a rota oficial grossa laranja #ff6a00
+  // 2. Traça a rota oficial grossa laranja #ff6a00 com borda branca
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || routeData.coordinates.length === 0) return;
 
-    if (routePolylineRef.current) {
-      routePolylineRef.current.setLatLngs(routeData.coordinates);
+    // Borda branca externa
+    if (routePolylineBorderRef.current) {
+      routePolylineBorderRef.current.setLatLngs(routeData.coordinates);
     } else {
-      routePolylineRef.current = L.polyline(routeData.coordinates, {
-        color: '#ff6a00',
-        weight: 7,
-        opacity: 0.95,
+      routePolylineBorderRef.current = L.polyline(routeData.coordinates, {
+        color: '#ffffff',
+        weight: 10,
+        opacity: 1,
         lineCap: 'round',
         lineJoin: 'round',
       }).addTo(map);
     }
 
-    // Ponto de Embarque / Destino no mapa
+    // Linha grossa laranja #ff6a00
+    if (routePolylineRef.current) {
+      routePolylineRef.current.setLatLngs(routeData.coordinates);
+    } else {
+      routePolylineRef.current = L.polyline(routeData.coordinates, {
+        color: '#ff6a00',
+        weight: 6,
+        opacity: 1,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+    }
+
+    // Ponto de Embarque no mapa (sem bolinhas, pin retangular nítido)
     const destCoord = routeData.coordinates[routeData.coordinates.length - 1];
     const destIcon = L.divIcon({
       className: 'driver-dest-icon',
       html: `
-        <div class="relative flex flex-col items-center">
-          <div class="w-8 h-8 rounded-full bg-emerald-500 text-black font-black flex items-center justify-center border-2 border-white shadow-xl text-xs">
-            👤
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="background: #10b981; color: #ffffff; font-weight: 900; font-size: 11px; padding: 4px 8px; border-radius: 6px; border: 2px solid #ffffff; box-shadow: 0 4px 8px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 4px; white-space: nowrap;">
+            <span>👤</span> Embarque Passageiro
           </div>
-          <div class="bg-black/90 text-white font-mono font-bold text-[10px] px-2 py-0.5 rounded border border-emerald-400 mt-1 shadow-lg">
-            Embarque Passageiro
-          </div>
+          <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #10b981;"></div>
         </div>
       `,
-      iconSize: [36, 44],
-      iconAnchor: [18, 22],
+      iconSize: [130, 36],
+      iconAnchor: [65, 36],
     });
     L.marker(destCoord, { icon: destIcon }).addTo(map);
   }, [routeData]);
 
-  // 3. Atualiza marcador do carro com rotação real na curva
+  // 3. Atualiza marcador do carro real top-down (sem nenhuma bolinha ou pulso) com rotação real
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    const carHtml = `
-      <div class="relative flex items-center justify-center" style="transform: rotate(${carHeading}deg); transition: transform 0.4s ease-out;">
-        <div class="absolute w-12 h-12 rounded-full bg-[#ff6a00]/30 animate-pulse"></div>
-        <svg width="42" height="42" viewBox="0 0 48 48" fill="none" class="drop-shadow-2xl">
-          <path d="M24 3 L29 13 L24 10 L19 13 Z" fill="#ffffff" />
-          <rect x="15" y="8" width="18" height="34" rx="7" fill="#ff6a00" stroke="#ffffff" stroke-width="2"/>
-          <rect x="18" y="16" width="12" height="6" rx="2" fill="#09090b" opacity="0.9"/>
-          <rect x="18" y="30" width="12" height="4" rx="1.5" fill="#09090b" opacity="0.9"/>
-          <circle cx="17" cy="9" r="1.5" fill="#fef08a"/>
-          <circle cx="31" cy="9" r="1.5" fill="#fef08a"/>
-          <circle cx="17" cy="41" r="1.5" fill="#ef4444"/>
-          <circle cx="31" cy="41" r="1.5" fill="#ef4444"/>
-        </svg>
+    const vehicleHtml = isMotoboy
+      ? `
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transform: rotate(${carHeading}deg); transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 6px 8px rgba(0,0,0,0.45));">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="22" y="3" width="4" height="9" rx="2" fill="#18181b" stroke="#ffffff" stroke-width="0.8" />
+            <line x1="12" y1="12" x2="36" y2="12" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" />
+            <rect x="10" y="10.5" width="4" height="3" rx="1.5" fill="#ff6a00" />
+            <rect x="34" y="10.5" width="4" height="3" rx="1.5" fill="#ff6a00" />
+            <circle cx="11" cy="8" r="1.5" fill="#ffffff" />
+            <circle cx="37" cy="8" r="1.5" fill="#ffffff" />
+            <ellipse cx="24" cy="5" rx="2.5" ry="1.5" fill="#ffffff" />
+            <path d="M21 14C21 13 22 12.5 24 12.5C26 12.5 27 13 27 14L28 20C28 21 26.5 22 24 22C21.5 22 20 21 20 20L21 14Z" fill="#ff6a00" stroke="#ffffff" stroke-width="1" />
+            <circle cx="24" cy="25" r="5" fill="#18181b" stroke="#ffffff" stroke-width="1.2" />
+            <path d="M21.5 22.5C22.5 21.8 25.5 21.8 26.5 22.5" stroke="#ff6a00" stroke-width="2" stroke-linecap="round" />
+            <rect x="21" y="29" width="6" height="8" rx="3" fill="#27272a" />
+            <rect x="22" y="36" width="4" height="9" rx="2" fill="#18181b" stroke="#ffffff" stroke-width="0.8" />
+            <rect x="26.5" y="33" width="2" height="7" rx="1" fill="#71717a" />
+            <rect x="22.5" y="44" width="3" height="1.5" rx="0.75" fill="#ef4444" />
+          </svg>
+        </div>
+        <div style="background: #09090b; color: #ff6a00; font-family: monospace; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 9999px; border: 1.5px solid #ffffff; margin-top: 2px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
+          ${driver.vehiclePlate || 'RACE-2026'} • ${speedKmh} km/h
+        </div>
       </div>
-    `;
+      `
+      : `
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transform: rotate(${carHeading}deg); transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 6px 8px rgba(0,0,0,0.45));">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="7" y="10" width="4" height="8" rx="2" fill="#18181b" />
+            <rect x="37" y="10" width="4" height="8" rx="2" fill="#18181b" />
+            <rect x="7" y="30" width="4" height="8" rx="2" fill="#18181b" />
+            <rect x="37" y="30" width="4" height="8" rx="2" fill="#18181b" />
+            <rect x="6" y="15" width="4" height="3" rx="1.5" fill="#e05e00" stroke="#ffffff" stroke-width="0.8" />
+            <rect x="38" y="15" width="4" height="3" rx="1.5" fill="#e05e00" stroke="#ffffff" stroke-width="0.8" />
+            <path d="M14 12C14 7 17 4 24 4C31 4 34 7 34 12V36C34 41 31 44 24 44C17 44 14 41 14 36V12Z" fill="#ff6a00" stroke="#ffffff" stroke-width="1.8" />
+            <path d="M17 5.5C19 4.8 22 4.5 24 4.5C26 4.5 29 4.8 31 5.5" stroke="#ffe4d6" stroke-width="1" stroke-linecap="round" />
+            <ellipse cx="16.5" cy="6.5" rx="2" ry="1.2" fill="#ffffff" />
+            <ellipse cx="31.5" cy="6.5" rx="2" ry="1.2" fill="#ffffff" />
+            <path d="M16 14C17 12 20 11 24 11C28 11 31 12 32 14L31 18H17L16 14Z" fill="#09090b" stroke="#3f3f46" stroke-width="0.8" />
+            <rect x="17.5" y="19" width="13" height="12" rx="2" fill="#e05e00" />
+            <rect x="19" y="21" width="10" height="7" rx="1.5" fill="#18181b" opacity="0.85" />
+            <path d="M17 32H31L32 35C31 36.5 28 37 24 37C20 37 17 36.5 16 35L17 32Z" fill="#09090b" stroke="#3f3f46" stroke-width="0.8" />
+            <rect x="15.5" y="42" width="4.5" height="1.8" rx="0.9" fill="#ef4444" />
+            <rect x="28" y="42" width="4.5" height="1.8" rx="0.9" fill="#ef4444" />
+          </svg>
+        </div>
+        <div style="background: #09090b; color: #ff6a00; font-family: monospace; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 9999px; border: 1.5px solid #ffffff; margin-top: 2px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
+          ${driver.vehiclePlate || 'RACE-2026'} • ${speedKmh} km/h
+        </div>
+      </div>
+      `;
 
     const carIcon = L.divIcon({
       className: 'gps-driver-car',
-      html: carHtml,
-      iconSize: [44, 44],
-      iconAnchor: [22, 22],
+      html: vehicleHtml,
+      iconSize: [48, 62],
+      iconAnchor: [24, 24],
     });
 
     if (carMarkerRef.current) {
@@ -186,14 +240,33 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     } else {
       carMarkerRef.current = L.marker(carPos, { icon: carIcon }).addTo(map);
     }
-  }, [carPos, carHeading]);
+  }, [carPos, carHeading, speedKmh, driver.vehiclePlate, isMotoboy]);
 
-  // 4. Simulação de condução: o carro avança rua por rua a cada 2s e gira na esquina
+  // 4. Simulação de condução suave a cada 500ms com interpolação e curvas realistas
   useEffect(() => {
     if (rideCompleted) return;
 
+    const rawCoords = routeData.coordinates;
+    if (rawCoords.length < 2) return;
+
+    // Sub-segmentação para movimento contínuo a cada 500ms
+    const smoothCoords: [number, number][] = [];
+    const factor = 3;
+    for (let i = 0; i < rawCoords.length - 1; i++) {
+      const p1 = rawCoords[i];
+      const p2 = rawCoords[i + 1];
+      smoothCoords.push(p1);
+      for (let s = 1; s < factor; s++) {
+        const frac = s / factor;
+        const lat = p1[0] + (p2[0] - p1[0]) * frac;
+        const lng = p1[1] + (p2[1] - p1[1]) * frac;
+        smoothCoords.push([lat, lng]);
+      }
+    }
+    smoothCoords.push(rawCoords[rawCoords.length - 1]);
+
     const interval = setInterval(() => {
-      const coords = routeData.coordinates;
+      const coords = smoothCoords;
       if (coords.length === 0) return;
 
       const prev = stepRef.current;
@@ -219,8 +292,8 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       const heading = calculateBearing(currentPoint[0], currentPoint[1], nextPoint[0], nextPoint[1]);
       setCarHeading(heading);
 
-      // Variação realista de velocidade urbana (38 a 48 km/h nas retas, reduz para 22 km/h nas curvas)
-      const isCornerTurn = Math.abs(heading - carHeading) > 35;
+      // Variação realista de velocidade urbana
+      const isCornerTurn = Math.abs(heading - carHeading) > 30;
       const targetSpeed = isCornerTurn ? 22 : Math.floor(40 + Math.random() * 8);
       setSpeedKmh(targetSpeed);
 
@@ -231,9 +304,9 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
       // Centraliza a visão do GPS suavemente no carro
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.setView(nextPoint, 16, { animate: true, duration: 1.2 });
+        mapInstanceRef.current.setView(nextPoint, 16, { animate: true, duration: 0.45 });
       }
-    }, 2000);
+    }, 500);
 
     return () => clearInterval(interval);
   }, [routeData, carHeading, rideCompleted]);

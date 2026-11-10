@@ -68,6 +68,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const pickupMarkerRef = useRef<L.Marker | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
   const routePolylineRef = useRef<L.Polyline | null>(null);
+  const routePolylineBorderRef = useRef<L.Polyline | null>(null);
   const fullPolylineRef = useRef<L.Polyline | null>(null);
 
   const stepRef = useRef(0);
@@ -225,8 +226,8 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, {
-        center: INDAIATUBA_CENTER_COORDS,
-        zoom: 15,
+        center: [-23.0903, -47.2180],
+        zoom: 16,
         minZoom: INDAIATUBA_MIN_ZOOM,
         maxZoom: INDAIATUBA_MAX_ZOOM,
         maxBounds: INDAIATUBA_BOUNDS,
@@ -234,10 +235,11 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         zoomControl: false,
       });
 
-      // OpenStreetMap Oficial Claro - Ruas de Indaiatuba totalmente visíveis
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap',
-        maxZoom: 19,
+      // CartoDB Voyager Oficial - Estilo Google Maps / Uber com ruas, praças e Parque Ecológico nítidos
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
+        subdomains: 'abcd',
+        maxZoom: 20,
       }).addTo(map);
 
       // Controle de zoom no topo direito
@@ -264,46 +266,60 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     };
   }, []);
 
-  // 3. Desenha a rota grossa laranja #ff6a00 por cima das ruas de Indaiatuba
+  // 3. Rota Laranja Grossa #ff6a00 com Borda Branca estilo Google Maps / Uber
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || routeData.coordinates.length === 0) return;
 
+    // Borda Branca Externa
+    if (routePolylineBorderRef.current) {
+      routePolylineBorderRef.current.setLatLngs(routeData.coordinates);
+    } else {
+      routePolylineBorderRef.current = L.polyline(routeData.coordinates, {
+        color: '#ffffff',
+        weight: 10,
+        opacity: 1.0,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+    }
+
+    // Linha Laranja Grossa #ff6a00 Central
     if (routePolylineRef.current) {
       routePolylineRef.current.setLatLngs(routeData.coordinates);
     } else {
       routePolylineRef.current = L.polyline(routeData.coordinates, {
         color: '#ff6a00',
-        weight: 8,
-        opacity: 0.95,
+        weight: 6,
+        opacity: 1.0,
         lineCap: 'round',
         lineJoin: 'round',
       }).addTo(map);
     }
   }, [routeData]);
 
-  // 4. Marcador Azul Grande do Passageiro
+  // 4. Marcador de Embarque (Pino de Localização estilo GPS, sem bolinhas)
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
     const passengerHtml = `
-      <div class="relative flex flex-col items-center">
-        <div class="absolute -top-1 w-12 h-12 rounded-full bg-blue-500/30 animate-ping"></div>
-        <div class="relative w-11 h-11 rounded-full bg-blue-600 border-3 border-white shadow-2xl flex items-center justify-center text-white text-lg font-bold">
-          👤
-        </div>
-        <div class="bg-blue-600 text-white font-heading font-black text-xs px-3 py-1 rounded-full border-2 border-white mt-1 whitespace-nowrap shadow-xl">
-          Passageiro (Você)
+      <div style="filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); display: flex; flex-direction: column; align-items: center;">
+        <svg width="32" height="40" viewBox="0 0 32 40" fill="none">
+          <path d="M16 0C7.16 0 0 7.16 0 16C0 28 16 40 16 40C16 40 32 28 32 16C32 7.16 24.84 0 16 0Z" fill="#2563eb" stroke="#ffffff" stroke-width="2.5"/>
+          <path d="M16 8C13.8 8 12 9.8 12 12C12 14.2 13.8 16 16 16C18.2 16 20 14.2 20 12C20 9.8 18.2 8 16 8ZM16 18C13 18 10 19.5 10 22.5V24H22V22.5C22 19.5 19 18 16 18Z" fill="#ffffff" />
+        </svg>
+        <div style="background: #0f172a; color: #ffffff; font-family: sans-serif; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 9999px; border: 1.5px solid #ffffff; margin-top: -3px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
+          Passageiro (Embarque)
         </div>
       </div>
     `;
 
     const passengerIcon = L.divIcon({
-      className: 'passenger-marker-clean',
+      className: 'passenger-pin-marker',
       html: passengerHtml,
-      iconSize: [48, 56],
-      iconAnchor: [24, 28],
+      iconSize: [36, 44],
+      iconAnchor: [18, 38],
     });
 
     if (pickupMarkerRef.current) {
@@ -313,39 +329,74 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     }
   }, [pLat, pLng]);
 
-  // 5. Ícone do Carro Grande com Fundo Laranja #ff6a00, Borda Branca, que GIRA nas esquinas
+  // 5. CARRO REAL VISTO DE CIMA (48x48px com sombra, virando a cada curva) - SEM NENHUMA BOLINHA
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    const carHtml = `
-      <div class="relative flex flex-col items-center justify-center">
-        <!-- Contêiner do Carro com Rotação Dinâmica -->
-        <div style="transform: rotate(${carHeading}deg); transition: transform 0.4s ease-out;" class="relative flex items-center justify-center">
-          <div class="w-13 h-13 rounded-full bg-[#ff6a00] border-3 border-white shadow-2xl flex items-center justify-center">
-            <!-- Seta Direcional na frente -->
-            <div class="absolute -top-1 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[8px] border-b-white"></div>
-            <!-- Carro Top Down em SVG -->
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2" />
-              <circle cx="7" cy="17" r="2" fill="white" />
-              <circle cx="17" cy="17" r="2" fill="white" />
-            </svg>
-          </div>
+    const vehicleHtml = isMotoboy
+      ? `
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <!-- Moto Real Vista de Cima (Top-Down) -->
+        <div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transform: rotate(${carHeading}deg); transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 6px 8px rgba(0,0,0,0.45));">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="22" y="3" width="4" height="9" rx="2" fill="#18181b" stroke="#ffffff" stroke-width="0.8" />
+            <line x1="12" y1="12" x2="36" y2="12" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" />
+            <rect x="10" y="10.5" width="4" height="3" rx="1.5" fill="#ff6a00" />
+            <rect x="34" y="10.5" width="4" height="3" rx="1.5" fill="#ff6a00" />
+            <circle cx="11" cy="8" r="1.5" fill="#ffffff" />
+            <circle cx="37" cy="8" r="1.5" fill="#ffffff" />
+            <ellipse cx="24" cy="5" rx="2.5" ry="1.5" fill="#ffffff" />
+            <path d="M21 14C21 13 22 12.5 24 12.5C26 12.5 27 13 27 14L28 20C28 21 26.5 22 24 22C21.5 22 20 21 20 20L21 14Z" fill="#ff6a00" stroke="#ffffff" stroke-width="1" />
+            <circle cx="24" cy="25" r="5" fill="#18181b" stroke="#ffffff" stroke-width="1.2" />
+            <path d="M21.5 22.5C22.5 21.8 25.5 21.8 26.5 22.5" stroke="#ff6a00" stroke-width="2" stroke-linecap="round" />
+            <rect x="21" y="29" width="6" height="8" rx="3" fill="#27272a" />
+            <rect x="22" y="36" width="4" height="9" rx="2" fill="#18181b" stroke="#ffffff" stroke-width="0.8" />
+            <rect x="26.5" y="33" width="2" height="7" rx="1" fill="#71717a" />
+            <rect x="22.5" y="44" width="3" height="1.5" rx="0.75" fill="#ef4444" />
+          </svg>
         </div>
-
-        <!-- Placa do Veículo Limpa e Legível -->
-        <div class="bg-slate-950 text-[#ff6a00] font-mono font-black text-[10px] px-2.5 py-0.5 rounded-full border-2 border-white shadow-xl mt-1 whitespace-nowrap">
+        <!-- Placa do Veículo -->
+        <div style="background: #09090b; color: #ff6a00; font-family: monospace; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 9999px; border: 1.5px solid #ffffff; margin-top: 2px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
           ${effectiveDriver.vehiclePlate} • ${speedKmh} km/h
         </div>
       </div>
-    `;
+      `
+      : `
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <!-- Carro Real Laranja #ff6a00 Visto de Cima (Top-Down) -->
+        <div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transform: rotate(${carHeading}deg); transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 6px 8px rgba(0,0,0,0.45));">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="7" y="10" width="4" height="8" rx="2" fill="#18181b" />
+            <rect x="37" y="10" width="4" height="8" rx="2" fill="#18181b" />
+            <rect x="7" y="30" width="4" height="8" rx="2" fill="#18181b" />
+            <rect x="37" y="30" width="4" height="8" rx="2" fill="#18181b" />
+            <rect x="6" y="15" width="4" height="3" rx="1.5" fill="#e05e00" stroke="#ffffff" stroke-width="0.8" />
+            <rect x="38" y="15" width="4" height="3" rx="1.5" fill="#e05e00" stroke="#ffffff" stroke-width="0.8" />
+            <path d="M14 12C14 7 17 4 24 4C31 4 34 7 34 12V36C34 41 31 44 24 44C17 44 14 41 14 36V12Z" fill="#ff6a00" stroke="#ffffff" stroke-width="1.8" />
+            <path d="M17 5.5C19 4.8 22 4.5 24 4.5C26 4.5 29 4.8 31 5.5" stroke="#ffe4d6" stroke-width="1" stroke-linecap="round" />
+            <ellipse cx="16.5" cy="6.5" rx="2" ry="1.2" fill="#ffffff" />
+            <ellipse cx="31.5" cy="6.5" rx="2" ry="1.2" fill="#ffffff" />
+            <path d="M16 14C17 12 20 11 24 11C28 11 31 12 32 14L31 18H17L16 14Z" fill="#09090b" stroke="#3f3f46" stroke-width="0.8" />
+            <rect x="17.5" y="19" width="13" height="12" rx="2" fill="#e05e00" />
+            <rect x="19" y="21" width="10" height="7" rx="1.5" fill="#18181b" opacity="0.85" />
+            <path d="M17 32H31L32 35C31 36.5 28 37 24 37C20 37 17 36.5 16 35L17 32Z" fill="#09090b" stroke="#3f3f46" stroke-width="0.8" />
+            <rect x="15.5" y="42" width="4.5" height="1.8" rx="0.9" fill="#ef4444" />
+            <rect x="28" y="42" width="4.5" height="1.8" rx="0.9" fill="#ef4444" />
+          </svg>
+        </div>
+        <!-- Placa do Veículo -->
+        <div style="background: #09090b; color: #ff6a00; font-family: monospace; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 9999px; border: 1.5px solid #ffffff; margin-top: 2px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
+          ${effectiveDriver.vehiclePlate} • ${speedKmh} km/h
+        </div>
+      </div>
+      `;
 
     const carIcon = L.divIcon({
-      className: 'driver-rotating-car-clean',
-      html: carHtml,
-      iconSize: [52, 64],
-      iconAnchor: [26, 32],
+      className: 'driver-real-car-icon',
+      html: vehicleHtml,
+      iconSize: [48, 62],
+      iconAnchor: [24, 24],
     });
 
     if (driverMarkerRef.current) {
@@ -354,7 +405,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     } else {
       driverMarkerRef.current = L.marker(carPos, { icon: carIcon }).addTo(map);
     }
-  }, [carPos, carHeading, speedKmh, effectiveDriver.vehiclePlate]);
+  }, [carPos, carHeading, speedKmh, effectiveDriver.vehiclePlate, isMotoboy]);
 
   // 6. Atualização segura de posição para o componente pai (App)
   useEffect(() => {
@@ -377,12 +428,31 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     return () => clearInterval(secInterval);
   }, [hasDriverArrived, isRideFinished]);
 
-  // 8. Simulação do Carro nas ruas de Indaiatuba: avança e GIRA nas esquinas a cada 2s
+  // 8. Simulação do Carro em Movimento Suave a Cada 500ms (não pulando, virando nas esquinas)
   useEffect(() => {
     if (hasDriverArrived || isRideFinished) return;
 
+    // Interpolação suave dos pontos para não pular (movimento contínuo a cada 500ms)
+    const rawCoords = routeData.coordinates;
+    if (rawCoords.length < 2) return;
+
+    const smoothCoords: [number, number][] = [];
+    const factor = 3; // 3 micropassos entre cada vértice da rua
+    for (let i = 0; i < rawCoords.length - 1; i++) {
+      const p1 = rawCoords[i];
+      const p2 = rawCoords[i + 1];
+      smoothCoords.push(p1);
+      for (let s = 1; s < factor; s++) {
+        const frac = s / factor;
+        const lat = p1[0] + (p2[0] - p1[0]) * frac;
+        const lng = p1[1] + (p2[1] - p1[1]) * frac;
+        smoothCoords.push([lat, lng]);
+      }
+    }
+    smoothCoords.push(rawCoords[rawCoords.length - 1]);
+
     const moveInterval = setInterval(() => {
-      const coords = routeData.coordinates;
+      const coords = smoothCoords;
       if (coords.length === 0) return;
 
       const prev = stepRef.current;
@@ -405,13 +475,13 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       const pNext = coords[next];
       setCarPos(pNext);
 
-      // Calcula o ângulo para virar o carro na esquina
+      // Calcula o ângulo exato para girar o carro na esquina
       const heading = calculateBearing(pCurrent[0], pCurrent[1], pNext[0], pNext[1]);
       setCarHeading(heading);
 
-      // Velocidade realista (reduz na curva, acelera nas avenidas)
+      // Velocidade realista
       const angleDiff = Math.abs(heading - carHeading);
-      const isCurve = angleDiff > 30;
+      const isCurve = angleDiff > 25;
       const dynamicSpeed = isCurve ? 22 : Math.floor(40 + Math.random() * 8);
       setSpeedKmh(dynamicSpeed);
 
@@ -419,7 +489,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       const remainingPct = (coords.length - 1 - next) / (coords.length - 1);
       const distLeft = Math.round(remainingPct * routeData.totalDistanceMeters);
       setDistanceRemainingMeters(distLeft);
-    }, 2000);
+    }, 500);
 
     return () => clearInterval(moveInterval);
   }, [routeData, carHeading, hasDriverArrived, isRideFinished]);
