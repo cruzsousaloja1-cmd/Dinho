@@ -17,7 +17,8 @@ import {
   Navigation,
   Volume2,
   VolumeX,
-  Check
+  Check,
+  Phone
 } from 'lucide-react';
 import { 
   INDAIATUBA_CENTER_COORDS, 
@@ -583,44 +584,58 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       {/* 3. CARD DE GPS EM TEMPO REAL ESTILO UBER (EMBAIXO DO MAPA) */}
       <div className="absolute bottom-4 sm:bottom-6 left-3 right-3 sm:left-6 sm:right-6 max-w-lg mx-auto z-[1000] pointer-events-auto">
         <div className="bg-white/95 backdrop-blur-2xl border border-slate-200 text-slate-900 rounded-3xl p-4 sm:p-5 shadow-[0_12px_40px_rgba(0,0,0,0.15)] space-y-3.5">
-          {/* Header do Card com Status */}
+          {/* Header do Card com Status, Foto do Motorista e Veículo */}
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-[#ff6a00]/15 border border-[#ff6a00]/30 flex items-center justify-center text-[#ff6a00] font-black shrink-0">
-                <Car className="w-6 h-6" />
+              <div className="relative shrink-0">
+                <img
+                  src={effectiveDriver.avatar}
+                  alt={effectiveDriver.name}
+                  className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shadow-md"
+                />
+                <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-[10px] px-1 rounded-full border border-black shadow">
+                  ★ {effectiveDriver.rating.toFixed(1)}
+                </span>
               </div>
               <div>
-                <h4 className="font-heading font-black text-sm sm:text-base text-slate-950">
-                  {isRideFinished
-                    ? '🏁 Viagem Finalizada!'
-                    : isRideInProgress
-                    ? '🛣️ Viagem em Andamento'
-                    : hasDriverArrived
-                    ? (isMotoboy ? '📍 Motoboy Chegou ao Local!' : '📍 Motorista Chegou ao Local!')
-                    : distanceRemainingMeters <= 200
-                    ? (isMotoboy ? '🚨 Motoboy chegando - 200m' : '🚨 Motorista chegando - 200m')
-                    : (isMotoboy ? '🏍️ Motoboy a Caminho' : '🚗 Motorista a Caminho')}
+                <h4 className="font-heading font-black text-sm sm:text-base text-slate-950 flex items-center gap-1.5">
+                  <span>{effectiveDriver.name}</span>
                 </h4>
                 <p className="text-xs text-slate-600 font-medium">
                   {effectiveDriver.vehicleModel} &bull;{' '}
                   <strong className="text-slate-900 font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[11px] border border-slate-200">
                     {effectiveDriver.vehiclePlate}
                   </strong>
+                  {effectiveDriver.vehicleColor ? ` • ${effectiveDriver.vehicleColor}` : ''}
                 </p>
               </div>
             </div>
 
-            {/* Distância e tempo grande estilo Uber */}
-            <div className="text-right">
-              <div className="text-xl sm:text-2xl font-heading font-black text-[#ff6a00]">
-                {isRideFinished
-                  ? 'Chegou!'
-                  : minutesLeft > 0
-                  ? `Chega em ${minutesLeft} min`
-                  : 'No local'}
-              </div>
-              <div className="text-[11px] font-mono text-slate-600 font-bold">
-                {isRideFinished ? 'Destino alcançado' : `${distanceKmFormatted} km de distância`}
+            <div className="flex items-center gap-2">
+              <a
+                href={`https://wa.me/55${(effectiveDriver.phone || '19998765432').replace(/\D/g, '')}?text=${encodeURIComponent(
+                  `Olá ${effectiveDriver.name}! Sou seu passageiro do RACE. Estou te acompanhando pelo mapa ao vivo.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-9 h-9 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-700 flex items-center justify-center transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
+                title="Ligar / WhatsApp para o motorista"
+              >
+                <Phone className="w-4 h-4" />
+              </a>
+
+              {/* Distância e tempo grande estilo Uber */}
+              <div className="text-right">
+                <div className="text-xl sm:text-2xl font-heading font-black text-[#ff6a00]">
+                  {isRideFinished
+                    ? 'Chegou!'
+                    : minutesLeft > 0
+                    ? `Chega em ${minutesLeft} min`
+                    : 'No local'}
+                </div>
+                <div className="text-[11px] font-mono text-slate-600 font-bold">
+                  {isRideFinished ? 'Destino alcançado' : `${distanceKmFormatted} km de distância`}
+                </div>
               </div>
             </div>
           </div>

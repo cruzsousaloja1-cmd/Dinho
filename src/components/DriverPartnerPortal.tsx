@@ -241,7 +241,9 @@ import {
   UserCheck2,
   CheckCircle,
   Navigation,
-  Camera
+  Camera,
+  MapPin,
+  Phone
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
@@ -250,6 +252,7 @@ interface DriverPartnerPortalProps {
   currentDriver: Driver;
   currentUser?: AppUser | null;
   rides?: Ride[];
+  activeRide?: Ride | null;
   onUpdateDriver: (driver: Driver) => void;
   onRegisterDriver: (newDriver: Driver) => void;
   onLoginDriverSuccess?: (user: AppUser, driver?: Driver) => void;
@@ -266,9 +269,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   currentDriver,
   currentUser,
   rides = [],
+  activeRide,
   onUpdateDriver,
   onRegisterDriver,
   onLoginDriverSuccess,
+  onAcceptIncomingRide,
   onOpenSupport,
   onOpenShare,
   onNavigateToRides,
@@ -1005,92 +1010,180 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 </div>
 
                 {isOnline ? (
-                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="bg-amber-500 text-slate-950 font-black text-xs px-2.5 py-1 rounded font-mono">
-                          NOVA CORRIDA DISPONÍVEL
-                        </span>
-                        <span className="text-xs sm:text-sm text-slate-700 font-semibold">A 1.2 km de você</span>
-                      </div>
-                      <span className="font-heading font-black text-amber-800 text-lg sm:text-xl">
-                        R$ 28,50 (100% Seu)
-                      </span>
-                    </div>
+                  (() => {
+                    const incomingPassengerAvatar = activeRide?.passengerAvatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80';
+                    const incomingPassengerName = activeRide?.passengerName || 'Marina Gonçalves de Castro';
+                    const incomingPassengerPhone = activeRide?.passengerPhone || '(19) 99887-1122';
+                    const incomingPickupAddress = activeRide?.pickup?.address || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba - SP';
+                    const incomingDestAddress = activeRide?.destination?.address || 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba - SP';
+                    const incomingPrice = activeRide?.price || 28.50;
 
-                    <div className="space-y-2 text-sm text-slate-800">
-                      <div className="flex items-center gap-2.5 font-medium">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                        <span>Embarque: Av. Presidente Vargas, 1200 - Cidade Nova, Indaiatuba</span>
-                      </div>
-                      <div className="flex items-center gap-2.5 font-medium">
-                        <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
-                        <span>Destino: Parque Ecológico de Indaiatuba - Marginal do Parque</span>
-                      </div>
-                    </div>
-
-                    {acceptedRideNotice && (
-                      <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-3.5 rounded-xl font-bold text-sm flex items-center justify-between animate-fade-in flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                          <span>{acceptedRideNotice}</span>
+                    return (
+                      <div className="bg-gradient-to-b from-white via-slate-50 to-slate-100 p-5 sm:p-6 rounded-3xl border-2 border-[#ff6a00] shadow-xl space-y-4">
+                        {/* Header da Chamada */}
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 pb-3.5">
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 radar-pulse" />
+                            <div>
+                              <span className="bg-[#ff6a00] text-white font-heading font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                                NOVA CHAMADA DE CORRIDA
+                              </span>
+                              <p className="text-xs text-slate-500 font-mono font-bold mt-0.5">
+                                A 1.2 km de você • Chegada estimada: 3 min
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right self-end sm:self-auto">
+                            <span className="text-2xl sm:text-3xl font-heading font-black text-[#ff6a00] block">
+                              {formatBRL(incomingPrice)}
+                            </span>
+                            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full inline-block">
+                              100% dos Ganhos Livres (R$ 0,00 Taxa)
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
+
+                        {/* Card do Passageiro com Foto Cadastrada e Nome */}
+                        <div className="bg-white rounded-2xl p-4 border border-slate-200 flex items-center justify-between gap-4 shadow-sm">
+                          <div className="flex items-center gap-3.5">
+                            <div className="relative shrink-0">
+                              <img
+                                src={incomingPassengerAvatar}
+                                alt={incomingPassengerName}
+                                className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-3 border-emerald-500 shadow-md"
+                              />
+                              <span className="absolute -bottom-1 -right-1 bg-white text-slate-900 border border-slate-300 text-[11px] px-1.5 py-0.2 rounded-full font-bold flex items-center shadow">
+                                ★ 5.0
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono font-bold text-emerald-700 uppercase tracking-wider block">
+                                Passageiro Solicitante
+                              </span>
+                              <h5 className="font-heading font-black text-slate-950 text-base sm:text-xl">
+                                {incomingPassengerName}
+                              </h5>
+                              <p className="text-xs text-slate-600 font-mono mt-0.5">
+                                Contato: <span className="font-bold text-slate-900">{incomingPassengerPhone}</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <a
+                            href={`https://wa.me/55${incomingPassengerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                              `Olá ${incomingPassengerName}! Sou seu condutor da RACE. Recebi sua chamada de corrida e estou a caminho!`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-2xl border border-emerald-300 shadow-sm transition-all active:scale-95 shrink-0"
+                            title="Ligar ou conversar no WhatsApp com o passageiro"
+                          >
+                            <Phone className="w-5 h-5" />
+                          </a>
+                        </div>
+
+                        {/* Endereço de Início e Chegada com Número Correto */}
+                        <div className="bg-white rounded-2xl p-4 border border-slate-200 space-y-3 shadow-xs">
+                          {/* Início com Número Correto */}
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5 border border-emerald-300 shadow-xs">
+                              <MapPin className="w-4 h-4 text-emerald-600" />
+                            </div>
+                            <div className="space-y-0.5">
+                              <span className="text-[11px] font-mono font-bold uppercase text-emerald-800 tracking-wider">
+                                Ponto de Início (Embarque):
+                              </span>
+                              <p className="font-heading font-bold text-slate-900 text-sm sm:text-base leading-snug">
+                                {incomingPickupAddress}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-dashed border-slate-200 my-1 ml-11" />
+
+                          {/* Chegada com Número Correto */}
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 border border-amber-300 shadow-xs">
+                              <Navigation className="w-4 h-4 text-[#ff6a00]" />
+                            </div>
+                            <div className="space-y-0.5">
+                              <span className="text-[11px] font-mono font-bold uppercase text-amber-800 tracking-wider">
+                                Ponto de Chegada (Destino):
+                              </span>
+                              <p className="font-heading font-bold text-slate-900 text-sm sm:text-base leading-snug">
+                                {incomingDestAddress}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {acceptedRideNotice && (
+                          <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-3.5 rounded-xl font-bold text-sm flex items-center justify-between animate-fade-in flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                              <span>{acceptedRideNotice}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setIsDriverGpsOpen(true)}
+                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-heading font-black cursor-pointer flex items-center gap-1 shadow-xs"
+                              >
+                                <Navigation className="w-3.5 h-3.5" />
+                                <span>Abrir GPS</span>
+                              </button>
+                              <button
+                                onClick={() => setAcceptedRideNotice(null)}
+                                className="text-xs text-emerald-700 hover:text-emerald-900 font-bold ml-1 cursor-pointer"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
                           <button
+                            onClick={() => {
+                              onUpdateDriver({
+                                ...currentDriver,
+                                earningsToday: currentDriver.earningsToday + incomingPrice,
+                                earningsWeek: currentDriver.earningsWeek + incomingPrice,
+                                totalRides: currentDriver.totalRides + 1,
+                              });
+                              if (activeRide && onAcceptIncomingRide) {
+                                onAcceptIncomingRide(activeRide);
+                              }
+                              setAcceptedRideNotice(`Corrida aceita! Rota enviada para o GPS. Ganhos de ${formatBRL(incomingPrice)} creditados (100% livres).`);
+                              setIsDriverGpsOpen(true);
+                              try {
+                                confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
+                              } catch {}
+                            }}
+                            className="w-full sm:flex-1 bg-gradient-to-r from-[#ff6a00] to-[#e05e00] hover:from-[#ff7b1a] hover:to-[#eb6800] text-white font-heading font-black py-4 rounded-2xl text-sm sm:text-base transition-all cursor-pointer shadow-lg active:scale-95 text-center border border-[#ff8533] flex items-center justify-center gap-2"
+                          >
+                            <Navigation className="w-4 h-4" />
+                            <span>ACEITAR E ABRIR GPS ({formatBRL(incomingPrice)})</span>
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => setIsDriverGpsOpen(true)}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-heading font-black cursor-pointer flex items-center gap-1 shadow-xs"
+                            className="w-full sm:w-auto px-4 py-4 bg-slate-950 hover:bg-zinc-800 text-white rounded-2xl text-xs sm:text-sm font-heading font-bold cursor-pointer border border-zinc-800 flex items-center justify-center gap-2 shadow-xs"
                           >
-                            <Navigation className="w-3.5 h-3.5" />
-                            <span>Abrir GPS</span>
+                            <Navigation className="w-4 h-4 text-emerald-400" />
+                            <span>GPS (Waze/Uber)</span>
                           </button>
+
                           <button
-                            onClick={() => setAcceptedRideNotice(null)}
-                            className="text-xs text-emerald-700 hover:text-emerald-900 font-bold ml-1 cursor-pointer"
+                            onClick={onOpenSupport}
+                            className="w-full sm:w-auto px-3.5 py-4 bg-white hover:bg-slate-100 text-slate-800 rounded-2xl text-xs sm:text-sm font-bold cursor-pointer border border-slate-300"
                           >
-                            ✕
+                            Suporte 24h
                           </button>
                         </div>
                       </div>
-                    )}
-
-                    <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
-                      <button
-                        onClick={() => {
-                          onUpdateDriver({
-                            ...currentDriver,
-                            earningsToday: currentDriver.earningsToday + 28.5,
-                            earningsWeek: currentDriver.earningsWeek + 28.5,
-                            totalRides: currentDriver.totalRides + 1,
-                          });
-                          setAcceptedRideNotice('Corrida aceita! Rota enviada para o GPS. Ganhos de R$ 28,50 creditados.');
-                          setIsDriverGpsOpen(true);
-                          try {
-                            confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
-                          } catch {}
-                        }}
-                        className="w-full sm:flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black py-3.5 rounded-xl text-sm transition-all cursor-pointer shadow active:scale-95 text-center border border-amber-400 flex items-center justify-center gap-2"
-                      >
-                        <Navigation className="w-4 h-4" />
-                        <span>ACEITAR E ABRIR GPS (R$ 28,50)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setIsDriverGpsOpen(true)}
-                        className="w-full sm:w-auto px-4 py-3.5 bg-slate-950 hover:bg-zinc-800 text-white rounded-xl text-xs sm:text-sm font-heading font-bold cursor-pointer border border-zinc-800 flex items-center justify-center gap-2 shadow-xs"
-                      >
-                        <Navigation className="w-4 h-4 text-emerald-400" />
-                        <span>Navegação GPS (Waze/Uber)</span>
-                      </button>
-
-                      <button
-                        onClick={onOpenSupport}
-                        className="w-full sm:w-auto px-3.5 py-3.5 bg-white hover:bg-slate-100 text-slate-800 rounded-xl text-xs sm:text-sm font-bold cursor-pointer border border-slate-300"
-                      >
-                        Suporte 24h
-                      </button>
-                    </div>
-                  </div>
+                    );
+                  })()
                 ) : (
                   <div className="text-center py-8 text-slate-600 text-sm">
                     <p>Você está atualmente <strong className="text-rose-600">OFFLINE</strong>.</p>

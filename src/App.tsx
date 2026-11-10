@@ -893,6 +893,10 @@ export default function App() {
               currentDriver={currentDriver}
               currentUser={currentUser}
               rides={getIsolatedUserRides(currentUser)}
+              activeRide={activeRide}
+              onAcceptIncomingRide={(ride) => {
+                setActiveRide({ ...ride, status: 'driver_assigned' });
+              }}
               onUpdateDriver={handleUpdateDriver}
               onRegisterDriver={(newDriver) => {
                 handleRegisterDriver(newDriver);

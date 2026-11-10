@@ -323,9 +323,9 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     const newDriver: Driver = {
       id: `drv-${Date.now().toString().slice(-5)}`,
       name: currentUser.name,
-      avatar: (selectedCategory.role === 'motoboy')
+      avatar: currentUser.avatar || ((selectedCategory.role === 'motoboy')
         ? 'https://images.unsplash.com/photo-1557862921-37829c790f19?w=150&auto=format&fit=crop&q=80'
-        : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'),
       phone: currentUser.phone,
       email: currentUser.email,
       password: currentUser.password || '',
@@ -336,6 +336,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       vehiclePlate: cleanPlate,
       vehicleColor: color || 'Prata',
       vehicleYear: yearNum,
+      vehiclePhoto: selectedCategory.role === 'motoboy'
+        ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
+        : (selectedCategory.key === 'motorista_confort'
+          ? 'https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=500&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80'),
       rating: 5.0,
       totalRides: 0,
       status: 'offline', // Fica online após pagar ou confirmar assinatura

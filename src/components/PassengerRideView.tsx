@@ -268,6 +268,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     const finalCategory = catId || selectedCategory;
     setSelectedCategory(finalCategory);
 
+    const isMoto = finalCategory === 'moto_passageiro' || finalCategory === 'moto_entrega';
+
     const calculated = calculateFare(finalCategory, dynamicDistanceKm);
 
     const finalPickup: LocationPoint = pickup || {
@@ -282,10 +284,46 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       lng: -47.2050,
     };
 
-    // Find a matching driver or use first available
-    const matchedDriver = availableDrivers.find(
+    // Find a matching driver or use default with complete vehicle details
+    const baseMatched = availableDrivers.find(
       (d) => d.category === finalCategory && d.status === 'online'
     ) || availableDrivers[0];
+
+    const matchedDriver: Driver = {
+      id: baseMatched?.id || (isMoto ? 'moto-indaiatuba-1' : 'drv-indaiatuba-1'),
+      name: baseMatched?.name || (isMoto ? 'Lucas Souza' : 'Marcos Silva'),
+      avatar: baseMatched?.avatar || (isMoto
+        ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=150&auto=format&fit=crop&q=80'
+        : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'),
+      phone: baseMatched?.phone || '(19) 99876-5432',
+      email: baseMatched?.email || 'motorista@race.com.br',
+      cpf: baseMatched?.cpf || '000.***.***-00',
+      cnh: baseMatched?.cnh || '01234567890',
+      category: finalCategory,
+      vehicleModel: baseMatched?.vehicleModel || (isMoto ? 'Honda CG 160 Fan' : (finalCategory === 'confort' ? 'Toyota Corolla Sedã' : 'Chevrolet Onix Plus 1.0')),
+      vehiclePlate: baseMatched?.vehiclePlate || (isMoto ? 'MTO-1A23' : 'IND-2E24'),
+      vehicleColor: baseMatched?.vehicleColor || (isMoto ? 'Vermelha' : (finalCategory === 'confort' ? 'Preto Perolizado' : 'Branco')),
+      vehicleYear: baseMatched?.vehicleYear || (isMoto ? 2023 : (finalCategory === 'confort' ? 2023 : 2022)),
+      vehiclePhoto: baseMatched?.vehiclePhoto || (isMoto
+        ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
+        : (finalCategory === 'confort'
+          ? 'https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=500&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80')),
+      rating: baseMatched?.rating || 4.98,
+      totalRides: baseMatched?.totalRides || 1420,
+      status: 'online',
+      lat: baseMatched?.lat || -23.084087,
+      lng: baseMatched?.lng || -47.212027,
+      weeklyPlanActive: true,
+      weeklyFeePaidAt: new Date().toISOString(),
+      weeklyFeeExpiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+      earningsToday: 180,
+      earningsWeek: 1240,
+      cnhVerified: true,
+      vehicleVerified: true,
+      criminalRecordClear: true,
+      registrationDate: '2024-01-01',
+    };
 
     const newRide: Ride = {
       id: `RCE-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -311,6 +349,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     };
 
     onStartRide(newRide);
+    try {
+      notifyDriverAccepted(isMoto);
+    } catch {}
     try {
       confetti({
         particleCount: 50,
@@ -412,65 +453,141 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </div>
           </div>
 
-          {/* Botão de Destaque: Ver Mapa em Tela Cheia Sem Informações em Cima */}
-          {onOpenFullMap && (
-            <button
-              type="button"
-              onClick={onOpenFullMap}
-              className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black py-3.5 px-4 rounded-2xl shadow-lg flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-[#ff8533] text-sm sm:text-base uppercase tracking-wider"
-            >
-              <Maximize2 className="w-5 h-5" />
-              <span>Ver Mapa em Tela Cheia (100% da Tela)</span>
-            </button>
-          )}
-
-          {/* Driver & Vehicle Details */}
+          {/* CARD GRANDE DO MOTORISTA / MOTOBOY E VEÍCULO (CHAMADA ACEITA) */}
           {activeRide.driver && (
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex items-center justify-between gap-4 shadow-sm">
-              <div className="flex items-center gap-3.5">
-                <div className="relative">
-                  <img
-                    src={activeRide.driver.avatar}
-                    alt={activeRide.driver.name}
-                    className="w-14 h-14 rounded-full object-cover border-2 border-amber-500 shadow-md"
-                  />
-                  <span className="absolute -bottom-1 -right-1 bg-white text-slate-900 border border-slate-300 text-xs px-1.5 py-0.2 rounded-full font-bold flex items-center shadow">
-                    ★ {activeRide.driver.rating.toFixed(2)}
-                  </span>
+            <div className="bg-gradient-to-b from-[#111111] via-[#161616] to-[#0a0a0a] text-white rounded-3xl p-5 sm:p-6 border-2 border-[#ff6a00] shadow-2xl space-y-5">
+              {/* 1. Header do Card: Foto do Motorista (Cadastro) + Nome + Categoria + Avaliação */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-800 pb-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative shrink-0">
+                    <img
+                      src={activeRide.driver.avatar}
+                      alt={activeRide.driver.name}
+                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover border-4 border-[#ff6a00] shadow-2xl"
+                    />
+                    <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full shadow border-2 border-black flex items-center gap-0.5">
+                      ★ {activeRide.driver.rating.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#ff6a00] bg-[#ff6a00]/15 px-2.5 py-0.5 rounded-full border border-[#ff6a00]/40 inline-block">
+                      {isMotoRide ? '🏍️ Motoboy RACE Homologado' : '🚗 Motorista RACE Homologado'}
+                    </span>
+                    <h4 className="font-heading font-black text-white text-xl sm:text-2xl leading-tight">
+                      {activeRide.driver.name}
+                    </h4>
+                    {/* Avaliação em estrelas */}
+                    <div className="flex items-center gap-1.5 text-amber-400 text-sm">
+                      <span className="tracking-widest">★★★★★</span>
+                      <span className="text-xs text-zinc-300 font-bold ml-1 font-mono">
+                        {activeRide.driver.rating.toFixed(2)} • {activeRide.driver.totalRides || 1420} viagens
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-heading font-bold text-slate-900 text-base sm:text-lg">
-                    {activeRide.driver.name}
-                  </h4>
-                  <p className="text-sm text-amber-700 font-mono font-bold">
-                    {activeRide.driver.vehicleModel}
-                  </p>
-                  <p className="text-xs sm:text-sm text-slate-600 font-mono mt-0.5">
-                    Placa: <span className="bg-white text-slate-950 px-2 py-0.5 rounded border border-slate-300 font-extrabold">{activeRide.driver.vehiclePlate}</span>
-                  </p>
+
+                {/* Áudio: Aviso de Chegada ("Seu motorista chegou" / "Seu motoboy chegou") */}
+                <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      notifyDriverArrived(isMotoRide);
+                    }}
+                    className="w-full sm:w-auto px-4 py-3 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
+                    title="Reproduzir áudio: Seu motorista/motoboy chegou"
+                  >
+                    <Volume2 className="w-4 h-4 text-[#ff6a00] shrink-0" />
+                    <span>{isMotoRide ? 'Áudio: "Seu motoboy chegou"' : 'Áudio: "Seu motorista chegou"'}</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const isMoto = activeRide.category === 'moto_passageiro' || activeRide.category === 'moto_entrega';
-                    notifyDriverArrived(isMoto);
-                  }}
-                  className="px-3 py-2.5 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-heading font-black text-xs flex items-center gap-1.5 transition-all shadow cursor-pointer active:scale-95"
-                  title="Ouvir aviso de voz de chegada"
-                >
-                  <Volume2 className="w-4 h-4 text-[#ff6a00]" />
-                  <span className="hidden sm:inline">Aviso Voz</span>
-                </button>
+              {/* 2. Informações do Veículo: Foto do Veículo (Carro / Moto), Modelo, Placa, Cor e Ano */}
+              <div className="bg-[#181818] rounded-2xl p-4 sm:p-5 border border-zinc-800 space-y-4">
+                <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-5">
+                  {/* Foto do Veículo */}
+                  <div className="w-full sm:w-48 h-36 sm:h-36 rounded-2xl overflow-hidden bg-zinc-900 border-2 border-zinc-700 shrink-0 relative shadow-inner group">
+                    <img
+                      src={activeRide.driver.vehiclePhoto || (isMotoRide
+                        ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
+                        : (activeRide.category === 'confort'
+                          ? 'https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=500&auto=format&fit=crop&q=80'
+                          : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80'))
+                      }
+                      alt={`Foto do veículo ${activeRide.driver.vehicleModel}`}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <span className="absolute bottom-2 left-2 text-[10px] bg-black/80 backdrop-blur-sm text-white px-2 py-0.5 rounded font-mono font-bold uppercase border border-zinc-700">
+                      {isMotoRide ? 'Moto Oficial' : 'Carro Oficial'}
+                    </span>
+                  </div>
 
+                  {/* Detalhes: Modelo, Placa Mercosul, Cor e Ano */}
+                  <div className="flex-1 space-y-3 w-full">
+                    <div>
+                      <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                        Modelo do Veículo
+                      </span>
+                      <div className="font-heading font-black text-white text-xl sm:text-2xl text-[#ff6a00]">
+                        {activeRide.driver.vehicleModel}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2.5 text-xs">
+                      {/* Placa do Veículo (Estilo Mercosul) */}
+                      <div className="bg-black/70 rounded-xl p-2.5 border border-zinc-700">
+                        <span className="text-[10px] text-zinc-400 font-bold uppercase block">Placa</span>
+                        <span className="font-mono font-black text-slate-950 bg-white px-2 py-0.5 rounded inline-block mt-1 text-xs sm:text-sm tracking-wider border border-slate-300 shadow-sm">
+                          {activeRide.driver.vehiclePlate}
+                        </span>
+                      </div>
+
+                      {/* Cor do Veículo */}
+                      <div className="bg-black/70 rounded-xl p-2.5 border border-zinc-700">
+                        <span className="text-[10px] text-zinc-400 font-bold uppercase block">Cor</span>
+                        <span className="font-heading font-black text-white text-xs sm:text-sm capitalize block mt-1">
+                          {activeRide.driver.vehicleColor || (isMotoRide ? 'Vermelha' : 'Branco')}
+                        </span>
+                      </div>
+
+                      {/* Ano do Veículo */}
+                      <div className="bg-black/70 rounded-xl p-2.5 border border-zinc-700">
+                        <span className="text-[10px] text-zinc-400 font-bold uppercase block">Ano</span>
+                        <span className="font-heading font-black text-amber-400 text-xs sm:text-sm block mt-1 font-mono">
+                          {activeRide.driver.vehicleYear || 2023}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Botões Principais: "VER MAPA NA TELA CHEIA" e "Ligar para motorista" (WhatsApp) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* Botão VER MAPA NA TELA CHEIA com carro andando */}
+                {onOpenFullMap && (
+                  <button
+                    type="button"
+                    onClick={onOpenFullMap}
+                    className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black py-4 px-4 rounded-2xl shadow-xl flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-[#ff8533] text-sm sm:text-base uppercase tracking-wider"
+                  >
+                    <Maximize2 className="w-5 h-5 shrink-0" />
+                    <span>VER MAPA NA TELA CHEIA (CARRO ANDANDO)</span>
+                  </button>
+                )}
+
+                {/* Botão Ligar para motorista (WhatsApp) */}
                 <a
-                  href={`tel:${activeRide.driver.phone}`}
-                  className="w-12 h-12 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-700 flex items-center justify-center transition-all shadow cursor-pointer active:scale-95"
-                  title="Ligar para o condutor"
+                  href={`https://wa.me/55${(activeRide.driver.phone || '19998765432').replace(/\D/g, '')}?text=${encodeURIComponent(
+                    `Olá ${activeRide.driver.name}! Sou seu passageiro da corrida RACE #${activeRide.id}. Estou aguardando no ponto de embarque.`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black py-4 px-4 rounded-2xl shadow-xl flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-emerald-400 text-sm sm:text-base uppercase tracking-wider text-center"
                 >
-                  <Phone className="w-5 h-5" />
+                  <Phone className="w-5 h-5 shrink-0" />
+                  <span>LIGAR PARA MOTORISTA (WHATSAPP)</span>
                 </a>
               </div>
             </div>

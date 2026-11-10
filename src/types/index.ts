@@ -63,6 +63,7 @@ export interface Driver {
   vehiclePlate: string;
   vehicleColor: string;
   vehicleYear: number;
+  vehiclePhoto?: string;
   rating: number;
   totalRides: number;
   status: 'online' | 'offline' | 'in_ride' | 'pending_approval';

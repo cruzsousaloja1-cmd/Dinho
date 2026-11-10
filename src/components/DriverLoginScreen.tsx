@@ -93,10 +93,16 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     onLoginSuccess(result.user, result.driver);
   };
 
-  // Submit do Cadastro com 5 campos (Nome, E-mail, WhatsApp, Login, Senha)
+  // Submit do Cadastro com 5 campos (Nome, E-mail, WhatsApp, Login, Senha) + FOTO OBRIGATÓRIA
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setRegErrorMessage(null);
+
+    // 1. Foto Obrigatória para TODAS as opções: Motorista, Motoboy, Passageiro
+    if (!regAvatar) {
+      setRegErrorMessage('Adicione sua foto para continuar');
+      return;
+    }
 
     const cleanName = regName.trim();
     const cleanEmail = regEmail.trim().toLowerCase();
@@ -135,12 +141,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     const isDriverRole = regRole === 'driver';
     const isMotoboyRole = regRole === 'motoboy';
 
-    const defaultAvatar = isPassengerRole
-      ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
-      : isMotoboyRole
-      ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=150&auto=format&fit=crop&q=80'
-      : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
-    const chosenAvatar = regAvatar || defaultAvatar;
+    const chosenAvatar = regAvatar;
 
     // Criação do novo motorista/motoboy se aplicável
     let newDriverObj: Driver | undefined = undefined;
@@ -160,6 +161,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         vehiclePlate: isMotoboyRole ? 'MTO-1A23' : 'RCE-2B34',
         vehicleColor: isMotoboyRole ? 'Vermelha' : 'Branco',
         vehicleYear: 2023,
+        vehiclePhoto: isMotoboyRole
+          ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80',
         cpf: '123.456.789-00',
         cnh: '99887766554',
         category,
@@ -509,7 +513,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             )}
 
             <form onSubmit={handleRegisterSubmit} className="space-y-3">
-              {/* Círculo de Foto da Galeria do Celular no Topo do Cadastro */}
+              {/* Círculo de Foto da Galeria do Celular no Topo do Cadastro - OBRIGATÓRIA */}
               <div className="flex flex-col items-center justify-center py-2">
                 <input
                   ref={fileInputRef}
@@ -524,10 +528,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                   onClick={() => fileInputRef.current?.click()}
                   className="relative group cursor-pointer"
                 >
-                  <div className={`w-24 h-24 sm:w-28 sm:h-28 rounded-full border-3 flex items-center justify-center overflow-hidden transition-all shadow-xl ${
+                  <div className={`w-28 h-28 sm:w-32 sm:h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-2xl relative ${
                     regAvatar
-                      ? 'border-[#ff6a00] bg-zinc-900 ring-4 ring-[#ff6a00]/25'
-                      : 'border-dashed border-zinc-500 hover:border-[#ff6a00] bg-[#141414] hover:bg-zinc-800'
+                      ? 'border-[#ff6a00] bg-zinc-900 ring-4 ring-[#ff6a00]/30'
+                      : 'border-dashed border-amber-500 bg-amber-950/20 hover:bg-zinc-900 animate-pulse'
                   }`}>
                     {regAvatar ? (
                       <img
@@ -536,10 +540,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="flex flex-col items-center justify-center text-zinc-400 group-hover:text-white transition-colors p-2 text-center">
-                        <Camera className="w-8 h-8 text-[#ff6a00] mb-1 group-hover:scale-110 transition-transform" />
-                        <span className="text-[11px] font-heading font-black uppercase tracking-wider text-zinc-300">
+                      <div className="flex flex-col items-center justify-center text-zinc-300 group-hover:text-white transition-colors p-2 text-center">
+                        <Camera className="w-9 h-9 text-[#ff6a00] mb-1 group-hover:scale-110 transition-transform" />
+                        <span className="text-[11px] font-heading font-black uppercase tracking-wider text-white">
                           Adicionar foto
+                        </span>
+                        <span className="text-[9px] text-amber-400 font-bold uppercase mt-0.5">
+                          * Obrigatória
                         </span>
                       </div>
                     )}
@@ -551,21 +558,32 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                       e.stopPropagation();
                       fileInputRef.current?.click();
                     }}
-                    className="absolute bottom-0 right-0 p-2 rounded-full bg-[#ff6a00] hover:bg-[#e05e00] text-white shadow-lg border-2 border-black transition-all cursor-pointer active:scale-90"
-                    title={regAvatar ? "Trocar foto da galeria" : "Tirar ou escolher foto"}
+                    className="absolute bottom-0 right-0 p-2.5 rounded-full bg-[#ff6a00] hover:bg-[#e05e00] text-white shadow-lg border-2 border-black transition-all cursor-pointer active:scale-90"
+                    title={regAvatar ? "Trocar foto da galeria" : "Escolher foto da galeria"}
                   >
                     <Camera className="w-4 h-4" />
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="mt-2 text-xs font-heading font-black text-[#ff6a00] hover:text-[#ff8533] transition-colors cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
-                >
-                  <Camera className="w-3.5 h-3.5" />
-                  <span>{regAvatar ? 'Trocar foto' : 'Adicionar foto da Galeria'}</span>
-                </button>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-xs font-heading font-black text-[#ff6a00] hover:text-[#ff8533] transition-colors cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>{regAvatar ? 'Trocar foto da galeria' : 'Adicionar foto da Galeria'}</span>
+                  </button>
+                  {regAvatar ? (
+                    <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold">
+                      ✓ Foto anexada
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-amber-950/70 text-amber-300 border border-amber-500/50 px-2 py-0.5 rounded-full font-bold">
+                      * Obrigatória
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* 1. Nome Completo */}
@@ -691,11 +709,23 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </div>
               )}
 
+              {!regAvatar && (
+                <div className="p-3 bg-amber-950/60 border border-amber-500/70 rounded-2xl text-xs text-amber-200 flex items-center gap-2.5 font-bold">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Adicione sua foto para continuar</span>
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-3"
+                disabled={!regAvatar}
+                className={`w-full font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl transition-all uppercase tracking-wider block mt-3 ${
+                  regAvatar
+                    ? 'bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/25'
+                    : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
+                }`}
               >
-                CRIAR CONTA E ENTRAR
+                {regAvatar ? 'CRIAR CONTA E ENTRAR' : '📸 ADICIONE SUA FOTO PARA CONTINUAR'}
               </button>
 
               <div className="text-center pt-2">
