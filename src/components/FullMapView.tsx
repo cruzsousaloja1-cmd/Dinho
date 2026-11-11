@@ -51,6 +51,7 @@ interface FullMapViewProps {
   activeRide: Ride | null;
   driverPosition?: { lat: number; lng: number };
   onUpdateDriverPosition?: (pos: { lat: number; lng: number }) => void;
+  onCompleteRide?: () => void;
 }
 
 export const FullMapView: React.FC<FullMapViewProps> = ({
@@ -61,6 +62,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   activeRide,
   driverPosition,
   onUpdateDriverPosition,
+  onCompleteRide,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -724,6 +726,9 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                   setIsRideFinished(true);
                   setDistanceRemainingMeters(0);
                   setSecondsRemaining(0);
+                  if (onCompleteRide) {
+                    onCompleteRide();
+                  }
                 }}
                 className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg cursor-pointer"
               >
@@ -734,11 +739,23 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
           {/* Finalizada */}
           {isRideFinished && (
-            <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 text-center">
+            <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 text-center space-y-2">
               <span className="text-xs font-heading font-black text-emerald-900 flex items-center justify-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 Você chegou ao seu destino!
               </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onCompleteRide) {
+                    onCompleteRide();
+                  }
+                  onClose();
+                }}
+                className="w-full py-2.5 px-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wide"
+              >
+                <span>⭐ Avaliar motorista agora</span>
+              </button>
             </div>
           )}
 

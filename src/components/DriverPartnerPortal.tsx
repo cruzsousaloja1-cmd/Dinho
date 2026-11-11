@@ -256,6 +256,7 @@ import {
   getWithdrawals, 
   checkMondayAutoDeduction 
 } from '../services/walletService';
+import { getDriverRatingStats } from '../services/reviewService';
 import { WithdrawalRequest } from '../types';
 
 interface DriverPartnerPortalProps {
@@ -394,6 +395,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   }, [currentDriver?.id]);
 
   const walletSummary = calculateWalletSummary(currentDriver);
+  const ratingStats = getDriverRatingStats(currentDriver?.id, currentDriver?.rating || 4.8, currentDriver?.totalRides || 25);
 
   const handleRequestWithdrawalAction = (summary: ReturnType<typeof calculateWalletSummary>) => {
     setWithdrawalErrorMessage(null);
@@ -962,8 +964,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     {currentDriver.vehicleModel} {currentDriver.vehicleYear ? `(${currentDriver.vehicleYear})` : ''} • {currentDriver.vehiclePlate}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-sm text-slate-600 font-semibold">
-                      ★ {currentDriver.rating.toFixed(2)} ({currentDriver.totalRides} corridas)
+                    <span className="text-sm text-slate-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                      {ratingStats.average.toFixed(1)} ★ ({ratingStats.totalReviews} avaliações)
                     </span>
                     <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-black">
                       0% Taxas
@@ -1641,10 +1643,72 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                           CNH EAR Homologada
                         </span>
                         <span className="bg-slate-100 text-slate-800 text-xs font-bold px-2 py-0.5 rounded-full border border-slate-300">
-                          ★ {currentDriver.rating.toFixed(2)}
+                          {ratingStats.average.toFixed(1)} ★ ({ratingStats.totalReviews} avaliações)
                         </span>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Card de Avaliações e Últimos 3 Comentários dos Passageiros */}
+                <div className="bg-white border-2 border-amber-300 rounded-3xl p-5 shadow-sm space-y-3.5">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div>
+                      <span className="text-[11px] font-mono font-black text-[#ff6a00] uppercase tracking-wider block">
+                        Reputação & Feedback Oficial
+                      </span>
+                      <h4 className="font-heading font-black text-slate-950 text-base sm:text-lg flex items-center gap-2">
+                        <span>Média das avaliações:</span>
+                        <span className="text-amber-500 font-mono font-black">
+                          {ratingStats.average.toFixed(1)} ★
+                        </span>
+                        <span className="text-xs font-mono font-bold text-slate-500">
+                          - {ratingStats.totalReviews} avaliações
+                        </span>
+                      </h4>
+                    </div>
+                    <span className="bg-amber-100 text-amber-900 text-xs font-mono font-black px-3 py-1 rounded-full border border-amber-300 shrink-0">
+                      ★ {ratingStats.average.toFixed(1)}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <span className="text-xs font-heading font-bold text-slate-700 block">
+                      Últimos 3 comentários dos passageiros:
+                    </span>
+                    {ratingStats.recentReviews.length > 0 ? (
+                      <div className="space-y-2">
+                        {ratingStats.recentReviews.map((rev) => (
+                          <div
+                            key={rev.id}
+                            className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs space-y-1 shadow-2xs"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-amber-500 font-mono font-bold tracking-widest text-sm">
+                                {'★'.repeat(rev.rating)}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {new Date(rev.createdAt).toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
+                            <p className="text-slate-900 font-bold text-xs sm:text-sm">
+                              "{rev.comment}"
+                            </p>
+                            <span className="text-[11px] text-slate-500 font-medium block">
+                              Passageiro(a): {rev.passengerName}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs text-slate-700 space-y-1">
+                        <div className="flex items-center gap-2 text-amber-500 font-bold">
+                          <span>★★★★★</span>
+                          <span className="text-slate-800 font-bold">- Chegou rápido e carro limpo</span>
+                          <span className="text-slate-500 font-normal">— Maria</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

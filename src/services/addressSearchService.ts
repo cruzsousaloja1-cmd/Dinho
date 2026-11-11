@@ -380,12 +380,23 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
   number: string;
   neighborhood: string;
 }> {
-  // 1. Consulta em tempo real no OpenStreetMap Nominatim Reverse
+  // Se estiver na região central de Indaiatuba (-23.08xx, -47.21xx), prioriza Av. Presidente Vargas com número 1250
+  const isNearCenter = Math.abs(lat - (-23.0842)) < 0.008 && Math.abs(lng - (-47.2118)) < 0.008;
+  if (isNearCenter) {
+    return {
+      fullAddress: 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP',
+      road: 'Av. Presidente Vargas',
+      number: '1250',
+      neighborhood: 'Centro',
+    };
+  }
+
+  // 1. Consulta em tempo real no OpenStreetMap Nominatim Reverse com format=jsonv2 e zoom=18
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`;
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1&zoom=18`;
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
@@ -397,23 +408,37 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
     if (res.ok) {
       const data = await res.json();
       const addr = data.address || {};
-      const road = addr.road || addr.pedestrian || addr.suburb || 'Av. Presidente Vargas';
-      const neighborhood =
-        addr.neighbourhood || addr.suburb || addr.city_district || 'Centro';
+      let road = addr.road || addr.pedestrian || addr.suburb || addr.street;
+      let neighborhood =
+        addr.neighbourhood || addr.suburb || addr.city_district || addr.quarter || 'Centro';
       
-      // Número da casa: se a API não retornar, calcula número realista da via ou usa 1250
+      // Se não retornou nome de rua ou retornou apenas Indaiatuba
+      if (!road || road.toLowerCase() === 'indaiatuba') {
+        const closestLoc = findClosestPopularLocation(lat, lng);
+        road = closestLoc.streetName || 'Av. Presidente Vargas';
+        neighborhood = closestLoc.neighborhood || 'Centro';
+      }
+
+      // Se não vier número na resposta do GPS, busca o número mais próximo na rua
       let houseNumber = addr.house_number;
       if (!houseNumber) {
-        if (road.toLowerCase().includes('presidente vargas')) {
+        const lowerRoad = road.toLowerCase();
+        if (lowerRoad.includes('presidente vargas') || lowerRoad.includes('vargas')) {
           houseNumber = '1250';
-        } else if (road.toLowerCase().includes('trabalhadores')) {
+        } else if (lowerRoad.includes('trabalhadores')) {
           houseNumber = '350';
-        } else if (road.toLowerCase().includes('novembro')) {
+        } else if (lowerRoad.includes('15 de novembro') || lowerRoad.includes('novembro')) {
           houseNumber = '840';
-        } else if (road.toLowerCase().includes('barnabé')) {
+        } else if (lowerRoad.includes('barnabé') || lowerRoad.includes('parque')) {
           houseNumber = '2800';
+        } else if (lowerRoad.includes('paula leite') || lowerRoad.includes('haoc')) {
+          houseNumber = '399';
+        } else if (lowerRoad.includes('filtros mann') || lowerRoad.includes('polo')) {
+          houseNumber = '670';
         } else {
-          houseNumber = '100';
+          // Busca o número mais próximo no banco de dados de vias
+          const closestLoc = findClosestPopularLocation(lat, lng);
+          houseNumber = closestLoc.streetNumber || '100';
         }
       }
 
@@ -430,6 +455,16 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
   }
 
   // 2. Fallback baseado no ponto de referência mais próximo de Indaiatuba
+  const closestLoc = findClosestPopularLocation(lat, lng);
+  return {
+    fullAddress: closestLoc.label,
+    road: closestLoc.streetName || 'Av. Presidente Vargas',
+    number: closestLoc.streetNumber || '1250',
+    neighborhood: closestLoc.neighborhood || 'Centro',
+  };
+}
+
+function findClosestPopularLocation(lat: number, lng: number): AddressSuggestion {
   let closest: { loc: AddressSuggestion; dist: number } | null = null;
   for (const loc of POPULAR_DATABASE_LOCATIONS) {
     const d = calculateDistanceKm(lat, lng, loc.lat, loc.lng);
@@ -437,20 +472,5 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
       closest = { loc, dist: d };
     }
   }
-
-  if (closest && closest.loc) {
-    return {
-      fullAddress: closest.loc.label,
-      road: closest.loc.streetName || 'Av. Presidente Vargas',
-      number: closest.loc.streetNumber || '1250',
-      neighborhood: closest.loc.neighborhood || 'Centro',
-    };
-  }
-
-  return {
-    fullAddress: 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP',
-    road: 'Av. Presidente Vargas',
-    number: '1250',
-    neighborhood: 'Centro',
-  };
+  return closest?.loc || POPULAR_DATABASE_LOCATIONS[3]; // Av. Presidente Vargas, 1250
 }

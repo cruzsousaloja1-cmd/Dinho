@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppUser, Driver, Ride } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
 import { WEEKLY_FEE, WEEKLY_FEE_TEXT, WEEKLY_FEE_BADGE, RACE_PIX_BANK } from '../config/pricing';
@@ -31,10 +31,13 @@ import {
   UserX,
   X,
   ArrowDownCircle,
-  Copy
+  Copy,
+  Star,
+  MessageSquare
 } from 'lucide-react';
 import { getWithdrawals, markWithdrawalAsPaid } from '../services/walletService';
 import { WithdrawalRequest } from '../types';
+import { getStoredReviews, DriverReview } from '../services/reviewService';
 
 interface AdminDashboardProps {
   drivers: Driver[];
@@ -65,11 +68,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onActivateAllDrivers,
   onRemoveAllAccounts,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'reports'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'reports' | 'reviews'>('overview');
   const [cadastrosSubTab, setCadastrosSubTab] = useState<'drivers' | 'passengers'>('drivers');
   const [driverFilterCategory, setDriverFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewProofImage, setPreviewProofImage] = useState<string | null>(null);
+
+  // Avaliações & Reclamações dos Passageiros
+  const [reviewsList, setReviewsList] = useState<DriverReview[]>(() => getStoredReviews());
+  const [reviewFilterStars, setReviewFilterStars] = useState<'all' | 'issues' | '5' | '4' | '3'>('all');
+
+  useEffect(() => {
+    const handleReviewUpdate = () => {
+      setReviewsList(getStoredReviews());
+    };
+    window.addEventListener('race_review_added', handleReviewUpdate);
+    return () => window.removeEventListener('race_review_added', handleReviewUpdate);
+  }, []);
+
+  const criticalIssues = reviewsList.filter((r) => r.rating <= 2);
 
   // Saques dos motoristas
   const [withdrawalsList, setWithdrawalsList] = useState<WithdrawalRequest[]>(() => getWithdrawals());
@@ -287,6 +304,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           Relatórios & Performance
+        </button>
+        <button
+          onClick={() => setActiveTab('reviews')}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'reviews'
+              ? 'bg-amber-500 text-slate-950 shadow'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+          <span>Avaliações & Reclamações ({reviewsList.length})</span>
+          {criticalIssues.length > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+              {criticalIssues.length} alerta{criticalIssues.length > 1 ? 's' : ''}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1230,6 +1263,294 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: REVIEWS & RECLAMAÇÕES (O QUE DEU ERRADO?) */}
+      {activeTab === 'reviews' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header & Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
+                <Star className="w-6 h-6 fill-amber-500 text-amber-500" />
+              </div>
+              <div>
+                <span className="text-xs text-slate-500 font-bold uppercase block">Média da Frota</span>
+                <span className="font-heading font-black text-2xl text-slate-900">
+                  {reviewsList.length > 0
+                    ? (reviewsList.reduce((acc, r) => acc + r.rating, 0) / reviewsList.length).toFixed(2)
+                    : '5.00'}{' '}
+                  <span className="text-amber-500 text-lg">★</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-xs text-slate-500 font-bold uppercase block">Total de Avaliações</span>
+                <span className="font-heading font-black text-2xl text-slate-900">
+                  {reviewsList.length}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${
+                criticalIssues.length > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'
+              }`}>
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-xs text-slate-500 font-bold uppercase block">Reclamações Críticas (1-2★)</span>
+                <span className={`font-heading font-black text-2xl ${
+                  criticalIssues.length > 0 ? 'text-rose-700' : 'text-emerald-700'
+                }`}>
+                  {criticalIssues.length} {criticalIssues.length === 1 ? 'caso' : 'casos'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Destaque para Reclamações 1 e 2 estrelas: "O que deu errado?" */}
+          <div className="bg-white border-2 border-rose-300 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-rose-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-black shadow-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                    Reclamações Críticas &bull; "O que deu errado?" (1 e 2 Estrelas)
+                  </h3>
+                  <p className="text-xs text-slate-600 font-medium">
+                    Relatórios enviados pelos passageiros para auditoria imediata da administração RACE
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-bold rounded-full border border-rose-200">
+                {criticalIssues.length} pendência(s) de atenção
+              </span>
+            </div>
+
+            {criticalIssues.length === 0 ? (
+              <div className="p-6 text-center bg-emerald-50 rounded-2xl border border-emerald-200">
+                <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto mb-2" />
+                <p className="font-heading font-black text-emerald-950 text-sm">
+                  Nenhuma reclamação crítica pendente!
+                </p>
+                <p className="text-xs text-emerald-700 mt-1">
+                  Todos os passageiros avaliaram os condutores com 3 ou mais estrelas.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3.5">
+                {criticalIssues.map((issue) => (
+                  <div
+                    key={issue.id}
+                    className="p-4 sm:p-5 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-rose-200 text-rose-800 font-bold flex items-center justify-center text-sm border border-rose-300">
+                          {issue.passengerName.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-heading font-black text-slate-950 text-sm">
+                              {issue.passengerName}
+                            </span>
+                            <span className="text-xs text-slate-500 font-medium">avaliou</span>
+                            <span className="font-bold text-slate-900 text-sm">
+                              {issue.driverName}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            {issue.driverVehicle} &bull; {new Date(issue.createdAt).toLocaleDateString('pt-BR')} às {new Date(issue.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 bg-rose-600 text-white px-3 py-1 rounded-xl text-xs font-black shadow-xs self-start sm:self-auto">
+                        <span>{issue.rating}</span>
+                        <Star className="w-3.5 h-3.5 fill-white" />
+                      </div>
+                    </div>
+
+                    {/* Comentário geral do passageiro */}
+                    {issue.comment && (
+                      <div className="text-xs text-slate-700 bg-white p-3 rounded-xl border border-rose-200/80">
+                        <strong className="text-slate-900 block mb-0.5">Comentário do passageiro:</strong>
+                        &ldquo;{issue.comment}&rdquo;
+                      </div>
+                    )}
+
+                    {/* Campo obrigatório de incidente: O que deu errado? */}
+                    <div className="text-xs text-rose-950 bg-rose-100/90 p-3.5 rounded-xl border-2 border-rose-300 space-y-1">
+                      <div className="flex items-center gap-1.5 font-heading font-black text-rose-900 text-xs">
+                        <AlertTriangle className="w-4 h-4 text-rose-700 shrink-0" />
+                        <span>Relatório: O que deu errado?</span>
+                      </div>
+                      <p className="font-bold leading-relaxed">
+                        {issue.issueComment || 'O passageiro não detalhou o incidente, mas atribuiu nota baixa.'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Todas as Avaliações com Filtro */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                  Histórico de Todas as Avaliações ({reviewsList.length})
+                </h3>
+                <p className="text-xs text-slate-600 font-medium">
+                  Feed completo com notas, elogios, comentários e tags de feedback
+                </p>
+              </div>
+
+              {/* Filtros por estrelas */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setReviewFilterStars('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    reviewFilterStars === 'all'
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Todas ({reviewsList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewFilterStars('issues')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    reviewFilterStars === 'issues'
+                      ? 'bg-rose-600 text-white'
+                      : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                  }`}
+                >
+                  Alertas (1-2★) ({criticalIssues.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewFilterStars('5')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    reviewFilterStars === '5'
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                  }`}
+                >
+                  5★ ({reviewsList.filter((r) => r.rating === 5).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewFilterStars('4')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    reviewFilterStars === '4'
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  4★ ({reviewsList.filter((r) => r.rating === 4).length})
+                </button>
+              </div>
+            </div>
+
+            {/* Lista Filtrada */}
+            {(() => {
+              const displayed = reviewsList.filter((r) => {
+                if (reviewFilterStars === 'issues') return r.rating <= 2;
+                if (reviewFilterStars === '5') return r.rating === 5;
+                if (reviewFilterStars === '4') return r.rating === 4;
+                if (reviewFilterStars === '3') return r.rating === 3;
+                return true;
+              });
+
+              if (displayed.length === 0) {
+                return (
+                  <p className="text-center text-slate-500 text-xs py-8 font-medium">
+                    Nenhuma avaliação encontrada para o filtro selecionado.
+                  </p>
+                );
+              }
+
+              return (
+                <div className="divide-y divide-slate-100">
+                  {displayed.map((r) => (
+                    <div key={r.id} className="py-3.5 first:pt-0 last:pb-0 space-y-2">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs">
+                            {r.passengerName.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <span className="font-heading font-black text-xs text-slate-900 block">
+                              {r.passengerName}
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              Motorista: <strong>{r.driverName}</strong> ({r.driverVehicle})
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-0.5">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Star
+                                key={star}
+                                className={`w-3.5 h-3.5 ${
+                                  star <= r.rating
+                                    ? 'text-amber-500 fill-amber-500'
+                                    : 'text-slate-300'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            {new Date(r.createdAt).toLocaleDateString('pt-BR')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {r.comment && (
+                        <p className="text-xs text-slate-700 pl-10 font-medium">
+                          &ldquo;{r.comment}&rdquo;
+                        </p>
+                      )}
+
+                      {r.issueComment && (
+                        <div className="ml-10 text-[11px] text-rose-800 bg-rose-50 p-2 rounded-lg border border-rose-200">
+                          <strong>O que deu errado:</strong> {r.issueComment}
+                        </div>
+                      )}
+
+                      {r.tags && r.tags.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap pl-10 pt-0.5">
+                          {r.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

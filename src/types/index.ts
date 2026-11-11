@@ -147,6 +147,7 @@ export interface Ride {
   completedAt?: string;
   ratingGivenToDriver?: number;
   ratingComment?: string;
+  issueComment?: string;
   deliveryDetails?: {
     packageType: string;
     instructions: string;

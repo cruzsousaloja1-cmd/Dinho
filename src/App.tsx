@@ -30,6 +30,8 @@ import { DriverLoginScreen } from './components/DriverLoginScreen';
 import { FullMapView } from './components/FullMapView';
 import { PassengerOptionsView } from './components/PassengerOptionsView';
 import { PassengerAccountView } from './components/PassengerAccountView';
+import { RatingModal } from './components/RatingModal';
+import { saveDriverReview } from './services/reviewService';
 import { AppUser } from './types';
 import { AlertTriangle, CheckCircle2, X, QrCode } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -94,6 +96,8 @@ export default function App() {
   });
   const [ridesHistory, setRidesHistory] = useState<Ride[]>(INITIAL_RIDES_HISTORY);
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
+  const [completedRideForRating, setCompletedRideForRating] = useState<Ride | null>(null);
+  const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
 
   // Registered Passengers State
@@ -369,7 +373,7 @@ export default function App() {
     );
   };
 
-  // Complete active ride
+  // Complete active ride - fecha mapa e abre modal de Avaliação
   const handleCompleteRide = () => {
     if (!activeRide) return;
     const updatedRide: Ride = {
@@ -378,6 +382,9 @@ export default function App() {
       completedAt: new Date().toISOString(),
     };
     setActiveRide(updatedRide);
+    setCompletedRideForRating(updatedRide);
+    setIsRatingModalOpen(true);
+    setIsFullMapOpen(false); // Retorna do mapa para tela de avaliação
     notifyRideFinished();
 
     // Credita o valor da corrida na carteira do motorista
@@ -411,45 +418,80 @@ export default function App() {
 
     triggerPush(
       '🏁 Viagem Finalizada!',
-      `Total de R$ ${activeRide.price.toFixed(2)} creditado no saldo do motorista! Pagamento retido pelo app para desconto semanal e saque.`,
-      'financial'
+      `Total de R$ ${activeRide.price.toFixed(2)} creditado no saldo do motorista! Avalie seu condutor.`,
+      'ride'
     );
   };
 
   // Submit rating
-  const handleSubmitRating = (rating: number, comment: string) => {
-    if (!activeRide) return;
+  const handleSubmitRating = (rating: number, comment: string, issueComment?: string) => {
+    const targetRide = completedRideForRating || activeRide;
+    if (!targetRide) return;
+
     const finalizedRide: Ride = {
-      ...activeRide,
+      ...targetRide,
       passengerId: currentUser?.id,
       passengerEmail: currentUser?.email,
+      passengerName: currentUser?.name || targetRide.passengerName || 'Passageiro',
       ratingGivenToDriver: rating,
       ratingComment: comment,
+      issueComment: issueComment,
     };
     setRidesHistory((prev) => [finalizedRide, ...prev]);
     saveIsolatedRide(finalizedRide, currentUser);
-    setActiveRide(null);
 
-    // Update driver rating
-    if (activeRide.driver) {
+    // Salva na base de avaliações e comentários dos motoristas
+    saveDriverReview({
+      rideId: finalizedRide.id,
+      driverId: targetRide.driver?.id || 'drv-indaiatuba-1',
+      driverName: targetRide.driver?.name || 'José da Cruz',
+      driverVehicle: targetRide.driver?.vehicleModel
+        ? `${targetRide.driver.vehicleModel} - ${targetRide.driver.vehiclePlate}`
+        : 'Chevrolet Onix - RCE9C40',
+      passengerName: currentUser?.name || targetRide.passengerName || 'Passageiro',
+      passengerEmail: currentUser?.email,
+      rating,
+      comment,
+      issueComment,
+    });
+
+    // Atualiza a média de avaliação do condutor
+    if (targetRide.driver?.id) {
+      const driverId = targetRide.driver.id;
       setDrivers((prev) =>
-        prev.map((d) =>
-          d.id === activeRide.driver?.id
-            ? {
-                ...d,
-                rating: Number(((d.rating * d.totalRides + rating) / (d.totalRides + 1)).toFixed(2)),
-                totalRides: d.totalRides + 1,
-                earningsToday: d.earningsToday + activeRide.price,
-                earningsWeek: d.earningsWeek + activeRide.price,
-              }
-            : d
-        )
+        prev.map((d) => {
+          if (d.id === driverId) {
+            const currentTotal = d.totalRides || 25;
+            const newAverage = Number(((d.rating * currentTotal + rating) / (currentTotal + 1)).toFixed(2));
+            return {
+              ...d,
+              rating: newAverage,
+              totalRides: currentTotal + 1,
+            };
+          }
+          return d;
+        })
       );
+
+      setCurrentDriver((prev) => {
+        if (!prev) return prev;
+        const currentTotal = prev.totalRides || 25;
+        const newAverage = Number(((prev.rating * currentTotal + rating) / (currentTotal + 1)).toFixed(2));
+        return {
+          ...prev,
+          rating: newAverage,
+          totalRides: currentTotal + 1,
+        };
+      });
     }
+
+    setActiveRide(null);
+    setCompletedRideForRating(null);
+    setIsRatingModalOpen(false);
 
     triggerPush(
       '⭐ Obrigado pela Avaliação!',
-      'Sua nota ajuda a manter o padrão de excelência e segurança da frota RACE.',
+      `Sua nota de ${rating} estrelas foi registrada com sucesso!`,
       'safety'
     );
   };
@@ -1198,6 +1240,7 @@ export default function App() {
           destination={destination}
           activeDriver={activeRide?.driver || (drivers.length > 0 ? drivers[0] : null)}
           activeRide={activeRide}
+          onCompleteRide={handleCompleteRide}
           onUpdateDriverPosition={(pos) => {
             setDriverPosition((prev) => {
               if (prev && prev.lat === pos.lat && prev.lng === pos.lng) return prev;
@@ -1206,6 +1249,17 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Modal de Avaliação do Motorista / Motoboy ao Concluir Corrida */}
+      <RatingModal
+        isOpen={isRatingModalOpen}
+        ride={completedRideForRating || activeRide}
+        onSubmitRating={handleSubmitRating}
+        onClose={() => {
+          setIsRatingModalOpen(false);
+          setActiveRide(null);
+        }}
+      />
     </div>
   );
 }

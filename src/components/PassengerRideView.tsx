@@ -255,7 +255,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         // Fallback default position: Av. Presidente Vargas, 1250, Centro de Indaiatuba - SP
         onCoordsResolved(-23.0842, -47.2118);
       },
-      { timeout: 7000, enableHighAccuracy: true }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
@@ -622,11 +622,16 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-60"
             >
               {isLocatingUser ? (
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Buscando seu GPS...</span>
+                </>
               ) : (
-                <Crosshair className="w-4 h-4 text-emerald-100" />
+                <>
+                  <Crosshair className="w-4 h-4 text-emerald-100" />
+                  <span>Meu GPS</span>
+                </>
               )}
-              <span>Meu GPS</span>
             </button>
           </div>
 
