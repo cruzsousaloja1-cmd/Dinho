@@ -352,9 +352,10 @@ export default function App() {
     }, 6000);
   };
 
-  // Passenger requests a ride
+  // Passenger requests a ride - vai DIRETO para o FullMapView fullscreen
   const handleStartRide = (ride: Ride) => {
     setActiveRide(ride);
+    setIsFullMapOpen(true);
     const isMotoboy =
       ride.category === 'moto_passageiro' ||
       ride.category === 'moto_entrega' ||

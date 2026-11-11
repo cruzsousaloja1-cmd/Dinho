@@ -303,24 +303,22 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
     const matchedDriver: Driver = {
       id: baseMatched?.id || (isMoto ? 'moto-indaiatuba-1' : 'drv-indaiatuba-1'),
-      name: baseMatched?.name || (isMoto ? 'Lucas Souza' : 'Marcos Silva'),
-      avatar: baseMatched?.avatar || (isMoto
-        ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=150&auto=format&fit=crop&q=80'
-        : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'),
+      name: isMoto ? (baseMatched?.name || 'Lucas Souza') : 'José da Cruz',
+      avatar: isMoto
+        ? (baseMatched?.avatar || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=150&auto=format&fit=crop&q=80')
+        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
       phone: baseMatched?.phone || '(19) 99876-5432',
       email: baseMatched?.email || 'motorista@race.com.br',
       cpf: baseMatched?.cpf || '000.***.***-00',
       cnh: baseMatched?.cnh || '01234567890',
       category: finalCategory,
-      vehicleModel: baseMatched?.vehicleModel || (isMoto ? 'Honda CG 160 Fan' : (finalCategory === 'confort' ? 'Toyota Corolla Sedã' : 'Chevrolet Onix Plus 1.0')),
-      vehiclePlate: baseMatched?.vehiclePlate || (isMoto ? 'MTO-1A23' : 'IND-2E24'),
-      vehicleColor: baseMatched?.vehicleColor || (isMoto ? 'Vermelha' : (finalCategory === 'confort' ? 'Preto Perolizado' : 'Branco')),
-      vehicleYear: baseMatched?.vehicleYear || (isMoto ? 2023 : (finalCategory === 'confort' ? 2023 : 2022)),
-      vehiclePhoto: baseMatched?.vehiclePhoto || (isMoto
+      vehicleModel: isMoto ? 'Honda CG 160 Fan' : 'Chevrolet Onix',
+      vehiclePlate: isMoto ? 'MTO-1A23' : 'RCE9C40',
+      vehicleColor: isMoto ? 'Vermelha' : 'Prata',
+      vehicleYear: isMoto ? 2023 : 2021,
+      vehiclePhoto: isMoto
         ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
-        : (finalCategory === 'confort'
-          ? 'https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=500&auto=format&fit=crop&q=80'
-          : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80')),
+        : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80',
       rating: baseMatched?.rating || 4.98,
       totalRides: baseMatched?.totalRides || 1420,
       status: 'online',
@@ -432,6 +430,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const handleConfirmRideAfterPayment = () => {
     handleRequestRideWithCategory(selectedCategory);
     setPassengerStep('search');
+    if (onOpenFullMap) {
+      onOpenFullMap();
+    }
   };
 
   const handleToggleCompliment = (item: string) => {
@@ -471,405 +472,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setAudioEnabledState(next);
   };
 
-  // If a ride is active, show the Map Hero with overlays on top of the map
-  if (activeRide) {
-    const isCompleted = activeRide.status === 'completed';
-    const isMotoRide = activeRide.category === 'moto_passageiro' || activeRide.category === 'moto_entrega';
-
-    return (
-      <div className="space-y-4">
-        {/* BANNER OFICIAL DE CONFIRMAÇÃO DE PAGAMENTO NO APP */}
-        <div className="bg-emerald-600 text-white rounded-3xl p-4 sm:p-5 shadow-xl flex items-center justify-between gap-3 animate-fade-in border-2 border-emerald-400">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
-              <CheckCircle2 className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <h4 className="font-heading font-black text-sm sm:text-base leading-tight">
-                Pagamento feito com sucesso
-              </h4>
-              <p className="text-xs sm:text-sm text-emerald-100 font-medium mt-0.5">
-                {isMotoRide ? 'Seu motoboy está a caminho' : 'Seu motorista está a caminho'}
-              </p>
-            </div>
-          </div>
-          <span className="text-xs sm:text-sm font-mono font-black bg-black/30 px-3.5 py-1.5 rounded-xl border border-white/20 shrink-0">
-            {formatBRL(activeRide.price)} PAGO NO APP
-          </span>
-        </div>
-
-        {/* Active Ride HUD card in clean white */}
-        <div className="bg-white border-2 border-amber-400 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
-          {/* Status Header */}
-          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-            <div className="flex items-center gap-3">
-              <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 radar-pulse" />
-              <div>
-                <h3 className="font-heading font-black text-slate-950 text-lg sm:text-xl">
-                  {activeRide.status === 'driver_assigned' && (isMotoRide ? 'Motoboy a Caminho' : 'Motorista a Caminho')}
-                  {activeRide.status === 'driver_arriving' && (isMotoRide ? 'Motoboy Chegando no Embarque' : 'Motorista Chegando no Embarque')}
-                  {activeRide.status === 'in_progress' && 'Viagem em Andamento'}
-                  {activeRide.status === 'completed' && 'Viagem Concluída com Sucesso!'}
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-600 font-mono font-bold">
-                  Corrida #{activeRide.id} • Rastreamento Seguro 24h
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {/* Botão de Som no Header da Corrida Ativa */}
-              <button
-                type="button"
-                onClick={handleToggleAudio}
-                className={`py-2 px-3 rounded-2xl border flex items-center gap-1.5 transition-all text-xs font-heading font-bold cursor-pointer ${
-                  audioEnabled
-                    ? 'bg-amber-50 text-amber-950 border-amber-300 shadow-sm'
-                    : 'bg-slate-100 text-slate-500 border-slate-300'
-                }`}
-                title={audioEnabled ? 'Áudio ATIVADO (clique para silenciar)' : 'Áudio MUTADO (clique para ativar som)'}
-              >
-                {audioEnabled ? <Volume2 className="w-4 h-4 text-[#ff6a00]" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
-                <span className="hidden sm:inline">{audioEnabled ? 'Voz Ativa' : 'Mudo'}</span>
-              </button>
-
-              <div className="text-right">
-                <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
-                  {formatBRL(activeRide.price)}
-                </div>
-                <div className="text-xs text-slate-700 font-bold bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
-                  Preço Final Estimado
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Card Chega em 3 min - 1,5 km */}
-          <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-[#ff6a00] rounded-2xl p-4 flex items-center justify-between shadow-md animate-fade-in">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-[#ff6a00] text-white flex items-center justify-center font-bold shadow-md shrink-0">
-                <Clock className="w-7 h-7 stroke-[2.5]" />
-              </div>
-              <div>
-                <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider block font-mono">
-                  Previsão de Chegada no Embarque
-                </span>
-                <h4 className="text-xl sm:text-2xl font-heading font-black text-slate-950">
-                  Chega em 3 min - 1,5 km
-                </h4>
-              </div>
-            </div>
-            <span className="bg-emerald-100 text-emerald-800 text-xs font-black px-3.5 py-1.5 rounded-full border border-emerald-300 font-mono animate-pulse shrink-0">
-              A CAMINHO
-            </span>
-          </div>
-
-          {/* CARD GRANDE DO MOTORISTA / MOTOBOY E VEÍCULO (CHAMADA ACEITA) */}
-          {activeRide.driver && (
-            <div className="bg-gradient-to-b from-[#111111] via-[#161616] to-[#0a0a0a] text-white rounded-3xl p-5 sm:p-6 border-2 border-[#ff6a00] shadow-2xl space-y-5">
-              {/* 1. Header do Card: Foto do Motorista (Cadastro) + Nome + Categoria + Avaliação */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-800 pb-4">
-                <div className="flex items-center gap-4">
-                  <div className="relative shrink-0">
-                    <img
-                      src={activeRide.driver.avatar}
-                      alt={activeRide.driver.name}
-                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover border-4 border-[#ff6a00] shadow-2xl"
-                    />
-                    <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full shadow border-2 border-black flex items-center gap-0.5">
-                      ★ {activeRide.driver.rating.toFixed(2)}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#ff6a00] bg-[#ff6a00]/15 px-2.5 py-0.5 rounded-full border border-[#ff6a00]/40 inline-block">
-                      {isMotoRide ? '🏍️ Motoboy RACE Homologado' : '🚗 Motorista RACE Homologado'}
-                    </span>
-                    <h4 className="font-heading font-black text-white text-xl sm:text-2xl leading-tight">
-                      {activeRide.driver.name}
-                    </h4>
-                    {/* Avaliação em estrelas */}
-                    <div className="flex items-center gap-1.5 text-amber-400 text-sm">
-                      <span className="tracking-widest">★★★★★</span>
-                      <span className="text-xs text-zinc-300 font-bold ml-1 font-mono">
-                        {activeRide.driver.rating.toFixed(2)} • {activeRide.driver.totalRides || 1420} viagens
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Áudio: Aviso de Chegada ("Seu motorista chegou" / "Seu motoboy chegou") */}
-                <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      notifyDriverArrived(isMotoRide);
-                    }}
-                    className="w-full sm:w-auto px-4 py-3 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
-                    title="Reproduzir áudio: Seu motorista/motoboy chegou"
-                  >
-                    <Volume2 className="w-4 h-4 text-[#ff6a00] shrink-0" />
-                    <span>{isMotoRide ? 'Áudio: "Seu motoboy chegou"' : 'Áudio: "Seu motorista chegou"'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 2. Informações do Veículo: Foto do Veículo (Carro / Moto), Modelo, Placa, Cor e Ano */}
-              <div className="bg-[#181818] rounded-2xl p-4 sm:p-5 border border-zinc-800 space-y-4">
-                <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-5">
-                  {/* Foto do Veículo */}
-                  <div className="w-full sm:w-48 h-36 sm:h-36 rounded-2xl overflow-hidden bg-zinc-900 border-2 border-zinc-700 shrink-0 relative shadow-inner group">
-                    <img
-                      src={activeRide.driver.vehiclePhoto || (isMotoRide
-                        ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
-                        : (activeRide.category === 'confort'
-                          ? 'https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=500&auto=format&fit=crop&q=80'
-                          : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80'))
-                      }
-                      alt={`Foto do veículo ${activeRide.driver.vehicleModel}`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <span className="absolute bottom-2 left-2 text-[10px] bg-black/80 backdrop-blur-sm text-white px-2 py-0.5 rounded font-mono font-bold uppercase border border-zinc-700">
-                      {isMotoRide ? 'Moto Oficial' : 'Carro Oficial'}
-                    </span>
-                  </div>
-
-                  {/* Detalhes: Modelo, Placa Mercosul, Cor e Ano */}
-                  <div className="flex-1 space-y-3 w-full">
-                    <div>
-                      <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
-                        Modelo do Veículo
-                      </span>
-                      <div className="font-heading font-black text-white text-xl sm:text-2xl text-[#ff6a00]">
-                        {activeRide.driver.vehicleModel}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2.5 text-xs">
-                      {/* Placa do Veículo (Estilo Mercosul) */}
-                      <div className="bg-black/70 rounded-xl p-2.5 border border-zinc-700">
-                        <span className="text-[10px] text-zinc-400 font-bold uppercase block">Placa</span>
-                        <span className="font-mono font-black text-slate-950 bg-white px-2 py-0.5 rounded inline-block mt-1 text-xs sm:text-sm tracking-wider border border-slate-300 shadow-sm">
-                          {activeRide.driver.vehiclePlate}
-                        </span>
-                      </div>
-
-                      {/* Cor do Veículo */}
-                      <div className="bg-black/70 rounded-xl p-2.5 border border-zinc-700">
-                        <span className="text-[10px] text-zinc-400 font-bold uppercase block">Cor</span>
-                        <span className="font-heading font-black text-white text-xs sm:text-sm capitalize block mt-1">
-                          {activeRide.driver.vehicleColor || (isMotoRide ? 'Vermelha' : 'Branco')}
-                        </span>
-                      </div>
-
-                      {/* Ano do Veículo */}
-                      <div className="bg-black/70 rounded-xl p-2.5 border border-zinc-700">
-                        <span className="text-[10px] text-zinc-400 font-bold uppercase block">Ano</span>
-                        <span className="font-heading font-black text-amber-400 text-xs sm:text-sm block mt-1 font-mono">
-                          {activeRide.driver.vehicleYear || 2023}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. Botões Principais: "VER MAPA NA TELA CHEIA" e "Ligar para motorista" (WhatsApp) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                {/* Botão VER MAPA NA TELA CHEIA com carro andando */}
-                {onOpenFullMap && (
-                  <button
-                    type="button"
-                    onClick={onOpenFullMap}
-                    className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black py-4 px-4 rounded-2xl shadow-xl flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-[#ff8533] text-sm sm:text-base uppercase tracking-wider"
-                  >
-                    <Maximize2 className="w-5 h-5 shrink-0" />
-                    <span>VER MAPA NA TELA CHEIA (CARRO ANDANDO)</span>
-                  </button>
-                )}
-
-                {/* Botão Ligar para motorista (WhatsApp) */}
-                <a
-                  href={`https://wa.me/55${(activeRide.driver.phone || '19998765432').replace(/\D/g, '')}?text=${encodeURIComponent(
-                    `Olá ${activeRide.driver.name}! Sou seu passageiro da corrida RACE #${activeRide.id}. Estou aguardando no ponto de embarque.`
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black py-4 px-4 rounded-2xl shadow-xl flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-emerald-400 text-sm sm:text-base uppercase tracking-wider text-center"
-                >
-                  <Phone className="w-5 h-5 shrink-0" />
-                  <span>LIGAR PARA MOTORISTA (WHATSAPP)</span>
-                </a>
-              </div>
-            </div>
-          )}
-
-          {/* Passenger Details com Foto (Passageiro e Motorista veem a foto um do outro) */}
-          <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200 flex items-center justify-between gap-3 shadow-xs">
-            <div className="flex items-center gap-3">
-              <div className="relative shrink-0">
-                <img
-                  src={activeRide.passengerAvatar || currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'}
-                  alt={activeRide.passengerName}
-                  className="w-13 h-13 rounded-full object-cover border-2 border-emerald-500 shadow-md"
-                />
-                <span className="absolute -bottom-1 -right-1 bg-white text-slate-900 border border-slate-300 text-[10px] px-1.5 py-0.2 rounded-full font-bold flex items-center shadow">
-                  ★ {activeRide.passengerRating.toFixed(1)}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] font-mono font-bold text-emerald-800 uppercase block">
-                  Passageiro Solicitante
-                </span>
-                <h5 className="font-heading font-black text-slate-900 text-sm sm:text-base">
-                  {activeRide.passengerName}
-                </h5>
-                <p className="text-xs text-slate-600 font-mono">
-                  {activeRide.passengerPhone}
-                </p>
-              </div>
-            </div>
-
-            <a
-              href={`tel:${activeRide.passengerPhone}`}
-              className="w-11 h-11 rounded-2xl bg-white hover:bg-slate-100 border border-slate-300 text-emerald-700 flex items-center justify-center transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
-              title="Ligar para o passageiro"
-            >
-              <Phone className="w-4 h-4" />
-            </a>
-          </div>
-
-          {/* Ações da corrida */}
-          {!isCompleted && (
-            <div className="flex items-center gap-3 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={onCompleteRide}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-extrabold text-sm sm:text-base py-3.5 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
-              >
-                <CheckCircle2 className="w-5 h-5" />
-                <span>Simular Conclusão da Corrida</span>
-              </button>
-              <button
-                type="button"
-                onClick={onCancelRide}
-                className="px-5 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-rose-600 text-sm font-bold border border-slate-300 transition-all cursor-pointer"
-              >
-                Cancelar
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Informações detalhadas da rota abaixo do mapa */}
-        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md space-y-4">
-          <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-3 text-xs text-emerald-950 font-bold flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Trajeto monitorado com segurança 24h e rastreamento oficial em Indaiatuba</span>
-          </div>
-
-          <div className="space-y-3 text-xs sm:text-sm">
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5 font-black text-xs">
-                A
-              </div>
-              <div className="flex-1">
-                <span className="text-emerald-800 text-[11px] uppercase font-black block font-mono">
-                  Endereço de Saída da Localização (GPS)
-                </span>
-                <p className="text-slate-900 font-bold">{activeRide.pickup.address}</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 font-black text-xs">
-                B
-              </div>
-              <div className="flex-1">
-                <span className="text-amber-800 text-[11px] uppercase font-black block font-mono">
-                  Endereço de Chegada / Destino
-                </span>
-                <p className="text-slate-900 font-bold">{activeRide.destination.address}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Rating Section if completed */}
-          {isCompleted && (
-            <div className="bg-slate-50 p-5 rounded-2xl border border-amber-300 space-y-4 mt-4">
-              <div className="text-center">
-                <h4 className="font-heading font-bold text-slate-900 text-lg">
-                  Como foi sua experiência com {activeRide.driver?.name}?
-                </h4>
-                <p className="text-sm text-slate-600">
-                  Sua avaliação garante a segurança e qualidade máxima da plataforma RACE.
-                </p>
-              </div>
-
-              {/* Stars */}
-              <div className="flex justify-center gap-2.5 py-2">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={() => setRatingVal(star)}
-                    className="p-1 cursor-pointer transition-transform hover:scale-125"
-                  >
-                    <Star
-                      className={`w-8 h-8 ${
-                        star <= ratingVal
-                          ? 'fill-amber-400 text-amber-500'
-                          : 'text-slate-300'
-                      }`}
-                    />
-                  </button>
-                ))}
-              </div>
-
-              {/* Quick compliments */}
-              <div className="flex flex-wrap gap-2 justify-center">
-                {['Direção Segura', 'Carro Limpo', 'Ar Gelado', 'Pontual', 'Excelente Conversa', 'Capacete Novo'].map(
-                  (tag) => {
-                    const isSelected = ratingCompliments.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => handleToggleCompliment(tag)}
-                        className={`text-xs sm:text-sm px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold'
-                            : 'bg-white border-slate-300 text-slate-700'
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  }
-                )}
-              </div>
-
-              <textarea
-                value={ratingComment}
-                onChange={(e) => setRatingComment(e.target.value)}
-                placeholder="Deixe um comentário para o motorista (opcional)..."
-                rows={2}
-                className="w-full bg-white border border-slate-300 rounded-xl p-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-amber-500"
-              />
-
-              <button
-                type="button"
-                onClick={handleFinishRating}
-                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black py-3.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer text-sm sm:text-base"
-              >
-                Enviar Avaliação e Fechar
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+  // Fluxo direto: ao confirmar o pagamento, abre direto o FullMapView fullscreen
+  // Sem tela cheia intermediária do motorista na aba do passageiro
 
   // Normal request mode in Clean White
   return (
@@ -908,6 +512,64 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
       )}
 
+
+      {/* 2. Mini Card de Corrida Ativa (permite reabrir o mapa se minimizado) */}
+      {activeRide && (
+        <div className="bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in">
+          <div className="flex items-center gap-3.5 w-full sm:w-auto">
+            <img
+              src={activeRide.driver?.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'}
+              alt={activeRide.driver?.name}
+              className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                <span className="text-[11px] font-mono text-[#ff6a00] font-black uppercase">
+                  {activeRide.status === 'completed' ? 'Viagem Finalizada' : 'Motorista a Caminho'}
+                </span>
+              </div>
+              <h4 className="font-heading font-black text-base text-white truncate">
+                {activeRide.driver?.name} • {activeRide.driver?.vehicleModel}
+              </h4>
+              <p className="text-xs text-zinc-300 font-mono">
+                Placa {activeRide.driver?.vehiclePlate} • {activeRide.driver?.vehicleColor} • {activeRide.driver?.vehicleYear}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {onOpenFullMap && (
+              <button
+                type="button"
+                onClick={onOpenFullMap}
+                className="flex-1 sm:flex-none px-4 py-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs sm:text-sm rounded-2xl transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 active:scale-95 border border-[#ff8533]"
+              >
+                <Maximize2 className="w-4 h-4 shrink-0" />
+                <span>VER O MAPA TELA INTEIRA</span>
+              </button>
+            )}
+
+            {activeRide.status !== 'completed' ? (
+              <button
+                type="button"
+                onClick={onCancelRide}
+                className="px-3.5 py-3 bg-zinc-800 hover:bg-zinc-700 text-rose-400 font-bold text-xs rounded-2xl border border-zinc-700 cursor-pointer active:scale-95"
+              >
+                Cancelar
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onCompleteRide}
+                className="px-3.5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-2xl cursor-pointer active:scale-95"
+              >
+                Avaliar
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ETAPA 1: BUSCA DE CORRIDA (Origem com Meu GPS e Destino com Número) */}
       {passengerStep === 'search' && (

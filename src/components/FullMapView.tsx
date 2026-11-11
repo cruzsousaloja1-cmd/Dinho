@@ -82,17 +82,17 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   // Driver details
   const effectiveDriver: Driver = activeRide?.driver || activeDriver || {
     id: 'drv-indaiatuba-1',
-    name: 'Marcos Silva',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    name: 'José da Cruz',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     phone: '(19) 99876-5432',
     email: 'motorista@race.com.br',
     cpf: '000.***.***-00',
     cnh: '01234567890',
     category: 'economica',
-    vehicleModel: 'Chevrolet Onix Plus',
-    vehiclePlate: 'IND-2E24',
-    vehicleColor: 'Prata Metálico',
-    vehicleYear: 2024,
+    vehicleModel: 'Chevrolet Onix',
+    vehiclePlate: 'RCE9C40',
+    vehicleColor: 'Prata',
+    vehicleYear: 2021,
     rating: 4.98,
     totalRides: 1420,
     status: 'online',
@@ -622,127 +622,101 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         style={{ width: '100vw', height: '100vh', background: '#ffffff' }}
       />
 
-      {/* 3. CARD DE GPS EM TEMPO REAL ESTILO UBER (EMBAIXO DO MAPA) */}
-      <div className="absolute bottom-4 sm:bottom-6 left-3 right-3 sm:left-6 sm:right-6 max-w-lg mx-auto z-[1000] pointer-events-auto">
-        <div className="bg-white/95 backdrop-blur-2xl border border-slate-200 text-slate-900 rounded-3xl p-4 sm:p-5 shadow-[0_12px_40px_rgba(0,0,0,0.15)] space-y-3.5">
-          {/* Header do Card com Status, Foto do Motorista e Veículo */}
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-3">
+      {/* 3. CARD PEQUENO DO MOTORISTA / GPS EM TEMPO REAL EMBAIXO DO MAPA */}
+      <div className="absolute bottom-3 sm:bottom-4 left-3 right-3 sm:left-6 sm:right-6 max-w-lg mx-auto z-[1000] pointer-events-auto">
+        <div className="bg-white/95 backdrop-blur-2xl border-2 border-slate-200 text-slate-900 rounded-3xl p-3.5 sm:p-4 shadow-[0_12px_40px_rgba(0,0,0,0.18)] space-y-3">
+          
+          {/* Header do Card Pequeno: Foto Pequena + José da Cruz + Chevrolet Onix - Placa RCE9C40 - Prata - 2021 */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <div className="relative shrink-0">
                 <img
                   src={effectiveDriver.avatar}
                   alt={effectiveDriver.name}
-                  className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shadow-md"
+                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-[#ff6a00] shadow-md"
                 />
-                <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-[10px] px-1 rounded-full border border-black shadow">
+                <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-[9px] px-1 rounded-full border border-black shadow">
                   ★ {effectiveDriver.rating.toFixed(1)}
                 </span>
               </div>
-              <div>
-                <h4 className="font-heading font-black text-sm sm:text-base text-slate-950 flex items-center gap-1.5">
-                  <span>{effectiveDriver.name}</span>
-                </h4>
-                <p className="text-xs text-slate-600 font-medium">
-                  {effectiveDriver.vehicleModel} &bull;{' '}
-                  <strong className="text-slate-900 font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[11px] border border-slate-200">
-                    {effectiveDriver.vehiclePlate}
-                  </strong>
-                  {effectiveDriver.vehicleColor ? ` • ${effectiveDriver.vehicleColor}` : ''}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-heading font-black text-sm sm:text-base text-slate-950 truncate">
+                    {effectiveDriver.name}
+                  </h4>
+                  <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded border border-amber-300">
+                    {isRideFinished ? 'Chegou' : (minutesLeft > 0 ? `Chega em ${minutesLeft} min` : 'No local')}
+                  </span>
+                </div>
+                {/* Linha do Veículo: Chevrolet Onix - Placa RCE9C40 - Prata - 2021 */}
+                <p className="text-xs text-slate-700 font-medium truncate">
+                  {effectiveDriver.vehicleModel || 'Chevrolet Onix'} - Placa <strong className="font-mono text-slate-950 font-bold bg-slate-100 px-1 py-0.2 rounded border border-slate-300">{effectiveDriver.vehiclePlate || 'RCE9C40'}</strong> - {effectiveDriver.vehicleColor || 'Prata'} - {effectiveDriver.vehicleYear || 2021}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <a
-                href={`https://wa.me/55${(effectiveDriver.phone || '19998765432').replace(/\D/g, '')}?text=${encodeURIComponent(
-                  `Olá ${effectiveDriver.name}! Sou seu passageiro do RACE. Estou te acompanhando pelo mapa ao vivo.`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-700 flex items-center justify-center transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
-                title="Ligar / WhatsApp para o motorista"
-              >
-                <Phone className="w-4 h-4" />
-              </a>
-
-              {/* Distância e tempo grande estilo Uber */}
-              <div className="text-right">
-                <div className="text-xl sm:text-2xl font-heading font-black text-[#ff6a00]">
-                  {isRideFinished
-                    ? 'Chegou!'
-                    : minutesLeft > 0
-                    ? `Chega em ${minutesLeft} min`
-                    : 'No local'}
-                </div>
-                <div className="text-[11px] font-mono text-slate-600 font-bold">
-                  {isRideFinished ? 'Destino alcançado' : `${distanceKmFormatted} km de distância`}
-                </div>
+            {/* Distância */}
+            <div className="text-right shrink-0">
+              <div className="text-base sm:text-lg font-heading font-black text-[#ff6a00]">
+                {isRideFinished ? 'Chegou!' : `${distanceKmFormatted} km`}
+              </div>
+              <div className="text-[10px] font-mono text-slate-500 font-bold">
+                {isRideFinished ? 'Destino' : `${speedKmh} km/h`}
               </div>
             </div>
           </div>
 
-          {/* ALERTA ESPECIAL QUANDO CHEGAR PERTO: "Motorista/Motoboy está chegando - 200m" */}
+          {/* Alerta de Chegada Próxima (<= 200m) */}
           {distanceRemainingMeters <= 200 && !hasDriverArrived && !isRideInProgress && !isRideFinished && (
-            <div className="bg-amber-50 border-2 border-[#ff6a00] rounded-2xl p-3 flex items-center justify-between gap-3 animate-pulse">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#ff6a00] text-white flex items-center justify-center shrink-0 shadow">
-                  <BellRing className="w-4 h-4 stroke-[2.5]" />
-                </div>
-                <div>
-                  <span className="font-heading font-black text-xs sm:text-sm text-slate-950 block">
-                    {isMotoboy ? 'Motoboy está chegando - 200m' : 'Motorista está chegando - 200m'}
-                  </span>
-                  <span className="text-[11px] text-amber-900 font-medium">
-                    Dirija-se ao ponto de embarque na calçada
-                  </span>
-                </div>
+            <div className="bg-amber-50 border border-[#ff6a00] rounded-xl p-2.5 flex items-center justify-between gap-2 animate-pulse">
+              <div className="flex items-center gap-2">
+                <BellRing className="w-4 h-4 text-[#ff6a00] shrink-0" />
+                <span className="font-heading font-bold text-xs text-slate-900">
+                  {isMotoboy ? 'Motoboy chegando - 200m' : 'Motorista chegando - 200m'}
+                </span>
               </div>
+              <span className="text-[11px] text-amber-900 font-medium">Aguarde na calçada</span>
             </div>
           )}
 
-          {/* QUANDO CHEGAR A 0m / NO LOCAL: "Motorista/Motoboy chegou!" + botão para ouvir áudio novamente + "Iniciar corrida" */}
+          {/* Quando Chegar no Local: Motorista Chegou! */}
           {hasDriverArrived && !isRideInProgress && !isRideFinished && (
-            <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 text-center space-y-3">
-              <div className="flex items-center justify-center gap-2 text-emerald-800 font-heading font-black text-base sm:text-lg">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <span>{isMotoboy ? 'Motoboy Chegou!' : 'Motorista Chegou!'}</span>
+            <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 text-center space-y-2">
+              <div className="flex items-center justify-center gap-2 text-emerald-800 font-heading font-black text-sm sm:text-base">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>{isMotoboy ? 'Seu motoboy chegou!' : 'Seu motorista chegou!'}</span>
               </div>
-              <p className="text-xs text-slate-600 font-medium">
-                O {isMotoboy ? 'motoboy' : 'veículo'} ({effectiveDriver.vehiclePlate}) está te aguardando no local de embarque.
+              <p className="text-[11px] text-slate-600 font-medium">
+                Veículo ({effectiveDriver.vehiclePlate}) no ponto de embarque.
               </p>
-              
               <div className="flex items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={handleTestAudioArrival}
-                  className="py-1.5 px-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Repetir áudio avisando chegada"
+                  className="py-1 px-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer"
                 >
                   <Volume2 className="w-3.5 h-3.5" />
                   <span>Ouvir aviso de voz</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={handleStartRide}
+                  className="py-1 px-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white text-xs font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
+                >
+                  <Play className="w-3.5 h-3.5 fill-white" />
+                  <span>Iniciar corrida</span>
+                </button>
               </div>
-
-              <button
-                type="button"
-                onClick={handleStartRide}
-                className="w-full py-3.5 bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-sm sm:text-base rounded-2xl shadow-xl transition-all cursor-pointer border border-[#ff8533] flex items-center justify-center gap-2"
-              >
-                <Play className="w-5 h-5 fill-white" />
-                <span>INICIAR CORRIDA</span>
-              </button>
             </div>
           )}
 
-          {/* QUANDO CORRIDA EM ANDAMENTO: Botão para concluir corrida e testar "Você chegou ao seu destino" */}
+          {/* Corrida em andamento */}
           {isRideInProgress && !isRideFinished && (
-            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-heading font-black text-blue-900 flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
-                  Viagem em deslocamento para o destino
-                </span>
-              </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-2.5 flex items-center justify-between gap-2">
+              <span className="text-xs font-heading font-bold text-blue-900 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                Viagem em andamento para o destino
+              </span>
               <button
                 type="button"
                 onClick={() => {
@@ -751,70 +725,73 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                   setDistanceRemainingMeters(0);
                   setSecondsRemaining(0);
                 }}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg cursor-pointer"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>FINALIZAR VIAGEM (CHEGADA AO DESTINO)</span>
+                Finalizar viagem
               </button>
             </div>
           )}
 
-          {/* QUANDO A CORRIDA FOI CONCLUÍDA */}
+          {/* Finalizada */}
           {isRideFinished && (
-            <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 text-center space-y-2.5">
-              <div className="flex items-center justify-center gap-2 text-emerald-800 font-heading font-black text-base">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <span>Você chegou ao seu destino!</span>
-              </div>
-              <p className="text-xs text-slate-600 font-medium">
-                Viagem concluída com segurança em Indaiatuba.
-              </p>
+            <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 text-center">
+              <span className="text-xs font-heading font-black text-emerald-900 flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                Você chegou ao seu destino!
+              </span>
             </div>
           )}
 
-          {/* Botões de Ação na Base incluindo Botão Voltar */}
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="py-2.5 px-4 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 border border-[#ff8533] uppercase tracking-wider"
-              title="Voltar às Opções de Corrida"
+          {/* Linha de Botões Pequenos: Ligar (WhatsApp), Ver mapa, Áudio, Voltar */}
+          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+            {/* Botão pequeno "Ligar (WhatsApp)" */}
+            <a
+              href={`https://wa.me/55${(effectiveDriver.phone || '19998765432').replace(/\D/g, '')}?text=${encodeURIComponent(
+                `Olá ${effectiveDriver.name}! Sou seu passageiro da corrida RACE. Estou te acompanhando pelo mapa.`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-emerald-500"
+              title="Ligar para motorista no WhatsApp"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Voltar</span>
-            </button>
+              <Phone className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Ligar (WhatsApp)</span>
+            </a>
 
-            {/* Botão de Som Rápido na Barra Inferior */}
-            <button
-              type="button"
-              onClick={handleToggleAudio}
-              className={`py-2.5 px-3 border font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
-                audioEnabled
-                  ? 'bg-amber-50 text-amber-900 border-amber-300'
-                  : 'bg-slate-100 text-slate-500 border-slate-300'
-              }`}
-              title="Ligar ou desligar som e voz"
-            >
-              {audioEnabled ? <Volume2 className="w-4 h-4 text-[#ff6a00]" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
-              <span className="hidden sm:inline">{audioEnabled ? 'Som Ligado' : 'Som Mudo'}</span>
-            </button>
-
+            {/* Botão pequeno "Ver mapa" */}
             <button
               type="button"
               onClick={handleViewFullRoute}
-              className="flex-1 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              className="py-2 px-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 border border-slate-300 font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+              title="Ver todo o trajeto da corrida no mapa"
             >
-              <Route className="w-4 h-4 text-[#ff6a00]" />
-              <span>Ver trajeto</span>
+              <Route className="w-3.5 h-3.5 text-[#ff6a00] shrink-0" />
+              <span>Ver mapa</span>
             </button>
 
+            {/* Botão pequeno Áudio (Ligar/Desligar) */}
             <button
               type="button"
-              onClick={handleCenterOnCar}
-              className="py-2.5 px-3.5 bg-slate-900 hover:bg-slate-800 text-white font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+              onClick={handleToggleAudio}
+              className={`py-2 px-2.5 border font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                audioEnabled
+                  ? 'bg-amber-50 text-amber-900 border-amber-300'
+                  : 'bg-slate-100 text-slate-400 border-slate-300'
+              }`}
+              title={audioEnabled ? 'Áudio ATIVADO (clique para mutar)' : 'Áudio MUTADO (clique para ativar som)'}
             >
-              <Crosshair className="w-4 h-4 text-amber-400" />
-              <span>Seguir Carro</span>
+              {audioEnabled ? <Volume2 className="w-3.5 h-3.5 text-[#ff6a00]" /> : <VolumeX className="w-3.5 h-3.5 text-slate-400" />}
+            </button>
+
+            {/* Botão pequeno Voltar */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="py-2 px-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shadow-xs shrink-0 border border-[#ff8533]"
+              title="Voltar"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Voltar</span>
             </button>
           </div>
         </div>
