@@ -83,9 +83,26 @@ export interface Driver {
   criminalRecordClear: boolean;
   registrationDate: string;
   password?: string;
+  walletBalance?: number; // Saldo da carteira do motorista
+  weeklyFeeDeductedThisWeek?: boolean; // Se os R$200 da semana já foram descontados
   comfortEligible?: boolean;
   comfortEligibilityReason?: string;
   trunkType?: string; // Tipo de baú para motoboy de entregas
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  driverId: string;
+  driverName: string;
+  driverEmail?: string;
+  driverPhone?: string;
+  grossAmount: number; // Ex: R$ 1.000,00
+  weeklyFeeDeducted: number; // Ex: R$ 200,00
+  netAmount: number; // Ex: R$ 800,00
+  pixKey: string;
+  status: 'pending' | 'paid';
+  requestedAt: string;
+  paidAt?: string;
 }
 
 export interface LocationPoint {

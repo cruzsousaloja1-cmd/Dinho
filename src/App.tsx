@@ -51,6 +51,11 @@ import {
   notifyDriverArrived,
   notifyRideFinished
 } from './services/audioNotificationService';
+import {
+  getDriverBalance,
+  addDriverEarnings,
+  checkMondayAutoDeduction
+} from './services/walletService';
 
 export default function App() {
   // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
@@ -178,6 +183,10 @@ export default function App() {
             const userAcc = getUserAccount(parsed.email);
             const matched = userAcc?.driverData || parsed.driverData;
             if (matched) {
+              // Verifica se é segunda-feira e desconta R$200 automaticamente se ainda não descontado
+              checkMondayAutoDeduction(matched.id);
+              const currentBalance = getDriverBalance(matched.id, matched.walletBalance || 0);
+
               const now = new Date();
               const expiresDate = matched.weeklyFeeExpiresAt
                 ? new Date(matched.weeklyFeeExpiresAt)
@@ -187,6 +196,7 @@ export default function App() {
               const isSubActive = Boolean(matched.weeklyPlanActive && expiresDate && expiresDate > now);
               const updatedMatched: Driver = {
                 ...matched,
+                walletBalance: currentBalance,
                 status: isSubActive ? 'online' : 'offline',
               };
               setCurrentDriver(updatedMatched);
@@ -368,9 +378,39 @@ export default function App() {
     };
     setActiveRide(updatedRide);
     notifyRideFinished();
+
+    // Credita o valor da corrida na carteira do motorista
+    if (activeRide.driver?.id) {
+      const updatedBalance = addDriverEarnings(activeRide.driver.id, activeRide.price);
+      setCurrentDriver((prev) => {
+        if (!prev) return prev;
+        if (prev.id === activeRide.driver?.id) {
+          return {
+            ...prev,
+            walletBalance: updatedBalance,
+            earningsToday: (prev.earningsToday || 0) + activeRide.price,
+            earningsWeek: (prev.earningsWeek || 0) + activeRide.price,
+          };
+        }
+        return prev;
+      });
+      setDrivers((prev) =>
+        prev.map((d) =>
+          d.id === activeRide.driver?.id
+            ? {
+                ...d,
+                walletBalance: updatedBalance,
+                earningsToday: d.earningsToday + activeRide.price,
+                earningsWeek: d.earningsWeek + activeRide.price,
+              }
+            : d
+        )
+      );
+    }
+
     triggerPush(
       '🏁 Viagem Finalizada!',
-      `Total de R$ ${activeRide.price.toFixed(2)} repassado integralmente ao motorista (100%). Por favor, avalie sua experiência!`,
+      `Total de R$ ${activeRide.price.toFixed(2)} creditado no saldo do motorista! Pagamento retido pelo app para desconto semanal e saque.`,
       'financial'
     );
   };
@@ -748,7 +788,10 @@ export default function App() {
             user.tipo === 'motoboy_entregas';
 
           if (isDriverOrMotoboy && driver) {
-            setCurrentDriver(driver);
+            checkMondayAutoDeduction(driver.id);
+            const currentBal = getDriverBalance(driver.id, driver.walletBalance || 0);
+            const driverWithBal = { ...driver, walletBalance: currentBal };
+            setCurrentDriver(driverWithBal);
             const expiresDate = driver.weeklyFeeExpiresAt
               ? new Date(driver.weeklyFeeExpiresAt)
               : driver.weeklyPlanExpiresAt
@@ -758,13 +801,13 @@ export default function App() {
               driver.weeklyPlanActive && expiresDate && expiresDate > new Date()
             );
             if (isSubActive) {
-              handleUpdateDriver({ ...driver, status: 'online' });
+              handleUpdateDriver({ ...driverWithBal, status: 'online' });
               setActiveTab('rides');
               setLoginSuccessBanner(
                 `Bem-vindo(a), ${driver.name}! Você entrou na Central de Corridas com 100% dos ganhos livres.`
               );
             } else {
-              handleUpdateDriver({ ...driver, status: 'offline' });
+              handleUpdateDriver({ ...driverWithBal, status: 'offline' });
               // Vai direto para central de corridas com aviso de assinatura R$ 200
               setActiveTab('rides');
               setLoginSuccessBanner(

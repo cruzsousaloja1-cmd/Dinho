@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
@@ -243,10 +243,20 @@ import {
   Navigation,
   Camera,
   MapPin,
-  Phone
+  Phone,
+  ArrowDownCircle,
+  XCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
+import { 
+  getDriverBalance, 
+  calculateWalletSummary, 
+  requestWithdrawal, 
+  getWithdrawals, 
+  checkMondayAutoDeduction 
+} from '../services/walletService';
+import { WithdrawalRequest } from '../types';
 
 interface DriverPartnerPortalProps {
   currentDriver: Driver;
@@ -354,6 +364,73 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     currentDriver.pixKey || currentDriver.cpf || ''
   );
   const [savedDriverPixNotice, setSavedDriverPixNotice] = useState(false);
+
+  // Carteira e Saques (Meu Saldo com desconto automático da semana)
+  const [walletPixKey, setWalletPixKey] = useState<string>(
+    currentDriver.pixKey || currentDriver.cpf || ''
+  );
+  const [withdrawalSuccessMessage, setWithdrawalSuccessMessage] = useState<string | null>(null);
+  const [withdrawalErrorMessage, setWithdrawalErrorMessage] = useState<string | null>(null);
+  const [driverWithdrawals, setDriverWithdrawals] = useState<WithdrawalRequest[]>(() => {
+    return getWithdrawals().filter((w) => w.driverId === currentDriver.id);
+  });
+  const [isCopiedAdminPix, setIsCopiedAdminPix] = useState(false);
+
+  // Executa auto-dedução na segunda-feira se aplicável
+  useEffect(() => {
+    if (currentDriver && currentDriver.id) {
+      const res = checkMondayAutoDeduction(currentDriver);
+      if (res.deducted) {
+        onUpdateDriver({
+          ...currentDriver,
+          walletBalance: res.newBalance,
+          weeklyPlanActive: true,
+        });
+        if (onTriggerToast && res.message) {
+          onTriggerToast('Assinatura Semanal', res.message, 'financial');
+        }
+      }
+    }
+  }, [currentDriver?.id]);
+
+  const walletSummary = calculateWalletSummary(currentDriver);
+
+  const handleRequestWithdrawalAction = (summary: ReturnType<typeof calculateWalletSummary>) => {
+    setWithdrawalErrorMessage(null);
+    setWithdrawalSuccessMessage(null);
+
+    if (!walletPixKey || !walletPixKey.trim()) {
+      setWithdrawalErrorMessage('Por favor, informe sua chave PIX para receber a transferência.');
+      return;
+    }
+
+    const res = requestWithdrawal(currentDriver, walletPixKey);
+    if (!res.success) {
+      setWithdrawalErrorMessage(res.error || 'Não foi possível solicitar o saque.');
+      return;
+    }
+
+    setWithdrawalSuccessMessage(
+      `Saque de ${formatBRL(res.withdrawal!.netAmount)} solicitado - Admin vai enviar em até 24h`
+    );
+    setDriverWithdrawals(getWithdrawals().filter((w) => w.driverId === currentDriver.id));
+
+    // Atualiza o motorista com o novo saldo e chave PIX
+    const updated: Driver = {
+      ...currentDriver,
+      walletBalance: 0,
+      pixKey: walletPixKey.trim(),
+      weeklyPlanActive: true,
+    };
+    onUpdateDriver(updated);
+    if (onTriggerToast) {
+      onTriggerToast(
+        '💰 Saque Solicitado',
+        `Saque de ${formatBRL(res.withdrawal!.netAmount)} solicitado - Admin vai enviar em até 24h`,
+        'financial'
+      );
+    }
+  };
 
   // Real Manual PIX Modal & Comprovante state for R$ 200 Weekly Plan
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
@@ -967,8 +1044,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/60'
               }`}
             >
-              <TrendingUp className="w-4 h-4" />
-              <span>Meus ganhos</span>
+              <Wallet className="w-4 h-4" />
+              <span>Meu Saldo</span>
             </button>
             <button
               type="button"
@@ -1246,107 +1323,189 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             </div>
           )}
 
-          {/* SEÇÃO 2: MEUS GANHOS */}
-          {dashboardSection === 'ganhos' && (
-            <div className="space-y-4">
-              {/* Earnings Metrics Cards in White */}
-              <div className="grid grid-cols-2 gap-3.5">
-                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs sm:text-sm text-slate-600 font-bold">Ganhos Hoje</span>
-                    <TrendingUp className="w-5 h-5 text-emerald-600" />
+          {/* SEÇÃO 2: MEU SALDO (CARTEIRA DO MOTORISTA) */}
+          {dashboardSection === 'ganhos' && (() => {
+            const summary = calculateWalletSummary(currentDriver);
+
+            return (
+              <div className="space-y-4">
+                {/* 1. Card Grande "Meu Saldo" */}
+                <div className="bg-gradient-to-br from-[#111111] via-[#1a1a1a] to-[#0d0d0d] text-white border-2 border-[#ff6a00] rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-xl bg-[#ff6a00]/20 text-[#ff6a00] flex items-center justify-center border border-[#ff6a00]/40">
+                        <Wallet className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
+                          Carteira do Motorista
+                        </span>
+                        <h3 className="font-heading font-black text-white text-lg">Meu Saldo</h3>
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 rounded-full">
+                      Corridas Pagas no App
+                    </span>
                   </div>
-                  <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
-                    {formatBRL(currentDriver.earningsToday)}
+
+                  <div>
+                    <span className="text-xs text-zinc-400 font-medium block">Saldo Bruto Acumulado:</span>
+                    <div className="text-4xl sm:text-5xl font-heading font-black text-[#ff6a00] mt-1 tracking-tight">
+                      {formatBRL(summary.gross)}
+                    </div>
+                    <p className="text-xs text-zinc-400 mt-1.5">
+                      O passageiro paga a corrida dentro do app (PIX ou Cartão). O dinheiro cai para o Admin e acumula automaticamente no seu saldo.
+                    </p>
                   </div>
-                  <p className="text-xs text-emerald-700 mt-1 font-bold">
-                    + R$ 0,00 descontado de taxa
-                  </p>
+
+                  {/* 2. Regra de Desconto Automático da Assinatura Semanal (R$ 200) */}
+                  <div className="bg-zinc-900/90 border border-zinc-700/80 rounded-2xl p-4 space-y-2">
+                    <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
+                      Desconto Automático da Semana
+                    </span>
+                    <p className="text-sm sm:text-base font-heading font-black text-white">
+                      Você ganhou {formatBRL(summary.gross)} essa semana - Desconto assinatura {formatBRL(summary.weeklyFee)} - Você recebe {formatBRL(summary.net)}
+                    </p>
+                    <p className="text-xs text-zinc-400">
+                      Toda segunda-feira ou quando você clicar em "Sacar", descontamos automaticamente os R$ 200 da sua assinatura semanal do seu saldo para manter seu app liberado com 100% de repasse livre.
+                    </p>
+                  </div>
+
+                  {/* Alerta se o saldo for menor que R$ 200 */}
+                  {!summary.canWithdraw && summary.missingForFee > 0 && (
+                    <div className="bg-amber-950/40 border border-amber-500/60 rounded-2xl p-4 text-amber-200 text-xs sm:text-sm space-y-2">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-heading font-black text-amber-300 text-sm sm:text-base">
+                            Falta R$ {summary.missingForFee.toFixed(2)} para pagar a semana
+                          </p>
+                          <p className="text-xs text-amber-200/90 mt-1">
+                            Faça mais corridas ou pague via PIX <strong className="font-mono text-white underline">{RACE_PIX_KEY}</strong>.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(RACE_PIX_KEY);
+                            setIsCopiedAdminPix(true);
+                            setTimeout(() => setIsCopiedAdminPix(false), 2500);
+                          }}
+                          className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-sm"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>{isCopiedAdminPix ? 'Chave PIX Copiada!' : `Copiar PIX ${RACE_PIX_KEY}`}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Feedback de Sucesso */}
+                  {withdrawalSuccessMessage && (
+                    <div className="bg-emerald-950/70 border border-emerald-500/80 rounded-2xl p-4 text-emerald-200 text-sm font-bold flex items-center gap-2.5 animate-fade-in">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                      <span>{withdrawalSuccessMessage}</span>
+                    </div>
+                  )}
+
+                  {/* Feedback de Erro */}
+                  {withdrawalErrorMessage && (
+                    <div className="bg-rose-950/70 border border-rose-500/80 rounded-2xl p-4 text-rose-200 text-sm font-bold flex items-center gap-2.5 animate-fade-in">
+                      <XCircle className="w-5 h-5 text-rose-400 shrink-0" />
+                      <span>{withdrawalErrorMessage}</span>
+                    </div>
+                  )}
+
+                  {/* 3. Área de Saque */}
+                  <div className="pt-2 border-t border-zinc-800 space-y-3">
+                    <div>
+                      <label className="text-xs font-bold text-zinc-300 block mb-1">
+                        Sua Chave PIX para receber o Saque ({formatBRL(summary.net)}):
+                      </label>
+                      <input
+                        type="text"
+                        value={walletPixKey}
+                        onChange={(e) => setWalletPixKey(e.target.value)}
+                        placeholder="Informe seu CPF, Celular, E-mail ou Chave Aleatória"
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-sm font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-[#ff6a00]"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRequestWithdrawalAction(summary)}
+                      disabled={!summary.canWithdraw}
+                      className={`w-full py-4 px-5 rounded-2xl font-heading font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-xl ${
+                        summary.canWithdraw
+                          ? 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:brightness-110 active:scale-95 text-white border border-emerald-400 cursor-pointer'
+                          : 'bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      <ArrowDownCircle className="w-5 h-5" />
+                      <span>Sacar {formatBRL(summary.net)}</span>
+                    </button>
+                    {summary.canWithdraw && (
+                      <p className="text-[11px] text-center text-zinc-400 font-medium">
+                        Admin vai enviar o pagamento para sua chave PIX em até 24h.
+                      </p>
+                    )}
+                  </div>
                 </div>
 
-                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs sm:text-sm text-slate-600 font-bold">Ganhos da Semana</span>
-                    <DollarSign className="w-5 h-5 text-amber-600" />
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-heading font-black text-amber-700">
-                    {formatBRL(currentDriver.earningsWeek)}
-                  </div>
-                  <p className="text-xs text-slate-600 mt-1 font-medium">
-                    Assinatura {WEEKLY_FEE_BADGE} {subStatus.isActive ? 'ativa' : 'vencida'}
-                  </p>
+                {/* 4. Histórico de Saques do Motorista */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-3">
+                  <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-[#ff6a00]" />
+                    <span>Meus Saques Solicitados</span>
+                  </h4>
+                  {driverWithdrawals.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-3 text-center">
+                      Nenhum saque solicitado ainda. Seu saldo acumula automaticamente a cada corrida paga pelos passageiros.
+                    </p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {driverWithdrawals.map((w) => (
+                        <div
+                          key={w.id}
+                          className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-xs text-slate-900">{w.id}</span>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  w.status === 'paid'
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : 'bg-amber-100 text-amber-800 border border-amber-300'
+                                }`}
+                              >
+                                {w.status === 'paid' ? '✓ Pago via PIX' : '⏳ Pendente (Admin envia em até 24h)'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              Bruto: {formatBRL(w.grossAmount)} &bull; Desconto semana: -{formatBRL(w.weeklyFeeDeducted)} &bull; Chave PIX: {w.pixKey}
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-mono">
+                              Solicitado em: {new Date(w.requestedAt).toLocaleString('pt-BR')}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-500 uppercase block font-bold">Valor do Saque</span>
+                            <span className="font-heading font-black text-emerald-700 text-lg sm:text-xl">
+                              {formatBRL(w.netAmount)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {/* Economia vs Uber/99 Card */}
-              <div className="bg-emerald-50 border-2 border-emerald-300 rounded-3xl p-5 shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs sm:text-sm font-heading font-black uppercase tracking-wider text-emerald-950 flex items-center gap-1.5">
-                      <TrendingUp className="w-4 h-4 text-emerald-700" />
-                      Economia no Bolso vs Uber e 99
-                    </span>
-                  </div>
-                  <span className="text-xs font-mono font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full">
-                    0% Comissões
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
-                  <div className="bg-white p-3 rounded-2xl border border-emerald-200">
-                    <span className="text-[11px] font-bold text-slate-500 uppercase block">Ganhos Brutos</span>
-                    <span className="text-base sm:text-lg font-heading font-black text-slate-900">
-                      {formatBRL(weeklyEarnings)}
-                    </span>
-                  </div>
-                  <div className="bg-white p-3 rounded-2xl border border-rose-200">
-                    <span className="text-[11px] font-bold text-rose-600 uppercase block">Taxa Uber/99 (~28%)</span>
-                    <span className="text-base sm:text-lg font-heading font-black text-rose-600">
-                      - {formatBRL(uberCut)}
-                    </span>
-                  </div>
-                  <div className="bg-emerald-600 p-3 rounded-2xl text-white shadow-xs">
-                    <span className="text-[11px] font-bold text-emerald-100 uppercase block">Sua Economia Real</span>
-                    <span className="text-base sm:text-lg font-heading font-black text-white">
-                      + {formatBRL(driverSavingsVsUber99)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Chave PIX Pessoal do Motorista para Recebimento */}
-              <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-3">
-                <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
-                  <QrCode className="w-5 h-5 text-amber-600" />
-                  <span>Minha Chave PIX para Receber dos Passageiros</span>
-                </h4>
-                <p className="text-xs text-slate-600">
-                  Os passageiros pagam diretamente para esta chave PIX ao final de cada corrida. Todo o dinheiro vai direto para sua conta bancária sem intermediários.
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={driverPixKey}
-                    onChange={(e) => setDriverPixKey(e.target.value)}
-                    placeholder="Sua chave PIX (CPF, Celular, E-mail ou Chave Aleatória)"
-                    className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-mono text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveDriverPixKey}
-                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs sm:text-sm cursor-pointer whitespace-nowrap"
-                  >
-                    Salvar Chave
-                  </button>
-                </div>
-                {savedDriverPixNotice && (
-                  <p className="text-xs text-emerald-700 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-4 h-4" /> Chave PIX pessoal atualizada com sucesso!
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* SEÇÃO 3: MINHA ASSINATURA */}
           {dashboardSection === 'assinatura' && (
@@ -1487,6 +1646,34 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Banner de Saldo e Carteira */}
+                <div 
+                  onClick={() => setDashboardSection('ganhos')}
+                  className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 border-2 border-[#ff6a00]/30 rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:border-[#ff6a00] transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#ff6a00] text-white flex items-center justify-center font-bold">
+                      <Wallet className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-500 font-bold uppercase block">Meu Saldo no App</span>
+                      <span className="text-xl font-heading font-black text-slate-900">
+                        R$ {walletSummary.gross.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDashboardSection('ganhos');
+                    }}
+                    className="text-xs font-black bg-[#ff6a00] hover:bg-[#e05e00] text-white px-3 py-1.5 rounded-xl shadow-sm transition-transform active:scale-95 cursor-pointer"
+                  >
+                    Gerenciar Carteira & Saque →
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-sm">

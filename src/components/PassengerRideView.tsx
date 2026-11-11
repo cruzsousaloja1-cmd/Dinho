@@ -44,7 +44,10 @@ import {
   AlertTriangle,
   Route,
   Volume2,
-  VolumeX
+  VolumeX,
+  ArrowLeft,
+  Copy,
+  Check
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -103,6 +106,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     destination?.address || 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba-SP'
   );
 
+  // Estados do Fluxo do Passageiro:
+  // 1. 'search': Entrada dos endereços de embarque e destino com número + botão "Buscar corrida"
+  // 2. 'options': Mostra as 4 opções com VALOR FINAL (Econômico R$ 8,00, Confort R$ 11,20, Motoboy R$ 6,16, Entregas R$ 6,90)
+  // 3. 'payment': Página de Pagamento ("Você escolheu [Categoria] - R$ [Valor]") com PIX/Cartão e botão "Pagar", depois "Confirmar corrida"
+  const [passengerStep, setPassengerStep] = useState<'search' | 'options' | 'payment'>('search');
+  const [isPaidInApp, setIsPaidInApp] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [pixCopied, setPixCopied] = useState(false);
+
   // Address validation banner state
   const [addressValidationError, setAddressValidationError] = useState<string | null>(null);
 
@@ -122,10 +134,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
   const searchTimeoutRef = useRef<any>(null);
 
-  // Calculate actual dynamic distance between points
+  // Calculate actual dynamic distance between points (default 1.2 km para as rotas centrais de Indaiatuba)
   const dynamicDistanceKm = pickup && destination
-    ? calculateDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng)
-    : 3.8;
+    ? Number(calculateDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng).toFixed(1)) || 1.2
+    : 1.2;
 
   // Keep inputs synced when pickup/destination change from map clicks
   useEffect(() => {
@@ -363,6 +375,65 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     }
   };
 
+  const getCategoryDisplayName = (cat: VehicleCategory) => {
+    switch (cat) {
+      case 'confort':
+        return 'Motorista Confort';
+      case 'moto_passageiro':
+        return 'Motoboy Passageiro';
+      case 'moto_entrega':
+        return 'Motoboy Entregas';
+      case 'economica':
+      default:
+        return 'Motorista Econômico';
+    }
+  };
+
+  const handleSearchRides = () => {
+    if (!hasAddressNumber(pickupInput)) {
+      setAddressValidationError('Coloque o número do endereço de saída (embarque) para o motorista te achar.');
+      const el = document.getElementById('route-details');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
+    if (!hasAddressNumber(destInput)) {
+      setAddressValidationError('Coloque o número do endereço de chegada (destino) para o motorista te achar.');
+      const el = document.getElementById('route-details');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
+    setAddressValidationError(null);
+    setPassengerStep('options');
+  };
+
+  const handleSelectCategory = (cat: VehicleCategory) => {
+    setSelectedCategory(cat);
+    setIsPaidInApp(false);
+    setPassengerStep('payment');
+  };
+
+  const handlePayInAppAction = () => {
+    setIsProcessingPayment(true);
+    setTimeout(() => {
+      setIsProcessingPayment(false);
+      setIsPaidInApp(true);
+      try {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.6 },
+        });
+      } catch {}
+    }, 600);
+  };
+
+  const handleConfirmRideAfterPayment = () => {
+    handleRequestRideWithCategory(selectedCategory);
+    setPassengerStep('search');
+  };
+
   const handleToggleCompliment = (item: string) => {
     setRatingCompliments((prev) =>
       prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
@@ -407,6 +478,26 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
     return (
       <div className="space-y-4">
+        {/* BANNER OFICIAL DE CONFIRMAÇÃO DE PAGAMENTO NO APP */}
+        <div className="bg-emerald-600 text-white rounded-3xl p-4 sm:p-5 shadow-xl flex items-center justify-between gap-3 animate-fade-in border-2 border-emerald-400">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
+              <CheckCircle2 className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h4 className="font-heading font-black text-sm sm:text-base leading-tight">
+                Pagamento feito com sucesso
+              </h4>
+              <p className="text-xs sm:text-sm text-emerald-100 font-medium mt-0.5">
+                {isMotoRide ? 'Seu motoboy está a caminho' : 'Seu motorista está a caminho'}
+              </p>
+            </div>
+          </div>
+          <span className="text-xs sm:text-sm font-mono font-black bg-black/30 px-3.5 py-1.5 rounded-xl border border-white/20 shrink-0">
+            {formatBRL(activeRide.price)} PAGO NO APP
+          </span>
+        </div>
+
         {/* Active Ride HUD card in clean white */}
         <div className="bg-white border-2 border-amber-400 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
           {/* Status Header */}
@@ -451,6 +542,26 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Card Chega em 3 min - 1,5 km */}
+          <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-[#ff6a00] rounded-2xl p-4 flex items-center justify-between shadow-md animate-fade-in">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-[#ff6a00] text-white flex items-center justify-center font-bold shadow-md shrink-0">
+                <Clock className="w-7 h-7 stroke-[2.5]" />
+              </div>
+              <div>
+                <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider block font-mono">
+                  Previsão de Chegada no Embarque
+                </span>
+                <h4 className="text-xl sm:text-2xl font-heading font-black text-slate-950">
+                  Chega em 3 min - 1,5 km
+                </h4>
+              </div>
+            </div>
+            <span className="bg-emerald-100 text-emerald-800 text-xs font-black px-3.5 py-1.5 rounded-full border border-emerald-300 font-mono animate-pulse shrink-0">
+              A CAMINHO
+            </span>
           </div>
 
           {/* CARD GRANDE DO MOTORISTA / MOTOBOY E VEÍCULO (CHAMADA ACEITA) */}
@@ -797,88 +908,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
       )}
 
-      {/* 2. Painel "Aguardando Corridas" quando o usuário logado for Motorista ou Motoboy */}
-      {(currentUser?.role === 'driver' ||
-        currentUser?.role === 'motoboy' ||
-        currentUser?.tipo === 'driver' ||
-        currentUser?.tipo === 'motoboy' ||
-        currentUser?.tipo === 'motorista_economico' ||
-        currentUser?.tipo === 'motorista_confort' ||
-        currentUser?.tipo === 'motoboy_passageiro' ||
-        currentUser?.tipo === 'motoboy_entregas') && (
-        <div className="bg-slate-950 text-white border-2 border-[#ff6a00] rounded-3xl p-5 sm:p-6 shadow-xl space-y-4 animate-fade-in">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-[#ff6a00]/20 border border-[#ff6a00]/50 text-[#ff6a00] flex items-center justify-center shrink-0">
-                {currentUser?.role === 'motoboy' || 
-                 currentUser?.tipo === 'motoboy' ||
-                 currentUser?.tipo === 'motoboy_passageiro' ||
-                 currentUser?.tipo === 'motoboy_entregas' ? (
-                  <Bike className="w-6 h-6" />
-                ) : (
-                  <Car className="w-6 h-6" />
-                )}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-heading font-black text-white text-lg sm:text-xl">
-                    Aguardando Corridas & Chamados
-                  </h3>
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-[#ff6a00] text-black uppercase font-mono">
-                    {currentUser?.tipo === 'motorista_economico'
-                      ? 'Econômico'
-                      : currentUser?.tipo === 'motorista_confort'
-                      ? 'Confort'
-                      : currentUser?.tipo === 'motoboy_passageiro'
-                      ? 'Moto Táxi'
-                      : currentUser?.tipo === 'motoboy_entregas'
-                      ? 'Entregas Flash'
-                      : currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy'
-                      ? 'Motoboy'
-                      : 'Motorista'}
-                  </span>
-                </div>
-                <p className="text-xs sm:text-sm text-zinc-300 font-medium">
-                  {currentUser?.name} &bull; Categoria Oficial Cadastrada &bull; 100% dos Ganhos Livres
-                </p>
-              </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-              </span>
-              <span className="text-xs sm:text-sm font-bold text-emerald-400">
-                Radar Ativo no Mapa
-              </span>
-            </div>
-          </div>
-
-          {/* Aviso da Assinatura R$ 200/semana */}
-          <div className="bg-[#141414] border border-amber-500/40 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-amber-400 text-sm">
-                  Plano Semanal: R$ 200 / semana
-                </span>
-                <span className="bg-amber-400/20 text-amber-300 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
-                  CHAVE PIX
-                </span>
-              </div>
-              <p className="text-zinc-300 font-mono select-all text-xs">
-                Chave PIX:{' '}
-                <span className="text-[#ff6a00] font-black font-mono">
-                  9d9e5635-9e68-46bf-bffe-08bdae29c8ba
-                </span>
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Route Selector Input Box with Automatic Search */}
-      <div id="route-details" className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+      {/* ETAPA 1: BUSCA DE CORRIDA (Origem com Meu GPS e Destino com Número) */}
+      {passengerStep === 'search' && (
+        <div id="route-details" className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4 animate-fade-in">
         {/* Banner de Erro de Validação de Número */}
         {addressValidationError && (
           <div className="bg-rose-50 border-2 border-rose-400 p-4 rounded-2xl flex items-center justify-between text-rose-950 font-bold text-xs sm:text-sm shadow-md animate-bounce">
@@ -1214,359 +1247,493 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             ))}
           </div>
         </div>
-      </div>
 
-      {/* SOMENTE O BOTÃO: "VER O MAPA TELA INTEIRA" (LARANJA, GRANDE, SEM MINI MAPA NEM BOLINHAS) */}
-      {onOpenFullMap && (
+        {/* Botão Buscar Corrida */}
         <button
           type="button"
-          onClick={onOpenFullMap}
-          className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider my-3"
+          onClick={handleSearchRides}
+          className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider mt-4"
         >
-          <Maximize2 className="w-6 h-6 stroke-[2.5]" />
-          <span>VER O MAPA TELA INTEIRA</span>
+          <Search className="w-6 h-6 stroke-[2.5]" />
+          <span>Buscar corrida</span>
         </button>
+      </div>
       )}
 
-      {/* Opções de Corrida para Passageiro (4 Opções: Motorista Econômico, Motorista Confort, Motoboy Passageiro, Motoboy Entregas) */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-heading font-black text-slate-900 uppercase tracking-wider">
-            Escolha sua Categoria de Viagem
-          </label>
-          <span className="text-xs sm:text-sm text-slate-700 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
-            Distância da rota: {dynamicDistanceKm} km
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          {/* 1. Motorista Econômico */}
-          {(() => {
-            const cat = VEHICLE_CATEGORIES.economica;
-            const fare = calculateFare('economica', dynamicDistanceKm);
-            const isSelected = selectedCategory === 'economica';
-
-            return (
-              <div
-                onClick={() => setSelectedCategory('economica')}
-                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between shadow-md ${
-                  isSelected
-                    ? 'bg-amber-50/60 border-amber-500 shadow-amber-500/10'
-                    : 'bg-white border-slate-200 hover:border-slate-400'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-13 h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
-                        <Car className="w-7 h-7" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                            Motorista Econômico
-                          </span>
-                          <span className="bg-emerald-100 text-emerald-800 font-bold text-[11px] px-2 py-0.5 rounded-full border border-emerald-300 font-mono shadow-2xs">
-                            Mais Pedida
-                          </span>
-                        </div>
-                        <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
-                          {cat.capacity} &bull; {cat.estimatedTimeMin} min de espera
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
-                        {formatBRL(fare.totalPrice)}
-                      </span>
-                      <p className="text-xs text-slate-500 font-medium">Preço Final</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 text-xs text-slate-600 border-t border-slate-200 pt-2 flex items-center justify-between font-medium">
-                    <span>{cat.tagline}</span>
-                    <span className="text-slate-500 font-mono">Ar-condicionado</span>
-                  </div>
-                </div>
-
-                {/* Botão Confirmar dedicado para a opção Motorista Econômico */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRequestRideWithCategory('economica');
-                  }}
-                  className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400"
-                >
-                  <CheckCircle2 className="w-5 h-5 fill-slate-950 text-amber-400" />
-                  <span>Confirmar Motorista Econômico ({formatBRL(fare.totalPrice)})</span>
-                </button>
+      {/* ETAPA 2: ESCOLHA DA CATEGORIA COM VALOR FINAL */}
+      {passengerStep === 'options' && (
+        <div className="space-y-4 animate-fade-in">
+          {/* Card Resumo do Trajeto com Botão Alterar Endereços */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1.5 flex-1 min-w-0">
+              <div className="flex items-center gap-2 text-xs text-slate-500 font-bold uppercase tracking-wider font-mono">
+                <span>Trajeto Selecionado</span>
+                <span>•</span>
+                <span className="text-[#ff6a00] font-black">{dynamicDistanceKm} km</span>
               </div>
-            );
-          })()}
-
-          {/* 2. Motorista Confort */}
-          {(() => {
-            const cat = VEHICLE_CATEGORIES.confort;
-            const fare = calculateFare('confort', dynamicDistanceKm);
-            const isSelected = selectedCategory === 'confort';
-
-            return (
-              <div
-                onClick={() => setSelectedCategory('confort')}
-                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between shadow-md ${
-                  isSelected
-                    ? 'bg-purple-50/60 border-purple-500 shadow-purple-500/10'
-                    : 'bg-white border-slate-200 hover:border-slate-400'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-13 h-13 rounded-2xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0 border border-purple-300">
-                        <Sparkles className="w-7 h-7" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                            Motorista Confort
-                          </span>
-                          <span className="bg-purple-100 text-purple-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-purple-300 font-mono shadow-2xs">
-                            Mais Conforto
-                          </span>
-                        </div>
-                        <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
-                          Sedans e SUVs novos &bull; {cat.estimatedTimeMin} min
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="font-heading font-black text-purple-900 text-xl sm:text-2xl">
-                        {formatBRL(fare.totalPrice)}
-                      </span>
-                      <p className="text-xs text-slate-500 font-medium">Preço Final</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 text-xs text-slate-600 border-t border-slate-200 pt-2 flex items-center justify-between font-medium">
-                    <span>{cat.tagline}</span>
-                    <span className="text-purple-700 font-bold">Mais espaço</span>
-                  </div>
-                </div>
-
-                {/* Botão Confirmar dedicado para a opção Motorista Confort */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRequestRideWithCategory('confort');
-                  }}
-                  className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-purple-700 hover:bg-purple-600 text-white border border-purple-600"
-                >
-                  <CheckCircle2 className="w-5 h-5 fill-white text-purple-700" />
-                  <span>Confirmar Motorista Confort ({formatBRL(fare.totalPrice)})</span>
-                </button>
+              <div className="text-xs sm:text-sm font-bold text-slate-900 truncate flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="truncate">{pickupInput}</span>
               </div>
-            );
-          })()}
-
-          {/* 3. Motoboy Passageiro */}
-          {(() => {
-            const cat = VEHICLE_CATEGORIES.moto_passageiro;
-            const fare = calculateFare('moto_passageiro', dynamicDistanceKm);
-            const isSelected = selectedCategory === 'moto_passageiro';
-
-            return (
-              <div
-                onClick={() => setSelectedCategory('moto_passageiro')}
-                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between shadow-md ${
-                  isSelected
-                    ? 'bg-cyan-50/60 border-cyan-500 shadow-cyan-500/10'
-                    : 'bg-white border-slate-200 hover:border-slate-400'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-13 h-13 rounded-2xl bg-cyan-100 text-cyan-800 flex items-center justify-center shrink-0 border border-cyan-300">
-                        <Bike className="w-7 h-7" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                            Motoboy Passageiro
-                          </span>
-                          <span className="bg-cyan-100 text-cyan-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-cyan-300 font-mono shadow-2xs">
-                            Mais Rápido
-                          </span>
-                        </div>
-                        <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
-                          Rápido no trânsito &bull; {cat.estimatedTimeMin} min
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="font-heading font-black text-cyan-900 text-xl sm:text-2xl">
-                        {formatBRL(fare.totalPrice)}
-                      </span>
-                      <p className="text-xs text-slate-500 font-medium">Preço Final</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 text-xs text-slate-600 border-t border-slate-200 pt-2 flex items-center justify-between font-medium">
-                    <span>{cat.tagline}</span>
-                    <span className="text-cyan-700 font-bold">Capacete incluso</span>
-                  </div>
-                </div>
-
-                {/* Botão Confirmar dedicado para Motoboy Passageiro */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRequestRideWithCategory('moto_passageiro');
-                  }}
-                  className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-cyan-600 hover:bg-cyan-500 text-white border border-cyan-500"
-                >
-                  <CheckCircle2 className="w-5 h-5 fill-white text-cyan-600" />
-                  <span>Confirmar Motoboy Passageiro ({formatBRL(fare.totalPrice)})</span>
-                </button>
+              <div className="text-xs sm:text-sm font-bold text-slate-900 truncate flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="truncate">{destInput}</span>
               </div>
-            );
-          })()}
+            </div>
 
-          {/* 4. Motoboy Entregas */}
-          {(() => {
-            const cat = VEHICLE_CATEGORIES.moto_entrega;
-            const fare = calculateFare('moto_entrega', dynamicDistanceKm);
-            const isSelected = selectedCategory === 'moto_entrega';
-
-            return (
-              <div
-                onClick={() => setSelectedCategory('moto_entrega')}
-                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between shadow-md ${
-                  isSelected
-                    ? 'bg-amber-50/60 border-amber-500 shadow-amber-500/10'
-                    : 'bg-white border-slate-200 hover:border-slate-400'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-13 h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
-                        <PackageCheck className="w-7 h-7" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                            Motoboy Entregas
-                          </span>
-                          <span className="bg-amber-100 text-amber-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-amber-300 font-mono shadow-2xs">
-                            Flash Delivery
-                          </span>
-                        </div>
-                        <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
-                          Delivery & Encomendas &bull; {cat.estimatedTimeMin} min
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
-                        {formatBRL(fare.totalPrice)}
-                      </span>
-                      <p className="text-xs text-slate-500 font-medium">Preço Final</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 text-xs text-slate-600 border-t border-slate-200 pt-2 flex items-center justify-between font-medium">
-                    <span>{cat.tagline}</span>
-                    <span className="text-amber-700 font-bold">Baú até 20kg</span>
-                  </div>
-                </div>
-
-                {/* Botão Confirmar dedicado para Motoboy Entregas */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRequestRideWithCategory('moto_entrega');
-                  }}
-                  className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-105 text-slate-950 border border-amber-400"
-                >
-                  <CheckCircle2 className="w-5 h-5 fill-slate-950 text-amber-400" />
-                  <span>Confirmar Motoboy Entregas ({formatBRL(fare.totalPrice)})</span>
-                </button>
-              </div>
-            );
-          })()}
-        </div>
-      </div>
-
-
-
-      {/* Digital Payment with Encryption & Security */}
-      <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 space-y-4 shadow-md">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-          <div className="flex items-center gap-2.5">
-            <Lock className="w-5 h-5 text-emerald-600" />
-            <h3 className="font-heading font-black text-slate-900 text-sm sm:text-base uppercase tracking-wider">
-              Pagamento Digital Criptografado
-            </h3>
+            <button
+              type="button"
+              onClick={() => setPassengerStep('search')}
+              className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-heading font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-300 self-start sm:self-center shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Alterar endereços</span>
+            </button>
           </div>
-          <span className="text-xs sm:text-sm text-slate-600 font-semibold flex items-center gap-1.5 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            TLS 256-bit Seguro
-          </span>
+
+          {/* SOMENTE O BOTÃO: "VER O MAPA TELA INTEIRA" (LARANJA, GRANDE, SEM MINI MAPA NEM BOLINHAS) */}
+          {onOpenFullMap && (
+            <button
+              type="button"
+              onClick={onOpenFullMap}
+              className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
+            >
+              <Maximize2 className="w-6 h-6 stroke-[2.5]" />
+              <span>VER O MAPA TELA INTEIRA</span>
+            </button>
+          )}
+
+          {/* Opções de Corrida para Passageiro (4 Opções com VALOR FINAL) */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-heading font-black text-slate-950 uppercase tracking-wider">
+                Escolha sua Categoria de Viagem
+              </label>
+              <span className="text-xs text-slate-600 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                Distância da rota: {dynamicDistanceKm} km
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* 1. Motorista Econômico */}
+              {(() => {
+                const cat = VEHICLE_CATEGORIES.economica;
+                const fare = calculateFare('economica', dynamicDistanceKm);
+                return (
+                  <div
+                    onClick={() => handleSelectCategory('economica')}
+                    className="p-5 rounded-2xl border-2 border-slate-200 hover:border-amber-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-13 h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
+                            <Car className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                                Motorista Econômico
+                              </span>
+                              <span className="bg-emerald-100 text-emerald-800 font-bold text-[11px] px-2 py-0.5 rounded-full border border-emerald-300 font-mono">
+                                Mais Pedida
+                              </span>
+                            </div>
+                            <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
+                              {cat.capacity} &bull; {cat.estimatedTimeMin} min de espera
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="font-heading font-black text-slate-950 text-2xl sm:text-3xl text-amber-600">
+                            {formatBRL(fare.totalPrice)}
+                          </span>
+                          <p className="text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex items-center justify-between font-medium">
+                        <span>{cat.tagline}</span>
+                        <span className="text-slate-500 font-mono">Ar-condicionado</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectCategory('economica');
+                      }}
+                      className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 uppercase tracking-wide"
+                    >
+                      <span>Escolher Econômico ({formatBRL(fare.totalPrice)})</span>
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {/* 2. Motorista Confort */}
+              {(() => {
+                const cat = VEHICLE_CATEGORIES.confort;
+                const fare = calculateFare('confort', dynamicDistanceKm);
+                return (
+                  <div
+                    onClick={() => handleSelectCategory('confort')}
+                    className="p-5 rounded-2xl border-2 border-purple-200 hover:border-purple-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-13 h-13 rounded-2xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0 border border-purple-300">
+                            <Sparkles className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                                Motorista Confort
+                              </span>
+                              <span className="bg-purple-100 text-purple-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-purple-300 font-mono">
+                                Mais Conforto
+                              </span>
+                            </div>
+                            <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
+                              Sedans e SUVs novos &bull; {cat.estimatedTimeMin} min
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="font-heading font-black text-purple-900 text-2xl sm:text-3xl">
+                            {formatBRL(fare.totalPrice)}
+                          </span>
+                          <p className="text-xs text-purple-600 font-bold uppercase font-mono">Preço Final</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex items-center justify-between font-medium">
+                        <span>{cat.tagline}</span>
+                        <span className="text-purple-700 font-bold">Mais espaço interno</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectCategory('confort');
+                      }}
+                      className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-purple-700 hover:bg-purple-600 text-white border border-purple-600 uppercase tracking-wide"
+                    >
+                      <span>Escolher Confort ({formatBRL(fare.totalPrice)})</span>
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {/* 3. Motoboy Passageiro */}
+              {(() => {
+                const cat = VEHICLE_CATEGORIES.moto_passageiro;
+                const fare = calculateFare('moto_passageiro', dynamicDistanceKm);
+                return (
+                  <div
+                    onClick={() => handleSelectCategory('moto_passageiro')}
+                    className="p-5 rounded-2xl border-2 border-cyan-200 hover:border-cyan-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-13 h-13 rounded-2xl bg-cyan-100 text-cyan-800 flex items-center justify-center shrink-0 border border-cyan-300">
+                            <Bike className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                                Motoboy Passageiro
+                              </span>
+                              <span className="bg-cyan-100 text-cyan-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-cyan-300 font-mono">
+                                Mais Rápido
+                              </span>
+                            </div>
+                            <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
+                              Rápido no trânsito &bull; {cat.estimatedTimeMin} min
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="font-heading font-black text-cyan-900 text-2xl sm:text-3xl">
+                            {formatBRL(fare.totalPrice)}
+                          </span>
+                          <p className="text-xs text-cyan-600 font-bold uppercase font-mono">Preço Final</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex items-center justify-between font-medium">
+                        <span>{cat.tagline}</span>
+                        <span className="text-cyan-700 font-bold">Capacete incluso</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectCategory('moto_passageiro');
+                      }}
+                      className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-cyan-600 hover:bg-cyan-500 text-white border border-cyan-500 uppercase tracking-wide"
+                    >
+                      <span>Escolher Motoboy Passageiro ({formatBRL(fare.totalPrice)})</span>
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {/* 4. Motoboy Entregas */}
+              {(() => {
+                const cat = VEHICLE_CATEGORIES.moto_entrega;
+                const fare = calculateFare('moto_entrega', dynamicDistanceKm);
+                return (
+                  <div
+                    onClick={() => handleSelectCategory('moto_entrega')}
+                    className="p-5 rounded-2xl border-2 border-amber-200 hover:border-amber-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-13 h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
+                            <PackageCheck className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                                Motoboy Entregas
+                              </span>
+                              <span className="bg-amber-100 text-amber-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-amber-300 font-mono">
+                                Flash Delivery
+                              </span>
+                            </div>
+                            <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
+                              Delivery & Encomendas &bull; {cat.estimatedTimeMin} min
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="font-heading font-black text-slate-950 text-2xl sm:text-3xl text-amber-600">
+                            {formatBRL(fare.totalPrice)}
+                          </span>
+                          <p className="text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex items-center justify-between font-medium">
+                        <span>{cat.tagline}</span>
+                        <span className="text-amber-700 font-bold">Baú até 20kg</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectCategory('moto_entrega');
+                      }}
+                      className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-105 text-slate-950 border border-amber-400 uppercase tracking-wide"
+                    >
+                      <span>Escolher Entregas ({formatBRL(fare.totalPrice)})</span>
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
         </div>
+      )}
 
-        <div className="grid grid-cols-3 gap-3">
-          <button
-            type="button"
-            onClick={() => setPaymentMethod('pix')}
-            className={`p-3.5 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              paymentMethod === 'pix'
-                ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-extrabold shadow-sm'
-                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
-            }`}
-          >
-            <QrCode className="w-5 h-5 text-emerald-600" />
-            <span className="text-sm font-bold">PIX Instantâneo</span>
-            <span className="text-xs text-emerald-700 font-bold">Sem taxas</span>
-          </button>
+      {/* ETAPA 3: PÁGINA DE PAGAMENTO NO APP COM DESCONTO/RETENÇÃO */}
+      {passengerStep === 'payment' && (() => {
+        const fare = calculateFare(selectedCategory, dynamicDistanceKm);
+        const isMoto = selectedCategory === 'moto_passageiro' || selectedCategory === 'moto_entrega';
 
-          <button
-            type="button"
-            onClick={() => setPaymentMethod('credit_card')}
-            className={`p-3.5 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              paymentMethod === 'credit_card'
-                ? 'bg-amber-50 border-amber-500 text-amber-900 font-extrabold shadow-sm'
-                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
-            }`}
-          >
-            <CreditCard className="w-5 h-5 text-amber-600" />
-            <span className="text-sm font-bold">Cartão Token</span>
-            <span className="text-xs text-slate-500 font-medium">•••• 4490</span>
-          </button>
+        return (
+          <div className="space-y-4 animate-fade-in">
+            {/* Botão Voltar às Opções */}
+            <button
+              type="button"
+              onClick={() => {
+                setPassengerStep('options');
+                setIsPaidInApp(false);
+              }}
+              className="inline-flex items-center gap-2 text-slate-700 hover:text-slate-950 font-heading font-bold text-sm bg-slate-100 hover:bg-slate-200 px-4 py-2.5 rounded-xl border border-slate-300 transition-all cursor-pointer shadow-2xs"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar às opções de viagem</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setPaymentMethod('race_pay')}
-            className={`p-3.5 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              paymentMethod === 'race_pay'
-                ? 'bg-purple-50 border-purple-500 text-purple-900 font-extrabold shadow-sm'
-                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
-            }`}
-          >
-            <Wallet className="w-5 h-5 text-purple-600" />
-            <span className="text-sm font-bold">RACE Pay</span>
-            <span className="text-xs text-purple-700 font-bold">Saldo: R$ 85,00</span>
-          </button>
-        </div>
-      </div>
+            {/* Card Principal: "Você escolheu [Categoria] - R$ [Valor]" */}
+            <div className="bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/10 border-2 border-[#ff6a00] rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+              <div className="flex items-start justify-between gap-3 border-b border-orange-200/80 pb-3">
+                <div>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
+                    Resumo do Pedido de Corrida
+                  </span>
+                  <h3 className="text-xl sm:text-2xl font-heading font-black text-slate-950 mt-1">
+                    Você escolheu {getCategoryDisplayName(selectedCategory)} - {formatBRL(fare.totalPrice)}
+                  </h3>
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-[#ff6a00] text-white flex items-center justify-center font-bold shrink-0 shadow-md">
+                  {isMoto ? <Bike className="w-6 h-6" /> : <Car className="w-6 h-6" />}
+                </div>
+              </div>
+
+              {/* Rota */}
+              <div className="space-y-2 text-xs sm:text-sm text-slate-800 bg-white/80 rounded-2xl p-4 border border-orange-200">
+                <div className="flex items-start gap-2.5">
+                  <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-[10px] font-bold text-emerald-700 uppercase block font-mono">Embarque</span>
+                    <span className="font-bold text-slate-950">{pickupInput}</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2.5 pt-2 border-t border-slate-100">
+                  <Navigation className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-700 uppercase block font-mono">Destino</span>
+                    <span className="font-bold text-slate-950">{destInput}</span>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 font-mono">
+                  <span>Distância da Rota:</span>
+                  <span className="font-black text-[#ff6a00]">{dynamicDistanceKm} km</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Formas de Pagamento no App (PIX no app / Cartão no app) */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-5 h-5 text-emerald-600" />
+                  <h4 className="font-heading font-black text-slate-950 text-base uppercase tracking-wider">
+                    Forma de Pagamento no App
+                  </h4>
+                </div>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 font-mono">
+                  100% SEGURO
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('pix')}
+                  className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    paymentMethod === 'pix'
+                      ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-black shadow-sm ring-2 ring-emerald-500/20'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
+                  }`}
+                >
+                  <QrCode className="w-6 h-6 text-emerald-600" />
+                  <span className="text-sm font-black">PIX no app</span>
+                  <span className="text-xs text-emerald-700 font-bold">Aprovação Imediata</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('credit_card')}
+                  className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    paymentMethod === 'credit_card'
+                      ? 'bg-amber-50 border-amber-500 text-amber-950 font-black shadow-sm ring-2 ring-amber-500/20'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
+                  }`}
+                >
+                  <CreditCard className="w-6 h-6 text-amber-600" />
+                  <span className="text-sm font-black">Cartão no app</span>
+                  <span className="text-xs text-slate-500 font-mono">Crédito / Débito</span>
+                </button>
+              </div>
+
+              {/* Botão Pagar R$ [Valor] ou Confirmação de Pagamento */}
+              {!isPaidInApp ? (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handlePayInAppAction}
+                    disabled={isProcessingPayment}
+                    className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-lg sm:text-xl py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider disabled:opacity-75"
+                  >
+                    {isProcessingPayment ? (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin text-white" />
+                        <span>Processando Pagamento...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-5 h-5 text-white" />
+                        <span>Pagar {formatBRL(fare.totalPrice)}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4 pt-2 animate-fade-in">
+                  {/* Banner de Pagamento Aprovado */}
+                  <div className="p-4 bg-emerald-50 border-2 border-emerald-400 rounded-2xl flex items-center gap-3">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-600 shrink-0" />
+                    <div>
+                      <h5 className="font-heading font-black text-emerald-950 text-sm sm:text-base">
+                        Pagamento de {formatBRL(fare.totalPrice)} Aprovado no App!
+                      </h5>
+                      <p className="text-xs text-emerald-800 font-medium">
+                        O dinheiro caiu para a administração da RACE com segurança. Clique abaixo para confirmar e chamar seu condutor.
+                      </p>
+                    </div>
+                  </div>
+
+                  {paymentMethod === 'pix' && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center space-y-3">
+                      <div className="w-32 h-32 mx-auto bg-white p-2 border-2 border-emerald-400 rounded-xl shadow-inner flex items-center justify-center">
+                        <QrCode className="w-24 h-24 text-slate-900" />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-xs text-slate-500 font-bold block font-mono">Chave PIX da Administração:</span>
+                        <p className="font-mono font-black text-xs sm:text-sm text-slate-900 select-all bg-white py-1.5 px-3 rounded-lg border border-slate-300 inline-block">
+                          9d9e5635-9e68-46bf-bffe-08bdae29c8ba
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            navigator.clipboard.writeText('9d9e5635-9e68-46bf-bffe-08bdae29c8ba');
+                            setPixCopied(true);
+                            setTimeout(() => setPixCopied(false), 3000);
+                          } catch {}
+                        }}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        {pixCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        <span>{pixCopied ? 'Chave Copiada!' : 'Copiar Chave PIX'}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Botão: Confirmar corrida */}
+                  <button
+                    type="button"
+                    onClick={handleConfirmRideAfterPayment}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-heading font-black text-lg sm:text-xl py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-emerald-400 cursor-pointer transition-all uppercase tracking-wider"
+                  >
+                    <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
+                    <span>Confirmar corrida</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Safety & 100% Policy Guarantee Banner */}
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between text-xs sm:text-sm text-slate-700 shadow-sm font-medium">
