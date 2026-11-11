@@ -1,5 +1,11 @@
 import { AppUser, Driver, Ride, UserRole, UserTipo } from '../types';
 import { WEEKLY_FEE } from '../config/pricing';
+import { 
+  saveUsuarioSupabase, 
+  getUsuarioSupabase, 
+  saveCorridaSupabase, 
+  getCorridasSupabase 
+} from '../supabase';
 
 export interface StoredUserAccount {
   id: string;
@@ -93,7 +99,34 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
       localStorage.setItem('race_registered_passengers', JSON.stringify(updatedPass));
     }
   } catch (err) {
-    console.error('Erro ao salvar conta de usuário:', err);
+    console.error('Erro ao salvar conta de usuário no localStorage:', err);
+  }
+
+  // 4. Salvar na nuvem Supabase (tabela public.usuarios)
+  try {
+    saveUsuarioSupabase({
+      id: normalizedAccount.id,
+      nome: normalizedAccount.name,
+      email: normalizedAccount.email,
+      celular: normalizedAccount.phone,
+      whatsapp: normalizedAccount.whatsapp || normalizedAccount.phone,
+      login: normalizedAccount.login || normalizedAccount.email,
+      senha: normalizedAccount.password,
+      tipo: normalizedAccount.tipo || (normalizedAccount.role === 'passenger' ? 'passenger' : 'motorista_economico'),
+      categoria: normalizedAccount.driverData?.category || 'economica',
+      placa: normalizedAccount.placa || normalizedAccount.driverData?.vehiclePlate || '',
+      modelo: normalizedAccount.driverData?.vehicleModel || '',
+      ano: normalizedAccount.driverData?.vehicleYear || 2023,
+      cnh: normalizedAccount.driverData?.cnh || '',
+      avatar: normalizedAccount.avatar || '',
+      rating: normalizedAccount.rating || 5.0,
+      saldo: normalizedAccount.driverData?.walletBalance || 0,
+      plano_ativo: normalizedAccount.driverData?.weeklyPlanActive ?? false,
+    }).catch((cloudErr) => {
+      console.warn('Aviso de sincronização Supabase usuarios:', cloudErr);
+    });
+  } catch (cloudErr) {
+    console.warn('Erro ao disparar sincronização Supabase usuarios:', cloudErr);
   }
 }
 
@@ -261,6 +294,123 @@ export function verifyUserLogin(
 }
 
 /**
+ * Autenticação assíncrona no Supabase com fallback local
+ */
+export async function verifyUserLoginAsync(
+  emailInput: string,
+  passwordInput: string
+): Promise<{ success: boolean; error?: string; user?: AppUser; driver?: Driver }> {
+  const cleanIdentifier = emailInput.trim().toLowerCase();
+  if (!cleanIdentifier || !passwordInput) {
+    return { success: false, error: 'Por favor, informe seu Login ou E-mail e sua senha.' };
+  }
+
+  // 0. Conta Mestre de Administrador (admin@race.com.br)
+  if (cleanIdentifier === ADMIN_EMAIL) {
+    return verifyUserLogin(cleanIdentifier, passwordInput);
+  }
+
+  // 1. Tentar buscar primeiro na nuvem Supabase
+  try {
+    const cloudUser = await getUsuarioSupabase(cleanIdentifier);
+    if (cloudUser) {
+      if (cloudUser.senha && cloudUser.senha !== passwordInput) {
+        return { success: false, error: 'Senha incorreta para esta conta.' };
+      }
+
+      const isMoto =
+        cloudUser.tipo === 'motoboy' ||
+        cloudUser.tipo === 'motoboy_passageiro' ||
+        cloudUser.tipo === 'motoboy_entregas' ||
+        cloudUser.categoria === 'moto_passageiro' ||
+        cloudUser.categoria === 'moto_entrega';
+
+      const isDriver =
+        cloudUser.tipo === 'driver' ||
+        cloudUser.tipo === 'motorista_economico' ||
+        cloudUser.tipo === 'motorista_confort' ||
+        isMoto;
+
+      let driverObj: Driver | undefined = undefined;
+      if (isDriver) {
+        driverObj = {
+          id: cloudUser.id,
+          name: cloudUser.nome,
+          email: cloudUser.email,
+          phone: cloudUser.celular || cloudUser.whatsapp || '',
+          avatar: cloudUser.avatar || '',
+          rating: Number(cloudUser.rating || 5.0),
+          totalRides: 0,
+          vehicleModel: cloudUser.modelo || (isMoto ? 'Honda CG 160 Fan' : 'Chevrolet Onix 1.0'),
+          vehiclePlate: cloudUser.placa || (isMoto ? 'MTO-1A23' : 'RCE-2B34'),
+          vehicleColor: isMoto ? 'Vermelha' : 'Branco',
+          vehicleYear: cloudUser.ano || 2023,
+          cpf: '123.456.789-00',
+          cnh: cloudUser.cnh || '99887766554',
+          category: (cloudUser.categoria as any) || (isMoto ? 'moto_passageiro' : 'economica'),
+          weeklyPlanActive: Boolean(cloudUser.plano_ativo),
+          weeklyPlanPrice: 200,
+          status: (cloudUser.status as any) || 'offline',
+          earningsToday: 0,
+          earningsWeek: 0,
+          walletBalance: Number(cloudUser.saldo || 0),
+          cnhVerified: true,
+          vehicleVerified: true,
+          criminalRecordClear: true,
+          lat: -23.0842,
+          lng: -47.2118,
+          registrationDate: cloudUser.data_cadastro || new Date().toISOString(),
+        };
+      }
+
+      const role = isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
+      const userPayload: AppUser = {
+        id: cloudUser.id,
+        name: cloudUser.nome,
+        email: cloudUser.email,
+        phone: cloudUser.celular || cloudUser.whatsapp || '',
+        whatsapp: cloudUser.whatsapp || cloudUser.celular || '',
+        login: cloudUser.login || cloudUser.email,
+        role: role as any,
+        tipo: (cloudUser.tipo as any) || role,
+        placa: cloudUser.placa || '',
+        avatar: cloudUser.avatar || '',
+        rating: Number(cloudUser.rating || 5.0),
+        driverData: driverObj,
+      };
+
+      // Atualiza cache local
+      saveUserAccount(
+        {
+          id: userPayload.id,
+          name: userPayload.name,
+          email: userPayload.email,
+          phone: userPayload.phone,
+          whatsapp: userPayload.whatsapp,
+          login: userPayload.login,
+          role: userPayload.role,
+          tipo: userPayload.tipo,
+          placa: userPayload.placa,
+          password: cloudUser.senha,
+          avatar: userPayload.avatar,
+          rating: userPayload.rating,
+          driverData: driverObj,
+          createdAt: cloudUser.data_cadastro || new Date().toISOString(),
+        },
+        true
+      );
+
+      return { success: true, user: userPayload, driver: driverObj };
+    }
+  } catch (err) {
+    console.warn('Aviso na busca no Supabase durante login, usando cache local:', err);
+  }
+
+  // 2. Se não encontrou no Supabase ou offline, consulta localmente
+  return verifyUserLogin(cleanIdentifier, passwordInput);
+}
+
+/**
  * Retorna as corridas isoladas do usuário autenticado
  * Motorista/Motoboy: só as corridas DELE
  * Passageiro: só as corridas que ELE pediu
@@ -366,6 +516,15 @@ export function saveIsolatedRide(ride: Ride, currentUser: AppUser | null): void 
     }
   } catch (err) {
     console.error('Erro ao salvar corrida isolada:', err);
+  }
+
+  // 4. Salvar na nuvem Supabase (tabela public.corridas)
+  try {
+    saveCorridaSupabase(ride, currentUser).catch((cloudErr) => {
+      console.warn('Aviso de sincronização Supabase corridas:', cloudErr);
+    });
+  } catch (cloudErr) {
+    console.warn('Erro ao disparar sincronização Supabase corridas:', cloudErr);
   }
 }
 

@@ -58,6 +58,7 @@ import {
   addDriverEarnings,
   checkMondayAutoDeduction
 } from './services/walletService';
+import { getCorridasSupabase, savePagamentoSupabase } from './supabase';
 
 export default function App() {
   // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
@@ -216,6 +217,20 @@ export default function App() {
       }
     } catch {}
   }, []);
+
+  // Sincronizar corridas isoladas da nuvem Supabase para o usuário logado
+  useEffect(() => {
+    if (!currentUser) return;
+    getCorridasSupabase(currentUser)
+      .then((cloudRides) => {
+        if (cloudRides && cloudRides.length > 0) {
+          setRidesHistory(cloudRides);
+        }
+      })
+      .catch((err) => {
+        console.warn('Aviso ao sincronizar corridas do Supabase:', err);
+      });
+  }, [currentUser]);
 
   // 3. Rota Secreta /admin: abre o AdminDashboard se o usuário for admin, senão volta para tela preta de login
   useEffect(() => {
@@ -678,6 +693,18 @@ export default function App() {
     if (currentUser?.driverData?.id === updated.id) {
       setCurrentUser((prev) => (prev ? { ...prev, driverData: updated } : null));
     }
+
+    // Salvar na tabela public.pagamentos no Supabase
+    savePagamentoSupabase({
+      id: driver.pendingPayment?.comprovanteId || `PAG-${Date.now()}`,
+      id_motorista: driver.id,
+      nome_motorista: driver.name,
+      email_motorista: driver.email,
+      valor: WEEKLY_FEE,
+      status: 'approved',
+      chave_pix: '9d9e5635-9e68-46bf-bffe-08bdae29c8ba',
+    });
+
     triggerPush(
       'Pagamento aprovado!',
       `O comprovante de R$ 200 de ${driver.name} foi aprovado! Status ONLINE liberado por 7 dias com 100% dos ganhos.`,
@@ -702,6 +729,18 @@ export default function App() {
     if (currentUser?.driverData?.id === updated.id) {
       setCurrentUser((prev) => (prev ? { ...prev, driverData: updated } : null));
     }
+
+    // Salvar na tabela public.pagamentos no Supabase
+    savePagamentoSupabase({
+      id: driver.pendingPayment?.comprovanteId || `PAG-${Date.now()}`,
+      id_motorista: driver.id,
+      nome_motorista: driver.name,
+      email_motorista: driver.email,
+      valor: WEEKLY_FEE,
+      status: 'rejected',
+      chave_pix: '9d9e5635-9e68-46bf-bffe-08bdae29c8ba',
+    });
+
     triggerPush(
       'Pagamento Reprovado',
       `O comprovante PIX de ${driver.name} foi reprovado. O condutor foi notificado para enviar novo comprovante.`,

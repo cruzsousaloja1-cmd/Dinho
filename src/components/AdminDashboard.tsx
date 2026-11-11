@@ -33,11 +33,22 @@ import {
   ArrowDownCircle,
   Copy,
   Star,
-  MessageSquare
+  MessageSquare,
+  Cloud,
+  Database,
+  RefreshCw,
+  Car
 } from 'lucide-react';
 import { getWithdrawals, markWithdrawalAsPaid } from '../services/walletService';
 import { WithdrawalRequest } from '../types';
 import { getStoredReviews, DriverReview } from '../services/reviewService';
+import { 
+  SUPABASE_URL, 
+  SUPABASE_ANON_KEY, 
+  SUPABASE_SETUP_SQL, 
+  testSupabaseConnection, 
+  saveUsuarioSupabase 
+} from '../supabase';
 
 interface AdminDashboardProps {
   drivers: Driver[];
@@ -68,11 +79,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onActivateAllDrivers,
   onRemoveAllAccounts,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'reports' | 'reviews'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'reports' | 'reviews' | 'supabase'>('overview');
   const [cadastrosSubTab, setCadastrosSubTab] = useState<'drivers' | 'passengers'>('drivers');
   const [driverFilterCategory, setDriverFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewProofImage, setPreviewProofImage] = useState<string | null>(null);
+
+  // Status da Nuvem Supabase
+  const [supabaseHealth, setSupabaseHealth] = useState<{
+    connected: boolean;
+    tables: { usuarios: boolean; corridas: boolean; pagamentos: boolean };
+    details: string;
+  } | null>(null);
+  const [isTestingSupabase, setIsTestingSupabase] = useState(false);
+  const [isSyncingSupabase, setIsSyncingSupabase] = useState(false);
+  const [copiedSQL, setCopiedSQL] = useState(false);
 
   // Avaliações & Reclamações dos Passageiros
   const [reviewsList, setReviewsList] = useState<DriverReview[]>(() => getStoredReviews());
@@ -320,6 +341,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {criticalIssues.length} alerta{criticalIssues.length > 1 ? 's' : ''}
             </span>
           )}
+        </button>
+        <button
+          onClick={() => setActiveTab('supabase')}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'supabase'
+              ? 'bg-[#ff6a00] text-white shadow'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Cloud className="w-4 h-4 text-emerald-600" />
+          <span>Nuvem Supabase</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         </button>
       </div>
 
@@ -1551,6 +1584,266 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: NUVEM SUPABASE */}
+      {activeTab === 'supabase' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Top Banner de Conexão */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-black text-white p-6 rounded-3xl border border-zinc-800 shadow-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 flex items-center justify-center font-black">
+                  <Cloud className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-xl text-white flex items-center gap-2">
+                    <span>Nuvem Supabase Conectada</span>
+                    <span className="text-[11px] bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-mono">
+                      LIVE
+                    </span>
+                  </h3>
+                  <p className="text-xs text-zinc-400 font-medium">
+                    Persistência em nuvem oficial para substituir o armazenamento local mantendo isolamento de dados
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  disabled={isTestingSupabase}
+                  onClick={async () => {
+                    setIsTestingSupabase(true);
+                    try {
+                      const health = await testSupabaseConnection();
+                      setSupabaseHealth(health);
+                      showToast(health.details);
+                    } finally {
+                      setIsTestingSupabase(false);
+                    }
+                  }}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-black transition-all cursor-pointer flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isTestingSupabase ? 'animate-spin' : ''}`} />
+                  <span>{isTestingSupabase ? 'Testando...' : 'Testar Conexão'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSyncingSupabase}
+                  onClick={async () => {
+                    setIsSyncingSupabase(true);
+                    let count = 0;
+                    try {
+                      for (const d of drivers) {
+                        await saveUsuarioSupabase({
+                          id: d.id,
+                          nome: d.name,
+                          email: d.email,
+                          celular: d.phone,
+                          whatsapp: d.phone,
+                          login: d.email.split('@')[0],
+                          senha: d.password || 'race123',
+                          tipo: d.category === 'economica' ? 'motorista_economico' : d.category === 'confort' ? 'motorista_confort' : 'motoboy_passageiro',
+                          categoria: d.category,
+                          placa: d.vehiclePlate,
+                          modelo: d.vehicleModel,
+                          ano: d.vehicleYear,
+                          cnh: d.cnh,
+                          avatar: d.avatar,
+                          rating: d.rating,
+                          saldo: d.walletBalance || 0,
+                          plano_ativo: d.weeklyPlanActive,
+                        });
+                        count++;
+                      }
+                      for (const p of passengers) {
+                        await saveUsuarioSupabase({
+                          id: p.id,
+                          nome: p.name,
+                          email: p.email,
+                          celular: p.phone,
+                          whatsapp: p.whatsapp || p.phone,
+                          login: p.login || p.email.split('@')[0],
+                          senha: p.password || '123456',
+                          tipo: 'passenger',
+                          categoria: 'economica',
+                          placa: '',
+                          modelo: '',
+                          ano: 2023,
+                          cnh: '',
+                          avatar: p.avatar,
+                          rating: p.rating || 5.0,
+                        });
+                        count++;
+                      }
+                      showToast(`Sincronização concluída! ${count} cadastros enviados para a nuvem Supabase.`);
+                    } catch (err: any) {
+                      showToast(`Erro na sincronização: ${err?.message || 'Tente novamente'}`);
+                    } finally {
+                      setIsSyncingSupabase(false);
+                    }
+                  }}
+                  className="px-4 py-2.5 bg-[#ff6a00] hover:bg-[#e05e00] text-white rounded-xl text-xs font-heading font-black transition-all cursor-pointer flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>{isSyncingSupabase ? 'Enviando...' : 'Sincronizar Cadastros'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Credenciais e Detalhes */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-2 border-t border-zinc-800">
+              <div className="bg-zinc-900/80 p-3 rounded-xl border border-zinc-800 space-y-1">
+                <span className="text-zinc-400 font-mono text-[11px] uppercase block">Project URL (Supabase)</span>
+                <span className="text-emerald-400 font-mono font-bold select-all break-all block">{SUPABASE_URL}</span>
+              </div>
+              <div className="bg-zinc-900/80 p-3 rounded-xl border border-zinc-800 space-y-1">
+                <span className="text-zinc-400 font-mono text-[11px] uppercase block">Publishable Anon Key</span>
+                <span className="text-[#ff6a00] font-mono font-bold select-all break-all block">{SUPABASE_ANON_KEY}</span>
+              </div>
+            </div>
+
+            {supabaseHealth && (
+              <div className={`p-3.5 rounded-xl border text-xs ${
+                supabaseHealth.connected ? 'bg-emerald-950/70 border-emerald-500/40 text-emerald-200' : 'bg-rose-950/70 border-rose-500/40 text-rose-200'
+              }`}>
+                <strong>Status do Teste:</strong> {supabaseHealth.details}
+              </div>
+            )}
+          </div>
+
+          {/* 3 Tabelas Oficiais Criadas no Supabase */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Tabela 1: usuarios */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black">
+                  <Users className="w-5 h-5" />
+                </div>
+                <span className="text-[11px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-mono font-bold">
+                  public.usuarios
+                </span>
+              </div>
+              <h4 className="font-heading font-black text-slate-900 text-base">Tabela de Usuários</h4>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                Armazena motoristas, motoboys, passageiros e login administrativo.
+              </p>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] font-mono text-slate-700 space-y-0.5">
+                <p>• id (chave primária)</p>
+                <p>• nome, email, celular, whatsapp</p>
+                <p>• login, senha</p>
+                <p>• tipo, categoria</p>
+                <p>• placa, modelo, ano, cnh, avatar</p>
+                <p>• rating, saldo, plano_ativo</p>
+              </div>
+            </div>
+
+            {/* Tabela 2: corridas */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
+                  <Car className="w-5 h-5" />
+                </div>
+                <span className="text-[11px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-mono font-bold">
+                  public.corridas
+                </span>
+              </div>
+              <h4 className="font-heading font-black text-slate-900 text-base">Tabela de Corridas</h4>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                Histórico em tempo real de cada corrida realizada com isolamento estrito de acesso.
+              </p>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] font-mono text-slate-700 space-y-0.5">
+                <p>• id (chave primária)</p>
+                <p>• id_passageiro, email_passageiro</p>
+                <p>• id_motorista, email_motorista</p>
+                <p>• origem (JSONB), destino (JSONB)</p>
+                <p>• valor, status, data</p>
+                <p>• rating_dado, comentario</p>
+              </div>
+            </div>
+
+            {/* Tabela 3: pagamentos */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
+                  <Wallet className="w-5 h-5" />
+                </div>
+                <span className="text-[11px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-mono font-bold">
+                  public.pagamentos
+                </span>
+              </div>
+              <h4 className="font-heading font-black text-slate-900 text-base">Tabela de Pagamentos</h4>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                Registro das assinaturas semanais de R$ 200 e saques via PIX oficial.
+              </p>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] font-mono text-slate-700 space-y-0.5">
+                <p>• id (chave primária)</p>
+                <p>• id_motorista, nome_motorista</p>
+                <p>• valor (R$ 200,00)</p>
+                <p>• status (pending, approved)</p>
+                <p>• chave_pix: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba</p>
+                <p>• data, comprovante_url</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Regras de Isolamento de Dados */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm space-y-3">
+            <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-emerald-600" />
+              <span>Garantia de Isolamento de Dados por Usuário</span>
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700">
+              <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200">
+                <strong className="text-emerald-950 block mb-1">Passageiro:</strong>
+                Vê exclusivamente suas próprias corridas solicitadas e histórico de rotas.
+              </div>
+              <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200">
+                <strong className="text-amber-950 block mb-1">Motorista / Motoboy:</strong>
+                Vê exclusivamente suas próprias corridas atendidas, saldo de carteira e ganhos dele.
+              </div>
+              <div className="p-3.5 bg-purple-50 rounded-2xl border border-purple-200">
+                <strong className="text-purple-950 block mb-1">Admin Geral (admin@race.com.br):</strong>
+                Acesso irrestrito a toda a frota, relatórios, saques e conciliação bancária.
+              </div>
+            </div>
+          </div>
+
+          {/* Script SQL para o Supabase SQL Editor */}
+          <div className="bg-slate-950 text-white rounded-3xl p-5 sm:p-6 border border-zinc-800 shadow-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="font-heading font-black text-base text-white flex items-center gap-2">
+                  <Database className="w-5 h-5 text-[#ff6a00]" />
+                  <span>Script SQL para o Supabase SQL Editor</span>
+                </h4>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Execute este código no SQL Editor do seu projeto Supabase para criar as tabelas e políticas RLS
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
+                  setCopiedSQL(true);
+                  showToast('Código SQL copiado para a área de transferência!');
+                  setTimeout(() => setCopiedSQL(false), 3000);
+                }}
+                className="px-4 py-2.5 bg-white text-slate-950 hover:bg-slate-100 rounded-xl text-xs font-heading font-black transition-all cursor-pointer flex items-center gap-2 shrink-0 active:scale-95"
+              >
+                {copiedSQL ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedSQL ? 'SQL Copiado!' : 'Copiar SQL Completo'}</span>
+              </button>
+            </div>
+
+            <pre className="p-4 bg-black/60 rounded-2xl border border-zinc-800 text-[11px] font-mono text-zinc-300 overflow-x-auto max-h-64 leading-relaxed select-all">
+              {SUPABASE_SETUP_SQL}
+            </pre>
           </div>
         </div>
       )}

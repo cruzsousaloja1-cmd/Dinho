@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
+import { savePagamentoSupabase } from '../supabase';
 import { 
   WEEKLY_FEE, 
   WEEKLY_FEE_TEXT, 
@@ -810,6 +811,19 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       };
 
       onUpdateDriver(updated);
+
+      // Salvar na tabela public.pagamentos do Supabase
+      savePagamentoSupabase({
+        id: finalId,
+        id_motorista: currentDriver.id,
+        nome_motorista: currentDriver.name,
+        email_motorista: currentDriver.email,
+        valor: WEEKLY_FEE,
+        status: 'pending',
+        chave_pix: '9d9e5635-9e68-46bf-bffe-08bdae29c8ba',
+        comprovante_url: comprovanteImage || undefined,
+      });
+
       setIsSubmittingProof(false);
       setProofSentSuccessNotice(
         "Comprovante enviado! Aguarde aprovação do Admin em até 10 minutos. Você receberá notificação."

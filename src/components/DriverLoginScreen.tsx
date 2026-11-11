@@ -2,7 +2,8 @@ import React, { useState, useRef } from 'react';
 import { Driver, AppUser, VehicleCategory } from '../types';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
+import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
+import { getUsuarioSupabase } from '../supabase';
 
 interface DriverLoginScreenProps {
   drivers: Driver[];
@@ -32,6 +33,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginErrorMessage, setLoginErrorMessage] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Estados do cadastro com 5 campos: Nome, E-mail, WhatsApp, Login, Senha
   const [regName, setRegName] = useState('');
@@ -42,6 +44,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regErrorMessage, setRegErrorMessage] = useState<string | null>(null);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   // Foto de perfil do cadastro (Galeria do Celular ou Câmera)
   const [regAvatar, setRegAvatar] = useState<string | null>(null);
@@ -68,8 +71,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setViewMode('register');
   };
 
-  // Submit de Login
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  // Submit de Login (Nuvem Supabase + Fallback Local)
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginErrorMessage(null);
 
@@ -79,22 +82,29 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    // Valida credenciais (suporta email ou login username)
-    const result = verifyUserLogin(cleanIdentifier, loginPassword);
-    if (!result.success || !result.user) {
-      setLoginErrorMessage(result.error || 'Credenciais inválidas. Verifique seu login e senha.');
-      return;
-    }
-
+    setIsLoggingIn(true);
     try {
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-    } catch {}
+      // Valida credenciais no Supabase com fallback local
+      const result = await verifyUserLoginAsync(cleanIdentifier, loginPassword);
+      if (!result.success || !result.user) {
+        setLoginErrorMessage(result.error || 'Credenciais inválidas. Verifique seu login e senha.');
+        return;
+      }
 
-    onLoginSuccess(result.user, result.driver);
+      try {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      } catch {}
+
+      onLoginSuccess(result.user, result.driver);
+    } catch {
+      setLoginErrorMessage('Falha ao autenticar. Verifique sua conexão e tente novamente.');
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   // Submit do Cadastro com 5 campos (Nome, E-mail, WhatsApp, Login, Senha) + FOTO OBRIGATÓRIA
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegErrorMessage(null);
 
@@ -124,24 +134,39 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    // Verifica se já existe conta com esse e-mail ou login
-    const existingEmail = getUserAccount(cleanEmail);
-    if (existingEmail) {
-      setRegErrorMessage('Já existe uma conta cadastrada com este e-mail. Faça login para continuar.');
-      return;
-    }
+    setIsRegistering(true);
+    try {
+      // Verifica se já existe conta com esse e-mail (localmente ou no Supabase)
+      const existingEmail = getUserAccount(cleanEmail);
+      if (existingEmail) {
+        setRegErrorMessage('Já existe uma conta cadastrada com este e-mail. Faça login para continuar.');
+        return;
+      }
 
-    const existingLogin = getUserAccount(cleanLogin);
-    if (existingLogin) {
-      setRegErrorMessage('Este login de usuário já está em uso. Por favor, escolha outro login.');
-      return;
-    }
+      const cloudEmail = await getUsuarioSupabase(cleanEmail).catch(() => null);
+      if (cloudEmail) {
+        setRegErrorMessage('Já existe uma conta no sistema com este e-mail. Faça login para continuar.');
+        return;
+      }
 
-    const isPassengerRole = regRole === 'passenger';
-    const isDriverRole = regRole === 'driver';
-    const isMotoboyRole = regRole === 'motoboy';
+      // Verifica se já existe conta com esse login
+      const existingLogin = getUserAccount(cleanLogin);
+      if (existingLogin) {
+        setRegErrorMessage('Este login de usuário já está em uso. Por favor, escolha outro login.');
+        return;
+      }
 
-    const chosenAvatar = regAvatar;
+      const cloudLogin = await getUsuarioSupabase(cleanLogin).catch(() => null);
+      if (cloudLogin) {
+        setRegErrorMessage('Este login de usuário já está em uso na nuvem. Por favor, escolha outro login.');
+        return;
+      }
+
+      const isPassengerRole = regRole === 'passenger';
+      const isDriverRole = regRole === 'driver';
+      const isMotoboyRole = regRole === 'motoboy';
+
+      const chosenAvatar = regAvatar;
 
     // Criação do novo motorista/motoboy se aplicável
     let newDriverObj: Driver | undefined = undefined;
@@ -237,7 +262,12 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       }
       onLoginSuccess(newUser, newDriverObj);
     }
-  };
+  } catch (err: any) {
+    setRegErrorMessage('Erro ao cadastrar. Verifique sua conexão e tente novamente.');
+  } finally {
+    setIsRegistering(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#000000] text-white flex flex-col justify-center items-center px-4 sm:px-6 py-10 selection:bg-[#ff6a00] selection:text-white">
@@ -428,9 +458,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
               <button
                 type="submit"
-                className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-lg py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-5"
+                disabled={isLoggingIn}
+                className="w-full bg-[#ff6a00] hover:bg-[#e05e00] disabled:opacity-60 active:scale-[0.99] text-white font-heading font-black text-lg py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-5"
               >
-                ENTRAR NO RACE
+                {isLoggingIn ? 'ENTRANDO NA NUVEM...' : 'ENTRAR NO RACE'}
               </button>
             </form>
 
@@ -718,14 +749,18 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
               <button
                 type="submit"
-                disabled={!regAvatar}
+                disabled={!regAvatar || isRegistering}
                 className={`w-full font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl transition-all uppercase tracking-wider block mt-3 ${
-                  regAvatar
+                  regAvatar && !isRegistering
                     ? 'bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/25'
                     : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
                 }`}
               >
-                {regAvatar ? 'CRIAR CONTA E ENTRAR' : '📸 ADICIONE SUA FOTO PARA CONTINUAR'}
+                {isRegistering
+                  ? 'CRIANDO CONTA NA NUVEM...'
+                  : regAvatar
+                  ? 'CRIAR CONTA E ENTRAR'
+                  : '📸 ADICIONE SUA FOTO PARA CONTINUAR'}
               </button>
 
               <div className="text-center pt-2">
