@@ -152,10 +152,159 @@ export interface SupabasePagamentoRow {
 }
 
 /**
- * Salva usuário na tabela public.usuarios no Supabase
+ * 1. INSERT DIRETO NO CADASTRO (Novo Cadastro)
+ * Insere na tabela 'usuarios' do Supabase com as colunas reais: nome, e-mail, celular, senha, tipo, etc.
+ */
+export async function insertUsuarioSupabase(params: {
+  nome: string;
+  email: string;
+  celular: string;
+  senha: string;
+  tipo: string;
+  categoria?: string;
+  placa?: string;
+  modelo?: string;
+  ano?: number | string;
+  cnh?: string;
+}): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const cleanEmail = params.email.trim().toLowerCase();
+    const row: any = {
+      nome: params.nome.trim(),
+      'e-mail': cleanEmail,
+      celular: params.celular.trim(),
+      senha: params.senha,
+      tipo: params.tipo || 'passenger',
+      categoria: params.categoria || null,
+      placa: params.placa || null,
+      modelo: params.modelo || null,
+      ano: params.ano ? String(params.ano) : null,
+      cnh: params.cnh || null,
+    };
+
+    const { data, error } = await supabase.from('usuarios').insert([row]).select();
+
+    if (error) {
+      // Se der erro de coluna com 'e-mail', tenta com 'email' sem hífen
+      if (error.message?.includes('e-mail')) {
+        delete row['e-mail'];
+        row.email = cleanEmail;
+        const retry = await supabase.from('usuarios').insert([row]).select();
+        if (retry.error) {
+          return { success: false, error: retry.error.message };
+        }
+        return { success: true, data: retry.data?.[0] };
+      }
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data: data?.[0] };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Falha ao conectar com o Supabase' };
+  }
+}
+
+/**
+ * 2. LOGIN DIRETO NO SUPABASE
+ * Busca na tabela 'usuarios' pelo email + senha
+ */
+export async function loginUsuarioSupabase(
+  emailInput: string,
+  senhaInput: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  const cleanEmail = emailInput.trim().toLowerCase();
+  try {
+    // 1. Tenta buscar por 'e-mail' e 'senha'
+    let { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('e-mail', cleanEmail)
+      .eq('senha', senhaInput)
+      .maybeSingle();
+
+    // Fallback se a coluna for 'email'
+    if (error && error.message?.includes('e-mail')) {
+      const retry = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('email', cleanEmail)
+        .eq('senha', senhaInput)
+        .maybeSingle();
+      data = retry.data;
+      error = retry.error;
+    }
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    if (!data) {
+      return { success: false, error: 'Usuário não encontrado ou senha incorreta no Supabase.' };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Falha de conexão com o Supabase' };
+  }
+}
+
+/**
+ * 3. UPDATE QUANDO VIRAR MOTORISTA NO BOTÃO MOTORISTA
+ * Faz update na mesma linha do usuario com categoria, placa, modelo, ano, cnh
+ */
+export async function updateMotoristaSupabase(
+  emailInput: string,
+  params: {
+    categoria: string;
+    placa: string;
+    modelo: string;
+    ano?: number | string;
+    cnh: string;
+    tipo?: string;
+  }
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  const cleanEmail = emailInput.trim().toLowerCase();
+  try {
+    const updatePayload: any = {
+      categoria: params.categoria,
+      placa: params.placa,
+      modelo: params.modelo,
+      ano: params.ano ? String(params.ano) : null,
+      cnh: params.cnh,
+      tipo: params.tipo || 'driver',
+    };
+
+    let { data, error } = await supabase
+      .from('usuarios')
+      .update(updatePayload)
+      .eq('e-mail', cleanEmail)
+      .select();
+
+    if (error && error.message?.includes('e-mail')) {
+      const retry = await supabase
+        .from('usuarios')
+        .update(updatePayload)
+        .eq('email', cleanEmail)
+        .select();
+      data = retry.data;
+      error = retry.error;
+    }
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data: data?.[0] };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Falha ao atualizar dados de motorista no Supabase' };
+  }
+}
+
+/**
+ * Salva ou atualiza usuário na tabela public.usuarios no Supabase (compatibilidade)
  */
 export async function saveUsuarioSupabase(user: {
-  id: string;
+  id?: string;
   nome: string;
   email: string;
   celular?: string;
@@ -166,7 +315,7 @@ export async function saveUsuarioSupabase(user: {
   categoria?: string;
   placa?: string;
   modelo?: string;
-  ano?: number;
+  ano?: number | string;
   cnh?: string;
   avatar?: string;
   rating?: number;
@@ -174,71 +323,80 @@ export async function saveUsuarioSupabase(user: {
   plano_ativo?: boolean;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
-    const payload: SupabaseUsuarioRow = {
-      id: user.id,
-      nome: user.nome,
-      email: user.email.toLowerCase().trim(),
-      celular: user.celular || user.whatsapp || '',
-      whatsapp: user.whatsapp || user.celular || '',
-      login: (user.login || user.email).toLowerCase().trim(),
-      senha: user.senha || '',
-      tipo: user.tipo || 'passenger',
-      categoria: user.categoria || 'economica',
-      placa: user.placa || '',
-      modelo: user.modelo || '',
-      ano: user.ano || 2023,
-      cnh: user.cnh || '',
-      avatar: user.avatar || '',
-      rating: user.rating || 5.0,
-      saldo: user.saldo || 0,
-      plano_ativo: user.plano_ativo ?? false,
-    };
+    const cleanEmail = user.email.toLowerCase().trim();
 
-    const { data, error } = await supabase
-      .from('usuarios')
-      .upsert(payload, { onConflict: 'email' })
-      .select()
-      .single();
+    // Verifica se já existe na nuvem
+    const existing = await getUsuarioSupabase(cleanEmail);
 
-    if (error) {
-      console.warn('Aviso Supabase ao salvar usuario:', error.message);
-      return { success: false, error: error.message };
+    if (existing) {
+      // Faz UPDATE
+      const updateData: any = {
+        nome: user.nome,
+        celular: user.celular || user.whatsapp || '',
+        senha: user.senha || existing.senha,
+        tipo: user.tipo || existing.tipo || 'passenger',
+        categoria: user.categoria || existing.categoria,
+        placa: user.placa || existing.placa,
+        modelo: user.modelo || existing.modelo,
+        ano: user.ano ? String(user.ano) : existing.ano,
+        cnh: user.cnh || existing.cnh,
+      };
+
+      const { data, error } = await supabase
+        .from('usuarios')
+        .update(updateData)
+        .eq('e-mail', cleanEmail)
+        .select();
+
+      if (error) return { success: false, error: error.message };
+      return { success: true, data: data?.[0] };
+    } else {
+      // Faz INSERT direto
+      return insertUsuarioSupabase({
+        nome: user.nome,
+        email: cleanEmail,
+        celular: user.celular || user.whatsapp || '',
+        senha: user.senha || '123456',
+        tipo: user.tipo || 'passenger',
+        categoria: user.categoria,
+        placa: user.placa,
+        modelo: user.modelo,
+        ano: user.ano,
+        cnh: user.cnh,
+      });
     }
-
-    return { success: true, data };
   } catch (err: any) {
-    console.warn('Erro ao conectar ao Supabase (usuarios):', err?.message || err);
     return { success: false, error: err?.message || 'Falha de conexão com Supabase' };
   }
 }
 
 /**
- * Busca usuário por e-mail ou login no Supabase
+ * Busca usuário por e-mail no Supabase (suporta 'e-mail' e 'email')
  */
-export async function getUsuarioSupabase(emailOrLogin: string): Promise<SupabaseUsuarioRow | null> {
+export async function getUsuarioSupabase(emailOrLogin: string): Promise<any | null> {
   const clean = emailOrLogin.trim().toLowerCase();
   if (!clean) return null;
 
   try {
-    // Tenta por email
-    const { data: byEmail, error: errEmail } = await supabase
+    // 1. Tenta por 'e-mail'
+    const { data: byHyphen } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('e-mail', clean)
+      .maybeSingle();
+
+    if (byHyphen) return byHyphen;
+
+    // 2. Tenta por 'email'
+    const { data: byNoHyphen } = await supabase
       .from('usuarios')
       .select('*')
       .eq('email', clean)
       .maybeSingle();
 
-    if (byEmail) return byEmail as SupabaseUsuarioRow;
-
-    // Tenta por login
-    const { data: byLogin, error: errLogin } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('login', clean)
-      .maybeSingle();
-
-    if (byLogin) return byLogin as SupabaseUsuarioRow;
+    if (byNoHyphen) return byNoHyphen;
   } catch (err) {
-    console.warn('Aviso ao consultar Supabase por usuario:', err);
+    console.warn('Aviso ao consultar Supabase:', err);
   }
 
   return null;

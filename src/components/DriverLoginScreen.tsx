@@ -2,8 +2,8 @@ import React, { useState, useRef } from 'react';
 import { Driver, AppUser, VehicleCategory } from '../types';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
-import { getUsuarioSupabase } from '../supabase';
+import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
+import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase } from '../supabase';
 
 interface DriverLoginScreenProps {
   drivers: Driver[];
@@ -33,6 +33,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginErrorMessage, setLoginErrorMessage] = useState<string | null>(null);
+  const [loginSuccessMessage, setLoginSuccessMessage] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Estados do cadastro com 5 campos: Nome, E-mail, WhatsApp, Login, Senha
@@ -44,6 +45,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regErrorMessage, setRegErrorMessage] = useState<string | null>(null);
+  const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
 
   // Foto de perfil do cadastro (Galeria do Celular ou Câmera)
@@ -68,36 +70,114 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const handleStartRegister = (role: RegistrationRole) => {
     setRegRole(role);
     setRegErrorMessage(null);
+    setRegSuccessMessage(null);
     setViewMode('register');
   };
 
-  // Submit de Login (Nuvem Supabase + Fallback Local)
+  // Submit de Login - Busca o usuário diretamente na tabela "usuarios" no Supabase pelo email + senha
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginErrorMessage(null);
+    setLoginSuccessMessage(null);
 
-    const cleanIdentifier = loginIdentifier.trim();
+    const cleanIdentifier = loginIdentifier.trim().toLowerCase();
     if (!cleanIdentifier || !loginPassword) {
-      setLoginErrorMessage('Por favor, informe seu Login ou E-mail e sua senha.');
+      setLoginErrorMessage('Por favor, informe seu E-mail ou Login e sua senha.');
       return;
     }
 
     setIsLoggingIn(true);
     try {
-      // Valida credenciais no Supabase com fallback local
-      const result = await verifyUserLoginAsync(cleanIdentifier, loginPassword);
-      if (!result.success || !result.user) {
-        setLoginErrorMessage(result.error || 'Credenciais inválidas. Verifique seu login e senha.');
+      // 0. Conta Mestre de Administrador (admin@race.com.br)
+      if (cleanIdentifier === 'admin@race.com.br') {
+        const result = verifyUserLogin(cleanIdentifier, loginPassword);
+        if (!result.success || !result.user) {
+          setLoginErrorMessage(result.error || 'Credenciais inválidas para o Administrador.');
+          return;
+        }
+        setLoginSuccessMessage('Salvo no Supabase! Conectado como Administrador.');
+        try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
+        setTimeout(() => {
+          onLoginSuccess(result.user!, result.driver);
+        }, 400);
         return;
       }
 
-      try {
-        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-      } catch {}
+      // 1. Busca direta na tabela "usuarios" no Supabase pelo email + senha
+      const cloudRes = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
+      if (!cloudRes.success || !cloudRes.data) {
+        setLoginErrorMessage(cloudRes.error || 'Usuário não encontrado ou senha incorreta no Supabase.');
+        return;
+      }
 
-      onLoginSuccess(result.user, result.driver);
-    } catch {
-      setLoginErrorMessage('Falha ao autenticar. Verifique sua conexão e tente novamente.');
+      // Sucesso no Supabase
+      const row = cloudRes.data;
+      const userEmail = (row['e-mail'] || row.email || cleanIdentifier).toLowerCase().trim();
+      const isMoto = row.tipo === 'motoboy' || row.categoria?.includes('moto');
+      const isDriver = row.tipo === 'driver' || isMoto || Boolean(row.placa);
+
+      let driverObj: Driver | undefined = undefined;
+      if (isDriver) {
+        driverObj = {
+          id: `drv-${row.id}`,
+          name: row.nome,
+          email: userEmail,
+          phone: row.celular || '',
+          avatar: regAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+          rating: 5.0,
+          totalRides: 0,
+          vehicleModel: row.modelo || (isMoto ? 'Honda CG 160 Fan' : 'Chevrolet Onix 1.0'),
+          vehiclePlate: row.placa || (isMoto ? 'MTO-1A23' : 'RCE-2B34'),
+          vehicleColor: isMoto ? 'Vermelha' : 'Branco',
+          vehicleYear: parseInt(row.ano, 10) || 2023,
+          cpf: '123.456.789-00',
+          cnh: row.cnh || '99887766554',
+          category: (row.categoria as any) || (isMoto ? 'moto_passageiro' : 'economica'),
+          weeklyPlanActive: true,
+          weeklyPlanPrice: 200,
+          status: 'online',
+          earningsToday: 0,
+          earningsWeek: 0,
+          walletBalance: 0,
+          cnhVerified: true,
+          vehicleVerified: true,
+          criminalRecordClear: true,
+          lat: -23.0842,
+          lng: -47.2118,
+          registrationDate: row.created_at || new Date().toISOString(),
+        };
+      }
+
+      const userPayload: AppUser = {
+        id: `usr-${row.id}`,
+        name: row.nome,
+        email: userEmail,
+        phone: row.celular || '',
+        whatsapp: row.celular || '',
+        login: userEmail.split('@')[0],
+        role: isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger',
+        tipo: isMoto ? 'motoboy_passageiro' : isDriver ? 'motorista_economico' : 'passenger',
+        placa: row.placa || '',
+        avatar: regAvatar || undefined,
+        rating: 5.0,
+        driverData: driverObj,
+      };
+
+      // Salva sessão local
+      saveUserAccount({
+        ...userPayload,
+        password: row.senha,
+        createdAt: row.created_at || new Date().toISOString(),
+      }, true);
+
+      setLoginSuccessMessage('Salvo no Supabase! Acesso autorizado.');
+      try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
+
+      setTimeout(() => {
+        onLoginSuccess(userPayload, driverObj);
+      }, 400);
+    } catch (err: any) {
+      setLoginErrorMessage(`Erro no Supabase: ${err?.message || 'Falha de comunicação'}`);
     } finally {
       setIsLoggingIn(false);
     }
@@ -107,6 +187,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegErrorMessage(null);
+    setRegSuccessMessage(null);
 
     // 1. Foto Obrigatória para TODAS as opções: Motorista, Motoboy, Passageiro
     if (!regAvatar) {
@@ -136,138 +217,142 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
     setIsRegistering(true);
     try {
-      // Verifica se já existe conta com esse e-mail (localmente ou no Supabase)
-      const existingEmail = getUserAccount(cleanEmail);
-      if (existingEmail) {
-        setRegErrorMessage('Já existe uma conta cadastrada com este e-mail. Faça login para continuar.');
-        return;
-      }
-
+      // 1. Verifica duplicidade rápida no Supabase
       const cloudEmail = await getUsuarioSupabase(cleanEmail).catch(() => null);
       if (cloudEmail) {
         setRegErrorMessage('Já existe uma conta no sistema com este e-mail. Faça login para continuar.');
         return;
       }
 
-      // Verifica se já existe conta com esse login
-      const existingLogin = getUserAccount(cleanLogin);
-      if (existingLogin) {
-        setRegErrorMessage('Este login de usuário já está em uso. Por favor, escolha outro login.');
-        return;
-      }
-
-      const cloudLogin = await getUsuarioSupabase(cleanLogin).catch(() => null);
-      if (cloudLogin) {
-        setRegErrorMessage('Este login de usuário já está em uso na nuvem. Por favor, escolha outro login.');
-        return;
-      }
-
       const isPassengerRole = regRole === 'passenger';
       const isDriverRole = regRole === 'driver';
       const isMotoboyRole = regRole === 'motoboy';
-
       const chosenAvatar = regAvatar;
 
-    // Criação do novo motorista/motoboy se aplicável
-    let newDriverObj: Driver | undefined = undefined;
-    if (isDriverRole || isMotoboyRole) {
-      const driverId = isMotoboyRole ? `moto-${Date.now().toString().slice(-6)}` : `drv-${Date.now().toString().slice(-6)}`;
-      const category: VehicleCategory = isMotoboyRole ? 'moto_passageiro' : 'economica';
+      // Criação dos dados do condutor caso seja motorista/motoboy
+      let newDriverObj: Driver | undefined = undefined;
+      if (isDriverRole || isMotoboyRole) {
+        const driverId = isMotoboyRole ? `moto-${Date.now().toString().slice(-6)}` : `drv-${Date.now().toString().slice(-6)}`;
+        const category: VehicleCategory = isMotoboyRole ? 'moto_passageiro' : 'economica';
 
-      newDriverObj = {
-        id: driverId,
-        name: cleanName,
-        phone: cleanWhatsApp,
+        newDriverObj = {
+          id: driverId,
+          name: cleanName,
+          phone: cleanWhatsApp,
+          email: cleanEmail,
+          avatar: chosenAvatar,
+          rating: 5.0,
+          totalRides: 0,
+          vehicleModel: isMotoboyRole ? 'Honda CG 160 Fan' : 'Chevrolet Onix 1.0',
+          vehiclePlate: isMotoboyRole ? 'MTO-1A23' : 'RCE-2B34',
+          vehicleColor: isMotoboyRole ? 'Vermelha' : 'Branco',
+          vehicleYear: 2023,
+          vehiclePhoto: isMotoboyRole
+            ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
+            : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80',
+          cpf: '123.456.789-00',
+          cnh: '99887766554',
+          category,
+          weeklyPlanActive: false,
+          weeklyPlanPrice: 200,
+          weeklyPlanExpiresAt: null,
+          weeklyFeeExpiresAt: null,
+          status: 'offline',
+          earningsToday: 0,
+          earningsWeek: 0,
+          cnhVerified: true,
+          vehicleVerified: true,
+          criminalRecordClear: true,
+          lat: -23.0842,
+          lng: -47.2118,
+          registrationDate: new Date().toISOString(),
+        };
+      }
+
+      // 1. FAZER INSERT DIRETO NA TABELA "usuarios" NO SUPABASE COM nome, email, celular, senha, tipo
+      const supabaseRes = await insertUsuarioSupabase({
+        nome: cleanName,
         email: cleanEmail,
+        celular: cleanWhatsApp,
+        senha: regPassword,
+        tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
+        categoria: newDriverObj?.category,
+        placa: newDriverObj?.vehiclePlate,
+        modelo: newDriverObj?.vehicleModel,
+        ano: newDriverObj?.vehicleYear,
+        cnh: newDriverObj?.cnh,
+      });
+
+      if (!supabaseRes.success) {
+        setRegErrorMessage(`Erro ao salvar no Supabase: ${supabaseRes.error || 'Falha no banco de dados'}`);
+        return;
+      }
+
+      // Alerta de sucesso: Salvo no Supabase
+      setRegSuccessMessage('Salvo no Supabase');
+
+      const newUser: AppUser = {
+        id: isPassengerRole ? `psg-${Date.now().toString().slice(-6)}` : newDriverObj!.id,
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanWhatsApp,
+        whatsapp: cleanWhatsApp,
+        login: cleanLogin,
+        role: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
+        tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy_passageiro' : 'motorista_economico',
+        placa: newDriverObj?.vehiclePlate || '',
         avatar: chosenAvatar,
         rating: 5.0,
-        totalRides: 0,
-        vehicleModel: isMotoboyRole ? 'Honda CG 160 Fan' : 'Chevrolet Onix 1.0',
-        vehiclePlate: isMotoboyRole ? 'MTO-1A23' : 'RCE-2B34',
-        vehicleColor: isMotoboyRole ? 'Vermelha' : 'Branco',
-        vehicleYear: 2023,
-        vehiclePhoto: isMotoboyRole
-          ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
-          : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80',
-        cpf: '123.456.789-00',
-        cnh: '99887766554',
-        category,
-        weeklyPlanActive: false, // Inicia pendente de pagamento R$ 200/semana
-        weeklyPlanPrice: 200,
-        weeklyPlanExpiresAt: null,
-        weeklyFeeExpiresAt: null,
-        status: 'offline', // Ativado após pagamento PIX
-        earningsToday: 0,
-        earningsWeek: 0,
-        cnhVerified: true,
-        vehicleVerified: true,
-        criminalRecordClear: true,
-        lat: -23.0842,
-        lng: -47.2118,
-        registrationDate: new Date().toISOString(),
+        password: regPassword,
+        driverData: newDriverObj,
       };
+
+      // Salva no localStorage isolado com chave race_user_${email} e define race_current_user
+      saveUserAccount({
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        phone: newUser.phone,
+        whatsapp: newUser.whatsapp,
+        login: newUser.login,
+        role: newUser.role,
+        tipo: newUser.tipo,
+        placa: newUser.placa,
+        password: regPassword,
+        avatar: newUser.avatar,
+        rating: 5.0,
+        rides: [],
+        driverData: newDriverObj,
+        createdAt: new Date().toISOString(),
+      }, true);
+
+      try {
+        confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });
+      } catch {}
+
+      setTimeout(() => {
+        if (isPassengerRole) {
+          onRegisterPassengerSuccess(newUser);
+          // Passageiro entra direto na busca de corridas
+          onLoginSuccess(newUser);
+        } else if (isMotoboyRole) {
+          if (onRegisterMotoboySuccess && newDriverObj) {
+            onRegisterMotoboySuccess(newUser, newDriverObj);
+          }
+          onLoginSuccess(newUser, newDriverObj);
+        } else {
+          if (newDriverObj) {
+            onRegisterDriverSuccess(newUser, newDriverObj);
+          }
+          onLoginSuccess(newUser, newDriverObj);
+        }
+      }, 700);
+    } catch (err: any) {
+      setRegErrorMessage(`Erro ao salvar no Supabase: ${err?.message || 'Verifique sua conexão e tente novamente.'}`);
+    } finally {
+      setIsRegistering(false);
     }
-
-    const newUser: AppUser = {
-      id: isPassengerRole ? `psg-${Date.now().toString().slice(-6)}` : newDriverObj!.id,
-      name: cleanName,
-      email: cleanEmail,
-      phone: cleanWhatsApp,
-      whatsapp: cleanWhatsApp,
-      login: cleanLogin,
-      role: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
-      tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy_passageiro' : 'motorista_economico',
-      placa: newDriverObj?.vehiclePlate || '',
-      avatar: chosenAvatar,
-      rating: 5.0,
-      password: regPassword,
-      driverData: newDriverObj,
-    };
-
-    // Salva no localStorage isolado com chave race_user_${email} e define race_current_user
-    saveUserAccount({
-      id: newUser.id,
-      name: newUser.name,
-      email: newUser.email,
-      phone: newUser.phone,
-      whatsapp: newUser.whatsapp,
-      login: newUser.login,
-      role: newUser.role,
-      tipo: newUser.tipo,
-      placa: newUser.placa,
-      password: regPassword,
-      avatar: newUser.avatar,
-      rating: 5.0,
-      rides: [],
-      driverData: newDriverObj,
-      createdAt: new Date().toISOString(),
-    }, true);
-
-    try {
-      confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });
-    } catch {}
-
-    if (isPassengerRole) {
-      onRegisterPassengerSuccess(newUser);
-      // Passageiro entra direto na busca de corridas
-      onLoginSuccess(newUser);
-    } else if (isMotoboyRole) {
-      if (onRegisterMotoboySuccess && newDriverObj) {
-        onRegisterMotoboySuccess(newUser, newDriverObj);
-      }
-      onLoginSuccess(newUser, newDriverObj);
-    } else {
-      if (newDriverObj) {
-        onRegisterDriverSuccess(newUser, newDriverObj);
-      }
-      onLoginSuccess(newUser, newDriverObj);
-    }
-  } catch (err: any) {
-    setRegErrorMessage('Erro ao cadastrar. Verifique sua conexão e tente novamente.');
-  } finally {
-    setIsRegistering(false);
-  }
-};
+  };
 
   return (
     <div className="min-h-screen bg-[#000000] text-white flex flex-col justify-center items-center px-4 sm:px-6 py-10 selection:bg-[#ff6a00] selection:text-white">
@@ -418,6 +503,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
               </div>
             )}
 
+            {loginSuccessMessage && (
+              <div className="bg-emerald-950/80 border border-emerald-500 text-emerald-200 text-xs sm:text-sm p-3.5 rounded-2xl font-medium flex items-center gap-2.5 shadow-sm animate-pulse">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{loginSuccessMessage}</span>
+              </div>
+            )}
+
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
@@ -540,6 +632,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
               <div className="bg-red-950/80 border border-red-500/80 text-red-200 text-xs sm:text-sm p-3.5 rounded-2xl font-medium flex items-center gap-2.5 shadow-sm">
                 <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
                 <span>{regErrorMessage}</span>
+              </div>
+            )}
+
+            {regSuccessMessage && (
+              <div className="bg-emerald-950/80 border border-emerald-500 text-emerald-200 text-xs sm:text-sm p-3.5 rounded-2xl font-medium flex items-center gap-2.5 shadow-sm animate-pulse">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{regSuccessMessage}</span>
               </div>
             )}
 
