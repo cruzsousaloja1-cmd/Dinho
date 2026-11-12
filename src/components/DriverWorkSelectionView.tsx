@@ -25,6 +25,7 @@ import {
 import confetti from 'canvas-confetti';
 import { RACE_PIX_KEY, RACE_PIX_BANK, RACE_PIX_NAME, WEEKLY_FEE } from '../config/pricing';
 import { saveUserAccount } from '../services/userService';
+import { updateMotoristaSupabase } from '../supabase';
 
 export type WorkCategoryKey = 
   | 'motorista_economico' 
@@ -294,7 +295,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     } catch {}
   };
 
-  const handleSubmitDetails = (e: React.FormEvent) => {
+  const handleSubmitDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -381,6 +382,20 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
     saveUserAccount(updatedAccount, true);
     setCreatedDriver(newDriver);
+
+    // Atualiza diretamente no Supabase na tabela usuarios
+    try {
+      await updateMotoristaSupabase(currentUser.email, {
+        categoria: selectedCategory.vehicleCategory,
+        placa: cleanPlate,
+        modelo: cleanModel,
+        ano: yearNum,
+        cnh: `${cleanCnh} (EAR Ativo)`,
+        tipo: selectedCategory.role,
+      });
+    } catch (supaErr) {
+      console.warn('Aviso ao sincronizar no Supabase:', supaErr);
+    }
 
     try {
       confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
