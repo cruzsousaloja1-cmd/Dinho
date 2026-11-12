@@ -899,7 +899,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          <span>Plano {WEEKLY_FEE_BADGE}</span>
+          <span>Comissão 15% / Ganhos 85%</span>
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
         </button>
       </div>
@@ -907,30 +907,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       {/* SUBTAB 1: DRIVER DASHBOARD */}
       {activeSubTab === 'dashboard' && (
         <div className="space-y-4">
-          {/* Alerta de Assinatura Vencida se o plano estiver inativo */}
-          {!currentDriver.weeklyPlanActive && (
-            <div className="bg-rose-50 border-2 border-rose-400 rounded-3xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in">
-              <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                  <AlertTriangle className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="font-heading font-black text-rose-950 text-base sm:text-lg">
-                    ASSINATURA SEMANAL VENCIDA ({WEEKLY_FEE_TEXT})
-                  </h4>
-                  <p className="text-xs sm:text-sm text-rose-800 font-medium">
-                    Sua assinatura de R$ 200 venceu. Pague via PIX para liberar seu status ONLINE e receber chamados com 100% dos ganhos livres.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setActiveSubTab('subscription')}
-                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer whitespace-nowrap active:scale-95"
-              >
-                PAGAR R$ 200 VIA PIX
-              </button>
-            </div>
-          )}
+
 
           {/* Status & Online Toggle Card in White */}
           <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md">
@@ -1073,7 +1050,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               }`}
             >
               <CreditCard className="w-4 h-4" />
-              <span>Minha assinatura</span>
+              <span>Comissões (85%/15%)</span>
             </button>
             <button
               type="button"
@@ -1126,12 +1103,15 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                               </p>
                             </div>
                           </div>
-                          <div className="text-right self-end sm:self-auto">
+                          <div className="text-right self-end sm:self-auto space-y-0.5">
                             <span className="text-2xl sm:text-3xl font-heading font-black text-[#ff6a00] block">
                               {formatBRL(incomingPrice)}
                             </span>
-                            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full inline-block">
-                              100% dos Ganhos Livres (R$ 0,00 Taxa)
+                            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full inline-block">
+                              Você ganha {formatBRL(Number((incomingPrice * 0.85).toFixed(2)))} (85%)
+                            </span>
+                            <span className="text-[11px] font-mono text-slate-500 block">
+                              Comissão Race 15%: {formatBRL(Number((incomingPrice * 0.15).toFixed(2)))}
                             </span>
                           </div>
                         </div>
@@ -1237,16 +1217,18 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
                           <button
                             onClick={() => {
+                              const driverEarns = Number((incomingPrice * 0.85).toFixed(2));
+                              const raceCommission = Number((incomingPrice * 0.15).toFixed(2));
                               onUpdateDriver({
                                 ...currentDriver,
-                                earningsToday: currentDriver.earningsToday + incomingPrice,
-                                earningsWeek: currentDriver.earningsWeek + incomingPrice,
+                                earningsToday: currentDriver.earningsToday + driverEarns,
+                                earningsWeek: currentDriver.earningsWeek + driverEarns,
                                 totalRides: currentDriver.totalRides + 1,
                               });
                               if (activeRide && onAcceptIncomingRide) {
                                 onAcceptIncomingRide(activeRide);
                               }
-                              setAcceptedRideNotice(`Corrida aceita! Rota enviada para o GPS. Ganhos de ${formatBRL(incomingPrice)} creditados (100% livres).`);
+                              setAcceptedRideNotice(`Você ganhou ${formatBRL(driverEarns)} nesta corrida (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`);
                               setIsDriverGpsOpen(true);
                               try {
                                 confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
@@ -1295,7 +1277,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       Minhas Corridas Atendidas
                     </h4>
                     <p className="text-xs text-slate-500">
-                      Total registrado: {currentDriver.totalRides} corridas • 100% dos ganhos livres
+                      Total registrado: {currentDriver.totalRides} corridas • 85% repasse líquido (Comissão Race 15%)
                     </p>
                   </div>
                   <span className="text-xs bg-amber-100 text-amber-900 font-bold px-2.5 py-1 rounded-full border border-amber-300">
@@ -1308,31 +1290,40 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <Car className="w-10 h-10 text-slate-400 mx-auto mb-2" />
                     <p className="text-sm font-bold text-slate-700">Nenhuma corrida finalizada ainda</p>
                     <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                      Suas corridas atendidas aparecerão exclusivamente aqui, com recibo e 100% dos ganhos livres creditados diretamente para você.
+                      Suas corridas atendidas aparecerão exclusivamente aqui, com recibo e 85% dos ganhos creditados diretamente no seu saldo (comissão Race 15%).
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {rides
                       .filter((r) => r.driver?.id === currentDriver.id || r.driver?.email?.toLowerCase() === currentDriver.email?.toLowerCase())
-                      .map((ride) => (
-                        <div key={ride.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-mono font-bold text-slate-500">#{ride.id}</span>
-                              <span className="text-xs bg-emerald-100 text-emerald-800 font-black px-2 py-0.5 rounded">
-                                Concluída
+                      .map((ride) => {
+                        const driverEarns = ride.driverEarnings || Number((ride.price * 0.85).toFixed(2));
+                        const raceCommission = ride.platformFee || Number((ride.price * 0.15).toFixed(2));
+                        return (
+                          <div key={ride.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono font-bold text-slate-500">#{ride.id}</span>
+                                <span className="text-xs bg-emerald-100 text-emerald-800 font-black px-2 py-0.5 rounded">
+                                  Concluída
+                                </span>
+                              </div>
+                              <p className="text-sm font-bold text-slate-900">{ride.pickup.address} → {ride.destination.address}</p>
+                              <p className="text-xs text-slate-500">Passageiro: {ride.passengerName} • {ride.distanceKm} km</p>
+                            </div>
+                            <div className="text-right shrink-0 space-y-0.5">
+                              <span className="text-base font-heading font-black text-slate-900 block">{formatBRL(ride.price)}</span>
+                              <span className="text-xs text-emerald-700 font-bold block">
+                                Ganho (85%): {formatBRL(driverEarns)}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-mono block">
+                                Race (15%): {formatBRL(raceCommission)}
                               </span>
                             </div>
-                            <p className="text-sm font-bold text-slate-900">{ride.pickup.address} → {ride.destination.address}</p>
-                            <p className="text-xs text-slate-500">Passageiro: {ride.passengerName} • {ride.distanceKm} km</p>
                           </div>
-                          <div className="text-right shrink-0">
-                            <span className="text-base font-heading font-black text-amber-700 block">{formatBRL(ride.price)}</span>
-                            <span className="text-[11px] text-emerald-700 font-bold">100% Livre</span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -1365,59 +1356,40 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </div>
 
                   <div>
-                    <span className="text-xs text-zinc-400 font-medium block">Saldo Bruto Acumulado:</span>
+                    <span className="text-xs text-zinc-400 font-medium block">Saldo Disponível:</span>
                     <div className="text-4xl sm:text-5xl font-heading font-black text-[#ff6a00] mt-1 tracking-tight">
                       {formatBRL(summary.gross)}
                     </div>
-                    <p className="text-xs text-zinc-400 mt-1.5">
-                      O passageiro paga a corrida dentro do app (PIX ou Cartão). O dinheiro cai para o Admin e acumula automaticamente no seu saldo.
+                    <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Seu saldo: {formatBRL(summary.gross)} - Comissão Race já descontada</span>
+                    </div>
+                    <p className="text-xs text-zinc-400 mt-2">
+                      Você recebe 85% líquido de cada corrida direto no seu saldo. A comissão de intermediação da Race (15%) já é retida automaticamente na finalização da viagem.
                     </p>
                   </div>
 
-                  {/* 2. Regra de Desconto Automático da Assinatura Semanal (R$ 200) */}
+                  {/* Modelo 85% Motorista / 15% Race */}
                   <div className="bg-zinc-900/90 border border-zinc-700/80 rounded-2xl p-4 space-y-2">
                     <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
-                      Desconto Automático da Semana
+                      Divisão de Ganhos: 85% para Você • 15% Race
                     </span>
-                    <p className="text-sm sm:text-base font-heading font-black text-white">
-                      Você ganhou {formatBRL(summary.gross)} essa semana - Desconto assinatura {formatBRL(summary.weeklyFee)} - Você recebe {formatBRL(summary.net)}
-                    </p>
-                    <p className="text-xs text-zinc-400">
-                      Toda segunda-feira ou quando você clicar em "Sacar", descontamos automaticamente os R$ 200 da sua assinatura semanal do seu saldo para manter seu app liberado com 100% de repasse livre.
-                    </p>
-                  </div>
-
-                  {/* Alerta se o saldo for menor que R$ 200 */}
-                  {!summary.canWithdraw && summary.missingForFee > 0 && (
-                    <div className="bg-amber-950/40 border border-amber-500/60 rounded-2xl p-4 text-amber-200 text-xs sm:text-sm space-y-2">
-                      <div className="flex items-start gap-2.5">
-                        <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-heading font-black text-amber-300 text-sm sm:text-base">
-                            Falta R$ {summary.missingForFee.toFixed(2)} para pagar a semana
-                          </p>
-                          <p className="text-xs text-amber-200/90 mt-1">
-                            Faça mais corridas ou pague via PIX <strong className="font-mono text-white underline">{RACE_PIX_KEY}</strong>.
-                          </p>
-                        </div>
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div className="p-3 bg-black/40 rounded-xl border border-zinc-800">
+                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">Seu Ganho Líquido (85%)</span>
+                        <span className="text-base sm:text-lg font-heading font-black text-emerald-400">{formatBRL(summary.gross)}</span>
                       </div>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(RACE_PIX_KEY);
-                            setIsCopiedAdminPix(true);
-                            setTimeout(() => setIsCopiedAdminPix(false), 2500);
-                          }}
-                          className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-sm"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>{isCopiedAdminPix ? 'Chave PIX Copiada!' : `Copiar PIX ${RACE_PIX_KEY}`}</span>
-                        </button>
+                      <div className="p-3 bg-black/40 rounded-xl border border-zinc-800">
+                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">Comissão Race (15%)</span>
+                        <span className="text-base sm:text-lg font-heading font-black text-amber-400">
+                          {formatBRL(summary.gross > 0 ? Number((summary.gross / 0.85 * 0.15).toFixed(2)) : 0)}
+                        </span>
                       </div>
                     </div>
-                  )}
+                    <p className="text-xs text-zinc-400">
+                      Sem taxa semanal de R$ 200, sem mensalidade e sem custo para trabalhar. Saque seu saldo a qualquer momento via PIX.
+                    </p>
+                  </div>
 
                   {/* Feedback de Sucesso */}
                   {withdrawalSuccessMessage && (
@@ -1523,65 +1495,73 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             );
           })()}
 
-          {/* SEÇÃO 3: MINHA ASSINATURA */}
+          {/* SEÇÃO 3: COMISSÕES & MODELO 85% / 15% */}
           {dashboardSection === 'assinatura' && (
             <div className="space-y-4">
-              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-md space-y-4">
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-md space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                   <div>
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Assinatura Semanal RACE</span>
-                    <h3 className="font-heading font-black text-2xl text-slate-950">{WEEKLY_FEE_TEXT}</h3>
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 uppercase tracking-wider inline-block mb-1">
+                      NOVO MODELO RACE
+                    </span>
+                    <h3 className="font-heading font-black text-2xl text-slate-950">85% para Você • 15% Race</h3>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-heading font-black flex items-center gap-1.5 ${
-                    subStatus.isActive ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
-                  }`}>
-                    {subStatus.isActive ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-rose-600" />}
-                    <span>{subDetails.badgeLabel || (subStatus.isActive ? 'PLANO ATIVO' : 'VENCIDO')}</span>
+                  <span className="px-3 py-1 rounded-full text-xs font-heading font-black flex items-center gap-1.5 bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>TAXA ZERO PARA TRABALHAR</span>
                   </span>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-3">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 font-medium">Status de Validade:</span>
-                    <span className="font-bold text-slate-900">{subStatus.label}</span>
+                    <span className="text-slate-600 font-medium">Mensalidade:</span>
+                    <span className="font-bold text-emerald-700">R$ 0,00 (Sem mensalidade)</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 font-medium">Ciclo:</span>
-                    <span className="font-bold text-slate-900">7 dias corridos</span>
+                    <span className="text-slate-600 font-medium">Taxa semanal anterior:</span>
+                    <span className="font-bold text-slate-500 line-through">R$ 200,00 / semana (Cancelada)</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 font-medium">Comissão por corrida:</span>
-                    <span className="font-black text-emerald-700">0% (100% dos ganhos livres)</span>
+                    <span className="text-slate-600 font-medium">Repasse líquido por corrida:</span>
+                    <span className="font-black text-emerald-700">85% do valor integral</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-600 font-medium">Comissão Race:</span>
+                    <span className="font-bold text-amber-700">15% de intermediação</span>
                   </div>
                 </div>
 
-                {/* Chave PIX oficial */}
-                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-300 space-y-2">
-                  <span className="text-xs font-bold text-amber-900 uppercase block">Chave PIX Oficial para Pagamento:</span>
-                  <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-amber-300 gap-2">
-                    <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 truncate">
-                      {RACE_PIX_KEY}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyRacePixKey}
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg cursor-pointer shrink-0"
-                    >
-                      {copiedRacePix ? 'Copiado!' : 'Copiar'}
-                    </button>
+                {/* Tabela de Exemplos */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-heading font-black text-slate-700 uppercase tracking-wider">
+                    Exemplos Reais de Ganhos:
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div className="p-3 bg-orange-50/70 border border-orange-200 rounded-xl space-y-1">
+                      <span className="font-black text-orange-800 block">Confort (R$ 11,20)</span>
+                      <p className="text-emerald-700 font-bold">Você recebe: R$ 9,52</p>
+                      <p className="text-slate-500">Race 15%: R$ 1,68</p>
+                    </div>
+                    <div className="p-3 bg-cyan-50/70 border border-cyan-200 rounded-xl space-y-1">
+                      <span className="font-black text-cyan-800 block">Motoboy Passageiro (R$ 6,16)</span>
+                      <p className="text-emerald-700 font-bold">Você recebe: R$ 5,24</p>
+                      <p className="text-slate-500">Race 15%: R$ 0,92</p>
+                    </div>
+                    <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-1">
+                      <span className="font-black text-amber-800 block">Motoboy Entregas (R$ 6,90)</span>
+                      <p className="text-emerald-700 font-bold">Você recebe: R$ 5,87</p>
+                      <p className="text-slate-500">Race 15%: R$ 1,03</p>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-amber-800">
-                    Favorecido: {RACE_PIX_NAME} • Banco: {RACE_PIX_BANK}
-                  </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={handleOpenPixModal}
-                  className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black text-sm sm:text-base shadow-md cursor-pointer transition-all active:scale-[0.99] flex items-center justify-center gap-2"
+                  onClick={() => setDashboardSection('ganhos')}
+                  className="w-full py-4 rounded-2xl bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-sm sm:text-base shadow-md cursor-pointer transition-all active:scale-[0.99] flex items-center justify-center gap-2"
                 >
-                  <QrCode className="w-5 h-5" />
-                  <span>PAGAR / RENOVAR R$ 200 E ENVIAR COMPROVANTE</span>
+                  <Wallet className="w-5 h-5" />
+                  <span>IR PARA MEU SALDO & SOLICITAR SAQUE</span>
                 </button>
               </div>
             </div>
@@ -2679,110 +2659,118 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         );
       })()}
 
-      {/* SUBTAB 4: SUBSCRIPTION PLAN (R$ 200 SEMANAL) */}
+      {/* SUBTAB 4: COMISSÕES & GANHOS (85% MOTORISTA / 15% RACE) */}
       {activeSubTab === 'subscription' && (
         <div className="space-y-4">
-          {/* Card Principal de Assinatura Semanal */}
+          {/* Card Principal do Modelo 85% / 15% */}
           <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-7 shadow-lg space-y-6">
-            {/* Topo: Badge "PLANO ATIVO" verde ou "VENCIDO" vermelho + Texto: "Ativo até DD/MM/YYYY HH:mm" ou "Vencido em DD/MM" */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
               <div>
-                <span className="text-xs font-mono font-black uppercase tracking-wider text-slate-500 block mb-1">
-                  Assinatura Semanal RACE
+                <span className="text-xs font-mono font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 inline-block mb-1">
+                  NOVO MODELO DE REPASSE RACE
                 </span>
                 <h2 className="font-heading font-black text-slate-950 text-2xl sm:text-3xl">
-                  {WEEKLY_FEE_TEXT}
+                  85% para Você • 15% Race
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-600 font-medium mt-1">
-                  100% de todos os ganhos das corridas repassados integralmente para você. Sem taxa percentual.
+                  Você não paga nada para trabalhar. Sem mensalidade, sem taxa semanal de R$ 200.
                 </p>
               </div>
 
-              {/* Status da Assinatura: Badge + Texto */}
               <div className="flex flex-col items-start sm:items-end gap-1.5">
-                <span
-                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-heading font-black tracking-wider uppercase border shadow-xs ${
-                    subDetails.isActive
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      : 'bg-rose-100 text-rose-800 border-rose-300'
-                  }`}
-                >
-                  {subDetails.isActive ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  ) : (
-                    <AlertTriangle className="w-4 h-4 text-rose-600" />
-                  )}
-                  <span>{subDetails.badgeLabel}</span>
+                <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-heading font-black tracking-wider uppercase border shadow-xs bg-emerald-100 text-emerald-800 border-emerald-300">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>CONTA ATIVA E LIBERADA</span>
                 </span>
                 <span className="text-xs sm:text-sm font-heading font-bold text-slate-700">
-                  {subDetails.textLabel}
+                  Pronto para receber chamados
                 </span>
               </div>
             </div>
 
-            {/* Barra de Progresso de 7 dias */}
-            <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-2">
-              <div className="flex items-center justify-between text-xs sm:text-sm">
-                <span className="font-heading font-black text-slate-800 flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-amber-600" />
-                  <span>Ciclo Semanal ({WEEKLY_DAYS} dias)</span>
-                </span>
-                <span className="font-mono font-bold text-slate-600">
-                  {subDetails.isActive
-                    ? `${subDetails.daysLeft} de ${WEEKLY_DAYS} dias restantes`
-                    : 'Ciclo expirado - requer renovação'}
-                </span>
+            {/* Exemplos Práticos de Corridas */}
+            <div className="space-y-3">
+              <h4 className="font-heading font-black text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-[#ff6a00]" />
+                <span>Simulação Real de Ganhos por Categoria</span>
+              </h4>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                {/* Exemplo 1: Motorista Confort */}
+                <div className="p-4 bg-orange-50/60 rounded-2xl border border-orange-200 space-y-2">
+                  <span className="text-xs font-heading font-black text-[#ff6a00] uppercase block">
+                    Motorista Confort
+                  </span>
+                  <div className="text-xl font-heading font-black text-slate-900">
+                    Passageiro paga R$ 11,20
+                  </div>
+                  <div className="space-y-1 text-xs pt-1 border-t border-orange-200">
+                    <p className="font-bold text-emerald-700 flex items-center justify-between">
+                      <span>Você recebe (85%):</span>
+                      <span className="font-mono text-sm">R$ 9,52</span>
+                    </p>
+                    <p className="text-slate-600 flex items-center justify-between">
+                      <span>Comissão Race (15%):</span>
+                      <span className="font-mono">R$ 1,68</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Exemplo 2: Motoboy Passageiro */}
+                <div className="p-4 bg-cyan-50/60 rounded-2xl border border-cyan-200 space-y-2">
+                  <span className="text-xs font-heading font-black text-cyan-700 uppercase block">
+                    Motoboy Passageiro
+                  </span>
+                  <div className="text-xl font-heading font-black text-slate-900">
+                    Passageiro paga R$ 6,16
+                  </div>
+                  <div className="space-y-1 text-xs pt-1 border-t border-cyan-200">
+                    <p className="font-bold text-emerald-700 flex items-center justify-between">
+                      <span>Você recebe (85%):</span>
+                      <span className="font-mono text-sm">R$ 5,24</span>
+                    </p>
+                    <p className="text-slate-600 flex items-center justify-between">
+                      <span>Comissão Race (15%):</span>
+                      <span className="font-mono">R$ 0,92</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Exemplo 3: Motoboy Entregas */}
+                <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200 space-y-2">
+                  <span className="text-xs font-heading font-black text-amber-700 uppercase block">
+                    Motoboy Entregas
+                  </span>
+                  <div className="text-xl font-heading font-black text-slate-900">
+                    Passageiro paga R$ 6,90
+                  </div>
+                  <div className="space-y-1 text-xs pt-1 border-t border-amber-200">
+                    <p className="font-bold text-emerald-700 flex items-center justify-between">
+                      <span>Você recebe (85%):</span>
+                      <span className="font-mono text-sm">R$ 5,87</span>
+                    </p>
+                    <p className="text-slate-600 flex items-center justify-between">
+                      <span>Comissão Race (15%):</span>
+                      <span className="font-mono">R$ 1,03</span>
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="h-3.5 w-full bg-slate-200 rounded-full overflow-hidden p-0.5 border border-slate-300">
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${
-                    subDetails.isActive
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
-                      : 'bg-rose-500'
-                  }`}
-                  style={{ width: `${subDetails.progressPercent}%` }}
-                />
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Sua assinatura renova o acesso por 7 dias inteiros de chamados com 100% de repasse integral.
-              </p>
             </div>
 
-            {/* Economia: "Você já economizou R$ 1.240 vs taxa de 25% da Uber" */}
-            <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="font-heading font-black text-emerald-950 text-sm sm:text-base flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-emerald-700" />
-                  <span>Economia Real Comprovada</span>
-                </h4>
-                <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300">
-                  0% de Comissão
-                </span>
-              </div>
-
-              <div className="bg-white p-4 rounded-xl border border-emerald-200">
-                <p className="text-base sm:text-lg font-heading font-black text-emerald-900 leading-snug">
-                  Você já economizou R$ 1.240 vs taxa de 25% da Uber
-                </p>
-                <p className="text-xs text-slate-600 font-medium mt-1">
-                  Enquanto a Uber e 99 cobram de 25% a 35% de cada quilômetro rodado, na RACE todo o valor do passageiro cai integralmente na sua chave PIX.
-                </p>
-              </div>
-            </div>
-
-            {/* Inputs: Chave PIX do motorista (onde ele recebe 100% da corrida) */}
+            {/* Cadastro da Chave PIX do Condutor para Saques */}
             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs sm:text-sm font-heading font-black text-slate-900 flex items-center gap-2">
                   <Wallet className="w-4 h-4 text-emerald-600" />
-                  <span>Chave PIX do Motorista (Recebimento de 100% da Corrida)</span>
+                  <span>Sua Chave PIX Cadastrada para Recebimento de Saques</span>
                 </label>
                 <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  Repasse Direto
+                  Repasse Direto 85%
                 </span>
               </div>
               <p className="text-xs text-slate-600 font-medium">
-                Cadastre aqui sua chave PIX (CPF, telefone, e-mail ou aleatória). É para ela que o passageiro realiza o pagamento das corridas:
+                Mantenha sua chave PIX atualizada (CPF, telefone, e-mail ou aleatória) para envio dos saques:
               </p>
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -2809,37 +2797,19 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               )}
             </div>
 
-            {/* Status do Pagamento Pendente se houver */}
-            {currentDriver.pendingPayment?.status === 'pending' && (
-              <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 shadow-sm">
-                <Clock className="w-6 h-6 text-amber-600 shrink-0 mt-0.5 animate-pulse" />
-                <div className="space-y-1">
-                  <span className="text-xs font-mono font-bold text-amber-800 uppercase tracking-wider block">
-                    Comprovante em Análise
-                  </span>
-                  <h4 className="font-heading font-black text-amber-950 text-sm sm:text-base">
-                    Comprovante enviado! Aguarde aprovação do Admin em até 10 minutos.
-                  </h4>
-                  <p className="text-xs text-amber-900 font-medium">
-                    ID do Comprovante: <span className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-amber-300">{currentDriver.pendingPayment.comprovanteId}</span> &bull; Você receberá notificação assim que homologado no banco {RACE_PIX_BANK}.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Botão grande: "PAGAR R$200 DA SEMANA VIA PIX" -> abre modal */}
+            {/* Ação: Ir para Carteira e Saques */}
             <div className="pt-2">
               <button
                 type="button"
-                onClick={handleOpenPixModal}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-heading font-black py-4 px-6 rounded-2xl shadow-xl transition-all cursor-pointer text-base sm:text-lg flex items-center justify-center gap-3 border-2 border-emerald-500"
+                onClick={() => {
+                  setActiveSubTab('dashboard');
+                  setDashboardSection('ganhos');
+                }}
+                className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-98 text-white font-heading font-black py-4 px-6 rounded-2xl shadow-xl transition-all cursor-pointer text-base sm:text-lg flex items-center justify-center gap-3"
               >
-                <Wallet className="w-6 h-6 text-emerald-100" />
-                <span>PAGAR R$200 DA SEMANA VIA PIX</span>
+                <Wallet className="w-6 h-6 text-white" />
+                <span>VER MEU SALDO E SOLICITAR SAQUE</span>
               </button>
-              <p className="text-center text-xs text-slate-500 mt-2 font-medium">
-                Pague pelo seu banco com a chave PIX oficial e envie o comprovante para liberação em até 10 minutos.
-              </p>
             </div>
           </div>
         </div>

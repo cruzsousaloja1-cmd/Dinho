@@ -110,6 +110,8 @@ export function setWeeklyFeeDeducted(driverId: string, deducted: boolean = true)
 
 /**
  * Calcula o resumo da carteira do motorista
+ * NOVO MODELO: A comissão da Race (15%) já é descontada na corrida.
+ * O saldo do motorista (85%) é 100% livre para saque a qualquer momento, sem taxa de R$ 200.
  */
 export function calculateWalletSummary(driver: Driver): {
   gross: number;
@@ -120,42 +122,15 @@ export function calculateWalletSummary(driver: Driver): {
   alreadyPaidFee: boolean;
 } {
   const gross = getDriverBalance(driver.id, driver.walletBalance || 0);
-  const alreadyPaidFee = hasWeeklyFeeBeenDeducted(driver.id);
 
-  if (alreadyPaidFee) {
-    return {
-      gross,
-      weeklyFee: 0,
-      net: gross,
-      canWithdraw: gross > 0,
-      missingForFee: 0,
-      alreadyPaidFee: true,
-    };
-  }
-
-  // Ainda não descontou a semana:
-  const fee = WEEKLY_FEE; // R$ 200
-  if (gross >= fee) {
-    const net = Number((gross - fee).toFixed(2));
-    return {
-      gross,
-      weeklyFee: fee,
-      net,
-      canWithdraw: true,
-      missingForFee: 0,
-      alreadyPaidFee: false,
-    };
-  } else {
-    const missing = Number((fee - gross).toFixed(2));
-    return {
-      gross,
-      weeklyFee: fee,
-      net: 0,
-      canWithdraw: false,
-      missingForFee: missing,
-      alreadyPaidFee: false,
-    };
-  }
+  return {
+    gross,
+    weeklyFee: 0, // Sem taxa semanal / sem desconto de R$ 200
+    net: gross,   // Motorista recebe 100% do saldo de 85% dele
+    canWithdraw: gross > 0,
+    missingForFee: 0,
+    alreadyPaidFee: true,
+  };
 }
 
 /**
@@ -166,30 +141,10 @@ export function checkMondayAutoDeduction(driverOrId: Driver | string): {
   newBalance: number;
   message?: string;
 } {
+  // NOVO MODELO: Sem desconto semanal às segundas-feiras. O motorista recebe 85% líquido por corrida.
   const driverId = typeof driverOrId === 'string' ? driverOrId : driverOrId.id;
   const initialBalance = typeof driverOrId === 'string' ? undefined : driverOrId.walletBalance;
-
-  const now = new Date();
-  const isMonday = now.getDay() === 1; // 1 = Segunda-feira
-  const alreadyDeducted = hasWeeklyFeeBeenDeducted(driverId);
-
-  if (!isMonday || alreadyDeducted) {
-    return { deducted: false, newBalance: getDriverBalance(driverId, initialBalance || 0) };
-  }
-
-  const currentBalance = getDriverBalance(driverId, initialBalance || 0);
-  if (currentBalance >= WEEKLY_FEE) {
-    const newBalance = Number((currentBalance - WEEKLY_FEE).toFixed(2));
-    setDriverBalance(driverId, newBalance);
-    setWeeklyFeeDeducted(driverId, true);
-    return {
-      deducted: true,
-      newBalance,
-      message: `Desconto automático da assinatura semanal de R$ ${WEEKLY_FEE.toFixed(2)} realizado com sucesso!`,
-    };
-  }
-
-  return { deducted: false, newBalance: currentBalance };
+  return { deducted: false, newBalance: getDriverBalance(driverId, initialBalance || 0) };
 }
 
 /**
@@ -215,6 +170,7 @@ function saveWithdrawals(list: WithdrawalRequest[]) {
 
 /**
  * Solicitação de Saque pelo Motorista
+ * Saca 100% do saldo líquido acumulado (85% das corridas) sem desconto semanal
  */
 export function requestWithdrawal(
   driver: Driver,
@@ -236,26 +192,12 @@ export function requestWithdrawal(
     };
   }
 
-  if (!summary.canWithdraw) {
-    return {
-      success: false,
-      error: `Falta R$ ${summary.missingForFee.toFixed(2)} para pagar a semana - faça mais corridas ou pague via PIX ${RACE_PIX_KEY}`,
-      missingAmount: summary.missingForFee,
-      newBalance: summary.gross,
-    };
-  }
-
   if (summary.net <= 0) {
     return {
       success: false,
-      error: 'Você não possui saldo líquido disponível para saque.',
+      error: 'Você não possui saldo acumulado disponível para saque no momento.',
       newBalance: summary.gross,
     };
-  }
-
-  // Marca a taxa da semana como descontada
-  if (!summary.alreadyPaidFee) {
-    setWeeklyFeeDeducted(driver.id, true);
   }
 
   // Zera o saldo retirado
@@ -268,7 +210,7 @@ export function requestWithdrawal(
     driverEmail: driver.email,
     driverPhone: driver.phone,
     grossAmount: summary.gross,
-    weeklyFeeDeducted: summary.weeklyFee,
+    weeklyFeeDeducted: 0, // Zero taxa de desconto
     netAmount: summary.net,
     pixKey: pixKey.trim(),
     status: 'pending',

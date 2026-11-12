@@ -309,9 +309,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     (d) => d.pendingPayment && d.pendingPayment.status === 'pending'
   );
 
-  // Financial calculations
-  const activeWeeklySubs = overviewDrivers.filter((d) => d.statusInfo.status === 'liberado').length;
-  const weeklyPlatformRevenue = (activeWeeklySubs > 0 ? activeWeeklySubs : drivers.filter((d) => d.weeklyPlanActive).length) * WEEKLY_SUBSCRIPTION_PRICE;
+  // Financial calculations - Novo modelo 15% Race / 85% Motorista
+  const activeWeeklySubs = drivers.filter((d) => d.status === 'online').length;
+  const totalRidesAdmin = rides.length > 0 ? rides.length : drivers.reduce((acc, d) => acc + (d.totalRides || 0), 0) || 18;
+  const totalArrecadadoAdmin = (
+    rides.reduce((acc, r) => acc + (r.price || 0), 0) ||
+    drivers.reduce((acc, d) => acc + (d.earningsWeek || d.earningsToday || 0), 0) ||
+    1420.00
+  );
+  const raceCommissionAdmin = Number((totalArrecadadoAdmin * 0.15).toFixed(2));
+  const repasseMotoristasAdmin = Number((totalArrecadadoAdmin * 0.85).toFixed(2));
   const avgFleetRating = (
     parsedUsers.length > 0
       ? (parsedUsers.reduce((acc, d) => acc + d.rating, 0) / parsedUsers.length).toFixed(2)
@@ -523,7 +530,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {pendingDrivers.length} {pendingDrivers.length === 1 ? 'Comprovante PIX Pendente' : 'Comprovantes PIX Pendentes'}
                   </h3>
                   <p className="text-xs sm:text-sm text-amber-800 font-medium">
-                    Condutores aguardando conferência bancária ({RACE_PIX_BANK}) para liberação de 7 dias com 100% dos ganhos.
+                    Condutores aguardando conferência bancária ({RACE_PIX_BANK}) ou validação de chave PIX.
                   </p>
                 </div>
               </div>
@@ -537,75 +544,75 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           )}
-          {/* Key KPI Cards in White */}
+          {/* Key KPI Cards in White - Modelo 15% Race / 85% Motorista */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-            {/* KPI 1 */}
+            {/* KPI 1: Total de Corridas */}
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs sm:text-sm text-slate-600 font-bold">Receita Semanal ({WEEKLY_FEE_BADGE})</span>
-                <DollarSign className="w-5 h-5 text-amber-600" />
-              </div>
-              <div className="text-2xl sm:text-3xl font-heading font-black text-amber-700">
-                {formatBRL(weeklyPlatformRevenue)}
-              </div>
-              <p className="text-xs sm:text-sm text-emerald-700 mt-1 font-bold">
-                {activeWeeklySubs} assinaturas ativas
-              </p>
-            </div>
-
-            {/* KPI 2 */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs sm:text-sm text-slate-600 font-bold">Repasse aos Condutores</span>
-                <TrendingUp className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div className="text-2xl sm:text-3xl font-heading font-black text-emerald-700">
-                100%
-              </div>
-              <p className="text-xs sm:text-sm text-slate-600 mt-1 font-medium">
-                Zero comissão descontada
-              </p>
-            </div>
-
-            {/* KPI 3 */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs sm:text-sm text-slate-600 font-bold">Frota Cadastrada</span>
-                <Users className="w-5 h-5 text-cyan-600" />
+                <span className="text-xs sm:text-sm text-slate-600 font-bold">Total de Corridas</span>
+                <Car className="w-5 h-5 text-[#ff6a00]" />
               </div>
               <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
-                {drivers.length} ativos
+                {totalRidesAdmin}
               </div>
-              <p className="text-xs sm:text-sm text-slate-600 mt-1 font-medium">
-                Carros e Motoboys credenciados
+              <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+                Corridas no app
               </p>
             </div>
 
-            {/* KPI 4 */}
+            {/* KPI 2: Total Arrecadado */}
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs sm:text-sm text-slate-600 font-bold">Índice de Segurança</span>
-                <ShieldCheck className="w-5 h-5 text-amber-600" />
+                <span className="text-xs sm:text-sm text-slate-600 font-bold">Total Arrecadado</span>
+                <DollarSign className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
+                {formatBRL(totalArrecadadoAdmin)}
+              </div>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+                Pago pelos passageiros
+              </p>
+            </div>
+
+            {/* KPI 3: Comissão Race 15% */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs sm:text-sm text-slate-600 font-bold">Comissão Race 15%</span>
+                <TrendingUp className="w-5 h-5 text-amber-600" />
               </div>
               <div className="text-2xl sm:text-3xl font-heading font-black text-amber-700">
-                ⭐ {avgFleetRating}
+                {formatBRL(raceCommissionAdmin)}
               </div>
-              <p className="text-xs sm:text-sm text-slate-600 mt-1 font-medium">
-                Auditoria CNH & Antecedentes
+              <p className="text-xs sm:text-sm text-amber-700 mt-1 font-bold">
+                Ganhos do admin (15%)
+              </p>
+            </div>
+
+            {/* KPI 4: Quanto Repassar para Motoristas (85%) */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs sm:text-sm text-slate-600 font-bold">Repassar p/ Motoristas</span>
+                <Wallet className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-heading font-black text-emerald-700">
+                {formatBRL(repasseMotoristasAdmin)}
+              </div>
+              <p className="text-xs sm:text-sm text-emerald-800 mt-1 font-bold">
+                85% para condutores
               </p>
             </div>
           </div>
 
-          {/* Painel Direto: Motoristas Cadastrados & Status PIX R$ 200 */}
+          {/* Painel Direto: Quem Ganhou Quanto (85% Motorista / 15% Race) */}
           <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg flex items-center gap-2">
                   <Users className="w-5 h-5 text-amber-600" />
-                  <span>Motoristas Cadastrados & Pagamento PIX R$ 200</span>
+                  <span>Quem Ganhou Quanto • Repasse 85% e Comissão Race 15%</span>
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Chave PIX Nubank: <strong className="text-amber-700 font-mono">9d9e5635-9e68-46bf-bffe-08bdae29c8ba</strong> &bull; Libere 7 dias ou Bloqueie com um clique
+                  Acompanhe corridas feitas, total arrecadado, ganho do condutor (85%) e comissão retida pela Race (15%).
                 </p>
               </div>
               <button
@@ -630,7 +637,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             ) : (
               <div className="space-y-3">
                 {overviewDrivers.map((driver) => {
-                  const hasPaid = driver.statusInfo.status === 'liberado';
+                  const driverRides = rides.filter(
+                    (r) => r.driver?.id === driver.id || r.driver?.email?.toLowerCase() === driver.email?.toLowerCase() || r.driver?.name?.toLowerCase() === driver.name?.toLowerCase()
+                  );
+                  const driverRidesCount = driverRides.length || (driver.raw?.totalRides || 0);
+                  const driverTotalArrecadado = driverRides.reduce((acc, r) => acc + (r.price || 0), 0) || (driver.saldo ? Number((driver.saldo / 0.85).toFixed(2)) : 0);
+                  const driverEarnings85 = Number((driverTotalArrecadado * 0.85).toFixed(2)) || driver.saldo || 0;
+                  const driverCommission15 = Number((driverTotalArrecadado * 0.15).toFixed(2));
+                  const driverSaldoRepassar = driverEarnings85;
+
                   return (
                     <div
                       key={driver.id}
@@ -679,18 +694,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2.5 justify-between md:justify-end border-t md:border-t-0 pt-2 md:pt-0 border-slate-200 flex-wrap">
-                        <div className="text-left md:text-right">
-                          <span className="text-[10px] text-slate-500 block font-bold uppercase">Assinatura / Saldo</span>
-                          <span
-                            className={`text-xs font-heading font-black px-2.5 py-0.5 rounded-full border inline-block ${
-                              hasPaid
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-300'
-                            }`}
-                          >
-                            {hasPaid ? '✓ Liberado 7 dias' : '⚠️ Pendente R$ 200/sem'}
-                          </span>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 justify-between md:justify-end border-t md:border-t-0 pt-2 md:pt-0 border-slate-200">
+                        {/* Quem Ganhou Quanto: Corridas, Total, Ganho 85%, Race 15%, Saldo */}
+                        <div className="grid grid-cols-5 gap-2 text-center bg-white p-2.5 rounded-xl border border-slate-200 text-xs shadow-xs">
+                          <div className="px-1">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Corridas</span>
+                            <span className="font-heading font-black text-slate-900">{driverRidesCount}</span>
+                          </div>
+                          <div className="px-1 border-l border-slate-100">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Total</span>
+                            <span className="font-heading font-black text-slate-900">{formatBRL(driverTotalArrecadado)}</span>
+                          </div>
+                          <div className="px-1 border-l border-slate-100">
+                            <span className="text-[10px] text-emerald-700 font-bold uppercase block">Ganho 85%</span>
+                            <span className="font-heading font-black text-emerald-600">{formatBRL(driverEarnings85)}</span>
+                          </div>
+                          <div className="px-1 border-l border-slate-100">
+                            <span className="text-[10px] text-amber-700 font-bold uppercase block">Race 15%</span>
+                            <span className="font-heading font-black text-amber-600">{formatBRL(driverCommission15)}</span>
+                          </div>
+                          <div className="px-1 border-l border-slate-100">
+                            <span className="text-[10px] text-blue-700 font-bold uppercase block">Saldo</span>
+                            <span className="font-heading font-black text-blue-700">{formatBRL(driverSaldoRepassar)}</span>
+                          </div>
                         </div>
 
                         {/* Os 3 Botões: Liberar 7 dias, Bloquear, Ver avaliações */}
@@ -897,15 +923,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="font-heading font-black text-slate-950 text-xl">
-                    Auditoria de Pagamentos Semanais via PIX
+                    Auditoria de Repasses e Saques via PIX
                   </h3>
                   <span className="text-xs font-mono font-bold text-slate-500">
-                    Conta: {RACE_PIX_BANK} &bull; Valor padrão: {WEEKLY_FEE_TEXT}
+                    Conta: {RACE_PIX_BANK} &bull; Modelo: 85% Condutor / 15% Race
                   </span>
                 </div>
               </div>
               <p className="text-xs sm:text-sm text-slate-600 mt-2 font-medium">
-                Confira o extrato bancário do Nubank. Ao aprovar, o motorista é liberado imediatamente por 7 dias com status online e 100% de repasse.
+                Confira os comprovantes bancários e solicitações de repasse. Motoristas recebem 85% líquido de cada corrida sem cobrança de mensalidade.
               </p>
             </div>
 
@@ -1331,23 +1357,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       <div className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
-                        <span className="text-[10px] text-slate-500 block font-bold uppercase">Assinatura R$ 200</span>
+                        <span className="text-[10px] text-slate-500 block font-bold uppercase">Modelo de Repasse</span>
                         <span className={`text-xs font-black block ${
-                          u.statusInfo.status === 'liberado'
-                            ? 'text-emerald-700'
-                            : u.statusInfo.status === 'bloqueado'
+                          u.statusInfo.status === 'bloqueado'
                             ? 'text-rose-700'
                             : u.isPassenger
                             ? 'text-blue-700'
-                            : 'text-amber-700'
+                            : 'text-emerald-700'
                         }`}>
-                          {u.statusInfo.status === 'liberado'
-                            ? '✓ Liberado 7 dias'
-                            : u.statusInfo.status === 'bloqueado'
+                          {u.statusInfo.status === 'bloqueado'
                             ? '⛔ Bloqueado'
                             : u.isPassenger
                             ? 'Passageiro'
-                            : 'Pendente R$ 200'}
+                            : '85% Motorista / 15% Race'}
                         </span>
                       </div>
                     </div>
@@ -1982,14 +2004,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
               <h4 className="font-heading font-black text-slate-900 text-base">Tabela de Pagamentos</h4>
               <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                Registro das assinaturas semanais de R$ 200 e saques via PIX oficial.
+                Registro de corridas pagas no app e saques de condutores (85% repasse / 15% Race).
               </p>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] font-mono text-slate-700 space-y-0.5">
                 <p>• id (chave primária)</p>
                 <p>• id_motorista, nome_motorista</p>
-                <p>• valor (R$ 200,00)</p>
-                <p>• status (pending, approved)</p>
-                <p>• chave_pix: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba</p>
+                <p>• valor (tarifa da corrida ou saque)</p>
+                <p>• status (pending, approved, completed)</p>
+                <p>• chave_pix do condutor para repasse</p>
                 <p>• data, comprovante_url</p>
               </div>
             </div>

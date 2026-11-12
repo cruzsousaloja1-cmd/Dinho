@@ -134,7 +134,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           cnh: row.cnh || '99887766554',
           category: (row.categoria as any) || (isMoto ? 'moto_passageiro' : 'economica'),
           weeklyPlanActive: true,
-          weeklyPlanPrice: 200,
+          weeklyPlanPrice: 0,
           status: 'online',
           earningsToday: 0,
           earningsWeek: 0,
@@ -253,11 +253,11 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           cpf: '123.456.789-00',
           cnh: '99887766554',
           category,
-          weeklyPlanActive: false,
-          weeklyPlanPrice: 200,
+          weeklyPlanActive: true,
+          weeklyPlanPrice: 0,
           weeklyPlanExpiresAt: null,
           weeklyFeeExpiresAt: null,
-          status: 'offline',
+          status: 'online',
           earningsToday: 0,
           earningsWeek: 0,
           cnhVerified: true,
@@ -423,7 +423,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                       Cadastro de Motorista
                     </h3>
                     <p className="text-xs text-zinc-400 font-medium">
-                      Carro próprio &bull; 100% de repasse &bull; R$200/semana
+                      Carro próprio &bull; 85% para você &bull; Sem mensalidade
                     </p>
                   </div>
                 </div>
@@ -816,18 +816,15 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </div>
               </div>
 
-              {/* Aviso da Assinatura para Motorista/Motoboy */}
+              {/* Aviso do Modelo de Repasse para Motorista/Motoboy */}
               {(regRole === 'driver' || regRole === 'motoboy') && (
-                <div className="p-3.5 bg-amber-950/40 border border-amber-500/50 rounded-2xl text-xs text-amber-200 space-y-1">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-400">
+                <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/50 rounded-2xl text-xs text-emerald-200 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-400">
                     <ShieldCheck className="w-4 h-4" />
-                    <span>Plano Semanal: R$ 200/semana (100% dos Ganhos Livres)</span>
+                    <span>85% para Você • 15% Race</span>
                   </div>
-                  <p className="text-[11px] text-zinc-300">
-                    Chave PIX Oficial:{' '}
-                    <span className="font-mono font-bold text-[#ff6a00] select-all">
-                      9d9e5635-9e68-46bf-bffe-08bdae29c8ba
-                    </span>
+                  <p className="text-[11px] text-zinc-300 font-medium">
+                    Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.
                   </p>
                 </div>
               )}

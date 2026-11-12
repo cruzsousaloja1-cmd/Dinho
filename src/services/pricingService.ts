@@ -51,9 +51,12 @@ export const VEHICLE_CATEGORIES: Record<VehicleCategory, CategoryInfo> = {
   },
 };
 
-import { WEEKLY_FEE } from '../config/pricing';
+import { COMMISSION, RACE_COMMISSION_PERCENT, DRIVER_SHARE_PERCENT } from '../config/pricing';
 
-export const WEEKLY_SUBSCRIPTION_PRICE = WEEKLY_FEE; // R$ 200,00 semanal sem taxa de corrida
+export const RACE_COMMISSION_RATE = COMMISSION; // 0.15
+export { RACE_COMMISSION_PERCENT, DRIVER_SHARE_PERCENT };
+// O modelo anterior cobrava R$ 200/semana; agora taxa semanal é ZERO (0) e a Race cobra apenas 15% por corrida
+export const WEEKLY_SUBSCRIPTION_PRICE = 0;
 
 export function calculateFare(
   category: VehicleCategory,
@@ -69,11 +72,17 @@ export function calculateFare(
   const total = Math.max(cat.basePrice + kmCost, cat.basePrice);
   const roundedTotal = Number(total.toFixed(2));
 
-  // No RACE: 100% dos ganhos para o motorista/motoboy! 0 taxas!
+  // NOVO MODELO RACE: 15% Comissão do App Race, 85% Repasse ao Condutor
+  // Ex: R$ 11,20 -> Race R$ 1,68 (15%) | Motorista R$ 9,52 (85%)
+  // Ex: R$ 6,16  -> Race R$ 0,92 (15%) | Motoboy R$ 5,24 (85%)
+  // Ex: R$ 6,90  -> Race R$ 1,03 (15%) | Motoboy R$ 5,87 (85%)
+  const platformFee = Number((roundedTotal * 0.15).toFixed(2));
+  const driverEarnings = Number((roundedTotal - platformFee).toFixed(2));
+
   return {
     totalPrice: roundedTotal,
-    driverEarnings: roundedTotal, // 100%
-    platformFee: 0.00,           // 0% cobrança
+    driverEarnings, // 85%
+    platformFee,    // 15%
     breakdown: {
       base: cat.basePrice,
       perKm: kmCost,

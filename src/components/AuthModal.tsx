@@ -424,7 +424,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <Car className="w-4 h-4 text-amber-700" /> Dados do Veículo & Categoria
                 </span>
                 <span className="text-xs font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                  0% Taxas • 100% Seu
+                  85% seu • 15% Race (Sem mensalidade)
                 </span>
               </div>
 

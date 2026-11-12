@@ -155,8 +155,7 @@ export default function App() {
   const [isNotifCenterOpen, setIsNotifCenterOpen] = useState(false);
   const [notifications, setNotifications] = useState<PushNotification[]>(INITIAL_NOTIFICATIONS);
   const [currentToast, setCurrentToast] = useState<PushNotification | null>(null);
-  const [subscriptionExpiredModalOpen, setSubscriptionExpiredModalOpen] = useState(false);
-  const [expiredModalDriver, setExpiredModalDriver] = useState<Driver | null>(null);
+
 
   // 2. Auto-login no App.tsx: verificar localStorage.getItem('race_current_user') e restaurar sessão ativa
   useEffect(() => {
@@ -188,28 +187,18 @@ export default function App() {
             const userAcc = getUserAccount(parsed.email);
             const matched = userAcc?.driverData || parsed.driverData;
             if (matched) {
-              // Verifica se é segunda-feira e desconta R$200 automaticamente se ainda não descontado
-              checkMondayAutoDeduction(matched.id);
               const currentBalance = getDriverBalance(matched.id, matched.walletBalance || 0);
 
-              const now = new Date();
-              const expiresDate = matched.weeklyFeeExpiresAt
-                ? new Date(matched.weeklyFeeExpiresAt)
-                : matched.weeklyPlanExpiresAt
-                ? new Date(matched.weeklyPlanExpiresAt)
-                : null;
-              const isSubActive = Boolean(matched.weeklyPlanActive && expiresDate && expiresDate > now);
               const updatedMatched: Driver = {
                 ...matched,
                 walletBalance: currentBalance,
-                status: isSubActive ? 'online' : 'offline',
+                weeklyPlanActive: true,
+                status: 'online',
               };
               setCurrentDriver(updatedMatched);
-              if (!isSubActive) {
-                setLoginSuccessBanner(
-                  `Bem-vindo(a) de volta, ${matched.name}! Você está na Central de Corridas (Aguardando Corridas). ⚠️ Assinatura semanal de R$ 200 pendente. Chave PIX: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba.`
-                );
-              }
+              setLoginSuccessBanner(
+                `Bem-vindo(a) de volta, ${matched.name}! Você recebe 85% de cada corrida sem mensalidade. Central de Corridas pronta para receber chamados.`
+              );
             }
           }
           setActiveTab('rides');
@@ -274,54 +263,7 @@ export default function App() {
     return () => window.removeEventListener('hashchange', checkSecretAdminRoute);
   }, [currentUser]);
 
-  // 4. Bloqueio Automático a cada 1 minuto (Se weeklyFeeExpiresAt < now, set weeklyPlanActive = false e status = offline)
-  useEffect(() => {
-    const checkSubscriptions = () => {
-      const now = new Date();
-      setDrivers((prevDrivers) =>
-        prevDrivers.map((driver) => {
-          const expiresDate = driver.weeklyFeeExpiresAt
-            ? new Date(driver.weeklyFeeExpiresAt)
-            : driver.weeklyPlanExpiresAt
-            ? new Date(driver.weeklyPlanExpiresAt)
-            : null;
-
-          if (expiresDate && expiresDate < now) {
-            if (driver.weeklyPlanActive || driver.status === 'online') {
-              return {
-                ...driver,
-                weeklyPlanActive: false,
-                status: 'offline',
-              };
-            }
-          }
-          return driver;
-        })
-      );
-
-      setCurrentDriver((prev) => {
-        if (!prev) return prev;
-        const expiresDate = prev.weeklyFeeExpiresAt
-          ? new Date(prev.weeklyFeeExpiresAt)
-          : prev.weeklyPlanExpiresAt
-          ? new Date(prev.weeklyPlanExpiresAt)
-          : null;
-
-        if (expiresDate && expiresDate < now && (prev.weeklyPlanActive || prev.status === 'online')) {
-          return {
-            ...prev,
-            weeklyPlanActive: false,
-            status: 'offline',
-          };
-        }
-        return prev;
-      });
-    };
-
-    checkSubscriptions();
-    const interval = setInterval(checkSubscriptions, 60_000);
-    return () => clearInterval(interval);
-  }, []);
+  // Motoristas trabalham livres sem bloqueio de taxa semanal (modelo 15% Race / 85% motorista)
 
   // Simulated GPS movement when a ride is active
   useEffect(() => {
@@ -605,23 +547,6 @@ export default function App() {
   };
 
   const handleToggleDriverStatus = (driverId: string) => {
-    const target = drivers.find((d) => d.id === driverId);
-    if (target) {
-      const willBeOnline = target.status !== 'online';
-      const expiresDate = target.weeklyFeeExpiresAt
-        ? new Date(target.weeklyFeeExpiresAt)
-        : target.weeklyPlanExpiresAt
-        ? new Date(target.weeklyPlanExpiresAt)
-        : null;
-      const isExpired = !target.weeklyPlanActive || (expiresDate ? expiresDate < new Date() : false);
-
-      if (willBeOnline && isExpired) {
-        setExpiredModalDriver(target);
-        setSubscriptionExpiredModalOpen(true);
-        return;
-      }
-    }
-
     setDrivers((prev) =>
       prev.map((d) =>
         d.id === driverId
@@ -649,10 +574,9 @@ export default function App() {
     if (currentUser?.driverData?.id === updated.id) {
       setCurrentUser((prev) => (prev ? { ...prev, driverData: updated } : null));
     }
-    setSubscriptionExpiredModalOpen(false);
     triggerPush(
-      '🎉 Assinatura Semanal Ativa!',
-      `Pagamento de ${WEEKLY_FEE_TEXT} via PIX confirmado! Seu status está ONLINE e liberado para receber chamados com 100% de repasse.`,
+      '🎉 Status Online Ativado!',
+      'Modelo sem taxas fixas: você fica com 85% de cada corrida e a Race com 15%. Sem taxa semanal ou mensalidade!',
       'financial'
     );
     try {
@@ -870,32 +794,19 @@ export default function App() {
             user.tipo === 'motoboy_entregas';
 
           if (isDriverOrMotoboy && driver) {
-            checkMondayAutoDeduction(driver.id);
             const currentBal = getDriverBalance(driver.id, driver.walletBalance || 0);
-            const driverWithBal = { ...driver, walletBalance: currentBal };
+            const driverWithBal: Driver = { 
+              ...driver, 
+              walletBalance: currentBal,
+              weeklyPlanActive: true,
+              status: 'online' 
+            };
             setCurrentDriver(driverWithBal);
-            const expiresDate = driver.weeklyFeeExpiresAt
-              ? new Date(driver.weeklyFeeExpiresAt)
-              : driver.weeklyPlanExpiresAt
-              ? new Date(driver.weeklyPlanExpiresAt)
-              : null;
-            const isSubActive = Boolean(
-              driver.weeklyPlanActive && expiresDate && expiresDate > new Date()
+            handleUpdateDriver(driverWithBal);
+            setActiveTab('rides');
+            setLoginSuccessBanner(
+              `Bem-vindo(a), ${driver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
             );
-            if (isSubActive) {
-              handleUpdateDriver({ ...driverWithBal, status: 'online' });
-              setActiveTab('rides');
-              setLoginSuccessBanner(
-                `Bem-vindo(a), ${driver.name}! Você entrou na Central de Corridas com 100% dos ganhos livres.`
-              );
-            } else {
-              handleUpdateDriver({ ...driverWithBal, status: 'offline' });
-              // Vai direto para central de corridas com aviso de assinatura R$ 200
-              setActiveTab('rides');
-              setLoginSuccessBanner(
-                `Bem-vindo(a), ${driver.name}! Você está na Central de Corridas (Aguardando Corridas). ⚠️ ATENÇÃO: Sua assinatura semanal de R$ 200 está VENCIDA/PENDENTE. Chave PIX: 9d9e5635-9e68-46bf-bffe-08bdae29c8ba.`
-              );
-            }
           } else {
             // Passageiro: vai direto para tela de pedir corrida com mapa
             setActiveTab('rides');
@@ -1044,10 +955,6 @@ export default function App() {
               }}
               onOpenSupport={() => setIsSupportOpen(true)}
               onOpenShare={() => setIsShareOpen(true)}
-              onShowSubscriptionExpiredModal={() => {
-                setExpiredModalDriver(currentDriver);
-                setSubscriptionExpiredModalOpen(true);
-              }}
               onRenewWeeklyPlan={handleRenewWeeklyPlan}
               onTriggerToast={(title, msg, type) => triggerPush(title, msg, type || 'financial')}
             />
@@ -1189,69 +1096,6 @@ export default function App() {
         initialRole={activeTab === 'driver_portal' ? 'driver' : 'passenger'}
       />
 
-      {/* 4. Modal de Assinatura Semanal Vencida */}
-      {subscriptionExpiredModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white border-2 border-rose-300 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative text-center space-y-4">
-            <button
-              onClick={() => setSubscriptionExpiredModalOpen(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors cursor-pointer"
-              title="Fechar"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="w-16 h-16 rounded-3xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border-2 border-rose-200 shadow-sm">
-              <AlertTriangle className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-1.5">
-              <span className="text-xs font-mono font-black text-rose-600 uppercase tracking-widest bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 inline-block">
-                Assinatura Vencida
-              </span>
-              <h3 className="text-xl sm:text-2xl font-heading font-black text-slate-950">
-                Acesso aos Chamados Bloqueado
-              </h3>
-            </div>
-
-            <p className="text-sm sm:text-base text-slate-800 font-bold leading-relaxed px-2">
-              Sua assinatura semanal de R$200 venceu. Renove para voltar a receber corridas com 100% dos ganhos
-            </p>
-
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-slate-700 space-y-1.5 text-left font-medium">
-              <div className="flex items-center gap-2 text-emerald-950 font-bold">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Zero taxas sobre corridas (100% de repasse líquido)</span>
-              </div>
-              <div className="flex items-center gap-2 text-emerald-950 font-bold">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Ativação instantânea via PIX com validade de 7 dias</span>
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setSubscriptionExpiredModalOpen(false);
-                  setActiveTab('driver_portal');
-                }}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black py-4 px-4 rounded-2xl shadow-lg transition-all cursor-pointer active:scale-95 text-sm sm:text-base flex items-center justify-center gap-2"
-              >
-                <span>Pagar R$200 da semana via PIX (Copiar Chave & Comprovante)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSubscriptionExpiredModalOpen(false)}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-2xl transition-all cursor-pointer text-xs sm:text-sm"
-              >
-                Permanecer Offline
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Ergonomic Bottom Navigation Bar */}
       <BottomNav

@@ -63,7 +63,7 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
     title: 'Motorista Econômico',
     subtitle: 'Carro comum - ganhe com corridas baratas em Indaiatuba',
     tagline: 'Ideal para hatch, sedã e carros populares',
-    badge: 'R$ 2,50/km • 100% dos Ganhos',
+    badge: 'R$ 2,50/km • 85% para Você',
     pricePerKm: 'R$ 2,50/km',
     icon: <Car className="w-8 h-8 text-zinc-400" />,
     vehicleCategory: 'economica',
@@ -80,7 +80,7 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
       'CNH com anotação EAR ativa',
       'Carro 4 portas com Ar-condicionado',
       'Ano 2012 ou superior',
-      '100% dos ganhos livres (R$ 2,50/km)'
+      'Você fica com 85% de cada corrida (Race 15%) - Sem mensalidade'
     ],
     driverRequirements: [
       'CNH definitiva com anotação EAR (Exerce Atividade Remunerada) ativa',
@@ -99,7 +99,7 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
     safetyRequirements: [
       'Suporte veicular seguro para smartphone com carregador veicular',
       'Pneus em excelente estado de rodagem (sem desgaste no TWI) e estepe calibrado',
-      'Chave PIX cadastrada para recebimento direto de 100% das corridas'
+      'Chave PIX cadastrada para recebimento dos seus ganhos (85%)'
     ],
   },
   motorista_confort: {
@@ -143,7 +143,7 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
     safetyRequirements: [
       'Carregador de celular (USB / Tipo C / Lightning) disponível para o passageiro',
       'Vidros elétricos nas 4 portas e travas elétricas ativas',
-      'Chave PIX própria para recebimento de 100% da tarifa sem retenções'
+      'Chave PIX própria para recebimento de 85% da corrida direto para você'
     ],
   },
   motoboy_passageiro: {
@@ -186,7 +186,7 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
       '2 Capacetes com selo INMETRO e viseiras transparentes sem riscos (1 condutor + 1 passageiro)',
       'Fornecimento obrigatório de touca higiênica descartável a cada passageiro transportado',
       'Suporte de guidão firme e resistente a intempéries para navegação GPS',
-      'Chave PIX para repasse instantâneo de 100% das corridas'
+      'Chave PIX para recebimento de 85% dos ganhos de cada corrida'
     ],
   },
   motoboy_entregas: {
@@ -210,7 +210,7 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
       'CNH categoria A com EAR',
       'Baú 80L/90L/120L ou Bag Térmica',
       'Entregas de encomendas e compras',
-      'R$ 2,00/km • Flash & Delivery'
+      'Você fica com 85% e Race com 15% - Sem mensalidade'
     ],
     driverRequirements: [
       'CNH categoria A com anotação EAR ativa',
@@ -227,7 +227,7 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
     safetyRequirements: [
       'Capacete com selo do INMETRO e faixas refletivas',
       'Capa de proteção contra chuva e suporte estanque para smartphone',
-      'Chave PIX pessoal para recebimento integral do valor do frete'
+      'Chave PIX pessoal para recebimento de 85% do frete'
     ],
   },
 };
@@ -245,7 +245,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   onBackToRides,
   onRenewWeeklyPlan,
 }) => {
-  const [stage, setStage] = useState<'select_category' | 'fill_details' | 'pay_pix'>('select_category');
+  const [stage, setStage] = useState<'select_category' | 'fill_details'>('select_category');
   const [selectedKey, setSelectedKey] = useState<WorkCategoryKey>('motorista_economico');
 
   // Estado para expandir detalhes de exigências nos cards
@@ -344,14 +344,14 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80'),
       rating: 5.0,
       totalRides: 0,
-      status: 'offline', // Fica online após pagar ou confirmar assinatura
+      status: 'online', // Ativado diretamente
       lat: -23.0903,
       lng: -47.2180,
-      weeklyPlanActive: false, // Requer pagamento de R$ 200
-      weeklyFeePaidAt: null,
+      weeklyPlanActive: true,
+      weeklyFeePaidAt: new Date().toISOString(),
       weeklyFeeExpiresAt: null,
       weeklyPlanExpiresAt: null,
-      weeklyPlanPrice: WEEKLY_FEE,
+      weeklyPlanPrice: 0,
       pixKey: pixKey.trim() || cpf.trim() || currentUser.phone,
       trunkType: selectedCategory.hasTrunkType ? trunkType : undefined,
       earningsToday: 0,
@@ -398,43 +398,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     }
 
     try {
-      confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+      confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
     } catch {}
 
-    // Transição para tela de pagamento da assinatura R$ 200 via PIX
-    setStage('pay_pix');
-  };
-
-  const handleActivateDriverAfterPayment = () => {
-    if (!createdDriver) return;
-
-    // Ativa plano semanal por 7 dias
-    const activated: Driver = {
-      ...createdDriver,
-      status: 'online',
-      weeklyPlanActive: true,
-      weeklyFeePaidAt: new Date().toISOString(),
-      weeklyFeeExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    };
-
-    saveUserAccount({
-      id: currentUser.id,
-      name: currentUser.name,
-      email: currentUser.email,
-      phone: currentUser.phone,
-      password: currentUser.password,
-      role: selectedCategory.role,
-      tipo: selectedCategory.userTipo,
-      placa: activated.vehiclePlate,
-      avatar: activated.avatar,
-      rating: 5.0,
-      driverData: activated,
-      createdAt: new Date().toISOString(),
-    }, true);
-
-    onCompleteDriverRegister(activated);
-    if (onRenewWeeklyPlan) onRenewWeeklyPlan(activated);
+    // Conclui cadastro e libera acesso imediato como motorista online (85% para você, 15% Race)
+    onCompleteDriverRegister(newDriver);
   };
 
   // ESTÁGIO 1: SELECIONAR COMO QUER TRABALHAR NO RACE COM TODAS AS EXIGÊNCIAS VISÍVEIS
@@ -451,8 +419,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             <ArrowLeft className="w-4 h-4" />
             <span>Voltar para Corridas (Passageiro)</span>
           </button>
-          <span className="text-xs font-mono font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-            0% Comissões • 100% dos Ganhos Livres
+          <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+            Você fica com 85% • Race 15% • Sem mensalidade
           </span>
         </div>
 
@@ -579,8 +547,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
                 {/* Botão de Ação: Selecionar e Abrir Cadastro */}
                 <div className="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-500 font-mono">
-                    Assinatura: R$ 200/semana após homologação
+                  <span className="text-[11px] text-emerald-700 font-bold font-mono">
+                    Sem mensalidade: 85% para você, 15% Race
                   </span>
 
                   <button
@@ -877,16 +845,16 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
               </span>
             </label>
 
-            {/* Checkbox 4: Taxa Semanal R$ 200 */}
-            <label className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-300 hover:border-slate-400 rounded-2xl cursor-pointer transition-colors">
+            {/* Checkbox 4: Modelo 85% / 15% */}
+            <label className="flex items-start gap-3 p-3 bg-emerald-50 border border-emerald-300 hover:border-emerald-400 rounded-2xl cursor-pointer transition-colors">
               <input
                 type="checkbox"
                 checked={checkWeeklyFeeAwareness}
                 onChange={(e) => setCheckWeeklyFeeAwareness(e.target.checked)}
-                className="mt-0.5 w-4 h-4 text-[#ff6a00] rounded border-slate-300 focus:ring-[#ff6a00] cursor-pointer"
+                className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
               />
               <span className="text-xs text-slate-800 font-medium leading-relaxed">
-                <strong>4. Plano Semanal de R$ 200:</strong> Estou ciente de que, após o envio do cadastro, para liberar o recebimento de corridas é necessário pagar a assinatura de <strong>R$ 200/semana via PIX</strong> ({RACE_PIX_KEY}) com <strong>100% dos ganhos livres de comissões</strong>.
+                <strong>4. Modelo de Repasse:</strong> Você fica com <strong>85% de cada corrida</strong>, a Race fica com <strong>15%</strong> - <strong>sem mensalidade, sem taxa para trabalhar</strong>.
               </span>
             </label>
           </div>
@@ -896,90 +864,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             type="submit"
             className="w-full py-4 px-6 rounded-2xl bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-base sm:text-lg transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-4 active:scale-[0.99]"
           >
-            CONCLUIR E AUTORIZAR CADASTRO
+            CONCLUIR CADASTRO E COMEÇAR A TRABALHAR
           </button>
         </form>
       </div>
     );
   }
 
-  // ESTÁGIO 3: TELA DE ASSINATURA R$ 200 VIA PIX CONFORME SOLICITADO NO ITEM 2 DO PROMPT:
-  // "Depois do cadastro, mostrar: 'Agora pague R$200/semana PIX 9d9e5635-9e68-46bf-bffe-08bdae29c8ba para liberar'"
-  return (
-    <div className="space-y-6 max-w-xl mx-auto py-2 animate-fade-in">
-      <div className="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-6 sm:p-7 text-center space-y-5 shadow-sm">
-        <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto text-emerald-700 shadow-inner">
-          <CheckCircle2 className="w-10 h-10" />
-        </div>
-
-        <div className="space-y-2">
-          <h2 className="text-xl sm:text-2xl font-heading font-black text-slate-950">
-            Cadastro de Motorista Autorizado com Sucesso!
-          </h2>
-          <p className="text-xs text-slate-600 font-medium">
-            Categoria Homologada: <strong>{selectedCategory.title}</strong> &bull; Veículo: {createdDriver?.vehicleModel} ({createdDriver?.vehiclePlate})
-          </p>
-
-          {/* TEXTO EXATO EXIGIDO NO PROMPT */}
-          <div className="p-4 bg-white border-2 border-amber-400 rounded-2xl shadow-sm">
-            <p className="text-base sm:text-lg font-heading font-black text-slate-900 leading-snug">
-              Agora pague R$200/semana PIX 9d9e5635-9e68-46bf-bffe-08bdae29c8ba para liberar
-            </p>
-          </div>
-        </div>
-
-        {/* Card de Cópia da Chave PIX */}
-        <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 text-left space-y-3">
-          <div className="flex items-center justify-between text-xs font-heading font-black text-slate-600">
-            <span>CHAVE PIX OFICIAL RACE (NUBANK)</span>
-            <span className="text-emerald-700 font-mono font-bold">R$ 200,00</span>
-          </div>
-
-          <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-300">
-            <span className="font-mono text-xs sm:text-sm font-black text-slate-950 select-all truncate">
-              {RACE_PIX_KEY}
-            </span>
-            <button
-              type="button"
-              onClick={handleCopyPixKey}
-              className="ml-2 px-3 py-1.5 bg-[#ff6a00] hover:bg-[#e05e00] text-white rounded-lg text-xs font-heading font-black flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
-            >
-              {copiedPix ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              <span>{copiedPix ? 'Copiado!' : 'Copiar'}</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-500 font-medium pt-1">
-            <div>
-              <span className="block font-bold text-slate-700">Banco:</span>
-              <span>{RACE_PIX_BANK}</span>
-            </div>
-            <div>
-              <span className="block font-bold text-slate-700">Favorecido:</span>
-              <span>{RACE_PIX_NAME}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Botão de Liberação / Acesso às Corridas */}
-        <div className="space-y-3 pt-2">
-          <button
-            type="button"
-            onClick={handleActivateDriverAfterPayment}
-            className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-base transition-all cursor-pointer shadow-lg shadow-emerald-600/20 uppercase tracking-wider block active:scale-98"
-          >
-            CONFIRMAR PAGAMENTO E LIBERAR CORRIDAS
-          </button>
-
-          <button
-            type="button"
-            onClick={onBackToRides}
-            className="w-full py-3 px-5 rounded-2xl bg-white hover:bg-slate-100 text-slate-700 font-heading font-bold text-xs sm:text-sm border border-slate-300 transition-all cursor-pointer"
-          >
-            Sou passageiro (Pedir corrida)
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return null;
 };
