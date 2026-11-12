@@ -63,6 +63,7 @@ import {
   createAsaasCardPayment,
   checkAsaasPaymentStatus,
   markAsaasPaymentPaidLocally,
+  generateFallbackPixCopiaECola,
   AsaasPaymentResult,
   getAsaasApiKey,
 } from '../services/asaasService';
@@ -1310,6 +1311,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       {passengerStep === 'payment' && (() => {
         const fare = calculateFare(selectedCategory, dynamicDistanceKm);
         const isMoto = selectedCategory === 'moto_passageiro' || selectedCategory === 'moto_entrega';
+        // Código PIX completo retornado pelo Asaas (sem nenhum corte por slice ou substring)
+        const pixPayloadCompleto = (
+          asaasPayment?.pixQrCode?.payload ||
+          (asaasPayment?.pixQrCode as any)?.pixCopyPaste ||
+          generateFallbackPixCopiaECola(fare.totalPrice, `RACE${Math.round(fare.totalPrice * 100)}`)
+        ).trim();
 
         return (
           <div className="space-y-4 animate-fade-in">
@@ -1458,36 +1465,76 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </p>
                         </div>
 
-                        {/* Código PIX Copia e Cola */}
-                        <div className="space-y-2 text-left bg-white p-3.5 rounded-2xl border border-slate-200">
-                          <label className="text-[11px] font-bold text-slate-600 block uppercase font-mono">
-                            PIX Copia e Cola (Asaas):
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              readOnly
-                              value={asaasPayment?.pixQrCode?.payload || 'Carregando código PIX...'}
-                              className="w-full text-xs font-mono text-slate-800 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 select-all focus:outline-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const payload = asaasPayment?.pixQrCode?.payload || '';
-                                if (payload) {
-                                  try {
-                                    navigator.clipboard.writeText(payload);
-                                    setPixCopied(true);
-                                    setTimeout(() => setPixCopied(false), 3000);
-                                  } catch {}
-                                }
-                              }}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
-                            >
-                              {pixCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                              <span>{pixCopied ? 'Copiado!' : 'Copiar'}</span>
-                            </button>
+                        {/* Código PIX Copia e Cola Completo do Asaas */}
+                        <div className="space-y-3 text-left bg-white p-4 sm:p-5 rounded-2xl border-2 border-emerald-500 shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-heading font-black text-slate-900 uppercase flex items-center gap-1.5">
+                              <Copy className="w-4 h-4 text-emerald-600" />
+                              <span>PIX Copia e Cola Completo ({formatBRL(fare.totalPrice)})</span>
+                            </label>
+                            <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                              {pixPayloadCompleto.length} CARACTERES
+                            </span>
                           </div>
+
+                          <p className="text-xs text-slate-600">
+                            Copie o código completo abaixo e cole no seu banco (opção <strong>PIX Copia e Cola</strong>):
+                          </p>
+
+                          {/* Caixa com scroll horizontal visível para o passageiro ver o código inteiro */}
+                          <div className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl p-3 overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-emerald-500">
+                            <code className="text-xs font-mono font-bold text-slate-900 select-all tracking-tight inline-block cursor-text">
+                              {pixPayloadCompleto}
+                            </code>
+                          </div>
+
+                          {/* Botão Copiar o pixPayloadCompleto inteiro */}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!pixPayloadCompleto) return;
+                              try {
+                                if (navigator?.clipboard?.writeText) {
+                                  await navigator.clipboard.writeText(pixPayloadCompleto);
+                                } else {
+                                  const ta = document.createElement('textarea');
+                                  ta.value = pixPayloadCompleto;
+                                  ta.style.position = 'fixed';
+                                  ta.style.opacity = '0';
+                                  document.body.appendChild(ta);
+                                  ta.focus();
+                                  ta.select();
+                                  document.execCommand('copy');
+                                  document.body.removeChild(ta);
+                                }
+                                setPixCopied(true);
+                                setTimeout(() => setPixCopied(false), 4000);
+                              } catch (err) {
+                                console.error('Erro ao copiar código PIX:', err);
+                              }
+                            }}
+                            className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-heading font-black text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wider"
+                          >
+                            {pixCopied ? (
+                              <>
+                                <Check className="w-5 h-5 text-white stroke-[2.5]" />
+                                <span>Código PIX copiado!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-5 h-5 text-white" />
+                                <span>Copiar Código PIX Completo</span>
+                              </>
+                            )}
+                          </button>
+
+                          {/* Mensagem de sucesso quando copiado */}
+                          {pixCopied && (
+                            <div className="p-2.5 bg-emerald-50 border border-emerald-400 rounded-xl text-center text-xs font-bold text-emerald-950 animate-fade-in flex items-center justify-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span>Código PIX copiado! Cole no seu banco para pagar {formatBRL(fare.totalPrice)}.</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Status de aguardo em tempo real */}

@@ -15,7 +15,8 @@ export interface AsaasCustomer {
 
 export interface AsaasPixQrCodeResponse {
   encodedImage: string; // base64 da imagem PNG ou data URL
-  payload: string;      // Código PIX Copia e Cola
+  payload: string;      // Código PIX Copia e Cola completo do Asaas
+  pixCopyPaste?: string;// Campo alternativo completo retornado pelo Asaas
   expirationDate: string;
 }
 
@@ -66,15 +67,55 @@ export function getAsaasBaseUrl(key?: string): string {
   return 'https://api.asaas.com/v3';
 }
 
+export function formatEMVField(id: string, val: string): string {
+  const len = String(val.length).padStart(2, '0');
+  return id + len + val;
+}
+
 /**
- * Gera string padrão PIX (EMV Co/Brcode) para garantia de que o passageiro
- * sempre tenha um QR Code e Copia-e-Cola válido mesmo sem internet ou em caso de CORS no GitHub Pages.
+ * Calcula CRC16-CCITT (Polinômio 0x1021, valor inicial 0xFFFF)
+ * Exigido estritamente pelo Banco Central do Brasil para validação em apps bancários (Nubank, Itaú, Bradesco, etc.)
+ */
+export function calculatePixCRC16(payload: string): string {
+  let crc = 0xFFFF;
+  for (let i = 0; i < payload.length; i++) {
+    crc ^= (payload.charCodeAt(i) << 8);
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) {
+        crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+      } else {
+        crc = (crc << 1) & 0xFFFF;
+      }
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
+
+/**
+ * Gera string padrão PIX (EMV Co/Brcode) 100% válida e aceita por qualquer banco no Brasil
+ * com CRC16 completo, nome do recebedor, cidade e chave PIX cadastrada.
  */
 export function generateFallbackPixCopiaECola(valor: number, desc = 'Corrida RACE'): string {
   const chavePix = RACE_PIX_KEY;
-  const valorStr = valor.toFixed(2);
-  // Formato simplificado padrão EMV QR Code BR Code
-  return `00020126580014br.gov.bcb.pix0136${chavePix}520400005303986540${valorStr.length < 10 ? '0' + valorStr.length : valorStr}${valorStr}5802BR5915Jose Cruz Sousa6010Indaiatuba62170513RACE${Date.now().toString().slice(-8)}6304`;
+  const valorStr = Number(valor).toFixed(2);
+  const accountInfo = formatEMVField('00', 'br.gov.bcb.pix') + formatEMVField('01', chavePix);
+  const cleanTxId = desc.replace(/[^a-zA-Z0-9]/g, '').slice(0, 15) || 'RACE1120';
+  const additionalData = formatEMVField('05', cleanTxId);
+
+  const raw =
+    formatEMVField('00', '01') +
+    formatEMVField('26', accountInfo) +
+    formatEMVField('52', '0000') +
+    formatEMVField('53', '986') +
+    formatEMVField('54', valorStr) +
+    formatEMVField('58', 'BR') +
+    formatEMVField('59', 'Jose Cruz Sousa') +
+    formatEMVField('60', 'Indaiatuba') +
+    formatEMVField('62', additionalData) +
+    '6304';
+
+  const fullBRCode = raw + calculatePixCRC16(raw);
+  return fullBRCode;
 }
 
 /**
@@ -187,12 +228,17 @@ export async function createAsaasPixPayment(params: {
           });
           if (qrRes.ok) {
             const qrData = await qrRes.json();
+            const rawPayload = (qrData.payload || qrData.pixCopyPaste || qrData.copyAndPaste || qrData.copyAndPasteUrl || '').trim();
+            const finalPayload = rawPayload || generateFallbackPixCopiaECola(params.value, description);
+            const imageStr = qrData.encodedImage
+              ? (qrData.encodedImage.startsWith('data:') ? qrData.encodedImage : `data:image/png;base64,${qrData.encodedImage}`)
+              : await QRCode.toDataURL(finalPayload, { width: 320, margin: 1 });
+
             pixQrCode = {
-              encodedImage: qrData.encodedImage.startsWith('data:')
-                ? qrData.encodedImage
-                : `data:image/png;base64,${qrData.encodedImage}`,
-              payload: qrData.payload,
-              expirationDate: qrData.expirationDate,
+              encodedImage: imageStr,
+              payload: finalPayload, // Código completo sem nenhum corte
+              pixCopyPaste: finalPayload,
+              expirationDate: qrData.expirationDate || new Date(Date.now() + 3600000).toISOString(),
             };
           }
         } catch (qrErr) {
@@ -201,11 +247,12 @@ export async function createAsaasPixPayment(params: {
 
         // Se o Asaas não retornou QR Code imediato, gera via biblioteca local com o payload do Asaas
         if (!pixQrCode) {
-          const payload = paymentData.invoiceUrl || generateFallbackPixCopiaECola(params.value, description);
-          const dataUrl = await QRCode.toDataURL(payload, { width: 300, margin: 1 });
+          const payload = generateFallbackPixCopiaECola(params.value, description);
+          const dataUrl = await QRCode.toDataURL(payload, { width: 320, margin: 1 });
           pixQrCode = {
             encodedImage: dataUrl,
             payload: payload,
+            pixCopyPaste: payload,
             expirationDate: new Date(Date.now() + 3600000).toISOString(),
           };
         }
@@ -244,6 +291,7 @@ export async function createAsaasPixPayment(params: {
     pixQrCode: {
       encodedImage,
       payload,
+      pixCopyPaste: payload,
       expirationDate: new Date(Date.now() + 3600000).toISOString(),
     },
     isSimulated: !apiKey,
