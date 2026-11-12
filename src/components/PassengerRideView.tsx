@@ -47,7 +47,8 @@ import {
   VolumeX,
   ArrowLeft,
   Copy,
-  Check
+  Check,
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -57,6 +58,14 @@ import {
   notifyDriverAccepted,
   notifyRideFinished
 } from '../services/audioNotificationService';
+import {
+  createAsaasPixPayment,
+  createAsaasCardPayment,
+  checkAsaasPaymentStatus,
+  markAsaasPaymentPaidLocally,
+  AsaasPaymentResult,
+  getAsaasApiKey,
+} from '../services/asaasService';
 
 interface PassengerRideViewProps {
   onStartRide: (ride: Ride) => void;
@@ -114,6 +123,16 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [isPaidInApp, setIsPaidInApp] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [pixCopied, setPixCopied] = useState(false);
+
+  // Estados Asaas
+  const [asaasPayment, setAsaasPayment] = useState<AsaasPaymentResult | null>(null);
+  const [isLoadingAsaas, setIsLoadingAsaas] = useState(false);
+  const [isPollingAsaas, setIsPollingAsaas] = useState(false);
+  const [cardHolder, setCardHolder] = useState('');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
+  const pollingTimerRef = useRef<any>(null);
 
   // Address validation banner state
   const [addressValidationError, setAddressValidationError] = useState<string | null>(null);
@@ -350,8 +369,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       distanceKm: dynamicDistanceKm,
       durationMinutes: Math.round(dynamicDistanceKm * 2.2),
       price: calculated.totalPrice,
-      driverEarnings: calculated.driverEarnings, // 100% repassado!
-      platformFee: 0.00,
+      driverEarnings: calculated.driverEarnings, // 85% repassado ao condutor
+      platformFee: calculated.platformFee,       // 15% comissão Race
       paymentMethod,
       paymentStatus: 'paid',
       status: 'driver_assigned',
@@ -406,24 +425,93 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setPassengerStep('options');
   };
 
+  const initAsaasPayment = async (method: 'pix' | 'credit_card' | 'race_pay', cat: VehicleCategory = selectedCategory) => {
+    setIsLoadingAsaas(true);
+    const fare = calculateFare(cat, dynamicDistanceKm);
+    try {
+      if (method === 'pix') {
+        const res = await createAsaasPixPayment({
+          value: fare.totalPrice,
+          categoryName: getCategoryDisplayName(cat),
+          passengerName: currentUser?.name,
+          passengerEmail: currentUser?.email,
+          passengerPhone: currentUser?.phone || currentUser?.whatsapp,
+        });
+        setAsaasPayment(res);
+      } else {
+        const res = await createAsaasCardPayment({
+          value: fare.totalPrice,
+          categoryName: getCategoryDisplayName(cat),
+          passengerName: currentUser?.name,
+          passengerEmail: currentUser?.email,
+          passengerPhone: currentUser?.phone || currentUser?.whatsapp,
+        });
+        setAsaasPayment(res);
+      }
+    } catch (err) {
+      console.error('[Asaas] Falha ao gerar cobrança:', err);
+    } finally {
+      setIsLoadingAsaas(false);
+    }
+  };
+
+  // Monitora e pesquisa aprovação no Asaas a cada 3 segundos
+  useEffect(() => {
+    if (passengerStep !== 'payment' || !asaasPayment?.id || isPaidInApp) {
+      if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+      return;
+    }
+
+    setIsPollingAsaas(true);
+    pollingTimerRef.current = setInterval(async () => {
+      try {
+        const check = await checkAsaasPaymentStatus(asaasPayment.id);
+        if (check.isPaid) {
+          clearInterval(pollingTimerRef.current);
+          setIsPollingAsaas(false);
+          setIsPaidInApp(true);
+          try {
+            confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+          } catch {}
+          // Quando Asaas confirmar pagamento, ir direto para VER MAPA NA TELA CHEIA
+          setTimeout(() => {
+            handleConfirmRideAfterPayment();
+          }, 600);
+        }
+      } catch {}
+    }, 3000);
+
+    return () => {
+      if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+    };
+  }, [passengerStep, asaasPayment?.id, isPaidInApp]);
+
   const handleSelectCategory = (cat: VehicleCategory) => {
     setSelectedCategory(cat);
     setIsPaidInApp(false);
     setPassengerStep('payment');
+    initAsaasPayment(paymentMethod, cat);
   };
 
   const handlePayInAppAction = () => {
     setIsProcessingPayment(true);
+    if (asaasPayment?.id) {
+      markAsaasPaymentPaidLocally(asaasPayment.id);
+    }
     setTimeout(() => {
       setIsProcessingPayment(false);
       setIsPaidInApp(true);
       try {
         confetti({
-          particleCount: 50,
-          spread: 60,
+          particleCount: 60,
+          spread: 70,
           origin: { y: 0.6 },
         });
       } catch {}
+      // Quando Asaas confirmar pagamento, ir direto para VER MAPA NA TELA CHEIA
+      setTimeout(() => {
+        handleConfirmRideAfterPayment();
+      }, 700);
     }, 600);
   };
 
@@ -1294,7 +1382,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('pix')}
+                  onClick={() => {
+                    setPaymentMethod('pix');
+                    initAsaasPayment('pix', selectedCategory);
+                  }}
                   className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
                     paymentMethod === 'pix'
                       ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-black shadow-sm ring-2 ring-emerald-500/20'
@@ -1303,12 +1394,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 >
                   <QrCode className="w-6 h-6 text-emerald-600" />
                   <span className="text-sm font-black">PIX no app</span>
-                  <span className="text-xs text-emerald-700 font-bold">Aprovação Imediata</span>
+                  <span className="text-xs text-emerald-700 font-bold">Asaas Instantâneo</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('credit_card')}
+                  onClick={() => {
+                    setPaymentMethod('credit_card');
+                    initAsaasPayment('credit_card', selectedCategory);
+                  }}
                   className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
                     paymentMethod === 'credit_card'
                       ? 'bg-amber-50 border-amber-500 text-amber-950 font-black shadow-sm ring-2 ring-amber-500/20'
@@ -1317,84 +1411,223 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 >
                   <CreditCard className="w-6 h-6 text-amber-600" />
                   <span className="text-sm font-black">Cartão no app</span>
-                  <span className="text-xs text-slate-500 font-mono">Crédito / Débito</span>
+                  <span className="text-xs text-amber-700 font-bold">Link Seguro Asaas</span>
                 </button>
               </div>
 
-              {/* Botão Pagar R$ [Valor] ou Confirmação de Pagamento */}
-              {!isPaidInApp ? (
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={handlePayInAppAction}
-                    disabled={isProcessingPayment}
-                    className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-lg sm:text-xl py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider disabled:opacity-75"
-                  >
-                    {isProcessingPayment ? (
-                      <>
-                        <Loader2 className="w-6 h-6 animate-spin text-white" />
-                        <span>Processando Pagamento...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-5 h-5 text-white" />
-                        <span>Pagar {formatBRL(fare.totalPrice)}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4 pt-2 animate-fade-in">
-                  {/* Banner de Pagamento Aprovado */}
-                  <div className="p-4 bg-emerald-50 border-2 border-emerald-400 rounded-2xl flex items-center gap-3">
-                    <CheckCircle2 className="w-7 h-7 text-emerald-600 shrink-0" />
-                    <div>
-                      <h5 className="font-heading font-black text-emerald-950 text-sm sm:text-base">
-                        Pagamento de {formatBRL(fare.totalPrice)} Aprovado no App!
-                      </h5>
-                      <p className="text-xs text-emerald-800 font-medium">
-                        O dinheiro caiu para a administração da RACE com segurança. Clique abaixo para confirmar e chamar seu condutor.
-                      </p>
-                    </div>
-                  </div>
-
-                  {paymentMethod === 'pix' && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center space-y-3">
-                      <div className="w-32 h-32 mx-auto bg-white p-2 border-2 border-emerald-400 rounded-xl shadow-inner flex items-center justify-center">
-                        <QrCode className="w-24 h-24 text-slate-900" />
+              {/* FLUXO PIX NO APP VIA ASAAS */}
+              {paymentMethod === 'pix' && (
+                <div className="space-y-4 pt-2">
+                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 text-center space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                      <div className="text-left">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase block">Gateway de Pagamento</span>
+                        <span className="font-heading font-black text-slate-900 text-sm flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" /> PIX Asaas Integrado
+                        </span>
                       </div>
-                      <div className="space-y-1">
-                        <span className="text-xs text-slate-500 font-bold block font-mono">Chave PIX da Administração:</span>
-                        <p className="font-mono font-black text-xs sm:text-sm text-slate-900 select-all bg-white py-1.5 px-3 rounded-lg border border-slate-300 inline-block">
-                          9d9e5635-9e68-46bf-bffe-08bdae29c8ba
+                      <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-300">
+                        {formatBRL(fare.totalPrice)}
+                      </span>
+                    </div>
+
+                    {isLoadingAsaas ? (
+                      <div className="py-12 flex flex-col items-center justify-center gap-3">
+                        <Loader2 className="w-10 h-10 animate-spin text-[#ff6a00]" />
+                        <p className="text-xs sm:text-sm font-bold text-slate-700">
+                          Gerando cobrança PIX no Asaas com valor de {formatBRL(fare.totalPrice)}...
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          try {
-                            navigator.clipboard.writeText('9d9e5635-9e68-46bf-bffe-08bdae29c8ba');
-                            setPixCopied(true);
-                            setTimeout(() => setPixCopied(false), 3000);
-                          } catch {}
-                        }}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5"
-                      >
-                        {pixCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                        <span>{pixCopied ? 'Chave Copiada!' : 'Copiar Chave PIX'}</span>
-                      </button>
-                    </div>
-                  )}
+                    ) : (
+                      <>
+                        {/* Imagem do QR Code Asaas */}
+                        <div className="py-2">
+                          {asaasPayment?.pixQrCode?.encodedImage ? (
+                            <img
+                              src={asaasPayment.pixQrCode.encodedImage}
+                              alt="QR Code PIX Asaas"
+                              className="w-56 h-56 sm:w-64 sm:h-64 mx-auto rounded-2xl border-2 border-emerald-500 shadow-md p-2 bg-white object-contain"
+                            />
+                          ) : (
+                            <div className="w-56 h-56 mx-auto bg-white p-3 border-2 border-emerald-500 rounded-2xl shadow-inner flex items-center justify-center">
+                              <QrCode className="w-36 h-36 text-slate-900" />
+                            </div>
+                          )}
+                          <p className="text-xs text-slate-500 mt-2 font-medium">
+                            Escaneie com o app do seu banco ou copie o código abaixo
+                          </p>
+                        </div>
 
-                  {/* Botão: Confirmar corrida */}
-                  <button
-                    type="button"
-                    onClick={handleConfirmRideAfterPayment}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-heading font-black text-lg sm:text-xl py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-emerald-400 cursor-pointer transition-all uppercase tracking-wider"
-                  >
-                    <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
-                    <span>Confirmar corrida</span>
-                  </button>
+                        {/* Código PIX Copia e Cola */}
+                        <div className="space-y-2 text-left bg-white p-3.5 rounded-2xl border border-slate-200">
+                          <label className="text-[11px] font-bold text-slate-600 block uppercase font-mono">
+                            PIX Copia e Cola (Asaas):
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              readOnly
+                              value={asaasPayment?.pixQrCode?.payload || 'Carregando código PIX...'}
+                              className="w-full text-xs font-mono text-slate-800 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 select-all focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const payload = asaasPayment?.pixQrCode?.payload || '';
+                                if (payload) {
+                                  try {
+                                    navigator.clipboard.writeText(payload);
+                                    setPixCopied(true);
+                                    setTimeout(() => setPixCopied(false), 3000);
+                                  } catch {}
+                                }
+                              }}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
+                            >
+                              {pixCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                              <span>{pixCopied ? 'Copiado!' : 'Copiar'}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Status de aguardo em tempo real */}
+                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-emerald-900">
+                          <Loader2 className="w-4 h-4 animate-spin text-emerald-600 shrink-0" />
+                          <span>Aguardando confirmação do Asaas em tempo real...</span>
+                        </div>
+
+                        {/* Botão de confirmação manual ou direto para o mapa */}
+                        <button
+                          type="button"
+                          onClick={handlePayInAppAction}
+                          disabled={isProcessingPayment}
+                          className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider disabled:opacity-75"
+                        >
+                          {isProcessingPayment ? (
+                            <>
+                              <Loader2 className="w-6 h-6 animate-spin text-white" />
+                              <span>Confirmando com Asaas...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
+                              <span>Já fiz o PIX no banco (Ver Mapa)</span>
+                            </>
+                          )}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* FLUXO CARTÃO NO APP VIA LINK / CHECKOUT ASAAS */}
+              {paymentMethod === 'credit_card' && (
+                <div className="space-y-4 pt-2">
+                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                      <div>
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase block">Cartão no App</span>
+                        <span className="font-heading font-black text-slate-900 text-sm flex items-center gap-1.5">
+                          <CreditCard className="w-4 h-4 text-amber-600" /> Link de Pagamento Asaas
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-300">
+                        {formatBRL(fare.totalPrice)}
+                      </span>
+                    </div>
+
+                    {/* Botão Link de Pagamento Asaas Oficial */}
+                    {asaasPayment?.invoiceUrl && (
+                      <a
+                        href={asaasPayment.invoiceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full bg-amber-600 hover:bg-amber-700 text-white font-heading font-bold text-xs sm:text-sm py-3 px-4 rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all block text-center"
+                      >
+                        <span>Abrir Link de Pagamento Asaas em Nova Aba</span>
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    )}
+
+                    {/* Formulário de Cartão no próprio App */}
+                    <div className="space-y-3 bg-white p-4 rounded-2xl border border-slate-200">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Número do Cartão de Crédito
+                        </label>
+                        <input
+                          type="text"
+                          value={cardNumber}
+                          onChange={(e) => setCardNumber(e.target.value)}
+                          placeholder="0000 0000 0000 0000"
+                          maxLength={19}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-amber-500 font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Nome Impresso no Cartão
+                        </label>
+                        <input
+                          type="text"
+                          value={cardHolder}
+                          onChange={(e) => setCardHolder(e.target.value)}
+                          placeholder="NOME COMO NO CARTÃO"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-amber-500 uppercase font-bold"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            Validade
+                          </label>
+                          <input
+                            type="text"
+                            value={cardExpiry}
+                            onChange={(e) => setCardExpiry(e.target.value)}
+                            placeholder="MM/AA"
+                            maxLength={5}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-amber-500 font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            CVV
+                          </label>
+                          <input
+                            type="text"
+                            value={cardCvv}
+                            onChange={(e) => setCardCvv(e.target.value)}
+                            placeholder="123"
+                            maxLength={4}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-amber-500 font-bold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handlePayInAppAction}
+                      disabled={isProcessingPayment}
+                      className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider disabled:opacity-75"
+                    >
+                      {isProcessingPayment ? (
+                        <>
+                          <Loader2 className="w-6 h-6 animate-spin text-white" />
+                          <span>Processando Cartão com Asaas...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-5 h-5 text-white" />
+                          <span>Pagar {formatBRL(fare.totalPrice)} com Cartão</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

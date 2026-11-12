@@ -50,6 +50,12 @@ import {
   testSupabaseConnection, 
   saveUsuarioSupabase 
 } from '../supabase';
+import { 
+  getAsaasFinancialSummary, 
+  AsaasBalanceInfo, 
+  getAsaasApiKey, 
+  setCustomAsaasApiKey 
+} from '../services/asaasService';
 
 interface AdminDashboardProps {
   drivers: Driver[];
@@ -319,6 +325,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   );
   const raceCommissionAdmin = Number((totalArrecadadoAdmin * 0.15).toFixed(2));
   const repasseMotoristasAdmin = Number((totalArrecadadoAdmin * 0.85).toFixed(2));
+
+  // Dados Financeiros Asaas (Saldo, Total Recebido, 15% Race, Repasse 85% toda Sexta-feira)
+  const [asaasData, setAsaasData] = useState<AsaasBalanceInfo>({
+    balance: 0,
+    totalReceived: totalArrecadadoAdmin,
+    raceCommission15: raceCommissionAdmin,
+    repassarSexta85: repasseMotoristasAdmin,
+    nextPayoutDate: 'Toda Sexta-feira às 18:00',
+    isLive: false,
+  });
+  const [isLoadingAsaasData, setIsLoadingAsaasData] = useState(false);
+  const [asaasKeyInput, setAsaasKeyInput] = useState(() => getAsaasApiKey());
+  const [showAsaasKeyConfig, setShowAsaasKeyConfig] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoadingAsaasData(true);
+    getAsaasFinancialSummary(totalArrecadadoAdmin)
+      .then((res) => {
+        if (isMounted) {
+          setAsaasData(res);
+          setIsLoadingAsaasData(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) setIsLoadingAsaasData(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [totalArrecadadoAdmin]);
+
   const avgFleetRating = (
     parsedUsers.length > 0
       ? (parsedUsers.reduce((acc, d) => acc + d.rating, 0) / parsedUsers.length).toFixed(2)
@@ -544,62 +582,195 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           )}
-          {/* Key KPI Cards in White - Modelo 15% Race / 85% Motorista */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-            {/* KPI 1: Total de Corridas */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs sm:text-sm text-slate-600 font-bold">Total de Corridas</span>
-                <Car className="w-5 h-5 text-[#ff6a00]" />
+          {/* PAINEL OFICIAL ASAAS: Saldo Asaas, Total Recebido, Comissão 15% Race, Repasse Sexta 85% */}
+          <div className="bg-gradient-to-br from-slate-900 via-zinc-950 to-slate-900 border-2 border-emerald-500/80 rounded-3xl p-5 sm:p-6 shadow-xl text-white space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-zinc-800">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Wallet className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-heading font-black text-lg sm:text-xl text-white">
+                      Painel Financeiro Asaas
+                    </h3>
+                    <span className="text-[11px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      {asaasData.isLive ? 'Asaas API Conectada' : (getAsaasApiKey() ? 'VITE_ASAAS_API_KEY Ativa' : 'Gateway Asaas')}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Controle de cobranças PIX, Cartão e repasse semanal de 85% aos motoristas
+                  </p>
+                </div>
               </div>
-              <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
-                {totalRidesAdmin}
+
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsLoadingAsaasData(true);
+                    getAsaasFinancialSummary(totalArrecadadoAdmin).then((res) => {
+                      setAsaasData(res);
+                      setIsLoadingAsaasData(false);
+                      showToast('✅ Saldo e dados financeiros do Asaas atualizados!');
+                    });
+                  }}
+                  disabled={isLoadingAsaasData}
+                  className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-heading font-bold text-xs rounded-xl border border-zinc-700 transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAsaasData ? 'animate-spin text-emerald-400' : ''}`} />
+                  <span>Atualizar Asaas</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAsaasKeyConfig(!showAsaasKeyConfig)}
+                  className="px-3 py-2 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 text-xs font-mono rounded-xl border border-zinc-700 cursor-pointer"
+                  title="Configurar chave Asaas"
+                >
+                  Chave API
+                </button>
               </div>
-              <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-                Corridas no app
-              </p>
             </div>
 
-            {/* KPI 2: Total Arrecadado */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs sm:text-sm text-slate-600 font-bold">Total Arrecadado</span>
-                <DollarSign className="w-5 h-5 text-emerald-600" />
+            {/* Painel expansível para conferência da chave Asaas */}
+            {showAsaasKeyConfig && (
+              <div className="bg-zinc-900/90 border border-zinc-700 rounded-2xl p-4 space-y-3 text-xs animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-zinc-200">Chave Asaas (Injetada via GitHub Secrets `ASAAS_API_KEY`):</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAsaasKeyConfig(false)}
+                    className="text-zinc-400 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    value={asaasKeyInput}
+                    onChange={(e) => setAsaasKeyInput(e.target.value)}
+                    placeholder="Cole sua chave Asaas ($aact_...)"
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 font-mono text-zinc-200 focus:outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomAsaasApiKey(asaasKeyInput);
+                      showToast('Chave Asaas salva para este navegador!');
+                      setShowAsaasKeyConfig(false);
+                      setIsLoadingAsaasData(true);
+                      getAsaasFinancialSummary(totalArrecadadoAdmin).then((res) => {
+                        setAsaasData(res);
+                        setIsLoadingAsaasData(false);
+                      });
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer shrink-0"
+                  >
+                    Salvar
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-400">
+                  No GitHub Actions, o passo de build já inclui <code className="text-emerald-400 font-mono">VITE_ASAAS_API_KEY: ${'{{ secrets.ASAAS_API_KEY }}'}</code> conforme configurado no <code className="text-zinc-300 font-mono">pages.yml</code>.
+                </p>
               </div>
-              <div className="text-2xl sm:text-3xl font-heading font-black text-slate-950">
-                {formatBRL(totalArrecadadoAdmin)}
+            )}
+
+            {/* 4 Cards de Métricas Principais Solicitadas */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {/* 1. Saldo Asaas */}
+              <div className="bg-zinc-900/80 border border-emerald-500/30 rounded-2xl p-4 relative overflow-hidden">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider font-mono">Saldo Asaas</span>
+                  <Wallet className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl sm:text-3xl font-heading font-black text-emerald-400">
+                  {formatBRL(asaasData.balance)}
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  Saldo disponível na conta
+                </p>
               </div>
-              <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-                Pago pelos passageiros
-              </p>
+
+              {/* 2. Total Recebido */}
+              <div className="bg-zinc-900/80 border border-zinc-700/80 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider font-mono">Total Recebido</span>
+                  <DollarSign className="w-4 h-4 text-white" />
+                </div>
+                <div className="text-2xl sm:text-3xl font-heading font-black text-white">
+                  {formatBRL(asaasData.totalReceived)}
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  Cobranças de corridas no app
+                </p>
+              </div>
+
+              {/* 3. Comissão 15% Race */}
+              <div className="bg-zinc-900/80 border border-amber-500/30 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-amber-400 font-bold uppercase tracking-wider font-mono">Comissão 15% Race</span>
+                  <TrendingUp className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="text-2xl sm:text-3xl font-heading font-black text-amber-400">
+                  {formatBRL(asaasData.raceCommission15)}
+                </div>
+                <p className="text-[11px] text-amber-300/80 mt-1 font-medium">
+                  Ganhos do admin (15%)
+                </p>
+              </div>
+
+              {/* 4. Valor a Repassar Sexta para Motoristas (85%) */}
+              <div className="bg-zinc-900/80 border border-emerald-500/40 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-emerald-400 font-bold uppercase tracking-wider font-mono">Repassar Sexta (85%)</span>
+                  <Calendar className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl sm:text-3xl font-heading font-black text-emerald-300">
+                  {formatBRL(asaasData.repassarSexta85)}
+                </div>
+                <p className="text-[11px] text-emerald-400 mt-1 font-bold">
+                  85% para condutores
+                </p>
+              </div>
             </div>
 
-            {/* KPI 3: Comissão Race 15% */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs sm:text-sm text-slate-600 font-bold">Comissão Race 15%</span>
-                <TrendingUp className="w-5 h-5 text-amber-600" />
+            {/* Banner de Repasse Sexta-feira às 18:00 */}
+            <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-zinc-200">
+                  <strong>Próximo Repasse Semanal:</strong> Toda sexta-feira às 18:00 o admin repassa os 85% ({formatBRL(asaasData.repassarSexta85)}) diretamente para as chaves PIX dos condutores.
+                </span>
               </div>
-              <div className="text-2xl sm:text-3xl font-heading font-black text-amber-700">
-                {formatBRL(raceCommissionAdmin)}
-              </div>
-              <p className="text-xs sm:text-sm text-amber-700 mt-1 font-bold">
-                Ganhos do admin (15%)
-              </p>
-            </div>
-
-            {/* KPI 4: Quanto Repassar para Motoristas (85%) */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs sm:text-sm text-slate-600 font-bold">Repassar p/ Motoristas</span>
-                <Wallet className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div className="text-2xl sm:text-3xl font-heading font-black text-emerald-700">
-                {formatBRL(repasseMotoristasAdmin)}
-              </div>
-              <p className="text-xs sm:text-sm text-emerald-800 mt-1 font-bold">
-                85% para condutores
-              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const rows = [
+                    ['Motorista', 'Chave PIX', 'Total Arrecadado', 'Ganho Líquido (85%)', 'Comissão Race (15%)'],
+                    ...overviewDrivers.map((d) => {
+                      const driverTotal = d.saldo ? Number((d.saldo / 0.85).toFixed(2)) : 0;
+                      const driver85 = d.saldo || 0;
+                      const race15 = Number((driverTotal * 0.15).toFixed(2));
+                      return [d.name, d.raw?.chave_pix || d.phone || 'PIX pendente', driverTotal.toFixed(2), driver85.toFixed(2), race15.toFixed(2)];
+                    })
+                  ];
+                  const csv = '\uFEFF' + rows.map((r) => r.join(';')).join('\n');
+                  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `race_repasse_sexta_${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                  showToast('Folha de repasse de sexta-feira exportada com sucesso!');
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer shrink-0 transition-all flex items-center gap-1.5 self-end sm:self-auto"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Exportar Repasse Sexta</span>
+              </button>
             </div>
           </div>
 
