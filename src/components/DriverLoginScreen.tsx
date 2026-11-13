@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Driver, AppUser, VehicleCategory } from '../types';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { saveUserAccount, verifyUserLogin, getUserAccount, updateUserPasswordLocal } from '../services/userService';
+import { saveSessionUser, verifyUserLogin } from '../services/userService';
 import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase } from '../supabase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 
@@ -141,11 +141,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         return;
       }
 
-      // Salva na tabela public.usuarios no Supabase com tipo = 'ADM'
+      // Salva na tabela public.usuarios no Supabase com tipo = 'ADM' (sem mandar `id` manual)
       const supabaseRes = await insertUsuarioSupabase({
         nome: cleanName,
         email: cleanEmail,
         celular: cleanWhatsApp,
+        whatsapp: cleanWhatsApp,
+        login: cleanEmail,
         senha: adminRegPassword,
         tipo: 'ADM',
       });
@@ -156,8 +158,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       }
 
       const createdRow = supabaseRes.data;
+      const supabaseId = createdRow?.id !== undefined && createdRow?.id !== null ? String(createdRow.id) : '';
       const adminUser: AppUser = {
-        id: createdRow?.id ? `usr-${createdRow.id}` : `usr-adm-${Date.now()}`,
+        id: supabaseId,
         name: cleanName,
         email: cleanEmail,
         phone: cleanWhatsApp,
@@ -167,27 +170,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         tipo: 'ADM',
         isAdmin: true,
         placa: 'ADMIN-01',
-        rating: 5.0,
+        rating: 0,
       };
 
-      saveUserAccount(
-        {
-          id: adminUser.id,
-          name: adminUser.name,
-          email: adminUser.email,
-          phone: adminUser.phone,
-          whatsapp: adminUser.whatsapp,
-          login: adminUser.login,
-          role: 'admin',
-          tipo: 'ADM',
-          placa: 'ADMIN-01',
-          password: adminRegPassword,
-          rating: 5.0,
-          createdAt: new Date().toISOString(),
-        },
-        true
-      );
-      updateUserPasswordLocal(cleanEmail, adminRegPassword);
+      saveSessionUser(adminUser);
 
       setAdminRegSuccessMessage('Conta de ADM criada e salva no Supabase com sucesso!');
       try { confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } }); } catch {}
@@ -232,27 +218,20 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           }
 
           const adminUser: AppUser = {
-            id: row.id ? `usr-${row.id}` : 'usr-admin-master',
+            id: row?.id !== undefined && row?.id !== null ? String(row.id) : '',
             name: row.nome || 'Administrador Geral',
             email: rowEmail,
-            phone: row.celular || '(19) 99999-0000',
-            whatsapp: row.celular || '(19) 99999-0000',
-            login: rowEmail,
+            phone: row.celular || '',
+            whatsapp: row.whatsapp || row.celular || '',
+            login: row.login || rowEmail,
             role: 'admin',
             tipo: 'ADM',
             isAdmin: true,
             placa: 'ADMIN-01',
-            rating: 5.0,
+            rating: 0,
           };
 
-          saveUserAccount(
-            {
-              ...adminUser,
-              password: row.senha || loginPassword,
-              createdAt: row.data_cadastro || new Date().toISOString(),
-            },
-            true
-          );
+          saveSessionUser(adminUser);
 
           setLoginSuccessMessage('Acesso ADM liberado!');
           try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
@@ -311,17 +290,17 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         if (cloudAdmin.success && cloudAdmin.data) {
           const row = cloudAdmin.data;
           const adminUser: AppUser = {
-            id: row.id ? `usr-${row.id}` : 'usr-admin-master',
+            id: row?.id !== undefined && row?.id !== null ? String(row.id) : '',
             name: row.nome || 'Administrador Geral',
             email: 'admin@race.com.br',
-            phone: row.celular || '(19) 99999-0000',
+            phone: row.celular || '',
             role: 'admin',
             tipo: 'ADM',
             isAdmin: true,
             placa: 'ADMIN-01',
-            rating: 5.0,
+            rating: 0,
           };
-          saveUserAccount({ ...adminUser, password: loginPassword, createdAt: new Date().toISOString() }, true);
+          saveSessionUser(adminUser);
           setLoginSuccessMessage('Acesso ADM liberado!');
           try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
           setTimeout(() => {
@@ -371,14 +350,15 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const isMoto = !isCloudAdmin && (row.tipo === 'motoboy' || row.categoria?.includes('moto'));
       const isDriver = !isCloudAdmin && (row.tipo === 'driver' || isMoto || Boolean(row.placa));
 
+      const rowId = row?.id !== undefined && row?.id !== null ? String(row.id) : '';
       let driverObj: Driver | undefined = undefined;
       if (isDriver) {
         driverObj = {
-          id: `drv-${row.id}`,
+          id: rowId,
           name: row.nome,
           email: userEmail,
           phone: row.celular || '',
-          avatar: regAvatar || row.avatar || '',
+          avatar: regAvatar || row.foto || row.avatar || '',
           rating: typeof row.rating === 'number' ? row.rating : 0,
           totalRides: 0,
           vehicleModel: row.modelo || '',
@@ -404,29 +384,23 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       }
 
       const userPayload: AppUser = {
-        id: `usr-${row.id}`,
+        id: rowId,
         name: row.nome,
         email: userEmail,
         phone: row.celular || '',
-        whatsapp: row.celular || '',
-        login: userEmail.split('@')[0],
+        whatsapp: row.whatsapp || row.celular || '',
+        login: row.login || userEmail.split('@')[0],
         role: isCloudAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger',
         tipo: isCloudAdmin ? 'ADM' : isMoto ? 'motoboy_passageiro' : isDriver ? 'motorista_economico' : 'passenger',
         isAdmin: isCloudAdmin || undefined,
         placa: row.placa || '',
-        avatar: regAvatar || row.avatar || undefined,
+        avatar: regAvatar || row.foto || row.avatar || undefined,
         rating: typeof row.rating === 'number' ? row.rating : 0,
         driverData: driverObj,
       };
+      saveSessionUser(userPayload);
 
-      // Salva sessão local
-      saveUserAccount({
-        ...userPayload,
-        password: row.senha,
-        createdAt: row.created_at || new Date().toISOString(),
-      }, true);
-
-      setLoginSuccessMessage('Salvo no Supabase! Acesso autorizado.');
+      setLoginSuccessMessage('Acesso autorizado!');
       try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
 
       setTimeout(() => {
@@ -485,14 +459,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const isMotoboyRole = regRole === 'motoboy';
       const chosenAvatar = regAvatar;
 
-      // Criação dos dados do condutor caso seja motorista/motoboy
+      // Criação dos dados do condutor caso seja motorista/motoboy (id será preenchido com o id numérico retornado pelo Supabase)
       let newDriverObj: Driver | undefined = undefined;
       if (isDriverRole || isMotoboyRole) {
-        const driverId = isMotoboyRole ? `moto-${Date.now().toString().slice(-6)}` : `drv-${Date.now().toString().slice(-6)}`;
         const category: VehicleCategory = isMotoboyRole ? 'moto_passageiro' : 'economica';
 
         newDriverObj = {
-          id: driverId,
+          id: '',
           name: cleanName,
           phone: cleanWhatsApp,
           email: cleanEmail,
@@ -523,12 +496,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         };
       }
 
-      // 1. FAZER INSERT DIRETO NA TABELA "usuarios" NO SUPABASE COM nome, email, celular, senha, tipo
+      // INSERT DIRETO NA TABELA "usuarios" NO SUPABASE SEM MANDAR `id` (auto-incremento bigint)
       const supabaseRes = await insertUsuarioSupabase({
-        id: isPassengerRole ? `psg-${Date.now().toString().slice(-6)}` : newDriverObj!.id,
         nome: cleanName,
         email: cleanEmail,
         celular: cleanWhatsApp,
+        whatsapp: cleanWhatsApp,
+        login: cleanLogin,
         senha: regPassword,
         tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
         categoria: newDriverObj?.category,
@@ -536,6 +510,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         modelo: newDriverObj?.vehicleModel,
         ano: newDriverObj?.vehicleYear,
         cnh: newDriverObj?.cnh,
+        foto: chosenAvatar || undefined,
         avatar: chosenAvatar || undefined,
         status: 'online',
         plano_ativo: true,
@@ -546,11 +521,20 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         return;
       }
 
+      const supabaseGeneratedId =
+        supabaseRes.data?.id !== undefined && supabaseRes.data?.id !== null
+          ? String(supabaseRes.data.id)
+          : '';
+
+      if (newDriverObj) {
+        newDriverObj.id = supabaseGeneratedId;
+      }
+
       // Alerta de sucesso: Salvo no Supabase
       setRegSuccessMessage('Salvo no Supabase');
 
       const newUser: AppUser = {
-        id: isPassengerRole ? `psg-${Date.now().toString().slice(-6)}` : newDriverObj!.id,
+        id: supabaseGeneratedId,
         name: cleanName,
         email: cleanEmail,
         phone: cleanWhatsApp,
@@ -560,29 +544,12 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy_passageiro' : 'motorista_economico',
         placa: newDriverObj?.vehiclePlate || '',
         avatar: chosenAvatar,
-        rating: 5.0,
+        rating: 0,
         password: regPassword,
         driverData: newDriverObj,
       };
 
-      // Salva no localStorage isolado com chave race_user_${email} e define race_current_user
-      saveUserAccount({
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        phone: newUser.phone,
-        whatsapp: newUser.whatsapp,
-        login: newUser.login,
-        role: newUser.role,
-        tipo: newUser.tipo,
-        placa: newUser.placa,
-        password: regPassword,
-        avatar: newUser.avatar,
-        rating: 5.0,
-        rides: [],
-        driverData: newDriverObj,
-        createdAt: new Date().toISOString(),
-      }, true);
+      saveSessionUser(newUser);
 
       try {
         confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });

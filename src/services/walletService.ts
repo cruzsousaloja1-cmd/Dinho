@@ -133,7 +133,7 @@ export function requestWithdrawal(
   setDriverBalance(driver.id, 0);
 
   const newWithdrawal: WithdrawalRequest = {
-    id: `SAQ-${Date.now().toString().slice(-6)}`,
+    id: '',
     driverId: driver.id,
     driverName: driver.name,
     driverEmail: driver.email,
@@ -149,7 +149,6 @@ export function requestWithdrawal(
   inMemoryWithdrawals = [newWithdrawal, ...inMemoryWithdrawals];
 
   savePagamentoSupabase({
-    id: newWithdrawal.id,
     id_motorista: driver.id,
     nome_motorista: driver.name,
     email_motorista: driver.email,
@@ -157,7 +156,13 @@ export function requestWithdrawal(
     tipo: 'saque',
     status: 'pending',
     chave_pix: pixKey.trim(),
-  }).catch(() => {});
+  })
+    .then((res) => {
+      if (res.id) {
+        newWithdrawal.id = res.id;
+      }
+    })
+    .catch(() => {});
 
   return {
     success: true,
@@ -183,8 +188,8 @@ export function markWithdrawalAsPaid(withdrawalId: string): boolean {
     return w;
   });
 
-  if (found) {
-    supabase.from('pagamentos').update({ status: 'paid' }).eq('id', withdrawalId).then(() => {}, () => {});
+  if (found && /^\d+$/.test(String(withdrawalId))) {
+    supabase.from('pagamentos').update({ status: 'paid' }).eq('id', Number(withdrawalId)).then(() => {}, () => {});
   }
   return found;
 }

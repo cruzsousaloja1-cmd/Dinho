@@ -168,7 +168,7 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
 
     // Cria o motorista / motoboy vinculado à categoria escolhida
     const newDriver: Driver = {
-      id: `drv-${Date.now().toString().slice(-5)}`,
+      id: '',
       name: cleanName,
       avatar: '',
       phone: cleanPhone,

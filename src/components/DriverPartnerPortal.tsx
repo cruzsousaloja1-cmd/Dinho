@@ -611,7 +611,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
 
     const newDriver: Driver = {
-      id: `drv-${Math.floor(100 + Math.random() * 900)}`,
+      id: '',
       name: regName,
       avatar: '',
       phone: regPhone,

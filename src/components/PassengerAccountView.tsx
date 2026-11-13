@@ -210,7 +210,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                 {(currentUser?.rating || 0).toFixed(1)} Avaliação
               </span>
               <span>•</span>
-              <span className="font-mono text-slate-500">ID: {currentUser?.id || 'RCE-USR'}</span>
+              <span className="font-mono text-slate-500">ID: {currentUser?.id || '-'}</span>
             </div>
           </div>
         </div>

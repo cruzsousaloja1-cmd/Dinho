@@ -152,7 +152,6 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
   }
 
   saveUsuarioSupabase({
-    id: account.id,
     nome: account.name,
     email: cleanEmail,
     celular: account.phone,
@@ -165,13 +164,23 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     modelo: account.driverData?.vehicleModel || '',
     ano: account.driverData?.vehicleYear || 2023,
     cnh: account.driverData?.cnh || '',
+    foto: account.avatar || '',
     avatar: account.avatar || '',
     rating: account.rating || 0,
     saldo: account.driverData?.walletBalance || 0,
     plano_ativo: account.driverData?.weeklyPlanActive ?? false,
-  }).catch((cloudErr) => {
-    console.warn('Aviso de sincronização Supabase usuarios:', cloudErr);
-  });
+  })
+    .then((res) => {
+      if (setActiveSession && res.success && res.data?.id !== undefined && res.data?.id !== null) {
+        saveSessionUser({
+          ...currentUserPayload,
+          id: String(res.data.id),
+        });
+      }
+    })
+    .catch((cloudErr) => {
+      console.warn('Aviso de sincronização Supabase usuarios:', cloudErr);
+    });
 }
 
 export function getUserAccount(_email: string): StoredUserAccount | null {

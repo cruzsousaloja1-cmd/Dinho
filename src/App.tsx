@@ -297,11 +297,28 @@ export default function App() {
       confirmationCode,
     };
     setActiveRide(startedRide);
-    setRidesHistory((prev) => [startedRide, ...prev.filter((r) => r.id !== startedRide.id)]);
-    saveIsolatedRide(startedRide, currentUser);
-    saveCorridaSupabase(startedRide, currentUser).catch(() => {});
+    setRidesHistory((prev) => [
+      startedRide,
+      ...prev.filter((r) => (startedRide.id ? r.id !== startedRide.id : r !== startedRide)),
+    ]);
+    saveCorridaSupabase(startedRide, currentUser)
+      .then((res) => {
+        if (res.success && res.id) {
+          const syncedId = res.id;
+          setActiveRide((curr) =>
+            curr && (curr === startedRide || (startedRide.id && curr.id === startedRide.id))
+              ? { ...curr, id: syncedId }
+              : curr
+          );
+          setRidesHistory((prev) =>
+            prev.map((r) =>
+              r === startedRide || (startedRide.id && r.id === startedRide.id) ? { ...r, id: syncedId } : r
+            )
+          );
+        }
+      })
+      .catch(() => {});
     savePagamentoSupabase({
-      id: `pag-${startedRide.id}`,
       id_motorista: startedRide.driver?.id || '',
       nome_motorista: startedRide.driver?.name || '',
       email_motorista: startedRide.driver?.email || '',
@@ -400,7 +417,10 @@ export default function App() {
       ratingComment: comment,
       issueComment: issueComment,
     };
-    setRidesHistory((prev) => [finalizedRide, ...prev.filter((r) => r.id !== finalizedRide.id)]);
+    setRidesHistory((prev) => [
+      finalizedRide,
+      ...prev.filter((r) => (finalizedRide.id ? r.id !== finalizedRide.id : r !== targetRide)),
+    ]);
     saveIsolatedRide(finalizedRide, currentUser);
 
     // Salva avaliação real na memória da sessão e no Supabase
@@ -619,9 +639,8 @@ export default function App() {
       setCurrentUser((prev) => (prev ? { ...prev, driverData: updated } : null));
     }
 
-    // Salvar na tabela public.pagamentos no Supabase
+    // Salvar na tabela public.pagamentos no Supabase (id gerado automaticamente)
     savePagamentoSupabase({
-      id: driver.pendingPayment?.comprovanteId || `PAG-${Date.now()}`,
       id_motorista: driver.id,
       nome_motorista: driver.name,
       email_motorista: driver.email,
@@ -655,9 +674,8 @@ export default function App() {
       setCurrentUser((prev) => (prev ? { ...prev, driverData: updated } : null));
     }
 
-    // Salvar na tabela public.pagamentos no Supabase
+    // Salvar na tabela public.pagamentos no Supabase (id gerado automaticamente)
     savePagamentoSupabase({
-      id: driver.pendingPayment?.comprovanteId || `PAG-${Date.now()}`,
       id_motorista: driver.id,
       nome_motorista: driver.name,
       email_motorista: driver.email,

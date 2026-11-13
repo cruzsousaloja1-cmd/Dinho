@@ -322,7 +322,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     }
 
     const newDriver: Driver = {
-      id: `drv-${Date.now().toString().slice(-5)}`,
+      id: '',
       name: currentUser.name,
       avatar: currentUser.avatar || '',
       phone: currentUser.phone,
@@ -368,7 +368,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       tipo: selectedCategory.userTipo,
       placa: cleanPlate,
       avatar: newDriver.avatar,
-      rating: 5.0,
+      rating: 0,
       driverData: newDriver,
       createdAt: new Date().toISOString(),
     };

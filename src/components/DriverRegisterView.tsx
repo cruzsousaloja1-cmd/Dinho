@@ -56,7 +56,7 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
 
     // Cria motorista ativo sem mensalidade (85% motorista / 15% Race)
     const newDriver: Driver = {
-      id: `drv-${Date.now().toString().slice(-5)}`,
+      id: '',
       name: cleanName,
       avatar: '',
       phone: cleanPhone,

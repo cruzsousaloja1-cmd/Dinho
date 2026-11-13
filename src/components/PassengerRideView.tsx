@@ -347,7 +347,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     };
 
     const newRide: Ride = {
-      id: `RCE-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: '',
       passengerId: currentUser?.id,
       passengerEmail: currentUser?.email,
       passengerName: currentUser?.name || 'Passageiro RACE',

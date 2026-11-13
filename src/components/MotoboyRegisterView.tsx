@@ -54,7 +54,7 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
 
     // Cria conta de Motoboy Parceiro (RACE Flash Entregas & Moto Passageiro)
     const newMotoboy: Driver = {
-      id: `mtb-${Date.now().toString().slice(-5)}`,
+      id: '',
       name: cleanName,
       avatar: '',
       phone: cleanPhone,

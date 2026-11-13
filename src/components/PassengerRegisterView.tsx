@@ -52,7 +52,7 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
     }
 
     const newPassenger: AppUser = {
-      id: `psg-${Date.now().toString().slice(-5)}`,
+      id: '',
       name: cleanName,
       email: cleanEmail,
       phone: cleanPhone,

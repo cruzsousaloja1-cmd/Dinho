@@ -149,7 +149,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
 
       createdDriver = {
-        id: `drv-${Math.floor(100 + Math.random() * 900)}`,
+        id: '',
         name: name || (email.split('@')[0].toUpperCase()),
         avatar: '',
         phone: phone || '',
@@ -183,7 +183,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const userTipo = role === 'driver' ? 'driver' : 'passenger';
     const appUser: AppUser = {
-      id: `usr-${Date.now()}`,
+      id: '',
       name: name || (email.split('@')[0]),
       email,
       phone: phone || '',

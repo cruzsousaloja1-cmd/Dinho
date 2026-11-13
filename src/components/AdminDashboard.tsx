@@ -134,8 +134,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const mappedWithdrawals: WithdrawalRequest[] = pagamentosData
         .filter((p) => p.tipo === 'saque')
         .map((p) => ({
-          id: p.id,
-          driverId: p.id_motorista || '',
+          id: p.id !== undefined && p.id !== null ? String(p.id) : '',
+          driverId: p.id_motorista !== undefined && p.id_motorista !== null ? String(p.id_motorista) : '',
           driverName: p.nome_motorista || 'Condutor',
           driverPhone: '',
           pixKey: p.chave_pix || '',
@@ -2208,7 +2208,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     try {
                       for (const d of drivers) {
                         await saveUsuarioSupabase({
-                          id: d.id,
                           nome: d.name,
                           email: d.email,
                           celular: d.phone,
@@ -2230,7 +2229,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       }
                       for (const p of passengers) {
                         await saveUsuarioSupabase({
-                          id: p.id,
                           nome: p.name,
                           email: p.email,
                           celular: p.phone,
@@ -2244,7 +2242,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           ano: 2023,
                           cnh: '',
                           avatar: p.avatar,
-                          rating: p.rating || 5.0,
+                          rating: p.rating || 0,
                         });
                         count++;
                       }

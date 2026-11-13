@@ -197,10 +197,10 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
     };
 
     const deliveryRide: Ride = {
-      id: `FLASH-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: '',
       passengerName: `Envio Flash (${packageType})`,
-      passengerPhone: '(11) 98888-7766',
-      passengerRating: 5.0,
+      passengerPhone: '',
+      passengerRating: 0,
       driver: motoboy,
       category: 'moto_entrega',
       pickup: finalPickup,
