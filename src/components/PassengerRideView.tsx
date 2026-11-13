@@ -1013,6 +1013,18 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           <Search className="w-6 h-6 stroke-[2.5]" />
           <span>Buscar corrida</span>
         </button>
+
+        {/* Botão DESABILITADO no início (cinza, não clicável) */}
+        <div className="pt-2">
+          <button
+            type="button"
+            disabled
+            className="w-full bg-slate-100 border-2 border-slate-300 text-slate-400 font-heading font-black text-xs sm:text-sm py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed uppercase tracking-wider shadow-none select-none"
+          >
+            <Lock className="w-4 h-4 text-slate-400" />
+            <span>Complete endereço e pagamento para ver o mapa</span>
+          </button>
+        </div>
       </div>
       )}
 
@@ -1047,17 +1059,39 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </button>
           </div>
 
-          {/* SOMENTE O BOTÃO: "VER O MAPA TELA INTEIRA" (LARANJA, GRANDE, SEM MINI MAPA NEM BOLINHAS) */}
-          {onOpenFullMap && (
-            <button
-              type="button"
-              onClick={onOpenFullMap}
-              className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
-            >
-              <Maximize2 className="w-6 h-6 stroke-[2.5]" />
-              <span>VER O MAPA TELA INTEIRA</span>
-            </button>
-          )}
+          {/* BOTÃO BLOQUEADO: Só libera após as 4 etapas (Endereço início com número + Chegada com número + Escolha da opção + Pagamento confirmado) */}
+          <div className="w-full">
+            {activeRide && activeRide.paymentStatus === 'paid' ? (
+              onOpenFullMap && (
+                <button
+                  type="button"
+                  onClick={onOpenFullMap}
+                  className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider animate-fade-in"
+                >
+                  <Maximize2 className="w-6 h-6 stroke-[2.5]" />
+                  <span>VER O MAPA TELA INTEIRA</span>
+                </button>
+              )
+            ) : (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled
+                  className="w-full bg-slate-100 border-2 border-slate-300 text-slate-400 font-heading font-black text-xs sm:text-sm py-4 px-6 rounded-2xl flex items-center justify-center gap-2.5 cursor-not-allowed shadow-none select-none uppercase tracking-wider"
+                >
+                  <Lock className="w-5 h-5 text-slate-400" />
+                  <span>Complete endereço e pagamento para ver o mapa</span>
+                </button>
+                <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 font-mono text-center flex-wrap">
+                  <span className="text-emerald-700 font-bold">✓ 1. Endereço com número</span>
+                  <span>&bull;</span>
+                  <span className="text-[#ff6a00] font-black">2. Escolha sua opção abaixo</span>
+                  <span>&bull;</span>
+                  <span className="text-slate-400 font-bold">3. Pagamento no app</span>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Opções de Corrida para Passageiro (4 Opções com VALOR FINAL) */}
           <div className="space-y-3">

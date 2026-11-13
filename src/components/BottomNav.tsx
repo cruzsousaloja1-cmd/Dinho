@@ -116,7 +116,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     {
       id: 'driver_portal' as TabType,
       label: 'Motorista',
-      sublabel: 'R$200 Semanal',
+      sublabel: '85% seu • 15% Race',
       icon: UserCheck,
       isHighlight: true,
       onlineDot: isDriverOnline,

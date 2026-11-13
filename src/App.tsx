@@ -906,7 +906,17 @@ export default function App() {
             currentDriver={currentDriver}
             loginSuccessBanner={loginSuccessBanner}
             onClearLoginBanner={() => setLoginSuccessBanner(null)}
-            onOpenFullMap={() => setIsFullMapOpen(true)}
+            onOpenFullMap={() => {
+              if (!activeRide || activeRide.paymentStatus !== 'paid') {
+                triggerPush(
+                  'Complete o fluxo primeiro',
+                  'Preencha seu endereço de início e chegada com número, escolha a categoria e confirme o pagamento no app para liberar o mapa.',
+                  'ride'
+                );
+                return;
+              }
+              setIsFullMapOpen(true);
+            }}
           />
         )}
 
@@ -1109,19 +1119,36 @@ export default function App() {
             );
             if (!isUserAdmin) return;
           }
+
+          // Se for passageiro e tentar abrir OPÇÃO ou ATIVIDADE antes de ter corrida paga:
+          const isPassenger = !currentUser?.role || currentUser.role === 'passenger';
+          const hasPaidRide = Boolean(activeRide && activeRide.paymentStatus === 'paid');
+
+          if (isPassenger && (tab === 'passenger_options' || tab === 'history')) {
+            if (!hasPaidRide) {
+              triggerPush(
+                'Faça sua corrida primeiro',
+                'Preencha endereço de início e chegada com número, escolha a categoria e conclua o pagamento no app antes de acessar.',
+                'ride'
+              );
+              setActiveTab('rides');
+              return;
+            }
+          }
+
           setActiveTab(tab);
         }}
         isDriverOnline={currentDriver.status === 'online'}
         currentUser={currentUser}
       />
 
-      {/* 1. Página de Mapa Fullscreen Toda Tela Sem Nenhuma Informação por Cima */}
-      {isFullMapOpen && (
+      {/* 1. Página de Mapa Fullscreen Toda Tela Sem Nenhuma Informação por Cima (Somente com corrida paga) */}
+      {isFullMapOpen && activeRide && activeRide.paymentStatus === 'paid' && (
         <FullMapView
           onClose={() => setIsFullMapOpen(false)}
           pickup={pickup}
           destination={destination}
-          activeDriver={activeRide?.driver || (drivers.length > 0 ? drivers[0] : null)}
+          activeDriver={activeRide.driver ?? null}
           activeRide={activeRide}
           onCompleteRide={handleCompleteRide}
           onUpdateDriverPosition={(pos) => {
