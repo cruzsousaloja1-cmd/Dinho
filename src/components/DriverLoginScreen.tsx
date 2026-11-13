@@ -4,6 +4,7 @@ import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, S
 import confetti from 'canvas-confetti';
 import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
 import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase } from '../supabase';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 interface DriverLoginScreenProps {
   drivers: Driver[];
@@ -35,6 +36,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [loginErrorMessage, setLoginErrorMessage] = useState<string | null>(null);
   const [loginSuccessMessage, setLoginSuccessMessage] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
   // Estados do cadastro com 5 campos: Nome, E-mail, WhatsApp, Login, Senha
   const [regName, setRegName] = useState('');
@@ -98,6 +100,30 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       if (cleanIdentifier === 'admin@race.com.br') {
         const result = verifyUserLogin(cleanIdentifier, loginPassword);
         if (!result.success || !result.user) {
+          // Fallback: verifica se a nova senha do administrador está salva no Supabase (public.usuarios)
+          const cloudAdmin = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
+          if (cloudAdmin.success) {
+            const adminUser: AppUser = {
+              id: 'usr-admin-master',
+              name: 'Administrador Geral',
+              email: 'admin@race.com.br',
+              phone: '(19) 99999-0000',
+              role: 'admin',
+              isAdmin: true,
+              placa: 'ADMIN-01',
+              rating: 5.0,
+            };
+            try {
+              localStorage.setItem('race_current_user', JSON.stringify(adminUser));
+            } catch {}
+            setLoginSuccessMessage('Acesso ADM liberado!');
+            try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
+            setTimeout(() => {
+              onLoginSuccess(adminUser);
+            }, 300);
+            return;
+          }
+
           setLoginErrorMessage(
             viewMode === 'admin_login'
               ? 'Acesso restrito — senha incorreta para o Administrador.'
@@ -113,9 +139,22 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         return;
       }
 
-      // 1. Busca direta na tabela "usuarios" no Supabase pelo email + senha
+      // 1. Busca direta na tabela "usuarios" no Supabase pelo email/login + senha
       const cloudRes = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
       if (!cloudRes.success || !cloudRes.data) {
+        // Fallback local apenas se não houver usuário na nuvem (ou offline)
+        const cloudExists = await getUsuarioSupabase(cleanIdentifier).catch(() => null);
+        if (!cloudExists) {
+          const localRes = verifyUserLogin(cleanIdentifier, loginPassword);
+          if (localRes.success && localRes.user) {
+            setLoginSuccessMessage('Acesso autorizado!');
+            try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
+            setTimeout(() => {
+              onLoginSuccess(localRes.user!, localRes.driver);
+            }, 300);
+            return;
+          }
+        }
         setLoginErrorMessage(cloudRes.error || 'Usuário não encontrado ou senha incorreta no Supabase.');
         return;
       }
@@ -483,8 +522,19 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 ENTRAR COM LOGIN E SENHA
               </button>
 
+              {/* Botão Esqueci a senha abaixo de ENTRAR COM LOGIN E SENHA */}
+              <div className="pt-0.5 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setIsForgotPasswordOpen(true)}
+                  className="px-4 py-1.5 text-xs font-bold text-zinc-300 hover:text-[#ff6a00] underline underline-offset-4 transition-colors cursor-pointer"
+                >
+                  Esqueci a senha
+                </button>
+              </div>
+
               {/* Botão ADM exatamente abaixo de ENTRAR COM LOGIN E SENHA: pequeno, discreto, cinza claro, centralizado, sempre visível */}
-              <div className="pt-1 flex justify-center">
+              <div className="pt-0.5 flex justify-center">
                 <button
                   type="button"
                   onClick={() => {
@@ -584,6 +634,21 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
               >
                 {isLoggingIn ? 'VALIDANDO...' : 'ENTRAR NO PAINEL ADM'}
               </button>
+
+              <div className="pt-1 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!loginIdentifier.trim()) {
+                      setLoginIdentifier('admin@race.com.br');
+                    }
+                    setIsForgotPasswordOpen(true);
+                  }}
+                  className="px-4 py-1.5 text-xs font-bold text-zinc-300 hover:text-[#ff6a00] underline underline-offset-4 transition-colors cursor-pointer"
+                >
+                  Esqueci a senha
+                </button>
+              </div>
             </form>
           </div>
         )}
@@ -667,6 +732,16 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
               >
                 {isLoggingIn ? 'ENTRANDO NA NUVEM...' : 'ENTRAR NO RACE'}
               </button>
+
+              <div className="pt-1 text-center">
+                <button
+                  type="button"
+                  onClick={() => setIsForgotPasswordOpen(true)}
+                  className="px-4 py-1.5 text-xs font-bold text-zinc-300 hover:text-[#ff6a00] underline underline-offset-4 transition-colors cursor-pointer"
+                >
+                  Esqueci a senha
+                </button>
+              </div>
             </form>
 
             {/* Atalhos para criar conta */}
@@ -987,6 +1062,24 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal Esqueci a senha (3 passos: E-mail -> Código 4 números -> Nova senha) */}
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordOpen}
+        onClose={() => setIsForgotPasswordOpen(false)}
+        initialIdentifier={
+          viewMode === 'admin_login'
+            ? loginIdentifier || 'admin@race.com.br'
+            : loginIdentifier
+        }
+        onPasswordResetSuccess={(resolvedIdentifier, successMessage) => {
+          setLoginErrorMessage(null);
+          setLoginIdentifier(resolvedIdentifier);
+          setLoginPassword('');
+          setLoginSuccessMessage(successMessage);
+          setViewMode(resolvedIdentifier === 'admin@race.com.br' ? 'admin_login' : 'login');
+        }}
+      />
     </div>
   );
 };

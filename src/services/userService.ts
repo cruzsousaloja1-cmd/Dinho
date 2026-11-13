@@ -200,6 +200,149 @@ export function getUserAccount(email: string): StoredUserAccount | null {
   return null;
 }
 
+export const ADMIN_PASSWORD_STORAGE_KEY = 'race_admin_custom_password';
+
+export function getStoredAdminPassword(): string | null {
+  try {
+    return localStorage.getItem(ADMIN_PASSWORD_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function findLocalUserAccount(identifier: string): StoredUserAccount | null {
+  const clean = normalizeEmail(identifier);
+  if (!clean) return null;
+
+  const direct = getUserAccount(clean);
+  if (direct) return direct;
+
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('race_user_')) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed: StoredUserAccount = JSON.parse(raw);
+          if (
+            normalizeEmail(parsed.email) === clean ||
+            (parsed.login && parsed.login.trim().toLowerCase() === clean) ||
+            (parsed.phone && clean.replace(/\D/g, '').length >= 8 && parsed.phone.replace(/\D/g, '') === clean.replace(/\D/g, ''))
+          ) {
+            return parsed;
+          }
+        }
+      }
+    }
+
+    // Fallback para contas criadas pelo AuthModal ('race_users')
+    const rawAuthUsers = localStorage.getItem('race_users');
+    if (rawAuthUsers) {
+      const list = JSON.parse(rawAuthUsers);
+      if (Array.isArray(list)) {
+        const matched = list.find((u: any) => normalizeEmail(u.email) === clean);
+        if (matched) {
+          return {
+            id: matched.id || `usr-${Date.now()}`,
+            name: matched.name || clean.split('@')[0],
+            email: normalizeEmail(matched.email),
+            phone: matched.phone || '',
+            login: normalizeEmail(matched.email),
+            role: matched.role || 'passenger',
+            tipo: matched.tipo || 'passenger',
+            password: matched.password,
+            createdAt: matched.createdAt || new Date().toISOString(),
+          };
+        }
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+export function updateUserPasswordLocal(identifier: string, newPassword: string): void {
+  const clean = normalizeEmail(identifier);
+  if (!clean || !newPassword) return;
+
+  try {
+    // 1. Se for o Administrador
+    if (clean === ADMIN_EMAIL) {
+      localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, newPassword);
+    }
+
+    // 2. Atualiza qualquer race_user_* correspondente (por e-mail ou login)
+    const keysToUpdate: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('race_user_')) {
+        keysToUpdate.push(k);
+      }
+    }
+
+    let resolvedEmail = clean;
+    for (const k of keysToUpdate) {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      try {
+        const parsed: StoredUserAccount = JSON.parse(raw);
+        if (
+          normalizeEmail(parsed.email) === clean ||
+          (parsed.login && parsed.login.trim().toLowerCase() === clean)
+        ) {
+          resolvedEmail = normalizeEmail(parsed.email) || clean;
+          const updatedAccount: StoredUserAccount = {
+            ...parsed,
+            password: newPassword,
+            driverData: parsed.driverData
+              ? { ...parsed.driverData, password: newPassword }
+              : parsed.driverData,
+          };
+          localStorage.setItem(k, JSON.stringify(updatedAccount));
+        }
+      } catch {}
+    }
+
+    // 3. Atualiza em race_registered_drivers
+    const storedDrivers = localStorage.getItem('race_registered_drivers');
+    if (storedDrivers) {
+      const drivers: Driver[] = JSON.parse(storedDrivers);
+      const nextDrivers = drivers.map((d) =>
+        normalizeEmail(d.email) === resolvedEmail || normalizeEmail(d.email) === clean
+          ? { ...d, password: newPassword }
+          : d
+      );
+      localStorage.setItem('race_registered_drivers', JSON.stringify(nextDrivers));
+    }
+
+    // 4. Atualiza em race_registered_passengers
+    const storedPass = localStorage.getItem('race_registered_passengers');
+    if (storedPass) {
+      const passList: AppUser[] = JSON.parse(storedPass);
+      const nextPass = passList.map((p) =>
+        normalizeEmail(p.email) === resolvedEmail || normalizeEmail(p.email) === clean
+          ? { ...p, password: newPassword }
+          : p
+      );
+      localStorage.setItem('race_registered_passengers', JSON.stringify(nextPass));
+    }
+
+    // 5. Atualiza em race_users
+    const rawAuthUsers = localStorage.getItem('race_users');
+    if (rawAuthUsers) {
+      const usersList: any[] = JSON.parse(rawAuthUsers);
+      const nextUsers = usersList.map((u) =>
+        normalizeEmail(u.email) === resolvedEmail || normalizeEmail(u.email) === clean
+          ? { ...u, password: newPassword }
+          : u
+      );
+      localStorage.setItem('race_users', JSON.stringify(nextUsers));
+    }
+  } catch (err) {
+    console.warn('Erro ao atualizar senha local:', err);
+  }
+}
+
 /**
  * Validação segura de login por e-mail e senha
  */
@@ -214,9 +357,19 @@ export function verifyUserLogin(
 
   // 0. Conta Mestre de Administrador (admin@race.com.br)
   if (cleanEmail === ADMIN_EMAIL) {
+    const customAdminPass = getStoredAdminPassword();
     const validAdminPass = ['race123', 'race@2024', 'admin', 'admin123'];
-    if (!validAdminPass.includes(passwordInput)) {
-      return { success: false, error: 'Senha incorreta para a conta de Administrador (use race123).' };
+    const isAdminPasswordValid = customAdminPass
+      ? passwordInput === customAdminPass
+      : validAdminPass.includes(passwordInput);
+
+    if (!isAdminPasswordValid) {
+      return {
+        success: false,
+        error: customAdminPass
+          ? 'Senha incorreta para a conta de Administrador.'
+          : 'Senha incorreta para a conta de Administrador (use race123).',
+      };
     }
 
     const adminUser: AppUser = {
@@ -237,29 +390,8 @@ export function verifyUserLogin(
     return { success: true, user: adminUser };
   }
 
-  // 1. Busca os dados daquele usuário específico (por e-mail ou por login)
-  let account = getUserAccount(cleanEmail);
-  if (!account) {
-    // Procura por username/login
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('race_user_')) {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const parsed: StoredUserAccount = JSON.parse(raw);
-            if (
-              (parsed.login && parsed.login.trim().toLowerCase() === cleanEmail) ||
-              (parsed.phone && parsed.phone.replace(/\D/g, '') === cleanEmail.replace(/\D/g, ''))
-            ) {
-              account = parsed;
-              break;
-            }
-          }
-        }
-      }
-    } catch {}
-  }
+  // 1. Busca os dados daquele usuário específico (por e-mail, login ou telefone)
+  const account = findLocalUserAccount(cleanEmail);
 
   if (!account) {
     return { success: false, error: 'Usuário não encontrado. Verifique seu e-mail/login ou crie uma conta.' };
@@ -307,7 +439,19 @@ export async function verifyUserLoginAsync(
 
   // 0. Conta Mestre de Administrador (admin@race.com.br)
   if (cleanIdentifier === ADMIN_EMAIL) {
-    return verifyUserLogin(cleanIdentifier, passwordInput);
+    const localAdminCheck = verifyUserLogin(cleanIdentifier, passwordInput);
+    if (localAdminCheck.success) return localAdminCheck;
+
+    // Fallback: verifica se existe linha admin@race.com.br no Supabase com senha atualizada
+    try {
+      const cloudAdmin = await getUsuarioSupabase(ADMIN_EMAIL);
+      if (cloudAdmin && cloudAdmin.senha === passwordInput) {
+        updateUserPasswordLocal(ADMIN_EMAIL, passwordInput);
+        return verifyUserLogin(cleanIdentifier, passwordInput);
+      }
+    } catch {}
+
+    return localAdminCheck;
   }
 
   // 1. Tentar buscar primeiro na nuvem Supabase
@@ -331,12 +475,14 @@ export async function verifyUserLoginAsync(
         cloudUser.tipo === 'motorista_confort' ||
         isMoto;
 
+      const cloudEmail = normalizeEmail(cloudUser['e-mail'] || cloudUser.email || cleanIdentifier);
+
       let driverObj: Driver | undefined = undefined;
       if (isDriver) {
         driverObj = {
           id: cloudUser.id,
           name: cloudUser.nome,
-          email: cloudUser.email,
+          email: cloudEmail,
           phone: cloudUser.celular || cloudUser.whatsapp || '',
           avatar: cloudUser.avatar || '',
           rating: Number(cloudUser.rating || 5.0),
@@ -367,10 +513,10 @@ export async function verifyUserLoginAsync(
       const userPayload: AppUser = {
         id: cloudUser.id,
         name: cloudUser.nome,
-        email: cloudUser.email,
+        email: cloudEmail,
         phone: cloudUser.celular || cloudUser.whatsapp || '',
         whatsapp: cloudUser.whatsapp || cloudUser.celular || '',
-        login: cloudUser.login || cloudUser.email,
+        login: cloudUser.login || cloudEmail,
         role: role as any,
         tipo: (cloudUser.tipo as any) || role,
         placa: cloudUser.placa || '',

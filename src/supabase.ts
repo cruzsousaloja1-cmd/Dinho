@@ -227,18 +227,34 @@ export async function loginUsuarioSupabase(
       .maybeSingle();
 
     // Fallback se a coluna for 'email'
-    if (error && error.message?.includes('e-mail')) {
+    if (!data && (!error || error.message?.includes('e-mail'))) {
       const retry = await supabase
         .from('usuarios')
         .select('*')
         .eq('email', cleanEmail)
         .eq('senha', senhaInput)
         .maybeSingle();
-      data = retry.data;
-      error = retry.error;
+      if (retry.data) {
+        data = retry.data;
+        error = retry.error;
+      }
     }
 
-    if (error) {
+    // Fallback se o usuário digitou o campo 'login'
+    if (!data) {
+      const retryLogin = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('login', cleanEmail)
+        .eq('senha', senhaInput)
+        .maybeSingle();
+      if (retryLogin.data) {
+        data = retryLogin.data;
+        error = retryLogin.error;
+      }
+    }
+
+    if (error && !error.message?.includes('e-mail') && !error.message?.includes('login')) {
       return { success: false, error: error.message };
     }
 
@@ -375,7 +391,7 @@ export async function saveUsuarioSupabase(user: {
 }
 
 /**
- * Busca usuário por e-mail no Supabase (suporta 'e-mail' e 'email')
+ * Busca usuário por e-mail ou login no Supabase (suporta 'e-mail', 'email' e 'login')
  */
 export async function getUsuarioSupabase(emailOrLogin: string): Promise<any | null> {
   const clean = emailOrLogin.trim().toLowerCase();
@@ -399,11 +415,95 @@ export async function getUsuarioSupabase(emailOrLogin: string): Promise<any | nu
       .maybeSingle();
 
     if (byNoHyphen) return byNoHyphen;
+
+    // 3. Tenta por 'login'
+    const { data: byLogin } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('login', clean)
+      .maybeSingle();
+
+    if (byLogin) return byLogin;
   } catch (err) {
     console.warn('Aviso ao consultar Supabase:', err);
   }
 
   return null;
+}
+
+/**
+ * Atualiza a senha do usuário na tabela public.usuarios no Supabase
+ * Se for o administrador (admin@race.com.br) e ainda não houver linha em public.usuarios, cria a linha para persistir a nova senha na nuvem.
+ */
+export async function updatePasswordSupabase(
+  identifier: string,
+  newPassword: string,
+  fallbackNome?: string
+): Promise<{ success: boolean; error?: string }> {
+  const clean = identifier.trim().toLowerCase();
+  if (!clean || !newPassword) {
+    return { success: false, error: 'Identificador ou senha inválidos.' };
+  }
+
+  try {
+    // 1. Tenta atualizar por 'e-mail'
+    const resHyphen = await supabase
+      .from('usuarios')
+      .update({ senha: newPassword })
+      .eq('e-mail', clean)
+      .select();
+
+    if (!resHyphen.error && resHyphen.data && resHyphen.data.length > 0) {
+      return { success: true };
+    }
+
+    // 2. Tenta atualizar por 'email'
+    const resNoHyphen = await supabase
+      .from('usuarios')
+      .update({ senha: newPassword })
+      .eq('email', clean)
+      .select();
+
+    if (!resNoHyphen.error && resNoHyphen.data && resNoHyphen.data.length > 0) {
+      return { success: true };
+    }
+
+    // 3. Tenta atualizar por 'login'
+    const resLogin = await supabase
+      .from('usuarios')
+      .update({ senha: newPassword })
+      .eq('login', clean)
+      .select();
+
+    if (!resLogin.error && resLogin.data && resLogin.data.length > 0) {
+      return { success: true };
+    }
+
+    // 4. Se ainda não existir linha para o usuário (ex: admin@race.com.br master), insere na tabela public.usuarios
+    if (clean === 'admin@race.com.br') {
+      const inserted = await insertUsuarioSupabase({
+        nome: fallbackNome || 'Administrador Geral',
+        email: clean,
+        celular: '(19) 99999-0000',
+        senha: newPassword,
+        tipo: 'admin',
+      });
+      if (inserted.success) {
+        return { success: true };
+      }
+      return { success: false, error: inserted.error };
+    }
+
+    // Caso tenha ocorrido erro de rede/schema mas não impediu o fluxo local
+    const anyError = resHyphen.error || resNoHyphen.error || resLogin.error;
+    if (anyError) {
+      return { success: false, error: anyError.message };
+    }
+
+    return { success: false, error: 'Usuário não encontrado na tabela public.usuarios do Supabase.' };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao atualizar senha no Supabase.' };
+  }
 }
 
 /**

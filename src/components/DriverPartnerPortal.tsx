@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
-import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
+import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
 import { savePagamentoSupabase } from '../supabase';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { 
   WEEKLY_FEE, 
   WEEKLY_FEE_TEXT, 
@@ -301,6 +302,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [isDriverGpsOpen, setIsDriverGpsOpen] = useState(false);
   const [acceptedDriverRide, setAcceptedDriverRide] = useState<Ride | null>(null);
   const [simulatedRideCode] = useState<string>(() => generateUniqueRideConfirmationCode());
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
   // Galeria de Fotos: Perfil, CNH e Foto do Veículo
   const driverAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -500,14 +502,14 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     });
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail || !loginPassword) {
       setLoginFeedback('Por favor, informe seu login (e-mail) e sua senha.');
       return;
     }
 
-    const verification = verifyUserLogin(loginEmail, loginPassword);
+    const verification = await verifyUserLoginAsync(loginEmail, loginPassword);
     if (!verification.success || !verification.user) {
       setLoginFeedback(verification.error || 'E-mail ou senha incorretos.');
       return;
@@ -1833,6 +1835,16 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             <div className="text-center pt-1">
               <button
                 type="button"
+                onClick={() => setIsForgotPasswordOpen(true)}
+                className="text-xs font-bold text-zinc-300 hover:text-[#ff6a00] underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Esqueci a senha
+              </button>
+            </div>
+
+            <div className="text-center pt-1">
+              <button
+                type="button"
                 onClick={() => setActiveSubTab('register')}
                 className="text-[#ff6a00] hover:underline text-sm font-bold transition-all cursor-pointer inline-block"
               >
@@ -2714,6 +2726,20 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           }}
         />
       )}
+
+      {/* Modal Esqueci a senha */}
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordOpen}
+        onClose={() => setIsForgotPasswordOpen(false)}
+        initialIdentifier={loginEmail}
+        onPasswordResetSuccess={(resolvedIdentifier, successMessage) => {
+          setLoginFeedback(null);
+          setLoginEmail(resolvedIdentifier);
+          setLoginPassword('');
+          setLoginSuccessNotice(successMessage);
+          setActiveSubTab('login');
+        }}
+      />
     </div>
   );
 };

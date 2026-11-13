@@ -23,6 +23,8 @@ import {
   Zap
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { verifyUserLoginAsync } from '../services/userService';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -59,8 +61,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // Validation & Feedback
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [comfortNotice, setComfortNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
   if (!isOpen) return null;
 
@@ -70,9 +74,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     parseInt(vehicleYear, 10) || 0
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setSuccessMessage(null);
     setComfortNotice(null);
 
     if (!email || !password) {
@@ -83,6 +88,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (password.length < 4) {
       setErrorMessage('A senha deve ter pelo menos 4 caracteres.');
       return;
+    }
+
+    if (mode === 'login') {
+      setIsSubmitting(true);
+      try {
+        const res = await verifyUserLoginAsync(email, password);
+        if (!res.success || !res.user) {
+          setErrorMessage(res.error || 'Login ou senha incorretos.');
+          return;
+        }
+        try {
+          confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+        } catch {}
+        onAuthSuccess(res.user, res.driver);
+        onClose();
+        return;
+      } finally {
+        setIsSubmitting(false);
+      }
     }
 
     if (mode === 'register') {
@@ -312,7 +336,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         </div>
 
-        {/* Error or Comfort Feedback */}
+        {/* Error or Success Feedback */}
+        {successMessage && (
+          <div className="mb-4 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs sm:text-sm p-3.5 rounded-2xl font-bold flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span>{successMessage}</span>
+          </div>
+        )}
+
         {errorMessage && (
           <div className="mb-4 bg-rose-50 border border-rose-300 text-rose-800 text-xs sm:text-sm p-3.5 rounded-2xl font-bold flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
@@ -503,10 +534,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </span>
             <ArrowRight className="w-5 h-5" />
           </button>
+
+          {mode === 'login' && (
+            <div className="pt-1 text-center">
+              <button
+                type="button"
+                onClick={() => setIsForgotPasswordOpen(true)}
+                className="text-xs font-bold text-slate-600 hover:text-[#ff6a00] underline underline-offset-4 cursor-pointer transition-colors"
+              >
+                Esqueci a senha
+              </button>
+            </div>
+          )}
         </form>
-
-
       </div>
+
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordOpen}
+        onClose={() => setIsForgotPasswordOpen(false)}
+        initialIdentifier={email}
+        onPasswordResetSuccess={(resolvedIdentifier, msg) => {
+          setMode('login');
+          setEmail(resolvedIdentifier);
+          setPassword('');
+          setErrorMessage(null);
+          setSuccessMessage(msg);
+        }}
+      />
     </div>
   );
 };
