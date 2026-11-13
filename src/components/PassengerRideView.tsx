@@ -108,7 +108,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   onOpenFullMap,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'race_pay'>('pix');
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'money' | 'race_pay'>('pix');
   const [pickupInput, setPickupInput] = useState(
     pickup?.address || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP'
   );
@@ -426,7 +426,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setPassengerStep('options');
   };
 
-  const initAsaasPayment = async (method: 'pix' | 'credit_card' | 'race_pay', cat: VehicleCategory = selectedCategory) => {
+  const initAsaasPayment = async (method: 'pix' | 'credit_card' | 'money' | 'race_pay', cat: VehicleCategory = selectedCategory) => {
+    if (method === 'money') {
+      setIsLoadingAsaas(false);
+      return;
+    }
     setIsLoadingAsaas(true);
     const fare = calculateFare(cat, dynamicDistanceKm);
     try {
@@ -1420,22 +1424,22 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => {
                     setPaymentMethod('pix');
                     initAsaasPayment('pix', selectedCategory);
                   }}
-                  className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  className={`p-3 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
                     paymentMethod === 'pix'
                       ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-black shadow-sm ring-2 ring-emerald-500/20'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
                   }`}
                 >
                   <QrCode className="w-6 h-6 text-emerald-600" />
-                  <span className="text-sm font-black">PIX no app</span>
-                  <span className="text-xs text-emerald-700 font-bold">Asaas Instantâneo</span>
+                  <span className="text-xs sm:text-sm font-black">PIX no app</span>
+                  <span className="text-[10px] sm:text-xs text-emerald-700 font-bold">Asaas Instantâneo</span>
                 </button>
 
                 <button
@@ -1444,15 +1448,31 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     setPaymentMethod('credit_card');
                     initAsaasPayment('credit_card', selectedCategory);
                   }}
-                  className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  className={`p-3 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
                     paymentMethod === 'credit_card'
                       ? 'bg-amber-50 border-amber-500 text-amber-950 font-black shadow-sm ring-2 ring-amber-500/20'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
                   }`}
                 >
                   <CreditCard className="w-6 h-6 text-amber-600" />
-                  <span className="text-sm font-black">Cartão no app</span>
-                  <span className="text-xs text-amber-700 font-bold">Link Seguro Asaas</span>
+                  <span className="text-xs sm:text-sm font-black">Cartão no app</span>
+                  <span className="text-[10px] sm:text-xs text-amber-700 font-bold">Link Seguro Asaas</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod('money');
+                  }}
+                  className={`p-3 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    paymentMethod === 'money'
+                      ? 'bg-blue-50 border-blue-500 text-blue-950 font-black shadow-sm ring-2 ring-blue-500/20'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
+                  }`}
+                >
+                  <Wallet className="w-6 h-6 text-blue-600" />
+                  <span className="text-xs sm:text-sm font-black">Dinheiro</span>
+                  <span className="text-[10px] sm:text-xs text-blue-700 font-bold">Ao condutor</span>
                 </button>
               </div>
 
@@ -1705,6 +1725,48 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         <>
                           <Lock className="w-5 h-5 text-white" />
                           <span>Pagar {formatBRL(fare.totalPrice)} com Cartão</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* FLUXO DINHEIRO */}
+              {paymentMethod === 'money' && (
+                <div className="space-y-4 pt-2">
+                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 text-center">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                      <div className="text-left">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase block">Pagamento em Espécie</span>
+                        <span className="font-heading font-black text-slate-900 text-sm flex items-center gap-1.5">
+                          <Wallet className="w-4 h-4 text-blue-600" /> Dinheiro direto ao condutor
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-full border border-blue-300">
+                        {formatBRL(fare.totalPrice)}
+                      </span>
+                    </div>
+
+                    <p className="text-xs sm:text-sm text-slate-700 font-medium">
+                      Pague <strong className="text-slate-950">{formatBRL(fare.totalPrice)}</strong> diretamente ao motorista/motoboy ao embarcar. Ao confirmar abaixo, sua corrida já começa automaticamente e abre o mapa.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={handlePayInAppAction}
+                      disabled={isProcessingPayment}
+                      className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider disabled:opacity-75"
+                    >
+                      {isProcessingPayment ? (
+                        <>
+                          <Loader2 className="w-6 h-6 animate-spin text-white" />
+                          <span>Confirmando corrida...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
+                          <span>Confirmar Dinheiro {formatBRL(fare.totalPrice)} (Ver Mapa)</span>
                         </>
                       )}
                     </button>
