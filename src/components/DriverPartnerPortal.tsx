@@ -305,7 +305,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [simulatedRideCode] = useState<string>(() => generateUniqueRideConfirmationCode());
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
-  // Polling real no Supabase por corridas em status 'searching' enquanto o condutor está ONLINE
+  // Polling real no Supabase por corridas em status 'searching' / 'procurando_motorista' enquanto o condutor está ONLINE
+  const isSearchingRideStatus = (st?: string) => {
+    const s = String(st || '').toLowerCase();
+    return s === 'searching' || s === 'procurando' || s === 'procurando_motorista';
+  };
+
   useEffect(() => {
     if (!isOnline || acceptedDriverRide) {
       if (!isOnline) setCloudSearchingRide(null);
@@ -316,7 +321,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       try {
         const list = await getSearchingCorridasSupabase();
         if (!mounted) return;
-        const firstOpen = list.find((r) => r.status === 'searching' || (r.status as string) === 'procurando') || null;
+        const firstOpen = list.find((r) => isSearchingRideStatus(r.status)) || null;
         setCloudSearchingRide(firstOpen);
       } catch {}
     };
@@ -957,20 +962,35 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 </div>
 
                 {isOnline ? (
-                  (acceptedDriverRide || (activeRide && activeRide.status === 'searching') || cloudSearchingRide) ? (
+                  (acceptedDriverRide || (activeRide && isSearchingRideStatus(activeRide.status)) || cloudSearchingRide) ? (
                     (() => {
                       const incomingRideSnapshot: Ride =
                         acceptedDriverRide ||
-                        (activeRide && activeRide.status === 'searching' ? activeRide : cloudSearchingRide)!;
+                        (activeRide && isSearchingRideStatus(activeRide.status) ? activeRide : cloudSearchingRide)!;
                       const incomingPassengerAvatar = incomingRideSnapshot.passengerAvatar || '';
                       const incomingPassengerName = incomingRideSnapshot.passengerName || 'Passageiro';
                       const incomingPassengerPhone = incomingRideSnapshot.passengerPhone || '';
                       const incomingPickupAddress = incomingRideSnapshot.pickup?.address || '';
                       const incomingDestAddress = incomingRideSnapshot.destination?.address || '';
                       const incomingPrice = incomingRideSnapshot.price || 0;
+                      const isCashCall =
+                        incomingRideSnapshot.paymentMethod === 'money' ||
+                        incomingRideSnapshot.paymentMethod === 'dinheiro';
 
                       return (
                         <div className="bg-gradient-to-b from-white via-slate-50 to-slate-100 p-5 sm:p-6 rounded-3xl border-2 border-[#ff6a00] shadow-xl space-y-4">
+                          {/* Banner Destacado para Corrida em DINHEIRO */}
+                          {isCashCall && (
+                            <div className="bg-emerald-600 text-white border-2 border-emerald-400 rounded-2xl p-4 text-center shadow-lg space-y-1">
+                              <div className="text-lg sm:text-2xl font-heading font-black uppercase tracking-wider">
+                                PAGAMENTO: DINHEIRO
+                              </div>
+                              <p className="text-sm sm:text-base font-extrabold text-emerald-50">
+                                Receber {formatBRL(incomingPrice)} em dinheiro no final da corrida
+                              </p>
+                            </div>
+                          )}
+
                           {/* Header da Chamada */}
                           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 pb-3.5">
                             <div className="flex items-center gap-2.5">
@@ -980,7 +1000,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                                   Nova corrida - Aceitar
                                 </span>
                                 <p className="text-xs text-slate-500 font-mono font-bold mt-0.5">
-                                  Chamado em tempo real
+                                  {isCashCall ? 'PAGAMENTO: DINHEIRO • Chamado em tempo real' : 'Chamado em tempo real'}
                                 </p>
                               </div>
                             </div>
@@ -1118,16 +1138,28 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                                 if (onAcceptIncomingRide) {
                                   onAcceptIncomingRide(acceptedRideObj);
                                 }
-                                setAcceptedRideNotice(`Corrida aceita! Você receberá ${formatBRL(driverEarns)} (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`);
+                                 setAcceptedRideNotice(
+                                  isCashCall
+                                    ? `Corrida em dinheiro aceita! Receber ${formatBRL(incomingPrice)} em dinheiro no final da corrida (85% seu: ${formatBRL(driverEarns)} • Race 15%: ${formatBRL(raceCommission)})`
+                                    : `Corrida aceita! Você receberá ${formatBRL(driverEarns)} (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`
+                                );
                                 setIsDriverGpsOpen(true);
                                 try {
                                   confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
                                 } catch {}
                               }}
-                              className="w-full sm:flex-1 bg-gradient-to-r from-[#ff6a00] to-[#e05e00] hover:from-[#ff7b1a] hover:to-[#eb6800] text-white font-heading font-black py-4 rounded-2xl text-sm sm:text-base transition-all cursor-pointer shadow-lg active:scale-95 text-center border border-[#ff8533] flex items-center justify-center gap-2"
+                              className={`w-full sm:flex-1 text-white font-heading font-black py-4 rounded-2xl text-sm sm:text-base transition-all cursor-pointer shadow-lg active:scale-95 text-center border flex items-center justify-center gap-2 ${
+                                isCashCall
+                                  ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-500'
+                                  : 'bg-gradient-to-r from-[#ff6a00] to-[#e05e00] hover:from-[#ff7b1a] hover:to-[#eb6800] border-[#ff8533]'
+                              }`}
                             >
-                              <Navigation className="w-4 h-4" />
-                              <span>ACEITAR CORRIDA ({formatBRL(incomingPrice)})</span>
+                              <Navigation className="w-4 h-4 shrink-0" />
+                              <span>
+                                {isCashCall
+                                  ? `ACEITAR CORRIDA EM DINHEIRO (${formatBRL(incomingPrice)})`
+                                  : `ACEITAR CORRIDA (${formatBRL(incomingPrice)})`}
+                              </span>
                             </button>
 
                             <button
@@ -2748,9 +2780,18 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             setAcceptedRideNotice('Corrida cancelada.');
           }}
           onCompleteRide={(finishedRide) => {
-            const rid = finishedRide?.id || acceptedDriverRide?.id || activeRide?.id;
-            if (rid) updateCorridaStatusSupabase(rid, 'completed').catch(() => {});
-            const totalRideVal = finishedRide?.price || acceptedDriverRide?.price || activeRide?.price || 0;
+            const targetRide = finishedRide || acceptedDriverRide || activeRide;
+            const rid = targetRide?.id;
+            const isCash =
+              targetRide?.paymentMethod === 'money' || targetRide?.paymentMethod === 'dinheiro';
+            if (rid) {
+              updateCorridaStatusSupabase(
+                rid,
+                isCash ? 'finalizada' : 'completed',
+                isCash ? 'dinheiro' : undefined
+              ).catch(() => {});
+            }
+            const totalRideVal = targetRide?.price || 0;
             const driverEarns = Number((totalRideVal * 0.85).toFixed(2));
             onUpdateDriver({
               ...currentDriver,
@@ -2758,7 +2799,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               earningsWeek: currentDriver.earningsWeek + driverEarns,
               totalRides: currentDriver.totalRides + 1,
             });
-            setAcceptedRideNotice(`Corrida finalizada! Você recebeu ${formatBRL(driverEarns)} (85% líquido).`);
+            setAcceptedRideNotice(
+              isCash
+                ? `Corrida finalizada! Receber ${formatBRL(totalRideVal)} em dinheiro do passageiro (Comissão Race 15%: ${formatBRL(Number((totalRideVal * 0.15).toFixed(2)))}).`
+                : `Corrida finalizada! Você recebeu ${formatBRL(driverEarns)} (85% líquido).`
+            );
             setAcceptedDriverRide(null);
             setIsDriverGpsOpen(false);
           }}

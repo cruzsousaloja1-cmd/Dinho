@@ -242,7 +242,10 @@ export default function App() {
 
   // Polling em tempo real no Supabase enquanto a corrida do passageiro estiver em MODO PROCURANDO
   useEffect(() => {
-    if (!activeRide || activeRide.status !== 'searching') return;
+    const curSt = String(activeRide?.status || '').toLowerCase();
+    const isSearching =
+      curSt === 'searching' || curSt === 'procurando' || curSt === 'procurando_motorista';
+    if (!activeRide || !isSearching) return;
 
     let isMounted = true;
     const checkAccepted = async () => {
@@ -369,14 +372,17 @@ export default function App() {
     }, 6000);
   };
 
-  // Passenger pays -> gera código único de 4 números, salva corrida em MODO PROCURANDO no Supabase (SEM voz ainda!)
+  // Passenger confirma corrida -> gera código único de 4 números, salva corrida em MODO PROCURANDO no Supabase (SEM voz ainda!)
   const handleStartRide = (ride: Ride) => {
+    const isCash = ride.paymentMethod === 'money' || ride.paymentMethod === 'dinheiro';
     const confirmationCode = ride.confirmationCode || generateUniqueRideConfirmationCode();
     const startedRide: Ride = {
       ...ride,
       passengerId: ride.passengerId || currentUser?.id,
       passengerEmail: ride.passengerEmail || currentUser?.email,
-      status: ride.status || 'searching',
+      paymentMethod: isCash ? 'dinheiro' : ride.paymentMethod,
+      paymentStatus: isCash ? 'pending' : (ride.paymentStatus || 'paid'),
+      status: ride.status || (isCash ? 'procurando_motorista' : 'searching'),
       confirmationCode,
     };
     setActiveRide(startedRide);
@@ -401,21 +407,25 @@ export default function App() {
         }
       })
       .catch(() => {});
-    savePagamentoSupabase({
-      id_motorista: startedRide.driver?.id || '',
-      nome_motorista: startedRide.driver?.name || '',
-      email_motorista: startedRide.driver?.email || '',
-      valor: startedRide.price,
-      tipo: 'corrida',
-      status: 'pago',
-      chave_pix: '',
-    }).catch(() => {});
+
+    // Dinheiro NÃO passa pelo Asaas — só grava pagamento Asaas quando for PIX / Cartão
+    if (!isCash) {
+      savePagamentoSupabase({
+        id_motorista: startedRide.driver?.id || '',
+        nome_motorista: startedRide.driver?.name || '',
+        email_motorista: startedRide.driver?.email || '',
+        valor: startedRide.price,
+        tipo: 'corrida',
+        status: 'pago',
+        chave_pix: '',
+      }).catch(() => {});
+    }
     setIsFullMapOpen(true);
 
     // Notificação silenciosa para o radar (sem voz enquanto aguarda motorista aceitar)
     const driverAlert: PushNotification = {
       id: `driver-call-${Date.now()}`,
-      title: '🔔 Nova corrida - Aceitar',
+      title: isCash ? '💵 Nova corrida em DINHEIRO - Aceitar' : '🔔 Nova corrida - Aceitar',
       message: `${ride.passengerName || 'Passageiro'} • ${ride.pickup.address} → ${ride.destination.address} (R$ ${ride.price.toFixed(2).replace('.', ',')})`,
       time: 'Agora',
       type: 'ride',
@@ -425,7 +435,9 @@ export default function App() {
 
     triggerPush(
       '🔍 Procurando motorista...',
-      'Buscando motoristas online próximos a você no mapa.',
+      isCash
+        ? 'Corrida em dinheiro criada no sistema! Buscando motoristas online no mapa.'
+        : 'Buscando motoristas online próximos a você no mapa.',
       'ride'
     );
   };
@@ -433,9 +445,12 @@ export default function App() {
   // Complete active ride - fecha mapa e abre modal de Avaliação
   const handleCompleteRide = () => {
     if (!activeRide) return;
+    const isCash = activeRide.paymentMethod === 'money' || activeRide.paymentMethod === 'dinheiro';
+    const finalStatus = isCash ? 'finalizada' : 'completed';
     const updatedRide: Ride = {
       ...activeRide,
-      status: 'completed',
+      paymentMethod: isCash ? 'dinheiro' : activeRide.paymentMethod,
+      status: finalStatus,
       completedAt: new Date().toISOString(),
     };
     setActiveRide(updatedRide);
@@ -443,6 +458,10 @@ export default function App() {
     setIsRatingModalOpen(true);
     setIsFullMapOpen(false); // Retorna do mapa para tela de avaliação
     notifyRideFinished();
+
+    if (activeRide.id && /^\d+$/.test(String(activeRide.id))) {
+      updateCorridaStatusSupabase(activeRide.id, finalStatus, isCash ? 'dinheiro' : undefined).catch(() => {});
+    }
 
     // Credita o valor da corrida na carteira do motorista
     if (activeRide.driver?.id) {
@@ -475,7 +494,9 @@ export default function App() {
 
     triggerPush(
       '🏁 Viagem Finalizada!',
-      `Total de R$ ${activeRide.price.toFixed(2)} creditado no saldo do motorista! Avalie seu condutor.`,
+      isCash
+        ? `Corrida em dinheiro (R$ ${activeRide.price.toFixed(2).replace('.', ',')}) finalizada! Avalie seu condutor.`
+        : `Total de R$ ${activeRide.price.toFixed(2)} creditado no saldo do motorista! Avalie seu condutor.`,
       'ride'
     );
   };
@@ -1019,10 +1040,16 @@ export default function App() {
             loginSuccessBanner={loginSuccessBanner}
             onClearLoginBanner={() => setLoginSuccessBanner(null)}
             onOpenFullMap={() => {
-              if (!activeRide || activeRide.paymentStatus !== 'paid') {
+              const isRideAuthorized = Boolean(
+                activeRide &&
+                (activeRide.paymentStatus === 'paid' ||
+                  activeRide.paymentMethod === 'money' ||
+                  activeRide.paymentMethod === 'dinheiro')
+              );
+              if (!isRideAuthorized) {
                 triggerPush(
                   'Complete o fluxo primeiro',
-                  'Preencha seu endereço de início e chegada com número, escolha a categoria e confirme o pagamento no app para liberar o mapa.',
+                  'Preencha seu endereço de início e chegada com número, escolha a categoria e confirme a forma de pagamento para liberar o mapa.',
                   'ride'
                 );
                 return;
@@ -1238,12 +1265,17 @@ export default function App() {
             if (!isUserAdmin) return;
           }
 
-          // Se for passageiro e tentar abrir OPÇÃO ou ATIVIDADE antes de ter corrida paga:
+          // Se for passageiro e tentar abrir OPÇÃO ou ATIVIDADE antes de ter corrida confirmada (paga ou dinheiro):
           const isPassenger = !currentUser?.role || currentUser.role === 'passenger';
-          const hasPaidRide = Boolean(activeRide && activeRide.paymentStatus === 'paid');
+          const hasAuthorizedRide = Boolean(
+            activeRide &&
+            (activeRide.paymentStatus === 'paid' ||
+              activeRide.paymentMethod === 'money' ||
+              activeRide.paymentMethod === 'dinheiro')
+          );
 
           if (isPassenger && (tab === 'passenger_options' || tab === 'history')) {
-            if (!hasPaidRide) {
+            if (!hasAuthorizedRide) {
               triggerPush(
                 'Faça sua corrida primeiro',
                 'Preencha endereço de início e chegada com número, escolha a categoria e conclua o pagamento no app antes de acessar.',
@@ -1260,8 +1292,12 @@ export default function App() {
         currentUser={currentUser}
       />
 
-      {/* 1. Página de Mapa Fullscreen Toda Tela Sem Nenhuma Informação por Cima (Somente com corrida paga) */}
-      {isFullMapOpen && activeRide && activeRide.paymentStatus === 'paid' && (
+      {/* 1. Página de Mapa Fullscreen Toda Tela Sem Nenhuma Informação por Cima (Somente com corrida paga ou em dinheiro) */}
+      {isFullMapOpen &&
+        activeRide &&
+        (activeRide.paymentStatus === 'paid' ||
+          activeRide.paymentMethod === 'money' ||
+          activeRide.paymentMethod === 'dinheiro') && (
         <FullMapView
           onClose={() => setIsFullMapOpen(false)}
           pickup={pickup}

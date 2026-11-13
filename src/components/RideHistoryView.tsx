@@ -152,7 +152,9 @@ export const RideHistoryView: React.FC<RideHistoryViewProps> = ({
                       {formatBRL(ride.price)}
                     </span>
                     <span className="text-xs text-emerald-700 block font-bold">
-                      Pago via {ride.paymentMethod === 'pix' ? 'PIX' : 'Cartão'}
+                      {ride.paymentMethod === 'money' || ride.paymentMethod === 'dinheiro'
+                        ? 'Dinheiro (direto ao condutor)'
+                        : `Pago via ${ride.paymentMethod === 'pix' ? 'PIX' : 'Cartão'}`}
                     </span>
                   </div>
                 </div>

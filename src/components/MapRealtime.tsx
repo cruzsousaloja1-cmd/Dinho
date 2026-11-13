@@ -114,7 +114,8 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
       rideStatus === 'driver_assigned' ||
       rideStatus === 'driver_arriving' ||
       rideStatus === 'in_progress' ||
-      rideStatus === 'completed';
+      rideStatus === 'completed' ||
+      rideStatus === 'finalizada';
 
     const driversToShow = isAccepted && activeDriver
       ? [activeDriver]
@@ -270,7 +271,11 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
     }
 
     // Route Polyline com borda branca e linha laranja #ff6a00 (oculta durante MODO PROCURANDO)
-    if (pickup && destination && rideStatus !== 'searching') {
+    const isSearchingStatus =
+      rideStatus === 'searching' ||
+      (rideStatus as string) === 'procurando' ||
+      rideStatus === 'procurando_motorista';
+    if (pickup && destination && !isSearchingStatus) {
       const midLat = (pickup.lat + destination.lat) / 2 + 0.003;
       const midLng = (pickup.lng + destination.lng) / 2 - 0.004;
 

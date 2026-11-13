@@ -80,14 +80,15 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const routePolylineRef = useRef<L.Polyline | null>(null);
   const fullPolylineRef = useRef<L.Polyline | null>(null);
 
-  const rideStatus = activeRide?.status || 'searching';
+  const rideStatus = activeRide?.status || 'procurando_motorista';
   const isAccepted =
     rideStatus === 'accepted' ||
     (rideStatus as string) === 'aceita' ||
     rideStatus === 'driver_assigned' ||
     rideStatus === 'driver_arriving' ||
     rideStatus === 'in_progress' ||
-    rideStatus === 'completed';
+    rideStatus === 'completed' ||
+    rideStatus === 'finalizada';
   const isSearching = !isAccepted;
 
   const stepRef = useRef(0);

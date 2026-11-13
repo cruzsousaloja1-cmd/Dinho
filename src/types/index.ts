@@ -119,11 +119,13 @@ export interface LocationPoint {
 export type RideStatus = 
   | 'idle' 
   | 'searching' 
+  | 'procurando_motorista'
   | 'accepted'
   | 'driver_assigned' 
   | 'driver_arriving' 
   | 'in_progress' 
   | 'completed' 
+  | 'finalizada'
   | 'cancelled';
 
 export interface Ride {
@@ -143,7 +145,7 @@ export interface Ride {
   price: number;
   driverEarnings: number; // 85% do valor da corrida
   platformFee: number;    // 15% comissão Race
-  paymentMethod: 'pix' | 'credit_card' | 'race_pay' | 'money';
+  paymentMethod: 'pix' | 'credit_card' | 'race_pay' | 'money' | 'dinheiro';
   paymentStatus: 'pending' | 'paid';
   status: RideStatus;
   confirmationCode?: string;

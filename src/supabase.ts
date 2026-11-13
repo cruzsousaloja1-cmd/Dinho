@@ -756,6 +756,9 @@ export async function zerarDadosTesteSupabase(): Promise<{ success: boolean; err
 
 function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
   const hasDriverAssigned = Boolean(row.email_motorista || row.nome_motorista || row.id_motorista);
+  const rawPayment = String(row.forma_pagamento || 'pix').toLowerCase().trim();
+  const isCash = rawPayment === 'dinheiro' || rawPayment === 'money';
+  const rawStatus = String(row.status || 'completed').toLowerCase().trim();
   return {
     id: String(row.id ?? ''),
     passengerId: row.id_passageiro !== undefined && row.id_passageiro !== null ? String(row.id_passageiro) : '',
@@ -808,8 +811,8 @@ function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
     price: Number(row.valor || 0),
     driverEarnings: Number((Number(row.valor || 0) * 0.85).toFixed(2)),
     platformFee: Number((Number(row.valor || 0) * 0.15).toFixed(2)),
-    paymentMethod: (row.forma_pagamento as any) || 'pix',
-    paymentStatus: 'paid',
+    paymentMethod: isCash ? 'dinheiro' : ((row.forma_pagamento as any) || 'pix'),
+    paymentStatus: isCash && rawStatus !== 'finalizada' && rawStatus !== 'completed' ? 'pending' : 'paid',
     status: (row.status as any) || 'completed',
     confirmationCode: row.codigo_confirmacao || undefined,
     createdAt: row.data,
@@ -830,6 +833,11 @@ export async function saveCorridaSupabase(
     const rawPassengerId = (ride as any).passengerId || currentUser?.id || '';
     const rawDriverId = ride.driver?.id || '';
 
+    const normalizedPaymentMethod =
+      ride.paymentMethod === 'money' || ride.paymentMethod === 'dinheiro'
+        ? 'dinheiro'
+        : ride.paymentMethod || 'pix';
+
     const payload: any = {
       email_passageiro: ((ride as any).passengerEmail || currentUser?.email || '').toLowerCase().trim(),
       nome_passageiro: ride.passengerName || currentUser?.name || 'Passageiro',
@@ -842,7 +850,7 @@ export async function saveCorridaSupabase(
       valor: Number(ride.price.toFixed(2)),
       categoria: ride.category,
       status: ride.status || 'completed',
-      forma_pagamento: ride.paymentMethod || 'pix',
+      forma_pagamento: normalizedPaymentMethod,
       rating_dado: ride.ratingGivenToDriver ?? null,
       comentario: ride.ratingComment ?? null,
       detalhe_problema: (ride as any).issueComment ?? null,
@@ -940,7 +948,7 @@ export async function getSearchingCorridasSupabase(): Promise<Ride[]> {
     const { data, error } = await supabase
       .from('corridas')
       .select('*')
-      .in('status', ['searching', 'procurando'])
+      .in('status', ['searching', 'procurando', 'procurando_motorista'])
       .order('data', { ascending: false })
       .limit(20);
 
@@ -999,13 +1007,18 @@ export async function acceptCorridaSupabase(
 
 export async function updateCorridaStatusSupabase(
   rideId: string | number,
-  status: string
+  status: string,
+  formaPagamento?: string
 ): Promise<boolean> {
   if (!rideId || !/^\d+$/.test(String(rideId))) return false;
   try {
+    const updatePayload: Record<string, any> = { status };
+    if (formaPagamento) {
+      updatePayload.forma_pagamento = formaPagamento;
+    }
     const { error } = await supabase
       .from('corridas')
-      .update({ status })
+      .update(updatePayload)
       .eq('id', Number(rideId));
     return !error;
   } catch {

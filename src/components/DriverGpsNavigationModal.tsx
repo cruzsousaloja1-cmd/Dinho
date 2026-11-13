@@ -129,6 +129,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
   // Fases da corrida do motorista
   const [tripPhase, setTripPhase] = useState<DriverTripPhase>('to_pickup');
+  const [showCashCollectionModal, setShowCashCollectionModal] = useState(false);
 
   // Card começa MINIMIZADO no Modo Navegação para não cobrir o mapa enquanto dirige (arrasta para cima para expandir)
   const [cardState, setCardState] = useState<CardSizeState>('minimized');
@@ -656,8 +657,30 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
   const handleFinishRide = () => {
     setTripPhase('completed');
+    const isCash = effectiveRide.paymentMethod === 'money' || effectiveRide.paymentMethod === 'dinheiro';
+    if (isCash) {
+      setShowCashCollectionModal(true);
+      if (!isVoiceMuted) {
+        speakNavigationInstruction(
+          `Corrida finalizada. Receber ${formatBRL(effectiveRide.price || 0)} em dinheiro do passageiro.`
+        );
+      }
+      return;
+    }
     if (onCompleteRide) {
       onCompleteRide(effectiveRide);
+    }
+    onClose();
+  };
+
+  const handleConfirmCashFinish = () => {
+    setShowCashCollectionModal(false);
+    if (onCompleteRide) {
+      onCompleteRide({
+        ...effectiveRide,
+        paymentMethod: 'dinheiro',
+        status: 'finalizada',
+      });
     }
     onClose();
   };
@@ -801,11 +824,14 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const activeTargetAddress =
     tripPhase === 'to_destination' ? effectiveRide.destination.address : effectiveRide.pickup.address;
 
+  const isCashPayment =
+    effectiveRide.paymentMethod === 'money' || effectiveRide.paymentMethod === 'dinheiro';
+
   const paymentLabel =
     effectiveRide.paymentMethod === 'credit_card'
       ? 'Cartão no App'
-      : effectiveRide.paymentMethod === 'money'
-      ? 'Dinheiro ao Motorista'
+      : isCashPayment
+      ? 'PAGAMENTO: DINHEIRO'
       : 'PIX no App';
 
   const activeTargetLat = tripPhase === 'to_destination' ? destLat : pickupLat;
@@ -924,9 +950,16 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                     <span className="font-heading font-black text-sm text-slate-950 truncate">
                       {effectiveRide.passengerName}
                     </span>
-                    <span className="font-heading font-black text-sm text-emerald-700 shrink-0">
-                      {formatBRL(totalValue)}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {isCashPayment && (
+                        <span className="bg-emerald-600 text-white text-[10px] font-heading font-black px-2 py-0.5 rounded-full uppercase">
+                          DINHEIRO
+                        </span>
+                      )}
+                      <span className="font-heading font-black text-sm text-emerald-700">
+                        {formatBRL(totalValue)}
+                      </span>
+                    </div>
                   </div>
                   <p className="text-xs font-semibold text-slate-600 truncate">
                     {tripPhase === 'to_destination' ? 'Destino: ' : 'Coleta: '}
@@ -1166,6 +1199,18 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               </div>
             </div>
 
+            {/* Banner Grande de Dinheiro no Card Expandido */}
+            {isCashPayment && (
+              <div className="bg-emerald-600 text-white border-2 border-emerald-400 rounded-2xl p-3.5 text-center shadow-md space-y-0.5">
+                <div className="font-heading font-black text-base sm:text-lg uppercase tracking-wider">
+                  PAGAMENTO: DINHEIRO
+                </div>
+                <div className="text-xs sm:text-sm font-bold text-emerald-50">
+                  Receber {formatBRL(totalValue)} em dinheiro no final da corrida
+                </div>
+              </div>
+            )}
+
             {/* 4. Valor total + Você recebe (85%), 5. Forma de pagamento, 6. Distância + tempo */}
             <div className="grid grid-cols-2 gap-2.5">
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5">
@@ -1196,8 +1241,8 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                 <span className="font-heading font-black text-xs sm:text-sm text-slate-950 flex items-center gap-1.5 mt-0.5">
                   {effectiveRide.paymentMethod === 'credit_card' ? (
                     <CreditCard className="w-4 h-4 text-amber-600 shrink-0" />
-                  ) : effectiveRide.paymentMethod === 'money' ? (
-                    <Wallet className="w-4 h-4 text-blue-600 shrink-0" />
+                  ) : isCashPayment ? (
+                    <Wallet className="w-4 h-4 text-emerald-600 shrink-0" />
                   ) : (
                     <QrCode className="w-4 h-4 text-emerald-600 shrink-0" />
                   )}
@@ -1582,6 +1627,45 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {/* TELA FINAL DE RECEBIMENTO EM DINHEIRO PARA O MOTORISTA */}
+      {showCashCollectionModal && (
+        <div className="fixed inset-0 z-[1150] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white text-slate-950 rounded-3xl border-4 border-emerald-500 p-6 shadow-2xl space-y-5 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-700 border-2 border-emerald-400 flex items-center justify-center mx-auto">
+              <Wallet className="w-9 h-9" />
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="inline-block bg-emerald-600 text-white font-heading font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider">
+                PAGAMENTO: DINHEIRO
+              </span>
+              <h3 className="font-heading font-black text-2xl sm:text-3xl text-slate-950">
+                Receber {formatBRL(totalValue)} em dinheiro do passageiro
+              </h3>
+              <p className="text-sm text-slate-600 font-semibold">
+                Corrida finalizada em dinheiro (sem cobrança no Asaas).
+              </p>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between text-sm">
+              <span className="text-slate-600 font-bold">Seu ganho líquido (85%):</span>
+              <span className="font-heading font-black text-emerald-700 text-lg">
+                {formatBRL(driverNetValue)}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleConfirmCashFinish}
+              style={{ width: '100%', minHeight: '58px' }}
+              className="w-full min-h-[58px] py-4 px-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white rounded-2xl font-heading font-black text-base sm:text-lg uppercase flex items-center justify-center gap-2 shadow-lg cursor-pointer border border-emerald-500"
+            >
+              <CheckCircle2 className="w-6 h-6 shrink-0" />
+              <span>CONFIRMAR RECEBIMENTO E FINALIZAR</span>
+            </button>
           </div>
         </div>
       )}

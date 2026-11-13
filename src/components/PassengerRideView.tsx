@@ -107,9 +107,14 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   onOpenFullMap,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'money' | 'race_pay'>('pix');
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'money' | 'dinheiro' | 'race_pay'>('pix');
   const [pickupInput, setPickupInput] = useState(pickup?.address || '');
   const [destInput, setDestInput] = useState(destination?.address || '');
+
+  const isCashMethod = (m?: string) => m === 'money' || m === 'dinheiro';
+  const isRideMapAllowed = Boolean(
+    activeRide && (activeRide.paymentStatus === 'paid' || isCashMethod(activeRide.paymentMethod))
+  );
 
   // Estados do Fluxo do Passageiro:
   // 1. 'search': Entrada dos endereços de embarque e destino com número + botão "Buscar corrida"
@@ -275,7 +280,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     );
   };
 
-  const handleRequestRideWithCategory = (catId?: VehicleCategory) => {
+  const handleRequestRideWithCategory = (
+    catId?: VehicleCategory,
+    methodOverride?: 'pix' | 'credit_card' | 'money' | 'dinheiro' | 'race_pay'
+  ) => {
     // 3. Validação estrita: se endereço não tiver número, mostrar alerta e bloquear pedido
     if (!hasAddressNumber(pickupInput)) {
       setAddressValidationError('Coloque o número do endereço de saída (embarque) para o motorista te achar.');
@@ -296,6 +304,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     const finalCategory = catId || selectedCategory;
     setSelectedCategory(finalCategory);
 
+    const effectiveMethod = methodOverride || paymentMethod;
+    const isCash = isCashMethod(effectiveMethod);
+
     const calculated = calculateFare(finalCategory, dynamicDistanceKm);
 
     const finalPickup: LocationPoint = pickup || {
@@ -310,7 +321,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       lng: -47.2050,
     };
 
-    // Inicia em MODO PROCURANDO (status: 'searching'), SEM motorista aceito ainda e SEM voz
+    // Dinheiro: cria imediatamente com status 'procurando_motorista' e forma_pagamento 'dinheiro' (SEM Asaas)
+    // PIX / Cartão: criado apenas após confirmação no Asaas
     const newRide: Ride = {
       id: '',
       passengerId: currentUser?.id,
@@ -328,9 +340,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       price: calculated.totalPrice,
       driverEarnings: calculated.driverEarnings, // 85% repassado ao condutor
       platformFee: calculated.platformFee,       // 15% comissão Race
-      paymentMethod,
-      paymentStatus: 'paid',
-      status: 'searching',
+      paymentMethod: isCash ? 'dinheiro' : effectiveMethod,
+      paymentStatus: isCash ? 'pending' : 'paid',
+      status: isCash ? 'procurando_motorista' : 'searching',
       confirmationCode: generateUniqueRideConfirmationCode(),
       createdAt: new Date().toISOString(),
     };
@@ -371,8 +383,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setPassengerStep('options');
   };
 
-  const initAsaasPayment = async (method: 'pix' | 'credit_card' | 'money' | 'race_pay', cat: VehicleCategory = selectedCategory) => {
-    if (method === 'money') {
+  const initAsaasPayment = async (
+    method: 'pix' | 'credit_card' | 'money' | 'dinheiro' | 'race_pay',
+    cat: VehicleCategory = selectedCategory
+  ) => {
+    if (isCashMethod(method)) {
       setIsLoadingAsaas(false);
       return;
     }
@@ -443,7 +458,37 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     initAsaasPayment(paymentMethod, cat);
   };
 
+  // Fluxo DINHEIRO: cria corrida NA HORA no Supabase sem esperar confirmação do Asaas
+  const handleConfirmMoneyRide = () => {
+    if (!hasAddressNumber(pickupInput)) {
+      setAddressValidationError('Coloque o número do endereço de saída (embarque) para o motorista te achar.');
+      const el = document.getElementById('route-details');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    if (!hasAddressNumber(destInput)) {
+      setAddressValidationError('Coloque o número do endereço de chegada (destino) para o motorista te achar.');
+      const el = document.getElementById('route-details');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
+    if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+    setIsProcessingPayment(false);
+    setIsPaidInApp(false);
+    handleRequestRideWithCategory(selectedCategory, 'dinheiro');
+    setPassengerStep('search');
+    if (onOpenFullMap) {
+      onOpenFullMap();
+    }
+  };
+
+  // Fluxo PIX / CARTÃO: mantém confirmação pelo Asaas antes de criar a corrida
   const handlePayInAppAction = () => {
+    if (isCashMethod(paymentMethod)) {
+      handleConfirmMoneyRide();
+      return;
+    }
     setIsProcessingPayment(true);
     if (asaasPayment?.id) {
       markAsaasPaymentPaidLocally(asaasPayment.id);
@@ -553,13 +598,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
       {/* 2. Mini Card de Corrida Ativa: MODO PROCURANDO vs MODO A CAMINHO */}
       {activeRide && (() => {
+        const isRideDone =
+          activeRide.status === 'completed' || (activeRide.status as string) === 'finalizada';
         const isRideAccepted =
           activeRide.status === 'accepted' ||
           (activeRide.status as string) === 'aceita' ||
           activeRide.status === 'driver_assigned' ||
           activeRide.status === 'driver_arriving' ||
           activeRide.status === 'in_progress' ||
-          activeRide.status === 'completed';
+          isRideDone;
 
         if (!isRideAccepted) {
           return (
@@ -668,7 +715,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
                     <span className="text-[11px] font-mono text-[#ff6a00] font-black uppercase">
-                      {activeRide.status === 'completed' ? 'Viagem Finalizada' : 'Motorista a caminho!'}
+                      {isRideDone ? 'Viagem Finalizada' : 'Motorista a caminho!'}
                     </span>
                   </div>
                   <h4 className="font-heading font-black text-base text-white truncate">
@@ -694,7 +741,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   </button>
                 )}
 
-                {activeRide.driver?.phone && activeRide.status !== 'completed' && (
+                {activeRide.driver?.phone && !isRideDone && (
                   <a
                     href={`tel:${activeRide.driver.phone.replace(/\D/g, '')}`}
                     className="px-3.5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs rounded-2xl border border-emerald-500 flex items-center gap-1.5"
@@ -704,7 +751,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   </a>
                 )}
 
-                {activeRide.status !== 'completed' ? (
+                {!isRideDone ? (
                   <button
                     type="button"
                     onClick={onCancelRide}
@@ -1126,9 +1173,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </button>
           </div>
 
-          {/* BOTÃO BLOQUEADO: Só libera após as 4 etapas (Endereço início com número + Chegada com número + Escolha da opção + Pagamento confirmado) */}
+          {/* BOTÃO BLOQUEADO: Só libera após as 4 etapas (Endereço início com número + Chegada com número + Escolha da opção + Pagamento/Dinheiro confirmado) */}
           <div className="w-full">
-            {activeRide && activeRide.paymentStatus === 'paid' ? (
+            {isRideMapAllowed ? (
               onOpenFullMap && (
                 <button
                   type="button"
@@ -1525,10 +1572,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setPaymentMethod('money');
+                    if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+                    setIsPollingAsaas(false);
+                    setPaymentMethod('dinheiro');
                   }}
                   className={`p-3 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    paymentMethod === 'money'
+                    isCashMethod(paymentMethod)
                       ? 'bg-blue-50 border-blue-500 text-blue-950 font-black shadow-sm ring-2 ring-blue-500/20'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
                   }`}
@@ -1795,8 +1844,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 </div>
               )}
 
-              {/* FLUXO DINHEIRO */}
-              {paymentMethod === 'money' && (
+              {/* FLUXO DINHEIRO (SEM ASAAS - CRIA NA HORA NO SUPABASE) */}
+              {isCashMethod(paymentMethod) && (
                 <div className="space-y-4 pt-2">
                   <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 text-center">
                     <div className="flex items-center justify-between border-b border-slate-200 pb-3">
@@ -1812,26 +1861,16 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     </div>
 
                     <p className="text-xs sm:text-sm text-slate-700 font-medium">
-                      Pague <strong className="text-slate-950">{formatBRL(fare.totalPrice)}</strong> diretamente ao motorista/motoboy ao embarcar. Ao confirmar abaixo, sua corrida já começa automaticamente e abre o mapa.
+                      Pague <strong className="text-slate-950">{formatBRL(fare.totalPrice)}</strong> diretamente ao motorista/motoboy no final da corrida. Ao confirmar abaixo, sua corrida é criada na hora sem passar pelo Asaas e abre o mapa procurando motorista.
                     </p>
 
                     <button
                       type="button"
-                      onClick={handlePayInAppAction}
-                      disabled={isProcessingPayment}
-                      className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider disabled:opacity-75"
+                      onClick={handleConfirmMoneyRide}
+                      className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
                     >
-                      {isProcessingPayment ? (
-                        <>
-                          <Loader2 className="w-6 h-6 animate-spin text-white" />
-                          <span>Confirmando corrida...</span>
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
-                          <span>Confirmar Dinheiro {formatBRL(fare.totalPrice)} (Ver Mapa)</span>
-                        </>
-                      )}
+                      <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
+                      <span>Confirmar Dinheiro {formatBRL(fare.totalPrice)} (Ver Mapa)</span>
                     </button>
                   </div>
                 </div>
