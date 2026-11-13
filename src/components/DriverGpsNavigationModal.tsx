@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   KeyRound,
   Delete,
+  ExternalLink,
 } from 'lucide-react';
 import {
   INDAIATUBA_BOUNDS,
@@ -43,6 +44,11 @@ import {
   INDAIATUBA_REAL_STEPS,
 } from '../services/osrmRoutingService';
 import { formatBRL, generateUniqueRideConfirmationCode } from '../services/pricingService';
+import {
+  isAudioEnabled,
+  setAudioEnabled,
+  speakNavigationInstruction,
+} from '../services/audioNotificationService';
 import { Driver, Ride } from '../types';
 
 type DriverTripPhase = 'to_pickup' | 'arrived_pickup' | 'to_destination' | 'completed';
@@ -125,9 +131,10 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   // Fases da corrida do motorista
   const [tripPhase, setTripPhase] = useState<DriverTripPhase>('to_pickup');
 
-  // 3 estados exatos do card:
-  // 'minimized' (180px), 'medium' (55% da tela), 'expanded' (88% da tela)
-  const [cardState, setCardState] = useState<CardSizeState>('medium');
+  // Card começa MINIMIZADO no Modo Navegação para não cobrir o mapa enquanto dirige (arrasta para cima para expandir)
+  const [cardState, setCardState] = useState<CardSizeState>('minimized');
+  const [isFollowingCar, setIsFollowingCar] = useState(true);
+  const [showExternalNavMenu, setShowExternalNavMenu] = useState(false);
 
   const [pickupRoute, setPickupRoute] = useState<StreetRouteResult>({
     coordinates: INDAIATUBA_REAL_STREET_COORDINATES,
@@ -155,8 +162,9 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const [speedKmh, setSpeedKmh] = useState(42);
   const [distanceRemainingMeters, setDistanceRemainingMeters] = useState(1800);
   const [secondsRemaining, setSecondsRemaining] = useState(240);
-  const [isVoiceMuted, setIsVoiceMuted] = useState(false);
+  const [isVoiceMuted, setIsVoiceMuted] = useState<boolean>(() => !isAudioEnabled());
   const [showCancelProblemMenu, setShowCancelProblemMenu] = useState(false);
+  const lastSpokenManeuverRef = useRef<string>('');
 
   // Confirmação por código de 4 números do passageiro
   const [fallbackRideCode] = useState<string>(() => generateUniqueRideConfirmationCode());
@@ -216,14 +224,14 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     };
   }, [startCarLat, startCarLng, pickupLat, pickupLng, destLat, destLng]);
 
-  // 1. Inicializa Leaflet (z-index: 0) com movimento livre
+  // 1. Inicializa Leaflet (z-index: 0) em Modo Navegação (zoom 17 centralizado no carro) com movimento livre ao arrastar
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, {
-        center: [(pickupLat + destLat) / 2, (pickupLng + destLng) / 2],
-        zoom: 15,
+        center: [startCarLat, startCarLng],
+        zoom: 17,
         minZoom: INDAIATUBA_MIN_ZOOM,
         maxZoom: INDAIATUBA_MAX_ZOOM,
         maxBounds: INDAIATUBA_BOUNDS,
@@ -232,7 +240,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         scrollWheelZoom: true,
         touchZoom: true,
         doubleClickZoom: true,
-        zoomControl: true,
+        zoomControl: false,
       });
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -240,7 +248,10 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         maxZoom: 19,
       }).addTo(map);
 
-      map.zoomControl?.setPosition('topright');
+      // Se o motorista arrastar o mapa manualmente, pausa auto-follow/rotação para deixar explorar livremente
+      map.on('dragstart', () => {
+        setIsFollowingCar(false);
+      });
 
       mapInstanceRef.current = map;
       map.invalidateSize();
@@ -260,6 +271,13 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       }
     };
   }, []);
+
+  // Mantém o mapa centralizado no carro enquanto dirige (Modo Navegação ativo)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isFollowingCar) return;
+    map.panTo(carPos, { animate: true, duration: 0.75 });
+  }, [carPos, isFollowingCar]);
 
   // 2. Atualiza rota em tempo real + pinos de coleta/destino + fitBounds inicial na área acima do card
   useEffect(() => {
@@ -317,7 +335,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
     // Pino do Passageiro (Coleta)
     const passengerPinHtml = `
-      <div style="filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); display: flex; flex-direction: column; align-items: center;">
+      <div style="filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); display: flex; flex-direction: column; align-items: center; transform: rotate(var(--nav-counter-rot, 0deg)); transition: transform 0.65s linear;">
         <svg width="30" height="38" viewBox="0 0 32 40" fill="none">
           <path d="M16 0C7.16 0 0 7.16 0 16C0 28 16 40 16 40C16 40 32 28 32 16C32 7.16 24.84 0 16 0Z" fill="#10b981" stroke="#ffffff" stroke-width="2.5"/>
           <path d="M16 8C13.8 8 12 9.8 12 12C12 14.2 13.8 16 16 16C18.2 16 20 14.2 20 12C20 9.8 18.2 8 16 8ZM16 18C13 18 10 19.5 10 22.5V24H22V22.5C22 19.5 19 18 16 18Z" fill="#ffffff" />
@@ -341,7 +359,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
     // Pino do Destino
     const destPinHtml = `
-      <div style="filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); display: flex; flex-direction: column; align-items: center;">
+      <div style="filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); display: flex; flex-direction: column; align-items: center; transform: rotate(var(--nav-counter-rot, 0deg)); transition: transform 0.65s linear;">
         <div style="background: #ff6a00; color: #ffffff; font-family: sans-serif; font-size: 10px; font-weight: 900; padding: 3px 8px; border-radius: 9999px; border: 2px solid #ffffff; white-space: nowrap;">
           🏁 Destino Final
         </div>
@@ -359,35 +377,26 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       destMarkerRef.current = L.marker([destLat, destLng], { icon: destIcon }).addTo(map);
     }
 
-    // Centraliza o mapa na rota coleta -> destino na área visível acima do card (1 vez)
+    // Centraliza no carro em zoom de navegação ao abrir pela 1ª vez
     if (!hasInitialFitBoundsRef.current) {
       hasInitialFitBoundsRef.current = true;
-      const allPoints: [number, number][] = [
-        [startCarLat, startCarLng],
-        [pickupLat, pickupLng],
-        [destLat, destLng],
-        ...pickupRoute.coordinates,
-        ...destRoute.coordinates,
-      ];
-      const bounds = L.latLngBounds(allPoints);
-      map.fitBounds(bounds, {
-        paddingTopLeft: [40, 80],
-        paddingBottomRight: [40, 320],
-        animate: true,
-      });
+      map.setView([startCarLat, startCarLng], 17, { animate: false });
     }
   }, [activeRoute, pickupRoute, destRoute, tripPhase, currentStepIndex, pickupLat, pickupLng, destLat, destLng, startCarLat, startCarLng, effectiveRide.passengerName]);
 
-  // 3. Marcador do veículo REAL (sem bolinha) em movimento
+  // 3. Marcador do veículo REAL (sem bolinha) em movimento — compensa rotação do mapa quando em Modo Navegação
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
+    const svgRotation = isFollowingCar ? 0 : carHeading;
+    const badgeCounterRotation = isFollowingCar ? carHeading : 0;
+
     const vehicleHtml = isMotoboy
       ? `
       <div style="display: flex; flex-direction: column; align-items: center;">
-        <div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transform: rotate(${carHeading}deg); transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 6px 8px rgba(0,0,0,0.45));">
-          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <div style="width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; transform: rotate(${svgRotation}deg); transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 6px 8px rgba(0,0,0,0.45));">
+          <svg width="52" height="52" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="22" y="3" width="4" height="9" rx="2" fill="#18181b" stroke="#ffffff" stroke-width="0.8" />
             <line x1="12" y1="12" x2="36" y2="12" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" />
             <rect x="10" y="10.5" width="4" height="3" rx="1.5" fill="#ff6a00" />
@@ -402,15 +411,15 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
             <rect x="22.5" y="44" width="3" height="1.5" rx="0.75" fill="#ef4444" />
           </svg>
         </div>
-        <div style="background: #09090b; color: #ff6a00; font-family: monospace; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 9999px; border: 1.5px solid #ffffff; margin-top: 2px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
+        <div style="transform: rotate(${badgeCounterRotation}deg); transition: transform 0.6s linear; background: #09090b; color: #ff6a00; font-family: monospace; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 9999px; border: 1.5px solid #ffffff; margin-top: 2px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
           ${driver.vehiclePlate || 'RACE-2026'} • ${speedKmh} km/h
         </div>
       </div>
       `
       : `
       <div style="display: flex; flex-direction: column; align-items: center;">
-        <div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transform: rotate(${carHeading}deg); transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 6px 8px rgba(0,0,0,0.45));">
-          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <div style="width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; transform: rotate(${svgRotation}deg); transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 6px 8px rgba(0,0,0,0.45));">
+          <svg width="52" height="52" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="7" y="10" width="4" height="8" rx="2" fill="#18181b" />
             <rect x="37" y="10" width="4" height="8" rx="2" fill="#18181b" />
             <rect x="7" y="30" width="4" height="8" rx="2" fill="#18181b" />
@@ -429,7 +438,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
             <rect x="28" y="42" width="4.5" height="1.8" rx="0.9" fill="#ef4444" />
           </svg>
         </div>
-        <div style="background: #09090b; color: #ff6a00; font-family: monospace; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 9999px; border: 1.5px solid #ffffff; margin-top: 2px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
+        <div style="transform: rotate(${badgeCounterRotation}deg); transition: transform 0.6s linear; background: #09090b; color: #ff6a00; font-family: monospace; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 9999px; border: 1.5px solid #ffffff; margin-top: 2px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
           ${driver.vehiclePlate || 'RACE-2026'} • ${speedKmh} km/h
         </div>
       </div>
@@ -438,8 +447,8 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     const carIcon = L.divIcon({
       className: 'gps-driver-car',
       html: vehicleHtml,
-      iconSize: [48, 62],
-      iconAnchor: [24, 24],
+      iconSize: [52, 66],
+      iconAnchor: [26, 26],
     });
 
     if (carMarkerRef.current) {
@@ -448,7 +457,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     } else {
       carMarkerRef.current = L.marker(carPos, { icon: carIcon }).addTo(map);
     }
-  }, [carPos, carHeading, speedKmh, driver.vehiclePlate, isMotoboy]);
+  }, [carPos, carHeading, speedKmh, driver.vehiclePlate, isMotoboy, isFollowingCar]);
 
   // 4. Simulação de condução pelas ruas em tempo real
   useEffect(() => {
@@ -599,6 +608,9 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       setWrongAttempts(0);
       setIsCodeModalOpen(false);
       setTripPhase('arrived_pickup');
+      if (!isVoiceMuted) {
+        speakNavigationInstruction('Passageiro confirmado. Toque em iniciar corrida.');
+      }
       return;
     }
 
@@ -624,6 +636,8 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       return;
     }
     setTripPhase('to_destination');
+    setIsFollowingCar(true);
+    setCardState('minimized');
     stepRef.current = 0;
     setCurrentStepIndex(0);
     const startPt = destRoute.coordinates[0] || [pickupLat, pickupLng];
@@ -631,13 +645,12 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     setDistanceRemainingMeters(destRoute.totalDistanceMeters);
     setSecondsRemaining(destRoute.totalDurationSeconds);
 
+    if (!isVoiceMuted) {
+      speakNavigationInstruction('Corrida iniciada. Siga para o destino.');
+    }
+
     if (mapInstanceRef.current) {
-      const bounds = L.latLngBounds(destRoute.coordinates);
-      mapInstanceRef.current.fitBounds(bounds, {
-        paddingTopLeft: [40, 80],
-        paddingBottomRight: [40, 260],
-        animate: true,
-      });
+      mapInstanceRef.current.setView(startPt, 17, { animate: true });
     }
   };
 
@@ -651,12 +664,35 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
   const handleCenterRoute = () => {
     if (!mapInstanceRef.current) return;
+    setIsFollowingCar(false);
     const bounds = L.latLngBounds([carPos, [pickupLat, pickupLng], [destLat, destLng]]);
     mapInstanceRef.current.fitBounds(bounds, {
-      paddingTopLeft: [40, 80],
-      paddingBottomRight: [40, 260],
+      paddingTopLeft: [40, 180],
+      paddingBottomRight: [40, 220],
       animate: true,
     });
+  };
+
+  const handleFollowCar = () => {
+    setIsFollowingCar(true);
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.setView(carPos, 17, { animate: true });
+    }
+  };
+
+  const handleToggleVoice = () => {
+    const nextMuted = !isVoiceMuted;
+    setIsVoiceMuted(nextMuted);
+    setAudioEnabled(!nextMuted);
+    if (nextMuted) {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {}
+      }
+    } else {
+      speakNavigationInstruction('Navegação por voz ativada');
+    }
   };
 
   // Gesto de arraste na barra superior do card entre os 3 estados (minimized -> medium -> expanded)
@@ -678,35 +714,72 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const currentManeuver = (() => {
     if (tripPhase === 'arrived_pickup') {
       return {
-        instruction: 'Você chegou ao local de embarque!',
-        sub: effectiveRide.pickup.address,
+        headline: 'CHEGOU AO EMBARQUE',
+        street: effectiveRide.pickup.address,
+        spoken: 'Você chegou ao local de embarque. Peça o código do passageiro.',
         modifier: 'arrive',
       };
     }
     if (tripPhase === 'completed') {
       return {
-        instruction: 'Destino alcançado!',
-        sub: effectiveRide.destination.address,
+        headline: 'DESTINO ALCANÇADO',
+        street: effectiveRide.destination.address,
+        spoken: 'Você chegou ao destino final.',
         modifier: 'arrive',
       };
     }
-    const stepIdx = Math.min(
-      Math.floor((currentStepIndex / (activeRoute.coordinates.length || 1)) * steps.length),
-      steps.length - 1
-    );
+
+    const totalCoords = Math.max(activeRoute.coordinates.length, 1);
+    const stepIdx = Math.min(Math.floor((currentStepIndex / totalCoords) * steps.length), steps.length - 1);
     const active = steps[stepIdx] || steps[0];
+    const nextStep = steps[Math.min(stepIdx + 1, steps.length - 1)] || active;
+    const progressInStep = ((currentStepIndex / totalCoords) * steps.length) % 1;
+    const rawMeters = Math.max(50, Math.round((active.distanceMeters || 300) * (1 - progressInStep) / 50) * 50);
+    const distLabel = rawMeters >= 1000 ? `${(rawMeters / 1000).toFixed(1).replace('.', ',')} km` : `${rawMeters}m`;
+    const distSpoken = rawMeters >= 1000 ? `${(rawMeters / 1000).toFixed(1).replace('.', ',')} quilômetros` : `${rawMeters} metros`;
+
+    let actionVerb = 'SIGA EM FRENTE';
+    let spokenVerb = 'Siga em frente';
+    if (nextStep.modifier === 'right' || nextStep.modifier === 'sharp right') {
+      actionVerb = 'VIRE À DIREITA';
+      spokenVerb = 'Vire à direita';
+    } else if (nextStep.modifier === 'left' || nextStep.modifier === 'sharp left') {
+      actionVerb = 'VIRE À ESQUERDA';
+      spokenVerb = 'Vire à esquerda';
+    } else if (nextStep.modifier === 'slight right') {
+      actionVerb = 'ENTRE À DIREITA';
+      spokenVerb = 'Entre suavemente à direita';
+    } else if (nextStep.modifier === 'slight left') {
+      actionVerb = 'ENTRE À ESQUERDA';
+      spokenVerb = 'Entre suavemente à esquerda';
+    }
+
+    const targetStreet = nextStep.streetName || active.streetName || 'Via local';
     return {
-      instruction: active.instruction,
-      sub: `Siga pela ${active.streetName}`,
-      modifier: active.modifier || 'straight',
+      headline: `${actionVerb} EM ${distLabel} - ${targetStreet}`,
+      street: targetStreet,
+      spoken: `${spokenVerb} em ${distSpoken} na ${targetStreet}`,
+      modifier: nextStep.modifier || active.modifier || 'straight',
     };
   })();
 
+  // Fala automaticamente cada nova manobra em voz alta enquanto dirige
+  useEffect(() => {
+    if (isVoiceMuted) return;
+    const key = `${tripPhase}:${currentManeuver.street}:${currentManeuver.modifier}`;
+    if (lastSpokenManeuverRef.current === key) return;
+    lastSpokenManeuverRef.current = key;
+    speakNavigationInstruction(currentManeuver.spoken);
+  }, [tripPhase, currentManeuver.street, currentManeuver.modifier, currentManeuver.spoken, isVoiceMuted]);
+
   const minutesLeft = Math.max(Math.ceil(secondsRemaining / 60), 1);
+  const kmLeftFormatted = (distanceRemainingMeters / 1000).toFixed(1).replace('.', ',');
   const totalValue = effectiveRide.price || 28.5;
   const driverNetValue = Number((totalValue * 0.85).toFixed(2));
   const raceCommissionValue = Number((totalValue * 0.15).toFixed(2));
   const cleanPhone = (effectiveRide.passengerPhone || '19998871122').replace(/\D/g, '');
+  const activeTargetAddress =
+    tripPhase === 'to_destination' ? effectiveRide.destination.address : effectiveRide.pickup.address;
 
   const paymentLabel =
     effectiveRide.paymentMethod === 'credit_card'
@@ -718,17 +791,18 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const activeTargetLat = tripPhase === 'to_destination' ? destLat : pickupLat;
   const activeTargetLng = tripPhase === 'to_destination' ? destLng : pickupLng;
   const externalNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${activeTargetLat},${activeTargetLng}&travelmode=driving`;
+  const wazeNavUrl = `https://waze.com/ul?ll=${activeTargetLat},${activeTargetLng}&navigate=yes`;
 
   const statusText =
     tripPhase === 'completed'
       ? 'CORRIDA FINALIZADA'
       : isCodeConfirmed
       ? tripPhase === 'to_destination'
-        ? 'CORRIDA INICIADA • A CAMINHO DO DESTINO'
-        : 'CORRIDA INICIADA'
+        ? 'CORRIDA INICIADA • EM ROTA'
+        : 'CÓDIGO OK • PODE INICIAR'
       : tripPhase === 'arrived_pickup'
-      ? 'NO LOCAL • CONFIRME O CÓDIGO'
-      : 'A CAMINHO DO PASSAGEIRO';
+      ? 'NO LOCAL • DIGITE O CÓDIGO'
+      : 'MODO NAVEGAÇÃO • A CAMINHO';
 
   const statusBadgeColor =
     tripPhase === 'to_destination' || isCodeConfirmed
@@ -737,10 +811,10 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       ? 'bg-blue-600 text-white border-blue-400'
       : 'bg-[#ff6a00] text-white border-[#ff8533]';
 
-  // Alturas exatas dos 3 estados (termina sempre acima da barra inferior do app)
+  // Alturas exatas dos 3 estados (minimized compacto para nunca cobrir o mapa enquanto dirige; medium 55%; expanded 88%)
   const cardHeightStyle: React.CSSProperties =
     cardState === 'minimized'
-      ? { height: '180px' }
+      ? { minHeight: '196px', maxHeight: '220px' }
       : cardState === 'medium'
       ? { height: '55%' }
       : { height: '88%' };
@@ -748,89 +822,133 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   return (
     /* Container termina 20px acima da barra inferior (BottomNav z-40) para nunca ficar atrás dela */
     <div className="fixed top-0 left-0 right-0 bottom-[calc(104px+env(safe-area-inset-bottom,0px))] sm:bottom-[calc(120px+env(safe-area-inset-bottom,0px))] z-50 bg-slate-950 text-white select-none">
-      {/* 1. MAPA NO FUNDO COM z-index: 0 */}
-      <div ref={mapContainerRef} className="absolute inset-0 z-0 w-full h-full bg-white" />
+      {/* 1. MAPA GRANDE NO FUNDO COM z-index: 0 E ROTAÇÃO AUTOMÁTICA SEGUINDO O CARRO */}
+      <div className="absolute inset-0 z-0 overflow-hidden bg-slate-200">
+        <div
+          ref={mapContainerRef}
+          style={
+            {
+              transform: `rotate(${isFollowingCar ? -carHeading : 0}deg) scale(${isFollowingCar ? 1.42 : 1})`,
+              transition: 'transform 0.65s linear',
+              '--nav-counter-rot': `${isFollowingCar ? carHeading : 0}deg`,
+            } as React.CSSProperties
+          }
+          className="w-full h-full bg-white"
+        />
+      </div>
 
-      {/* 2. HUD DE MANOBRA E BOTÕES DO MAPA COM z-index: 20 (sempre ABAIXO do card z-50, nunca por cima do card) */}
-      <div className="absolute top-2.5 left-2.5 right-14 z-20 pointer-events-none">
-        <div className="max-w-xl bg-emerald-600/95 backdrop-blur-md text-white rounded-2xl p-2.5 shadow-xl flex items-center justify-between gap-2.5 border border-emerald-300">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-slate-950 text-emerald-400 flex items-center justify-center shrink-0">
-              {currentManeuver.modifier === 'right' ? (
-                <CornerUpRight className="w-5 h-5 stroke-[3]" />
-              ) : currentManeuver.modifier === 'left' ? (
-                <CornerUpLeft className="w-5 h-5 stroke-[3]" />
+      {/* 2. MODO NAVEGAÇÃO HUD NO TOPO (LIMPO, FONTE GIGANTE, VOZ ON/OFF, TEMPO E DISTÂNCIA) */}
+      <div className="absolute top-2 left-2 right-2 z-20 pointer-events-none space-y-2">
+        {/* Linha Principal: Seta Gigante + Próxima Manobra Grande + Botão de Voz + Velocímetro */}
+        <div className="bg-emerald-700/95 backdrop-blur-md text-white rounded-2xl p-3 shadow-2xl border-2 border-emerald-400 flex items-center justify-between gap-2.5 pointer-events-auto">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-14 h-14 rounded-2xl bg-slate-950 text-emerald-400 flex items-center justify-center shrink-0 border-2 border-emerald-400 shadow-lg">
+              {currentManeuver.modifier === 'right' ||
+              currentManeuver.modifier === 'sharp right' ||
+              currentManeuver.modifier === 'slight right' ? (
+                <CornerUpRight className="w-9 h-9 stroke-[3]" />
+              ) : currentManeuver.modifier === 'left' ||
+                currentManeuver.modifier === 'sharp left' ||
+                currentManeuver.modifier === 'slight left' ? (
+                <CornerUpLeft className="w-9 h-9 stroke-[3]" />
               ) : (
-                <ArrowUp className="w-5 h-5 stroke-[3]" />
+                <ArrowUp className="w-9 h-9 stroke-[3]" />
               )}
             </div>
-            <div className="min-w-0">
-              <h2 className="font-heading font-black text-xs sm:text-sm leading-tight truncate">
-                {currentManeuver.instruction}
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-mono font-black uppercase tracking-widest text-emerald-200 block">
+                Próxima Manobra
+              </span>
+              <h2 className="font-heading font-black text-lg sm:text-2xl leading-tight text-white line-clamp-2">
+                {currentManeuver.headline}
               </h2>
-              <p className="text-[11px] text-emerald-100 font-semibold truncate">
-                {currentManeuver.sub}
-              </p>
             </div>
           </div>
 
-          <div className="w-11 h-11 rounded-full bg-black/90 border-2 border-white flex flex-col items-center justify-center shrink-0">
-            <span className="font-heading font-black text-white text-xs leading-none">
-              {speedKmh}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Botão de Som Ligado / Desligado bem visível */}
+            <button
+              type="button"
+              onClick={handleToggleVoice}
+              className={`h-12 px-3 rounded-2xl border-2 font-heading font-black text-xs flex flex-col items-center justify-center shadow-lg cursor-pointer active:scale-95 ${
+                isVoiceMuted
+                  ? 'bg-rose-950 border-rose-400 text-rose-200'
+                  : 'bg-slate-950 border-emerald-400 text-emerald-300'
+              }`}
+              title="Ligar ou desligar navegação por voz"
+            >
+              {isVoiceMuted ? (
+                <VolumeX className="w-5 h-5 text-rose-400" />
+              ) : (
+                <Volume2 className="w-5 h-5 text-emerald-400 animate-pulse" />
+              )}
+              <span className="text-[9px] uppercase tracking-wider mt-0.5">
+                {isVoiceMuted ? 'MUDO' : 'VOZ ON'}
+              </span>
+            </button>
+
+            <div className="w-12 h-12 rounded-2xl bg-black/95 border-2 border-white flex flex-col items-center justify-center shrink-0">
+              <span className="font-heading font-black text-white text-base leading-none">
+                {speedKmh}
+              </span>
+              <span className="text-[8px] font-mono text-zinc-400 uppercase">km/h</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Cartão de Relance: Endereço Gigante 24px + Tempo e Distância Grandes ("8 min - 3,2 km") */}
+        <div className="bg-slate-950/92 backdrop-blur-md text-white rounded-2xl px-3.5 py-2.5 shadow-xl border border-zinc-700 pointer-events-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-mono font-black uppercase tracking-wider text-amber-400 block">
+              {tripPhase === 'to_destination' ? '🏁 DESTINO DO PASSAGEIRO' : '📍 COLETA DO PASSAGEIRO'}
             </span>
-            <span className="text-[8px] font-mono text-zinc-400 uppercase">km/h</span>
+            <p
+              style={{ fontSize: '24px', lineHeight: '1.15' }}
+              className="font-heading font-black text-white line-clamp-2 break-words"
+            >
+              {activeTargetAddress}
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 border-t sm:border-t-0 border-zinc-800 pt-1.5 sm:pt-0">
+            <div className="bg-[#ff6a00] text-white px-3.5 py-1.5 rounded-xl font-heading font-black text-lg sm:text-2xl tracking-tight shadow-md whitespace-nowrap">
+              {minutesLeft} min - {kmLeftFormatted} km
+            </div>
+
+            {!isFollowingCar && (
+              <button
+                type="button"
+                onClick={handleFollowCar}
+                className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-heading font-black text-xs flex items-center gap-1.5 shadow-lg cursor-pointer active:scale-95 border border-blue-400"
+                title="Voltar a centralizar e girar com o carro"
+              >
+                <Crosshair className="w-4 h-4" />
+                <span>SEGUIR</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleCenterRoute}
+              className="w-10 h-10 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white rounded-xl flex items-center justify-center cursor-pointer active:scale-95"
+              title="Ver rota completa"
+            >
+              <Route className="w-5 h-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-10 h-10 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-xl flex items-center justify-center cursor-pointer active:scale-95"
+              title="Sair do modo navegação"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* BOTÕES LATERAIS DO MAPA COM z-index: 20 (nunca ficam em cima do card z-50) */}
-      <div className="absolute top-20 right-2.5 z-20 flex flex-col gap-2 pointer-events-none">
-        <button
-          type="button"
-          onClick={() => setIsVoiceMuted(!isVoiceMuted)}
-          className="pointer-events-auto w-9 h-9 bg-black/90 hover:bg-zinc-800 border border-zinc-700 text-white rounded-xl shadow-lg flex items-center justify-center cursor-pointer active:scale-95"
-          title="Áudio de Orientação"
-        >
-          {isVoiceMuted ? (
-            <VolumeX className="w-4 h-4 text-rose-400" />
-          ) : (
-            <Volume2 className="w-4 h-4 text-emerald-400" />
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            if (mapInstanceRef.current) {
-              mapInstanceRef.current.setView(carPos, 16, { animate: true });
-            }
-          }}
-          className="pointer-events-auto w-9 h-9 bg-white hover:bg-slate-100 border border-slate-300 text-[#ff6a00] rounded-xl shadow-lg flex items-center justify-center cursor-pointer active:scale-95"
-          title="Centralizar no motorista"
-        >
-          <Crosshair className="w-4 h-4" />
-        </button>
-
-        <button
-          type="button"
-          onClick={handleCenterRoute}
-          className="pointer-events-auto w-9 h-9 bg-white hover:bg-slate-100 border border-slate-300 text-slate-900 rounded-xl shadow-lg flex items-center justify-center cursor-pointer active:scale-95"
-          title="Ver rota coleta e destino"
-        >
-          <Route className="w-4 h-4" />
-        </button>
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="pointer-events-auto w-9 h-9 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white rounded-xl shadow-lg flex items-center justify-center cursor-pointer active:scale-95"
-          title="Voltar ao painel"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* 3. CARD DO MOTORISTA COM z-index: 50 SEMPRE POR CIMA DO MAPA, EM 3 ESTADOS (180px / 55% / 88%) */}
+      {/* 3. CARD DO MOTORISTA COM z-index: 50 SEMPRE POR CIMA DO MAPA, INICIA MINIMIZADO PARA NÃO COBRIR O MAPA */}
       <div
         style={cardHeightStyle}
         className="absolute bottom-0 left-0 right-0 z-50 bg-white text-slate-950 border-t-4 border-[#ff6a00] rounded-t-3xl shadow-[0_-12px_40px_rgba(0,0,0,0.45)] flex flex-col transition-[height] duration-200 ease-out"
@@ -839,7 +957,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         <div
           onTouchStart={handleCardTouchStart}
           onTouchEnd={handleCardTouchEnd}
-          className="px-3.5 pt-2 pb-2 flex flex-col items-center gap-1.5 border-b border-slate-200 bg-white rounded-t-3xl shrink-0"
+          className="px-3.5 pt-2 pb-1.5 flex flex-col items-center gap-1 border-b border-slate-200 bg-white rounded-t-3xl shrink-0"
         >
           <div
             onClick={() =>
@@ -847,8 +965,8 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                 prev === 'minimized' ? 'medium' : prev === 'medium' ? 'expanded' : 'minimized'
               )
             }
-            className="w-12 h-1.5 rounded-full bg-slate-300 cursor-pointer"
-            title="Arraste ou toque para alternar tamanho"
+            className="w-14 h-1.5 rounded-full bg-slate-300 cursor-pointer"
+            title="Arraste para cima para ver tudo"
           />
 
           <div className="w-full flex items-center justify-between gap-2">
@@ -860,7 +978,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               <span className="truncate">{statusText}</span>
             </div>
 
-            {/* Botões explícitos no cabeçalho: DIGITAR CÓDIGO sempre visível + controle de tamanho do Card */}
+            {/* Botões explícitos no cabeçalho: DIGITAR CÓDIGO + EXPANDIR / MINIMIZAR */}
             <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
               {!isCodeConfirmed && (
                 <button
@@ -886,7 +1004,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                 <button
                   type="button"
                   onClick={() =>
-                    setCardState((prev) => (prev === 'minimized' ? 'expanded' : 'expanded'))
+                    setCardState((prev) => (prev === 'minimized' ? 'medium' : 'expanded'))
                   }
                   className="px-2.5 py-1 rounded-lg bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-[11px] flex items-center gap-1 cursor-pointer shadow-xs"
                 >
@@ -894,22 +1012,14 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                   <span>EXPANDIR</span>
                 </button>
               )}
-              {cardState === 'expanded' && (
-                <button
-                  type="button"
-                  onClick={() => setCardState('medium')}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-bold text-[11px] cursor-pointer border border-slate-300"
-                >
-                  55%
-                </button>
-              )}
             </div>
           </div>
         </div>
 
-        {/* ESTADO 1: MINIMIZADO (180px - mostra status + passageiro + coleta + valor + EXPANDIR) */}
+        {/* ESTADO 1: MINIMIZADO ENQUANTO DIRIGE (Passageiro + Valor + Código + Botões Gigantes CHEGUEI / INICIAR + Segurança) */}
         {cardState === 'minimized' ? (
-          <div className="px-3.5 py-2 flex-1 min-h-0 flex flex-col justify-between overflow-hidden">
+          <div className="px-3 py-2 flex-1 flex flex-col justify-between gap-2 bg-white">
+            {/* Passageiro + Valor + Código */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <img
@@ -924,9 +1034,9 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                   <h3 className="font-heading font-black text-xs sm:text-sm text-slate-950 truncate">
                     {effectiveRide.passengerName} • ★ {(effectiveRide.passengerRating || 5.0).toFixed(1)}
                   </h3>
-                  <p className="text-[11px] text-slate-700 font-semibold truncate">
-                    📍 {effectiveRide.pickup.address}
-                  </p>
+                  <span className="text-[11px] font-bold text-slate-600 block truncate">
+                    {isCodeConfirmed ? '✅ Código confirmado' : '🔐 Código de 4 números pendente'}
+                  </span>
                 </div>
               </div>
 
@@ -935,9 +1045,93 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                   {formatBRL(totalValue)}
                 </span>
                 <span className="text-[10px] font-bold text-emerald-700 block">
-                  85%: {formatBRL(driverNetValue)}
+                  Você (85%): {formatBRL(driverNetValue)}
                 </span>
               </div>
+            </div>
+
+            {/* BOTÕES GIGANTES DE DIREÇÃO: VERDE CHEGUEI / FINALIZAR + AZUL INICIAR CORRIDA */}
+            <div className="grid grid-cols-2 gap-2">
+              {tripPhase !== 'to_destination' ? (
+                <button
+                  type="button"
+                  onClick={handleArrivedAtPickup}
+                  className="min-h-[54px] px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-2xl font-heading font-black text-base uppercase flex items-center justify-center gap-2 shadow-lg cursor-pointer border-2 border-emerald-400"
+                >
+                  <CheckCircle2 className="w-6 h-6 shrink-0" />
+                  <span>CHEGUEI</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleFinishRide}
+                  className="min-h-[54px] px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-lg cursor-pointer border-2 border-emerald-400"
+                >
+                  <CheckCircle2 className="w-6 h-6 shrink-0" />
+                  <span>FINALIZAR</span>
+                </button>
+              )}
+
+              {!isCodeConfirmed ? (
+                <button
+                  type="button"
+                  onClick={handleOpenCodeModal}
+                  className="min-h-[54px] px-3 py-2.5 bg-slate-300 hover:bg-slate-400/70 text-slate-700 rounded-2xl font-heading font-black text-xs sm:text-sm uppercase flex flex-col items-center justify-center leading-tight border-2 border-slate-400 cursor-pointer"
+                  title="Digite o código de 4 números para desbloquear INICIAR CORRIDA"
+                >
+                  <span className="flex items-center gap-1">
+                    <Lock className="w-4 h-4 shrink-0" />
+                    <span>INICIAR CORRIDA</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-blue-700">Toque p/ código</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartTripToDestination}
+                  disabled={tripPhase === 'to_destination'}
+                  className={`min-h-[54px] px-3 py-2.5 rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-lg border-2 ${
+                    tripPhase === 'to_destination'
+                      ? 'bg-blue-100 text-blue-900 border-blue-500 cursor-default'
+                      : 'bg-blue-600 hover:bg-blue-500 active:scale-95 text-white border-blue-400 cursor-pointer'
+                  }`}
+                >
+                  <Play className="w-5 h-5 shrink-0 fill-current" />
+                  <span>{tripPhase === 'to_destination' ? 'EM ROTA' : 'INICIAR CORRIDA'}</span>
+                </button>
+              )}
+            </div>
+
+            {/* BARRA FIXA DE SEGURANÇA E NAVEGAÇÃO EXTERNA */}
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowExternalNavMenu(true)}
+                className="min-h-[42px] px-2 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-heading font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-1 cursor-pointer shadow-sm leading-tight text-center"
+              >
+                <Navigation className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>GOOGLE MAPS / WAZE</span>
+              </button>
+
+              <a
+                href={`tel:+55${cleanPhone}`}
+                className="min-h-[42px] px-2 py-1.5 bg-blue-900 hover:bg-blue-800 text-white rounded-xl font-heading font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-1 shadow-sm leading-tight text-center"
+              >
+                <Phone className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+                <span>LIGAR PASSAGEIRO</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCardState('expanded');
+                  setShowCancelProblemMenu(true);
+                }}
+                className="min-h-[42px] px-2 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-xl font-heading font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-1 cursor-pointer shadow-sm leading-tight text-center"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>EMERGÊNCIA</span>
+              </button>
             </div>
           </div>
         ) : (
@@ -1124,6 +1318,26 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               </div>
             )}
 
+            {/* BOTÕES EXTRA DE SEGURANÇA E NAVEGAÇÃO EXTERNA NO CARD EXPANDIDO */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowExternalNavMenu(true)}
+                className="w-full min-h-[56px] px-4 py-3 bg-slate-950 hover:bg-slate-800 text-white rounded-2xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 cursor-pointer shadow-md border border-slate-700"
+              >
+                <Navigation className="w-5 h-5 text-emerald-400 shrink-0" />
+                <span>NAVEGAR NO GOOGLE MAPS / WAZE</span>
+              </button>
+
+              <a
+                href={`tel:+55${cleanPhone}`}
+                className="w-full min-h-[56px] px-4 py-3 bg-blue-700 hover:bg-blue-600 text-white rounded-2xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 shadow-md border border-blue-500"
+              >
+                <Phone className="w-5 h-5 shrink-0" />
+                <span>LIGAR PARA O PASSAGEIRO</span>
+              </a>
+            </div>
+
             {/* 7. PILHA DOS BOTÕES INTEIROS EM COLUNA (z-index: 60): 1. AZUL, (INICIAR BLOQUEADO CINZA se sem código), 2. VERDE, 3. VERMELHO */}
             <div
               className="relative z-[60] flex flex-col gap-3 w-full pt-1"
@@ -1192,7 +1406,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                 <span>FINALIZAR CORRIDA</span>
               </button>
 
-              {/* 3. BOTÃO VERMELHO EMBAIXO: CANCELAR / PROBLEMA */}
+              {/* 3. BOTÃO VERMELHO EMBAIXO: EMERGÊNCIA / PROBLEMA */}
               <button
                 type="button"
                 onClick={() => setShowCancelProblemMenu((prev) => !prev)}
@@ -1200,7 +1414,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                 className="w-full min-h-[56px] py-3.5 px-4 bg-red-600 hover:bg-red-500 text-white rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] border border-red-500"
               >
                 <XCircle className="w-5 h-5 shrink-0" />
-                <span>CANCELAR / PROBLEMA</span>
+                <span>EMERGÊNCIA / PROBLEMA</span>
               </button>
 
               {showCancelProblemMenu && (
@@ -1227,7 +1441,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                     className="w-full min-h-[56px] py-3 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                   >
                     <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span>ABRIR SUPORTE 24H / PROBLEMA</span>
+                    <span>ABRIR SUPORTE 24H / EMERGÊNCIA</span>
                   </button>
                 </div>
               )}
@@ -1235,6 +1449,54 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
           </div>
         )}
       </div>
+
+      {/* ESCOLHA RÁPIDA DE NAVEGADOR EXTERNO: GOOGLE MAPS / WAZE */}
+      {showExternalNavMenu && (
+        <div className="fixed inset-0 z-[1050] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white text-slate-950 rounded-3xl border-2 border-[#ff6a00] p-5 shadow-2xl space-y-4">
+            <div className="text-center space-y-1">
+              <h3 className="font-heading font-black text-lg text-slate-950 uppercase">
+                Abrir Navegação Externa
+              </h3>
+              <p className="text-xs text-slate-600 font-semibold line-clamp-2">
+                {activeTargetAddress}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <a
+                href={externalNavUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setShowExternalNavMenu(false)}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-heading font-black text-base uppercase flex items-center justify-center gap-2 shadow-lg"
+              >
+                <ExternalLink className="w-5 h-5 shrink-0" />
+                <span>ABRIR NO GOOGLE MAPS</span>
+              </a>
+
+              <a
+                href={wazeNavUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setShowExternalNavMenu(false)}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-2xl font-heading font-black text-base uppercase flex items-center justify-center gap-2 shadow-lg"
+              >
+                <Navigation className="w-5 h-5 shrink-0" />
+                <span>ABRIR NO WAZE</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setShowExternalNavMenu(false)}
+                className="w-full min-h-[48px] py-2.5 px-4 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-2xl font-heading font-bold text-sm uppercase cursor-pointer"
+              >
+                Voltar para o mapa do Race
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TELA DE CONFIRMAÇÃO DO CÓDIGO DE 4 NÚMEROS DO PASSAGEIRO */}
       {isCodeModalOpen && (

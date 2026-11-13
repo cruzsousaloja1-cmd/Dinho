@@ -151,3 +151,34 @@ export function notifyDriverAccepted(isMotoboy: boolean = false): void {
 export function notifyRideFinished(): void {
   speakText('Você chegou ao seu destino', [300, 150, 300]);
 }
+
+// Instrução de navegação curva a curva por voz (sem vibração repetitiva enquanto dirige)
+export function speakNavigationInstruction(text: string): void {
+  if (!isAudioEnabled() || typeof window === 'undefined' || !text) return;
+  if ('speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'pt-BR';
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      const voices = window.speechSynthesis.getVoices();
+      const ptVoice = voices.find(
+        (v) =>
+          v.lang.toLowerCase().includes('pt-br') ||
+          v.lang.toLowerCase().includes('pt_br') ||
+          v.lang.toLowerCase().startsWith('pt')
+      );
+      if (ptVoice) {
+        utterance.voice = ptVoice;
+      }
+
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.debug('Erro na voz de navegação:', err);
+    }
+  }
+}
+
