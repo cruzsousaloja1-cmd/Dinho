@@ -73,6 +73,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const fullPolylineRef = useRef<L.Polyline | null>(null);
 
   const stepRef = useRef(0);
+  const hasInitialFitBoundsRef = useRef(false);
 
   // Coordenadas padrão em Indaiatuba - SP
   const pLat = pickup?.lat ?? -23.0955;
@@ -221,29 +222,33 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     };
   }, [pLat, pLng]);
 
-  // 2. Inicializa Leaflet com OpenStreetMap claro oficial e container BRANCO
+  // 2. Inicializa Leaflet com movimento 100% livre (dragging, touchZoom, scrollWheelZoom, doubleClickZoom, zoomControl)
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, {
         center: [-23.0903, -47.2180],
-        zoom: 16,
+        zoom: 15,
         minZoom: INDAIATUBA_MIN_ZOOM,
         maxZoom: INDAIATUBA_MAX_ZOOM,
         maxBounds: INDAIATUBA_BOUNDS,
-        maxBoundsViscosity: 1.0, // Impede de arrastar para fora de Indaiatuba
-        zoomControl: false,
+        maxBoundsViscosity: 0.5,
+        dragging: true,
+        scrollWheelZoom: true,
+        touchZoom: true,
+        doubleClickZoom: true,
+        boxZoom: true,
+        zoomControl: true,
       });
 
-      // OpenStreetMap Oficial Claro - Ruas de Indaiatuba com nomes bem nítidos (Av. Presidente Vargas, Av. dos Trabalhadores, Rua 15 de Novembro, etc.)
+      // OpenStreetMap Oficial Claro - Ruas de Indaiatuba com nomes bem nítidos
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap',
         maxZoom: 19,
       }).addTo(map);
 
-      // Controle de zoom no topo direito
-      L.control.zoom({ position: 'topright' }).addTo(map);
+      map.zoomControl?.setPosition('topright');
 
       mapInstanceRef.current = map;
 
@@ -266,7 +271,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     };
   }, []);
 
-  // 3. Rota Laranja #ff6a00 Grossa por cima das ruas
+  // 3. Rota Laranja #ff6a00 Grossa por cima das ruas + fitBounds 1 única vez ao abrir o mapa
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || routeData.coordinates.length === 0) return;
@@ -282,7 +287,25 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         lineJoin: 'round',
       }).addTo(map);
     }
-  }, [routeData]);
+
+    // Mostra o percurso inteiro [origem, destino] 1 vez só no início; depois o usuário movimenta livremente
+    if (!hasInitialFitBoundsRef.current) {
+      hasInitialFitBoundsRef.current = true;
+      const boundsPoints: [number, number][] = [
+        ...routeData.coordinates,
+        [pLat, pLng],
+      ];
+      if (destination?.lat && destination?.lng) {
+        boundsPoints.push([destination.lat, destination.lng]);
+      }
+      const bounds = L.latLngBounds(boundsPoints);
+      map.fitBounds(bounds, {
+        paddingTopLeft: [45, 90],
+        paddingBottomRight: [45, 190],
+        animate: true,
+      });
+    }
+  }, [routeData, pLat, pLng, destination]);
 
   // 4. Marcador de Embarque (Pino de Localização estilo GPS, sem bolinhas)
   useEffect(() => {
@@ -313,7 +336,29 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     } else {
       pickupMarkerRef.current = L.marker([pLat, pLng], { icon: passengerIcon }).addTo(map);
     }
-  }, [pLat, pLng]);
+
+    // Marcador de Destino (se informado)
+    if (destination?.lat && destination?.lng) {
+      const destHtml = `
+        <div style="filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); display: flex; flex-direction: column; align-items: center;">
+          <div style="background: #ff6a00; color: #ffffff; font-family: sans-serif; font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 9999px; border: 2px solid #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">
+            🏁 Destino
+          </div>
+        </div>
+      `;
+      const destIcon = L.divIcon({
+        className: 'dest-pin-marker',
+        html: destHtml,
+        iconSize: [70, 26],
+        iconAnchor: [35, 13],
+      });
+      if (destMarkerRef.current) {
+        destMarkerRef.current.setLatLng([destination.lat, destination.lng]);
+      } else {
+        destMarkerRef.current = L.marker([destination.lat, destination.lng], { icon: destIcon }).addTo(map);
+      }
+    }
+  }, [pLat, pLng, destination]);
 
   // 5. CARRO REAL VISTO DE CIMA (48x48px com sombra, virando a cada curva) - SEM NENHUMA BOLINHA
   useEffect(() => {
@@ -456,11 +501,6 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       const remainingPct = (coords.length - 1 - next) / (coords.length - 1);
       const distLeft = Math.round(remainingPct * routeData.totalDistanceMeters);
       setDistanceRemainingMeters(distLeft);
-
-      // Acompanha a visão do mapa suavemente no carro
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.panTo(pNext, { animate: true, duration: 0.8 });
-      }
     }, 1000);
 
     return () => clearInterval(moveInterval);
@@ -496,11 +536,19 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const minutesLeft = Math.max(Math.ceil(secondsRemaining / 60), 0);
   const distanceKmFormatted = (distanceRemainingMeters / 1000).toFixed(1);
 
-  // Ver corrida completa
+  // Ver corrida completa (origem + destino)
   const handleViewFullRoute = () => {
     if (!mapInstanceRef.current) return;
-    const bounds = L.latLngBounds(routeData.coordinates);
-    mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], animate: true });
+    const points: [number, number][] = [...routeData.coordinates, [pLat, pLng]];
+    if (destination?.lat && destination?.lng) {
+      points.push([destination.lat, destination.lng]);
+    }
+    const bounds = L.latLngBounds(points);
+    mapInstanceRef.current.fitBounds(bounds, {
+      paddingTopLeft: [45, 90],
+      paddingBottomRight: [45, 190],
+      animate: true,
+    });
 
     if (!fullPolylineRef.current) {
       fullPolylineRef.current = L.polyline(routeData.coordinates, {
@@ -512,7 +560,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     }
   };
 
-  // Centralizar no carro
+  // Centralizar no motorista (somente ao clicar no botão)
   const handleCenterOnCar = () => {
     if (!mapInstanceRef.current) return;
     mapInstanceRef.current.setView(carPos, 16, { animate: true });
@@ -521,26 +569,26 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-white text-slate-900 flex flex-col w-screen h-screen overflow-hidden select-none">
       {/* 1. HUD SUPERIOR ESTILO UBER (PRÓXIMA ESQUINA & MANOBRA) */}
-      <div className="absolute top-4 left-4 right-4 z-[1000] flex items-start justify-between gap-3 pointer-events-none">
+      <div className="absolute top-3 left-3 right-14 z-[1000] flex items-start justify-between gap-2.5 pointer-events-none">
         {/* Botão VOLTAR */}
         <button
           type="button"
           onClick={onClose}
-          className="pointer-events-auto bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs sm:text-sm py-2.5 px-4 rounded-2xl shadow-xl flex items-center gap-2 transition-all cursor-pointer border border-[#ff8533]"
+          className="pointer-events-auto bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs sm:text-sm py-2.5 px-3.5 rounded-2xl shadow-xl flex items-center gap-1.5 transition-all cursor-pointer border border-[#ff8533]"
         >
           <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 stroke-[3]" />
           <span>VOLTAR</span>
         </button>
 
-        {/* Card Superior Estilo Uber de Direção */}
-        <div className="pointer-events-auto flex-1 max-w-md bg-white/95 backdrop-blur-xl border border-slate-200 text-slate-900 rounded-2xl p-3 shadow-xl flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#ff6a00] text-white flex items-center justify-center shrink-0 shadow-md">
+        {/* Card Superior Estilo Uber de Direção (pointer-events-none para não bloquear arraste no mapa) */}
+        <div className="pointer-events-none flex-1 max-w-md bg-white/90 backdrop-blur-md border border-slate-200 text-slate-900 rounded-2xl p-2.5 shadow-lg flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-[#ff6a00] text-white flex items-center justify-center shrink-0 shadow-md">
             {currentStep.modifier === 'right' ? (
-              <CornerUpRight className="w-6 h-6 stroke-[3]" />
+              <CornerUpRight className="w-5 h-5 stroke-[3]" />
             ) : currentStep.modifier === 'left' ? (
-              <CornerUpLeft className="w-6 h-6 stroke-[3]" />
+              <CornerUpLeft className="w-5 h-5 stroke-[3]" />
             ) : (
-              <ArrowUp className="w-6 h-6 stroke-[3]" />
+              <ArrowUp className="w-5 h-5 stroke-[3]" />
             )}
           </div>
           <div className="overflow-hidden">
@@ -557,7 +605,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         </div>
 
         {/* Badge Cidade: Indaiatuba - SP */}
-        <div className="pointer-events-auto hidden sm:flex items-center gap-2 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-slate-200 text-xs shadow-md">
+        <div className="pointer-events-none hidden sm:flex items-center gap-2 bg-white/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-200 text-xs shadow-md">
           <Navigation className="w-4 h-4 text-[#ff6a00]" />
           <span className="font-heading font-bold text-slate-900">Indaiatuba - SP</span>
         </div>
@@ -565,18 +613,18 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
       {/* TOAST DE FEEDBACK DE ÁUDIO */}
       {audioToast && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[1001] bg-slate-950/90 backdrop-blur-md text-white font-heading font-black text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border border-[#ff6a00] flex items-center gap-2 animate-bounce">
+        <div className="pointer-events-none absolute top-20 left-1/2 -translate-x-1/2 z-[1001] bg-slate-950/90 backdrop-blur-md text-white font-heading font-black text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border border-[#ff6a00] flex items-center gap-2 animate-bounce">
           <span>{audioToast}</span>
         </div>
       )}
 
-      {/* BOTÕES RÁPIDOS LATERAIS (ÁUDIO, SEGUIR CARRO E ROTA) */}
-      <div className="absolute top-24 right-4 z-[1000] flex flex-col gap-2.5">
+      {/* BOTÕES RÁPIDOS LATERAIS (ÁUDIO, CENTRALIZAR NO MOTORISTA E VER ROTA) */}
+      <div className="absolute top-24 right-2.5 z-[1000] flex flex-col gap-2 pointer-events-none">
         {/* Botão de Som / Voz Ligar/Desligar */}
         <button
           type="button"
           onClick={handleToggleAudio}
-          className={`w-11 h-11 border active:scale-95 rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer ${
+          className={`pointer-events-auto w-10 h-10 border active:scale-95 rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer ${
             audioEnabled
               ? 'bg-[#ff6a00] text-white border-[#ff8533] hover:bg-[#e05e00]'
               : 'bg-white text-slate-400 border-slate-300 hover:text-slate-600 hover:bg-slate-50'
@@ -589,8 +637,8 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         <button
           type="button"
           onClick={handleCenterOnCar}
-          className="w-11 h-11 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-[#ff6a00] rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer"
-          title="Centralizar no Veículo"
+          className="pointer-events-auto w-10 h-10 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-[#ff6a00] rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer"
+          title="Centralizar no motorista"
         >
           <Crosshair className="w-5 h-5" />
         </button>
@@ -598,56 +646,55 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         <button
           type="button"
           onClick={handleViewFullRoute}
-          className="w-11 h-11 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-slate-800 hover:text-[#ff6a00] rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer"
-          title="Ver Trajeto Total de Indaiatuba"
+          className="pointer-events-auto w-10 h-10 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-slate-800 hover:text-[#ff6a00] rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer"
+          title="Ver percurso inteiro no mapa"
         >
           <Route className="w-5 h-5" />
         </button>
       </div>
 
-      {/* MAPA FULLSCREEN LEAFLET COM FUNDO BRANCO E RUAS CLARAS */}
+      {/* MAPA FULLSCREEN LEAFLET COM FUNDO BRANCO E MOVIMENTO LIVRE */}
       <div 
         ref={mapContainerRef} 
         className="w-full h-full flex-1 z-0 bg-white" 
         style={{ width: '100vw', height: '100vh', background: '#ffffff' }}
       />
 
-      {/* 3. CARD PEQUENO DO MOTORISTA / GPS EM TEMPO REAL EMBAIXO DO MAPA */}
-      <div className="absolute bottom-3 sm:bottom-4 left-3 right-3 sm:left-6 sm:right-6 max-w-lg mx-auto z-[1000] pointer-events-auto">
-        <div className="bg-white/95 backdrop-blur-2xl border-2 border-slate-200 text-slate-900 rounded-3xl p-3.5 sm:p-4 shadow-[0_12px_40px_rgba(0,0,0,0.18)] space-y-3">
+      {/* 3. CARD COMPACTO DO MOTORISTA EMBAIXO (pointer-events-none no fundo; só botões clicáveis) */}
+      <div className="absolute bottom-2.5 sm:bottom-3 left-2.5 right-2.5 sm:left-6 sm:right-6 max-w-md mx-auto z-[1000] pointer-events-none">
+        <div className="pointer-events-none bg-white/92 backdrop-blur-xl border border-slate-200 text-slate-900 rounded-2xl p-2.5 sm:p-3 shadow-[0_8px_30px_rgba(0,0,0,0.14)] space-y-2">
           
-          {/* Header do Card Pequeno: Foto Pequena + José da Cruz + Chevrolet Onix - Placa RCE9C40 - Prata - 2021 */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
+          {/* Header Compacto: Foto Pequena + José da Cruz + Chevrolet Onix - Placa RCE9C40 */}
+          <div className="flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative shrink-0">
                 <img
                   src={effectiveDriver.avatar}
                   alt={effectiveDriver.name}
-                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-[#ff6a00] shadow-md"
+                  className="w-10 h-10 rounded-full object-cover border-2 border-[#ff6a00] shadow-sm"
                 />
                 <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-[9px] px-1 rounded-full border border-black shadow">
                   ★ {effectiveDriver.rating.toFixed(1)}
                 </span>
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h4 className="font-heading font-black text-sm sm:text-base text-slate-950 truncate">
+                <div className="flex items-center gap-1.5">
+                  <h4 className="font-heading font-black text-xs sm:text-sm text-slate-950 truncate">
                     {effectiveDriver.name}
                   </h4>
-                  <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded border border-amber-300">
-                    {isRideFinished ? 'Chegou' : (minutesLeft > 0 ? `Chega em ${minutesLeft} min` : 'No local')}
+                  <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded border border-amber-300 shrink-0">
+                    {isRideFinished ? 'Chegou' : (minutesLeft > 0 ? `${minutesLeft} min` : 'No local')}
                   </span>
                 </div>
-                {/* Linha do Veículo: Chevrolet Onix - Placa RCE9C40 - Prata - 2021 */}
-                <p className="text-xs text-slate-700 font-medium truncate">
-                  {effectiveDriver.vehicleModel || 'Chevrolet Onix'} - Placa <strong className="font-mono text-slate-950 font-bold bg-slate-100 px-1 py-0.2 rounded border border-slate-300">{effectiveDriver.vehiclePlate || 'RCE9C40'}</strong> - {effectiveDriver.vehicleColor || 'Prata'} - {effectiveDriver.vehicleYear || 2021}
+                <p className="text-[11px] text-slate-700 font-medium truncate">
+                  {effectiveDriver.vehicleModel || 'Chevrolet Onix'} • <strong className="font-mono text-slate-950 font-bold">{effectiveDriver.vehiclePlate || 'RCE9C40'}</strong> • {effectiveDriver.vehicleColor || 'Prata'}
                 </p>
               </div>
             </div>
 
             {/* Distância */}
             <div className="text-right shrink-0">
-              <div className="text-base sm:text-lg font-heading font-black text-[#ff6a00]">
+              <div className="text-sm sm:text-base font-heading font-black text-[#ff6a00] leading-tight">
                 {isRideFinished ? 'Chegou!' : `${distanceKmFormatted} km`}
               </div>
               <div className="text-[10px] font-mono text-slate-500 font-bold">
@@ -656,51 +703,47 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             </div>
           </div>
 
-          {/* Status automático: Corrida já iniciada após pagamento */}
+          {/* Status automático compacto + Finalizar viagem */}
           {!hasDriverArrived && !isRideFinished && (
-            <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping shrink-0" />
-                <span className="font-heading font-black text-xs sm:text-sm text-emerald-950 truncate">
-                  {isMotoboy
-                    ? 'Corrida iniciada - Motoboy a caminho'
-                    : 'Corrida iniciada - Motorista a caminho'}
+            <div className="bg-emerald-50/90 border border-emerald-300 rounded-xl px-2.5 py-1.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping shrink-0" />
+                <span className="font-heading font-black text-[11px] sm:text-xs text-emerald-950 truncate">
+                  {distanceRemainingMeters <= 200
+                    ? (isMotoboy ? 'Motoboy chegando - 200m' : 'Motorista chegando - 200m')
+                    : (isMotoboy ? 'Corrida iniciada - Motoboy a caminho' : 'Corrida iniciada - Motorista a caminho')}
                 </span>
               </div>
-              <span className="text-[10px] font-mono font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full shrink-0 uppercase">
-                EM ANDAMENTO
-              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRideInProgress(false);
+                  setIsRideFinished(true);
+                  setDistanceRemainingMeters(0);
+                  setSecondsRemaining(0);
+                  if (onCompleteRide) {
+                    onCompleteRide();
+                  }
+                }}
+                className="pointer-events-auto py-1 px-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] sm:text-xs rounded-lg cursor-pointer shrink-0 shadow-xs"
+              >
+                Finalizar viagem
+              </button>
             </div>
           )}
 
-          {/* Alerta de Chegada Próxima (<= 200m) */}
-          {distanceRemainingMeters <= 200 && !hasDriverArrived && !isRideFinished && (
-            <div className="bg-amber-50 border border-[#ff6a00] rounded-xl p-2.5 flex items-center justify-between gap-2 animate-pulse">
-              <div className="flex items-center gap-2">
-                <BellRing className="w-4 h-4 text-[#ff6a00] shrink-0" />
-                <span className="font-heading font-bold text-xs text-slate-900">
-                  {isMotoboy ? 'Motoboy chegando - 200m' : 'Motorista chegando - 200m'}
-                </span>
-              </div>
-              <span className="text-[11px] text-amber-900 font-medium">Aguarde na calçada</span>
-            </div>
-          )}
-
-          {/* Quando Chegar no Local: Motorista Chegou + Viagem em Andamento Automático */}
+          {/* Quando Chegar no Local */}
           {hasDriverArrived && !isRideFinished && (
-            <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 text-center space-y-2">
-              <div className="flex items-center justify-center gap-2 text-emerald-800 font-heading font-black text-sm sm:text-base">
+            <div className="bg-emerald-50/95 border border-emerald-300 rounded-xl p-2 text-center space-y-1.5">
+              <div className="flex items-center justify-center gap-1.5 text-emerald-800 font-heading font-black text-xs sm:text-sm">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 <span>{isMotoboy ? 'Seu motoboy chegou!' : 'Seu motorista chegou!'}</span>
               </div>
-              <p className="text-[11px] text-slate-600 font-medium">
-                Veículo ({effectiveDriver.vehiclePlate}) no ponto de embarque • Corrida em andamento automático.
-              </p>
               <div className="flex items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={handleTestAudioArrival}
-                  className="py-1.5 px-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer"
+                  className="pointer-events-auto py-1 px-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[11px] font-bold rounded-lg flex items-center gap-1 cursor-pointer"
                 >
                   <Volume2 className="w-3.5 h-3.5" />
                   <span>Ouvir aviso de voz</span>
@@ -716,7 +759,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                       onCompleteRide();
                     }
                   }}
-                  className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg cursor-pointer shadow-xs"
+                  className="pointer-events-auto py-1 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg cursor-pointer shadow-xs"
                 >
                   Finalizar viagem
                 </button>
@@ -724,34 +767,9 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             </div>
           )}
 
-          {/* Opção de Finalizar viagem durante trajeto se desejado */}
-          {!hasDriverArrived && isRideInProgress && !isRideFinished && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-2.5 flex items-center justify-between gap-2">
-              <span className="text-xs font-heading font-bold text-blue-900 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                Acompanhamento GPS em tempo real ativo
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRideInProgress(false);
-                  setIsRideFinished(true);
-                  setDistanceRemainingMeters(0);
-                  setSecondsRemaining(0);
-                  if (onCompleteRide) {
-                    onCompleteRide();
-                  }
-                }}
-                className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg cursor-pointer"
-              >
-                Finalizar viagem
-              </button>
-            </div>
-          )}
-
           {/* Finalizada */}
           {isRideFinished && (
-            <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 text-center space-y-2">
+            <div className="bg-emerald-50/95 border border-emerald-300 rounded-xl p-2 text-center space-y-1.5">
               <span className="text-xs font-heading font-black text-emerald-900 flex items-center justify-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 Você chegou ao seu destino!
@@ -764,45 +782,51 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                   }
                   onClose();
                 }}
-                className="w-full py-2.5 px-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wide"
+                className="pointer-events-auto w-full py-2 px-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wide"
               >
                 <span>⭐ Avaliar motorista agora</span>
               </button>
             </div>
           )}
 
-          {/* Linha de Botões Pequenos: Ligar (WhatsApp), Ver mapa, Áudio, Voltar */}
-          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-            {/* Botão pequeno "Ligar (WhatsApp)" */}
+          {/* Linha de Botões Pequenos (pointer-events-auto apenas nos botões) */}
+          <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
             <a
               href={`https://wa.me/55${(effectiveDriver.phone || '19998765432').replace(/\D/g, '')}?text=${encodeURIComponent(
                 `Olá ${effectiveDriver.name}! Sou seu passageiro da corrida RACE. Estou te acompanhando pelo mapa.`
               )}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-emerald-500"
+              className="pointer-events-auto flex-1 py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-bold text-[11px] sm:text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all cursor-pointer border border-emerald-500"
               title="Ligar para motorista no WhatsApp"
             >
               <Phone className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Ligar (WhatsApp)</span>
+              <span className="truncate">WhatsApp</span>
             </a>
 
-            {/* Botão pequeno "Ver mapa" */}
             <button
               type="button"
               onClick={handleViewFullRoute}
-              className="py-2 px-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 border border-slate-300 font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+              className="pointer-events-auto py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 border border-slate-300 font-heading font-bold text-[11px] sm:text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
               title="Ver todo o trajeto da corrida no mapa"
             >
               <Route className="w-3.5 h-3.5 text-[#ff6a00] shrink-0" />
-              <span>Ver mapa</span>
+              <span>Ver rota</span>
             </button>
 
-            {/* Botão pequeno Áudio (Ligar/Desligar) */}
+            <button
+              type="button"
+              onClick={handleCenterOnCar}
+              className="pointer-events-auto py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-[#ff6a00] border border-slate-300 font-heading font-bold text-[11px] sm:text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
+              title="Centralizar no motorista"
+            >
+              <Crosshair className="w-3.5 h-3.5 shrink-0" />
+            </button>
+
             <button
               type="button"
               onClick={handleToggleAudio}
-              className={`py-2 px-2.5 border font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+              className={`pointer-events-auto py-1.5 px-2 border font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
                 audioEnabled
                   ? 'bg-amber-50 text-amber-900 border-amber-300'
                   : 'bg-slate-100 text-slate-400 border-slate-300'
@@ -812,11 +836,10 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
               {audioEnabled ? <Volume2 className="w-3.5 h-3.5 text-[#ff6a00]" /> : <VolumeX className="w-3.5 h-3.5 text-slate-400" />}
             </button>
 
-            {/* Botão pequeno Voltar */}
             <button
               type="button"
               onClick={onClose}
-              className="py-2 px-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shadow-xs shrink-0 border border-[#ff8533]"
+              className="pointer-events-auto py-1.5 px-2.5 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-bold text-[11px] sm:text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shadow-xs shrink-0 border border-[#ff8533]"
               title="Voltar"
             >
               <ArrowLeft className="w-3.5 h-3.5" />

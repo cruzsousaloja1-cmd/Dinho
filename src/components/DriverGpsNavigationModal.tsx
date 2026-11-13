@@ -48,6 +48,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const routePolylineBorderRef = useRef<L.Polyline | null>(null);
   const routePolylineRef = useRef<L.Polyline | null>(null);
   const stepRef = useRef(0);
+  const hasInitialFitBoundsRef = useRef(false);
 
   const isMotoboy = driver.category === 'moto_passageiro' || driver.category === 'moto_entrega';
 
@@ -90,12 +91,16 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, {
         center: [-23.0903, -47.2180],
-        zoom: 16,
+        zoom: 15,
         minZoom: INDAIATUBA_MIN_ZOOM,
         maxZoom: INDAIATUBA_MAX_ZOOM,
         maxBounds: INDAIATUBA_BOUNDS,
-        maxBoundsViscosity: 1.0,
-        zoomControl: false,
+        maxBoundsViscosity: 0.5,
+        dragging: true,
+        scrollWheelZoom: true,
+        touchZoom: true,
+        doubleClickZoom: true,
+        zoomControl: true,
       });
 
       // OpenStreetMap Oficial Claro - Ruas nítidas com nomes
@@ -103,6 +108,8 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         attribution: '&copy; OpenStreetMap',
         maxZoom: 19,
       }).addTo(map);
+
+      map.zoomControl?.setPosition('topright');
 
       mapInstanceRef.current = map;
       map.invalidateSize();
@@ -165,6 +172,16 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       iconAnchor: [65, 36],
     });
     L.marker(destCoord, { icon: destIcon }).addTo(map);
+
+    if (!hasInitialFitBoundsRef.current) {
+      hasInitialFitBoundsRef.current = true;
+      const bounds = L.latLngBounds(routeData.coordinates);
+      map.fitBounds(bounds, {
+        paddingTopLeft: [40, 100],
+        paddingBottomRight: [40, 180],
+        animate: true,
+      });
+    }
   }, [routeData]);
 
   // 3. Atualiza marcador do carro real top-down (sem nenhuma bolinha ou pulso) com rotação real
@@ -281,11 +298,6 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       const pct = (coords.length - 1 - next) / (coords.length - 1);
       setDistanceRemainingMeters(Math.max(Math.round(pct * routeData.totalDistanceMeters), 0));
       setSecondsRemaining(Math.max(Math.round(pct * routeData.totalDurationSeconds), 0));
-
-      // Centraliza a visão do GPS suavemente no carro
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.setView(nextPoint, 16, { animate: true, duration: 0.8 });
-      }
     }, 1000);
 
     return () => clearInterval(interval);
@@ -322,8 +334,8 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   return (
     <div className="fixed inset-0 z-50 bg-[#09090b] text-white flex flex-col w-screen h-screen overflow-hidden select-none">
       {/* BARRA SUPERIOR VERDE DE NAVEGAÇÃO WAZE / UBER DRIVER */}
-      <div className="absolute top-0 left-0 right-0 z-[1000] p-3 sm:p-4 bg-gradient-to-b from-black/90 via-black/70 to-transparent pointer-events-none">
-        <div className="max-w-2xl mx-auto flex items-start justify-between gap-3 pointer-events-auto">
+      <div className="absolute top-0 left-0 right-0 z-[1000] p-3 sm:p-4 pr-14 bg-gradient-to-b from-black/90 via-black/70 to-transparent pointer-events-none">
+        <div className="max-w-2xl mx-auto flex items-start justify-between gap-3 pointer-events-none">
           {/* Caixa Verde de Manobra estilo Waze */}
           <div className="flex-1 bg-[#10b981] text-slate-950 rounded-3xl p-3.5 sm:p-4 shadow-2xl flex items-center gap-3.5 border-2 border-emerald-300 animate-fade-in">
             <div className="w-12 h-12 rounded-2xl bg-slate-950 text-white flex items-center justify-center font-black shrink-0 shadow-md">
@@ -364,11 +376,11 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       </div>
 
       {/* BOTÕES LATERAIS DE CONTROLE RÁPIDO */}
-      <div className="absolute top-28 right-4 z-[1000] flex flex-col gap-2.5">
+      <div className="absolute top-24 right-2.5 z-[1000] flex flex-col gap-2 pointer-events-none">
         <button
           type="button"
           onClick={() => setIsVoiceMuted(!isVoiceMuted)}
-          className="w-11 h-11 bg-black/90 hover:bg-zinc-800 border border-zinc-800 text-white rounded-2xl shadow-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+          className="pointer-events-auto w-10 h-10 bg-black/90 hover:bg-zinc-800 border border-zinc-800 text-white rounded-2xl shadow-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all"
           title="Áudio de Orientação"
         >
           {isVoiceMuted ? <VolumeX className="w-5 h-5 text-rose-400" /> : <Volume2 className="w-5 h-5 text-emerald-400" />}
@@ -381,8 +393,8 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               mapInstanceRef.current.setView(carPos, 16, { animate: true });
             }
           }}
-          className="w-11 h-11 bg-black/90 hover:bg-[#ff6a00] border border-zinc-800 text-[#ff6a00] hover:text-white rounded-2xl shadow-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-          title="Centralizar no Carro"
+          className="pointer-events-auto w-10 h-10 bg-black/90 hover:bg-[#ff6a00] border border-zinc-800 text-[#ff6a00] hover:text-white rounded-2xl shadow-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+          title="Centralizar no motorista"
         >
           <Crosshair className="w-5 h-5" />
         </button>
@@ -390,7 +402,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         <button
           type="button"
           onClick={onClose}
-          className="w-11 h-11 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl shadow-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+          className="pointer-events-auto w-10 h-10 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl shadow-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all"
           title="Fechar Navegação GPS"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -404,9 +416,9 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         style={{ width: '100vw', height: '100vh', background: '#ffffff' }}
       />
 
-      {/* BARRA INFERIOR UBER DRIVER DE TELEMETRIA */}
-      <div className="absolute bottom-4 sm:bottom-6 left-3 right-3 sm:left-6 sm:right-6 max-w-xl mx-auto z-[1000]">
-        <div className="bg-zinc-950/95 backdrop-blur-2xl border-2 border-zinc-800 text-white rounded-3xl p-4 sm:p-5 shadow-[0_12px_40px_rgba(0,0,0,0.85)] space-y-3">
+      {/* BARRA INFERIOR UBER DRIVER DE TELEMETRIA (pointer-events-none no fundo, só botões clicáveis) */}
+      <div className="absolute bottom-3 sm:bottom-4 left-3 right-3 sm:left-6 sm:right-6 max-w-xl mx-auto z-[1000] pointer-events-none">
+        <div className="pointer-events-none bg-zinc-950/92 backdrop-blur-xl border border-zinc-800 text-white rounded-3xl p-3.5 sm:p-4 shadow-[0_12px_40px_rgba(0,0,0,0.85)] space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="w-3 h-3 rounded-full bg-emerald-500 radar-pulse" />
@@ -439,7 +451,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                   if (onCompleteRide) onCompleteRide();
                   onClose();
                 }}
-                className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-heading font-black text-sm rounded-xl cursor-pointer transition-all shadow-lg active:scale-95"
+                className="pointer-events-auto w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-heading font-black text-sm rounded-xl cursor-pointer transition-all shadow-lg active:scale-95"
               >
                 FINALIZAR CORRIDA ATUAL
               </button>
@@ -449,7 +461,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-heading font-bold text-xs sm:text-sm rounded-xl border border-zinc-700 transition-all cursor-pointer"
+                className="pointer-events-auto flex-1 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-heading font-bold text-xs sm:text-sm rounded-xl border border-zinc-700 transition-all cursor-pointer"
               >
                 Voltar ao Painel
               </button>
@@ -459,7 +471,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                   setRideCompleted(true);
                   setDistanceRemainingMeters(0);
                 }}
-                className="flex-1 py-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow-lg active:scale-95 border border-[#ff8533]"
+                className="pointer-events-auto flex-1 py-2.5 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow-lg active:scale-95 border border-[#ff8533]"
               >
                 CHEGUEI NO LOCAL
               </button>

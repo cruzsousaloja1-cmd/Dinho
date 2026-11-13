@@ -53,8 +53,12 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         minZoom: INDAIATUBA_MIN_ZOOM,
         maxZoom: INDAIATUBA_MAX_ZOOM,
         maxBounds: INDAIATUBA_BOUNDS,
-        maxBoundsViscosity: 1.0, // Impede de arrastar para fora de Indaiatuba
-        zoomControl: false,
+        maxBoundsViscosity: 0.5,
+        dragging: true,
+        scrollWheelZoom: true,
+        touchZoom: true,
+        doubleClickZoom: true,
+        zoomControl: true,
       });
 
       // OpenStreetMap Oficial Claro - Ruas nítidas com nomes
