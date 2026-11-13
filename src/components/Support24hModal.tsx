@@ -38,8 +38,8 @@ export const Support24hModal: React.FC<Support24hModalProps> = ({
 
   const quickQuestions = [
     'Quais carros são aceitos no RACE Confort?',
-    `Como funciona a assinatura semanal de ${WEEKLY_FEE_TEXT}?`,
-    'É verdade que o motorista fica com 100% da corrida?',
+    'Como funciona a comissão de 15% e o ganho de 85%?',
+    'Tem alguma mensalidade ou taxa para trabalhar?',
     'Quais são os valores por km nas categorias?',
     'Como acionar o suporte de emergência durante a corrida?',
     'Como cadastrar moto para entrega ou passageiro?',
@@ -66,10 +66,8 @@ export const Support24hModal: React.FC<Support24hModalProps> = ({
 
       if (lower.includes('confort') || lower.includes('voyage') || lower.includes('etios') || lower.includes('argo') || lower.includes('polo')) {
         reply = 'As exigências do modelo RACE Confort para liberação são: 1) Etios Sedan, Voyage, Prisma, Logan e Cobalt: ano a partir de 2019; 2) Argo e Polo: ano a partir de 2023; 3) Demais modelos (SUVs, CR-V, Sedãs médios): ano a partir de 2018!';
-      } else if (lower.includes('200') || lower.includes('300') || lower.includes('assinatura') || lower.includes('semanal')) {
-        reply = `O modelo RACE é revolucionário: o condutor paga apenas ${WEEKLY_FEE_TEXT} e NENHUMA taxa sobre as corridas! Todo o valor pago pelo passageiro cai 100% na conta do motorista/motoboy.`;
-      } else if (lower.includes('100%') || lower.includes('taxa') || lower.includes('comissão')) {
-        reply = 'Sim, exatamente! Zero comissão (0%). Ao contrário de outras plataformas que retêm 25% a 40%, na RACE 100% do valor da corrida pertence ao profissional parceiro.';
+      } else if (lower.includes('taxa') || lower.includes('mensalidade') || lower.includes('comissão') || lower.includes('85%') || lower.includes('15%') || lower.includes('ganho')) {
+        reply = 'Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar! Os repasses são feitos toda sexta-feira diretamente na sua chave PIX.';
       } else if (lower.includes('km') || lower.includes('valor') || lower.includes('tarifa') || lower.includes('preço')) {
         reply = 'Nossas tarifas oficiais são: RACE Econômica a R$ 2,50/km, RACE Confort a R$ 3,50/km, Motoboy Passageiro a R$ 1,80/km e Motoboy Entrega Flash a R$ 2,00/km.';
       } else if (lower.includes('emergência') || lower.includes('sos') || lower.includes('segurança')) {

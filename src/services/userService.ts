@@ -348,9 +348,9 @@ export async function verifyUserLoginAsync(
           cpf: '123.456.789-00',
           cnh: cloudUser.cnh || '99887766554',
           category: (cloudUser.categoria as any) || (isMoto ? 'moto_passageiro' : 'economica'),
-          weeklyPlanActive: Boolean(cloudUser.plano_ativo),
-          weeklyPlanPrice: 200,
-          status: (cloudUser.status as any) || 'offline',
+          weeklyPlanActive: true,
+          weeklyPlanPrice: 0,
+          status: (cloudUser.status as any) || 'online',
           earningsToday: 0,
           earningsWeek: 0,
           walletBalance: Number(cloudUser.saldo || 0),
@@ -612,7 +612,7 @@ export function deleteAllUserAccounts(): void {
 }
 
 /**
- * Ativa TODOS os cadastros de motoristas/motoboys (libera 7 dias de plano semanal + status online)
+ * Ativa TODOS os cadastros de motoristas/motoboys (status online com 85% dos ganhos e 15% Race)
  */
 export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
   const now = new Date();
@@ -625,7 +625,7 @@ export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
       weeklyFeeExpiresAt: expiresAt.toISOString(),
       weeklyPlanExpiresAt: expiresAt.toISOString(),
       weeklyPlanActive: true,
-      weeklyPlanPrice: 200,
+      weeklyPlanPrice: 0,
       status: 'online',
       cnhVerified: true,
       vehicleVerified: true,

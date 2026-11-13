@@ -53,7 +53,7 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
       return;
     }
 
-    // Cria motorista com plano semanal vencido/pendente de R$ 200
+    // Cria motorista ativo sem mensalidade (85% motorista / 15% Race)
     const newDriver: Driver = {
       id: `drv-${Date.now().toString().slice(-5)}`,
       name: cleanName,
@@ -69,14 +69,14 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
       vehicleYear: parseInt(vehicleYear, 10) || 2024,
       rating: 5.0,
       totalRides: 0,
-      status: 'offline', // Offline até pagar a taxa de R$ 200
+      status: 'online', // Sem taxa para trabalhar, ativo imediatamente
       lat: -23.0903,
       lng: -47.2180,
-      weeklyPlanActive: false,
+      weeklyPlanActive: true,
       weeklyPlanExpiresAt: null,
       weeklyFeePaidAt: null,
       weeklyFeeExpiresAt: null,
-      weeklyPlanPrice: WEEKLY_FEE,
+      weeklyPlanPrice: 0,
       earningsToday: 0,
       earningsWeek: 0,
       cnhVerified: true,

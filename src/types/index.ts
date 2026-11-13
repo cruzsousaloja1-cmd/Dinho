@@ -83,8 +83,8 @@ export interface Driver {
   criminalRecordClear: boolean;
   registrationDate: string;
   password?: string;
-  walletBalance?: number; // Saldo da carteira do motorista
-  weeklyFeeDeductedThisWeek?: boolean; // Se os R$200 da semana já foram descontados
+  walletBalance?: number; // Saldo da carteira do motorista (85% líquido)
+  weeklyFeeDeductedThisWeek?: boolean; // Desativado no modelo 85% / 15%
   comfortEligible?: boolean;
   comfortEligibilityReason?: string;
   trunkType?: string; // Tipo de baú para motoboy de entregas
@@ -96,9 +96,9 @@ export interface WithdrawalRequest {
   driverName: string;
   driverEmail?: string;
   driverPhone?: string;
-  grossAmount: number; // Ex: R$ 1.000,00
-  weeklyFeeDeducted: number; // Ex: R$ 200,00
-  netAmount: number; // Ex: R$ 800,00
+  grossAmount: number; // Saldo acumulado (85%)
+  weeklyFeeDeducted: number; // R$ 0,00 (sem mensalidade)
+  netAmount: number; // Valor líquido a sacar via PIX
   pixKey: string;
   status: 'pending' | 'paid';
   requestedAt: string;
@@ -138,8 +138,8 @@ export interface Ride {
   distanceKm: number;
   durationMinutes: number;
   price: number;
-  driverEarnings: number; // 100% of price
-  platformFee: number;    // R$ 0.00
+  driverEarnings: number; // 85% do valor da corrida
+  platformFee: number;    // 15% comissão Race
   paymentMethod: 'pix' | 'credit_card' | 'race_pay' | 'money';
   paymentStatus: 'pending' | 'paid';
   status: RideStatus;
@@ -159,7 +159,7 @@ export interface Ride {
 export interface WeeklySubscription {
   driverId: string;
   driverName: string;
-  amount: number; // 200 (WEEKLY_FEE)
+  amount: number; // 0 (sem taxa fixa, modelo 15% Race / 85% motorista)
   status: 'active' | 'expiring_soon' | 'expired' | 'pending_payment';
   startedAt: string;
   expiresAt: string;

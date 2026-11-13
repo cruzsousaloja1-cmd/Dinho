@@ -758,7 +758,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             {/* Chave PIX Pessoal para Receber Corridas */}
             <div className="space-y-1.5 sm:col-span-2">
               <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                Sua Chave PIX (onde o passageiro transfere 100% da corrida) *
+                Sua Chave PIX (para receber seus 85% das corridas toda sexta-feira) *
               </label>
               <input
                 type="text"

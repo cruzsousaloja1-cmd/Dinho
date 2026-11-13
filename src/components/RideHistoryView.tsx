@@ -234,12 +234,12 @@ export const RideHistoryView: React.FC<RideHistoryViewProps> = ({
                 </span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>Taxa da Plataforma</span>
-                <span className="text-emerald-700 font-bold">R$ 0,00 (0%)</span>
+                <span>Comissão Race (15%)</span>
+                <span className="text-amber-700 font-bold">{formatBRL(selectedRide.platformFee || Number((selectedRide.price * 0.15).toFixed(2)))}</span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>Repasse ao Condutor</span>
-                <span className="text-emerald-700 font-bold">100% ({formatBRL(selectedRide.driverEarnings)})</span>
+                <span>Repasse ao Condutor (85%)</span>
+                <span className="text-emerald-700 font-bold">{formatBRL(selectedRide.driverEarnings || Number((selectedRide.price * 0.85).toFixed(2)))}</span>
               </div>
               <div className="border-t border-slate-200 pt-2.5 flex justify-between text-base font-black text-slate-950">
                 <span>TOTAL PAGO</span>

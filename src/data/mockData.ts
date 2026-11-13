@@ -49,8 +49,8 @@ export const POPULAR_LOCATIONS = [
 export const INITIAL_NOTIFICATIONS: PushNotification[] = [
   {
     id: 'notif-1',
-    title: '🚀 RACE: 100% dos Ganhos são Seus!',
-    message: `Lembre-se: com sua assinatura semanal de ${WEEKLY_FEE_TEXT}, nenhuma corrida tem desconto de comissão.`,
+    title: '🚀 RACE: 85% dos Ganhos são Seus!',
+    message: 'Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar. Repasse toda sexta-feira.',
     time: 'Há 5 minutos',
     type: 'financial',
     read: false,

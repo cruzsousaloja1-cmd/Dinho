@@ -447,7 +447,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                       Cadastro de Motoboy
                     </h3>
                     <p className="text-xs text-zinc-400 font-medium">
-                      Moto táxi ou entregas &bull; 100% dos ganhos livres
+                      Moto táxi ou entregas &bull; 85% para você &bull; Sem mensalidade
                     </p>
                   </div>
                 </div>
@@ -623,7 +623,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
               </h2>
               <p className="text-xs text-zinc-400 font-medium">
                 {regRole === 'passenger' && 'Preencha os 5 campos abaixo para entrar direto na busca de corridas:'}
-                {regRole === 'driver' && 'Preencha os 5 campos para liberar sua conta de motorista com 100% dos ganhos:'}
+                {regRole === 'driver' && 'Preencha os 5 campos para liberar sua conta (85% para você, 15% Race - sem mensalidade):'}
                 {regRole === 'motoboy' && 'Preencha os 5 campos para rodar como motoboy em passageiro ou entregas:'}
               </p>
             </div>

@@ -44,7 +44,7 @@ const CATEGORY_CONFIGS: Record<CategoryRegisterKey, CategoryConfig> = {
     key: 'motorista_economico',
     title: 'Motorista Econômico',
     subtitle: 'Carro comum - ganhe com corridas baratas em Indaiatuba',
-    badge: 'R$ 2,50/km • 100% dos Ganhos',
+    badge: 'R$ 2,50/km • 85% seu',
     badgeColor: 'bg-zinc-800 text-zinc-300 border-zinc-700',
     icon: <Car className="w-8 h-8 text-zinc-300" />,
     vehicleCategory: 'economica',
@@ -182,14 +182,14 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       vehicleYear: yearNum,
       rating: 5.0,
       totalRides: 0,
-      status: 'offline', // Offline até pagar a taxa semanal de R$ 200
+      status: 'online', // Sem taxa para trabalhar, ativo imediatamente
       lat: -23.0903,
       lng: -47.2180,
-      weeklyPlanActive: false,
+      weeklyPlanActive: true,
       weeklyPlanExpiresAt: null,
       weeklyFeePaidAt: null,
       weeklyFeeExpiresAt: null,
-      weeklyPlanPrice: WEEKLY_FEE,
+      weeklyPlanPrice: 0,
       earningsToday: 0,
       earningsWeek: 0,
       cnhVerified: true,
@@ -442,14 +442,14 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
             </div>
           )}
 
-          {/* Informativo da Assinatura Semanal R$ 200 */}
-          <div className="bg-[#141414] border border-amber-500/30 rounded-xl p-3 text-xs text-zinc-300 space-y-1">
-            <div className="flex items-center gap-1.5 text-amber-400 font-bold">
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span>Assinatura Semanal: R$ 200 / semana via PIX</span>
+          {/* Informativo do Modelo 85% Motorista / 15% Race */}
+          <div className="bg-[#141414] border border-emerald-500/40 rounded-xl p-3 text-xs text-zinc-300 space-y-1">
+            <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Sem mensalidade, sem taxa para trabalhar</span>
             </div>
-            <p className="text-[11px] text-zinc-400">
-              Após concluir este cadastro, você entrará diretamente na tela de assinatura com a Chave PIX <strong className="text-[#ff6a00] font-mono">9d9e5635-9e68-46bf-bffe-08bdae29c8ba</strong> para liberar suas corridas nessa categoria!
+            <p className="text-[11px] text-zinc-300">
+              Você fica com <strong className="text-emerald-400">85%</strong> de cada corrida, Race fica com <strong className="text-[#ff6a00]">15%</strong> — repasse toda sexta-feira direto na sua chave PIX!
             </p>
           </div>
 
@@ -458,7 +458,7 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
             type="submit"
             className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/20 uppercase tracking-wider block mt-4"
           >
-            CONCLUIR CADASTRO & IR PARA ASSINATURA
+            CONCLUIR CADASTRO & COMEÇAR A DIRIGIR
           </button>
 
           {/* Voltar para opções */}

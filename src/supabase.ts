@@ -64,16 +64,16 @@ CREATE TABLE IF NOT EXISTS public.corridas (
   data TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 3. TABELA DE PAGAMENTOS (Assinatura Semanal R$ 200 e Saques)
+-- 3. TABELA DE PAGAMENTOS (Repasses 85% Motorista e Saques)
 CREATE TABLE IF NOT EXISTS public.pagamentos (
   id TEXT PRIMARY KEY,
   id_motorista TEXT,
   nome_motorista TEXT,
   email_motorista TEXT,
-  valor NUMERIC NOT NULL DEFAULT 200.00,
-  tipo TEXT DEFAULT 'assinatura_semanal',
+  valor NUMERIC NOT NULL DEFAULT 0.00,
+  tipo TEXT DEFAULT 'repasse_semanal',
   status TEXT DEFAULT 'pending',
-  chave_pix TEXT DEFAULT '9d9e5635-9e68-46bf-bffe-08bdae29c8ba',
+  chave_pix TEXT DEFAULT '',
   comprovante_url TEXT,
   data TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
@@ -530,7 +530,7 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
         cpf: '123.456.789-00',
         cnh: '99887766554',
         weeklyPlanActive: true,
-        weeklyPlanPrice: 200,
+        weeklyPlanPrice: 0,
         status: 'online',
         earningsToday: row.valor,
         earningsWeek: row.valor,
@@ -555,8 +555,8 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
       distanceKm: 2.5,
       durationMinutes: 7,
       price: Number(row.valor),
-      driverEarnings: Number(row.valor),
-      platformFee: 0,
+      driverEarnings: Number((Number(row.valor) * 0.85).toFixed(2)),
+      platformFee: Number((Number(row.valor) * 0.15).toFixed(2)),
       paymentMethod: (row.forma_pagamento as any) || 'pix',
       paymentStatus: 'paid',
       status: (row.status as any) || 'completed',
@@ -572,8 +572,7 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
 }
 
 /**
- * Salva pagamento na tabela public.pagamentos no Supabase
- * Valor padrão 200, chave pix oficial 9d9e5635-9e68-46bf-bffe-08bdae29c8ba
+ * Salva pagamento / repasse na tabela public.pagamentos no Supabase
  */
 export async function savePagamentoSupabase(pagamento: {
   id?: string;
@@ -592,11 +591,11 @@ export async function savePagamentoSupabase(pagamento: {
       id_motorista: pagamento.id_motorista,
       nome_motorista: pagamento.nome_motorista || 'Motorista Parceiro',
       email_motorista: (pagamento.email_motorista || '').toLowerCase().trim(),
-      valor: pagamento.valor ?? 200.0,
-      tipo: pagamento.tipo || 'assinatura_semanal',
+      valor: pagamento.valor ?? 0.0,
+      tipo: pagamento.tipo || 'repasse_semanal',
       status: pagamento.status || 'pending',
       data: new Date().toISOString(),
-      chave_pix: pagamento.chave_pix || RACE_PIX_KEY,
+      chave_pix: pagamento.chave_pix || '',
       comprovante_url: pagamento.comprovante_url || '',
     };
 

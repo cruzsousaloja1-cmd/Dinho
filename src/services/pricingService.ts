@@ -55,7 +55,7 @@ import { COMMISSION, RACE_COMMISSION_PERCENT, DRIVER_SHARE_PERCENT } from '../co
 
 export const RACE_COMMISSION_RATE = COMMISSION; // 0.15
 export { RACE_COMMISSION_PERCENT, DRIVER_SHARE_PERCENT };
-// O modelo anterior cobrava R$ 200/semana; agora taxa semanal é ZERO (0) e a Race cobra apenas 15% por corrida
+// Taxa semanal fixa é ZERO (0) - Race cobra apenas comissão de 15% por corrida
 export const WEEKLY_SUBSCRIPTION_PRICE = 0;
 
 export function calculateFare(

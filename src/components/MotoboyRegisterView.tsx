@@ -67,14 +67,14 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
       vehicleYear: 2024,
       rating: 5.0,
       totalRides: 0,
-      status: 'offline', // Offline até pagar a taxa semanal de R$ 200
+      status: 'online', // Sem taxa semanal, liberado para trabalhar
       lat: -23.0903,
       lng: -47.2180,
-      weeklyPlanActive: false,
+      weeklyPlanActive: true,
       weeklyPlanExpiresAt: null,
       weeklyFeePaidAt: null,
       weeklyFeeExpiresAt: null,
-      weeklyPlanPrice: WEEKLY_FEE, // R$ 200 / semana
+      weeklyPlanPrice: 0,
       earningsToday: 0,
       earningsWeek: 0,
       cnhVerified: true,
@@ -156,7 +156,7 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
             Cadastro Motoboy Parceiro
           </p>
           <div className="inline-block bg-[#1a1a1a] border border-[#ff6a00]/40 rounded-full px-3 py-1 text-xs text-[#ff6a00] font-bold">
-            Entregas Flash & Corridas &bull; 100% Repasse Livre
+            85% seu • 15% Race • Sem Mensalidade
           </div>
         </div>
 
@@ -286,13 +286,13 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
             />
           </div>
 
-          {/* Aviso da Assinatura Semanal R$ 200 */}
-          <div className="bg-[#1a1a1a] border border-amber-500/30 rounded-xl p-3 text-xs text-zinc-300 space-y-1">
-            <p className="font-bold text-amber-400">
-              Taxa Semanal Fixa: R$ 200 via PIX
+          {/* Aviso do Novo Modelo 85% / 15% */}
+          <div className="bg-[#1a1a1a] border border-emerald-500/40 rounded-xl p-3 text-xs text-zinc-300 space-y-1">
+            <p className="font-bold text-emerald-400">
+              Sem mensalidade, sem taxa para trabalhar
             </p>
-            <p className="text-[11px] text-zinc-400">
-              Chave PIX: <code className="text-[#ff6a00] font-mono">9d9e5635-9e68-46bf-bffe-08bdae29c8ba</code>. 100% de repasse livre de todas as entregas e corridas!
+            <p className="text-[11px] text-zinc-300">
+              Você fica com 85% de cada corrida, Race fica com 15% - repasse automático toda sexta-feira direto na sua conta!
             </p>
           </div>
 

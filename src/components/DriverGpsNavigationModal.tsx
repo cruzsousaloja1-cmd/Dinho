@@ -422,7 +422,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
             <div className="text-right">
               <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2.5 py-1 rounded-full border border-emerald-500/40">
-                100% Livre de Taxa
+                85% seu • 15% Race
               </span>
             </div>
           </div>
@@ -441,7 +441,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                 }}
                 className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-heading font-black text-sm rounded-xl cursor-pointer transition-all shadow-lg active:scale-95"
               >
-                PASSAGEIRO EMBARCOU (INICIAR DESTINO)
+                FINALIZAR CORRIDA ATUAL
               </button>
             </div>
           ) : (

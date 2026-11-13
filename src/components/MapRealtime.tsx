@@ -184,7 +184,7 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
           <div style="color: #0f172a; font-family: sans-serif; padding: 6px;">
             <b style="font-size: 14px; font-weight: bold;">${drv.name}</b><br/>
             <span style="font-size: 12px; color: #475569;">${drv.vehicleModel} (${drv.vehiclePlate})</span><br/>
-            <span style="font-size: 12px; color: #16a34a; font-weight: bold;">⭐ ${drv.rating.toFixed(2)} • 100% dos Ganhos</span>
+            <span style="font-size: 12px; color: #16a34a; font-weight: bold;">⭐ ${drv.rating.toFixed(2)} • Parceiro Oficial RACE</span>
           </div>
         `);
         markersRef.current[drv.id] = marker;

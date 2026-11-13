@@ -365,14 +365,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const exportReportCSV = () => {
     const rows = [
-      ['ID', 'Nome', 'Categoria', 'Placa', 'Avaliação', `Status Plano Semanal (${WEEKLY_FEE_BADGE})`, 'Ganhos Semanais'],
+      ['ID', 'Nome', 'Categoria', 'Placa', 'Avaliação', 'Status Conta', 'Ganhos Líquidos (85%)'],
       ...drivers.map((d) => [
         d.id,
         d.name,
         d.category,
         d.vehiclePlate,
         d.rating.toString(),
-        d.weeklyPlanActive ? 'ATIVO' : 'PENDENTE',
+        d.status === 'online' ? 'ONLINE' : 'OFFLINE',
         d.earningsWeek.toString(),
       ]),
     ];
@@ -430,7 +430,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* Informações Bancárias PIX Oficial R$ 200 */}
+      {/* Modelo Oficial Financeiro Race: Comissão 15% - Total Arrecadado */}
       <div className="bg-slate-950 text-white rounded-2xl p-3.5 sm:p-4 border border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-[#ff6a00]/20 border border-[#ff6a00]/40 text-[#ff6a00] flex items-center justify-center font-bold shrink-0">
@@ -438,16 +438,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
           <div>
             <span className="font-heading font-black text-sm text-white block">
-              Recebimento Oficial PIX &bull; Taxa R$ 200 / semana
+              Comissão Race 15% - Total arrecadado: {formatBRL(asaasData.raceCommission15)}
             </span>
             <span className="text-zinc-400 font-mono text-[11px]">
-              Chave PIX: <strong className="text-[#ff6a00] font-mono select-all">9d9e5635-9e68-46bf-bffe-08bdae29c8ba</strong> &bull; Banco Nubank
+              Total recebido no app: <strong className="text-white">{formatBRL(asaasData.totalReceived)}</strong> &bull; Repasse 85% aos condutores toda sexta-feira
             </span>
           </div>
         </div>
         <div className="text-left sm:text-right shrink-0">
           <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 px-3 py-1 rounded-full font-mono text-xs font-bold">
-            100% Repasse Livre aos Condutores
+            85% Motorista • 15% Race • Sem Mensalidade
           </span>
         </div>
       </div>
@@ -708,17 +708,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </p>
               </div>
 
-              {/* 3. Comissão 15% Race */}
+              {/* 3. Comissão Race 15% - Total arrecadado */}
               <div className="bg-zinc-900/80 border border-amber-500/30 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-amber-400 font-bold uppercase tracking-wider font-mono">Comissão 15% Race</span>
+                  <span className="text-xs text-amber-400 font-bold uppercase tracking-wider font-mono">Comissão Race 15%</span>
                   <TrendingUp className="w-4 h-4 text-amber-400" />
                 </div>
                 <div className="text-2xl sm:text-3xl font-heading font-black text-amber-400">
                   {formatBRL(asaasData.raceCommission15)}
                 </div>
                 <p className="text-[11px] text-amber-300/80 mt-1 font-medium">
-                  Ganhos do admin (15%)
+                  Comissão Race 15% - Total arrecadado
                 </p>
               </div>
 
@@ -946,12 +946,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Solicitações de Saque dos Motoristas
                   </h3>
                   <span className="text-xs font-mono font-bold text-slate-500">
-                    Repasses via PIX em até 24h com desconto da assinatura semanal de R$ 200
+                    Repasses via PIX toda sexta-feira (85% para o motorista • 15% Comissão Race)
                   </span>
                 </div>
               </div>
               <p className="text-xs sm:text-sm text-slate-600 mt-2 font-medium">
-                Passageiros pagam dentro do app para você (Admin). Quando os motoristas solicitam saque, confira a chave PIX informada e clique em "Pagar" para confirmar a transferência.
+                Passageiros pagam dentro do app via Asaas. A comissão Race (15%) já é retida na origem e o motorista saca 85% líquido sem mensalidade.
               </p>
             </div>
 
@@ -1017,18 +1017,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Detalhes Financeiros: Bruto, Desconto Assinatura R$200, Líquido */}
+                  {/* Detalhes Financeiros: Saldo Acumulado (85%), Comissão Race 15% Já Descontada, Valor do PIX */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                      <span className="text-slate-500 block font-medium">Ganhos Brutos da Semana:</span>
+                      <span className="text-slate-500 block font-medium">Saldo Acumulado (85%):</span>
                       <span className="font-heading font-black text-slate-900 text-sm">
                         {formatBRL(w.grossAmount)}
                       </span>
                     </div>
                     <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
-                      <span className="text-amber-800 block font-medium">Desconto Assinatura Semanal:</span>
+                      <span className="text-amber-800 block font-medium">Comissão Race 15%:</span>
                       <span className="font-heading font-black text-amber-900 text-sm">
-                        - {formatBRL(w.weeklyFeeDeducted)} (Retido para Plataforma)
+                        Já descontada na corrida
                       </span>
                     </div>
                     <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
@@ -1286,7 +1286,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   }
                 }}
                 className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-                title="Ativar e liberar todos os motoristas com 7 dias de plano semanal"
+                title="Ativar e liberar todos os motoristas com status ONLINE"
               >
                 <CheckCheck className="w-4 h-4" />
                 <span>Ativar Todos os Cadastros ({drivers.length})</span>
@@ -1516,9 +1516,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Lado Direito: Saldo, Assinatura e os 3 Botões (Liberar 7 dias, Bloquear, Ver avaliações) */}
+                  {/* Lado Direito: Saldo, Modelo 85%/15% e os 3 Botões (Liberar 7 dias, Bloquear, Ver avaliações) */}
                   <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end justify-between gap-3 w-full lg:w-auto pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-200">
-                    {/* Saldo e Assinatura */}
+                    {/* Saldo e Modelo */}
                     <div className="flex items-center gap-2.5 text-left lg:text-right flex-wrap">
                       <div className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
                         <span className="text-[10px] text-slate-500 block font-bold uppercase">Saldo em Carteira</span>
@@ -1624,10 +1624,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       {formatBRL(ride.price)}
                     </div>
                     <span className="text-xs text-emerald-700 block font-extrabold">
-                      Condutor: 100% ({formatBRL(ride.driverEarnings)})
+                      Condutor (85%): {formatBRL(ride.driverEarnings || Number((ride.price * 0.85).toFixed(2)))}
                     </span>
-                    <span className="text-xs text-slate-500">
-                      Taxa RACE: R$ 0,00
+                    <span className="text-xs text-amber-700 font-bold">
+                      Comissão Race (15%): {formatBRL(ride.platformFee || Number((ride.price * 0.15).toFixed(2)))}
                     </span>
                   </div>
                 </div>
@@ -1669,10 +1669,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-2">
-              <span className="text-xs text-slate-500 uppercase font-black block">Sustentabilidade RACE</span>
-              <p className="text-emerald-700 text-sm font-bold">Zero Risco para o Motorista</p>
+              <span className="text-xs text-slate-500 uppercase font-black block">Comissão Race 15% - Total arrecadado</span>
+              <p className="text-emerald-700 text-sm font-bold">85% Motorista • 15% Race • Sem Mensalidade</p>
               <p className="text-slate-700 text-xs font-medium">
-                O modelo de {WEEKLY_FEE_BADGE} gera receita fixa para a plataforma e garante previsibilidade aos parceiros.
+                Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar. Repasse toda sexta-feira.
               </p>
             </div>
 

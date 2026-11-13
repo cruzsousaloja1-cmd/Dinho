@@ -116,7 +116,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           comfortEligible = false;
           reason = `Homologado na Econômica: ${check.ruleDescription}`;
           setComfortNotice(
-            `Aviso Confort: Seu ${vehicleModel} (${yearNum}) não atende à exigência mínima (${check.ruleDescription}). Homologado na categoria RACE Econômica com 100% dos ganhos livres!`
+            `Aviso Confort: Seu ${vehicleModel} (${yearNum}) não atende à exigência mínima (${check.ruleDescription}). Homologado na categoria RACE Econômica (85% para você, 15% Race)!`
           );
         } else {
           comfortEligible = true;
@@ -306,7 +306,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <Zap className="w-5 h-5 text-amber-400 shrink-0" />
               <div>
                 <span className="font-heading font-black text-xs sm:text-sm block">Motorista / Motoboy</span>
-                <span className="text-[11px] opacity-80 block font-mono text-emerald-400 font-bold">100% dos ganhos</span>
+                <span className="text-[11px] opacity-80 block font-mono text-emerald-400 font-bold">85% seu • 15% Race</span>
               </div>
             </button>
           </div>

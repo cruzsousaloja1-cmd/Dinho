@@ -212,7 +212,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
       platformFee: 0.00,
       paymentMethod: 'pix',
       paymentStatus: 'paid',
-      status: 'driver_assigned',
+      status: 'in_progress',
       createdAt: new Date().toISOString(),
       deliveryDetails: {
         packageType,

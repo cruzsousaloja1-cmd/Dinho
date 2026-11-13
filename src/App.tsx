@@ -313,9 +313,10 @@ export default function App() {
     }, 6000);
   };
 
-  // Passenger requests a ride - vai DIRETO para o FullMapView fullscreen
+  // Passenger pays -> corrida já começa AUTOMATICAMENTE e vai DIRETO para FullMapView fullscreen
   const handleStartRide = (ride: Ride) => {
-    setActiveRide(ride);
+    const startedRide: Ride = { ...ride, status: 'in_progress' };
+    setActiveRide(startedRide);
     setIsFullMapOpen(true);
     const isMotoboy =
       ride.category === 'moto_passageiro' ||
@@ -323,9 +324,21 @@ export default function App() {
       ride.driver?.category === 'moto_passageiro' ||
       ride.driver?.category === 'moto_entrega';
     notifyDriverAccepted(isMotoboy);
+
+    // Notificação automática para o motorista na central de alertas
+    const driverAlert: PushNotification = {
+      id: `driver-call-${Date.now()}`,
+      title: '🔔 Nova corrida - Aceitar',
+      message: `${ride.passengerName || 'Passageiro'} • ${ride.pickup.address} → ${ride.destination.address} (R$ ${ride.price.toFixed(2).replace('.', ',')})`,
+      time: 'Agora',
+      type: 'ride',
+      read: false,
+    };
+    setNotifications((prev) => [driverAlert, ...prev]);
+
     triggerPush(
-      '🚗 Corrida Confirmada!',
-      `Seu motorista ${ride.driver?.name} está a caminho em um ${ride.driver?.vehicleModel} (${ride.driver?.vehiclePlate}).`,
+      isMotoboy ? '🏍️ Corrida iniciada - Motoboy a caminho!' : '🚗 Corrida iniciada - Motorista a caminho!',
+      `${ride.driver?.name || 'Seu condutor'} já está a caminho em um ${ride.driver?.vehicleModel} (${ride.driver?.vehiclePlate}).`,
       'ride'
     );
   };
@@ -518,7 +531,7 @@ export default function App() {
 
     triggerPush(
       '🎉 Bem-vindo à RACE!',
-      `Cadastro de ${newDriver.name} concluído com sucesso. Ative sua assinatura semanal de ${WEEKLY_FEE_TEXT} para começar a receber corridas com 100% dos ganhos livres!`,
+      `Cadastro de ${newDriver.name} concluído com sucesso! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.`,
       'financial'
     );
   };
@@ -624,14 +637,14 @@ export default function App() {
       id_motorista: driver.id,
       nome_motorista: driver.name,
       email_motorista: driver.email,
-      valor: WEEKLY_FEE,
+      valor: driver.walletBalance || 0,
       status: 'approved',
-      chave_pix: '9d9e5635-9e68-46bf-bffe-08bdae29c8ba',
+      chave_pix: driver.pixKey || '',
     });
 
     triggerPush(
-      'Pagamento aprovado!',
-      `O comprovante de R$ 200 de ${driver.name} foi aprovado! Status ONLINE liberado por 7 dias com 100% dos ganhos.`,
+      'Cadastro Ativo!',
+      `${driver.name} está ONLINE! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.`,
       'financial'
     );
     try {
@@ -660,14 +673,14 @@ export default function App() {
       id_motorista: driver.id,
       nome_motorista: driver.name,
       email_motorista: driver.email,
-      valor: WEEKLY_FEE,
+      valor: 0,
       status: 'rejected',
-      chave_pix: '9d9e5635-9e68-46bf-bffe-08bdae29c8ba',
+      chave_pix: driver.pixKey || '',
     });
 
     triggerPush(
-      'Pagamento Reprovado',
-      `O comprovante PIX de ${driver.name} foi reprovado. O condutor foi notificado para enviar novo comprovante.`,
+      'Solicitação Atualizada',
+      `O registro de ${driver.name} foi atualizado pelo administrador.`,
       'financial'
     );
   };
@@ -932,7 +945,7 @@ export default function App() {
           />
         )}
 
-        {/* 3. Condutor & Cadastro (Plano Semanal R$ 200 e 100% dos Ganhos) */}
+        {/* 3. Condutor & Cadastro (85% para você, 15% Race - Sem mensalidade) */}
         {activeTab === 'driver_portal' && (
           isUserDriver ? (
             <DriverPartnerPortal
@@ -941,7 +954,7 @@ export default function App() {
               rides={getIsolatedUserRides(currentUser)}
               activeRide={activeRide}
               onAcceptIncomingRide={(ride) => {
-                setActiveRide({ ...ride, status: 'driver_assigned' });
+                setActiveRide({ ...ride, status: 'in_progress' });
               }}
               onUpdateDriver={handleUpdateDriver}
               onRegisterDriver={(newDriver) => {
@@ -954,7 +967,7 @@ export default function App() {
                   localStorage.setItem('race_current_user', JSON.stringify(user));
                 } catch {}
                 setLoginSuccessBanner(
-                  `Bem-vindo(a), ${user.name}! Login efetuado com sucesso com 100% dos ganhos livres.`
+                  `Bem-vindo(a), ${user.name}! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.`
                 );
               }}
               onNavigateToRides={() => {

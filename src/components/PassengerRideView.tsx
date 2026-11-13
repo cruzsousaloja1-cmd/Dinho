@@ -374,7 +374,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       platformFee: calculated.platformFee,       // 15% comissão Race
       paymentMethod,
       paymentStatus: 'paid',
-      status: 'driver_assigned',
+      status: 'in_progress',
       createdAt: new Date().toISOString(),
     };
 
@@ -615,7 +615,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
                 <span className="text-[11px] font-mono text-[#ff6a00] font-black uppercase">
-                  {activeRide.status === 'completed' ? 'Viagem Finalizada' : 'Motorista a Caminho'}
+                  {activeRide.status === 'completed' ? 'Viagem Finalizada' : 'Corrida Iniciada - Motorista a Caminho'}
                 </span>
               </div>
               <h4 className="font-heading font-black text-base text-white truncate">

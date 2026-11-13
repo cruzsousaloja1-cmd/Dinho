@@ -1,14 +1,13 @@
 /**
  * Serviço de Carteira, Saldo e Saques do Motorista RACE
- * - Passageiro paga dentro do app (cai para o Admin)
- * - Cada corrida realizada é somada no saldo do motorista
- * - Desconto automático de R$ 200 da semana (na segunda-feira ou no saque)
- * - Solicitação de saque via PIX com repasse em até 24h
+ * - Passageiro paga dentro do app via Asaas
+ * - Cada corrida realizada soma 85% líquido no saldo do motorista (15% Comissão Race)
+ * - Sem taxa fixa, sem mensalidade, repasse via PIX toda sexta-feira
  * - Gestão de saques pendentes pelo Admin
  */
 
 import { Driver, WithdrawalRequest } from '../types';
-import { WEEKLY_FEE, RACE_PIX_KEY } from '../config/pricing';
+import { RACE_PIX_KEY } from '../config/pricing';
 
 const STORAGE_KEY_WITHDRAWALS = 'race_withdrawals';
 const STORAGE_KEY_BALANCES = 'race_driver_balances';
@@ -69,7 +68,7 @@ export function addDriverEarnings(driverId: string, amount: number): number {
 }
 
 /**
- * Obtém a chave de ciclo da semana (ex: "2026-W45") para rastrear o desconto semanal
+ * Obtém a chave de ciclo da semana (ex: "2026-W45")
  */
 function getCurrentWeekCycleKey(): string {
   const now = new Date();
@@ -79,25 +78,11 @@ function getCurrentWeekCycleKey(): string {
   return `${now.getFullYear()}-W${weekNum}`;
 }
 
-/**
- * Verifica se a assinatura de R$ 200 já foi descontada nesta semana
- */
-export function hasWeeklyFeeBeenDeducted(driverId: string): boolean {
-  if (!driverId) return false;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_FEE_DEDUCTED);
-    const map = raw ? JSON.parse(raw) : {};
-    const cycle = getCurrentWeekCycleKey();
-    return Boolean(map[`${driverId}_${cycle}`]);
-  } catch {
-    return false;
-  }
+export function hasWeeklyFeeBeenDeducted(_driverId: string): boolean {
+  return false;
 }
 
-/**
- * Marca que a assinatura de R$ 200 foi descontada para a semana atual
- */
-export function setWeeklyFeeDeducted(driverId: string, deducted: boolean = true): void {
+export function setWeeklyFeeDeducted(driverId: string, deducted: boolean = false): void {
   if (!driverId) return;
   try {
     const raw = localStorage.getItem(STORAGE_KEY_FEE_DEDUCTED);
@@ -110,8 +95,8 @@ export function setWeeklyFeeDeducted(driverId: string, deducted: boolean = true)
 
 /**
  * Calcula o resumo da carteira do motorista
- * NOVO MODELO: A comissão da Race (15%) já é descontada na corrida.
- * O saldo do motorista (85%) é 100% livre para saque a qualquer momento, sem taxa de R$ 200.
+ * MODELO OFICIAL RACE: A comissão da Race (15%) já é descontada na corrida.
+ * O saldo do motorista (85%) fica livre para saque via PIX sem mensalidade.
  */
 export function calculateWalletSummary(driver: Driver): {
   gross: number;
@@ -125,8 +110,8 @@ export function calculateWalletSummary(driver: Driver): {
 
   return {
     gross,
-    weeklyFee: 0, // Sem taxa semanal / sem desconto de R$ 200
-    net: gross,   // Motorista recebe 100% do saldo de 85% dele
+    weeklyFee: 0, // Sem mensalidade e sem taxa para trabalhar
+    net: gross,   // Motorista recebe seus 85% integralmente
     canWithdraw: gross > 0,
     missingForFee: 0,
     alreadyPaidFee: true,
@@ -141,7 +126,7 @@ export function checkMondayAutoDeduction(driverOrId: Driver | string): {
   newBalance: number;
   message?: string;
 } {
-  // NOVO MODELO: Sem desconto semanal às segundas-feiras. O motorista recebe 85% líquido por corrida.
+  // Sem desconto fixo; o motorista recebe 85% líquido por corrida.
   const driverId = typeof driverOrId === 'string' ? driverOrId : driverOrId.id;
   const initialBalance = typeof driverOrId === 'string' ? undefined : driverOrId.walletBalance;
   return { deducted: false, newBalance: getDriverBalance(driverId, initialBalance || 0) };
@@ -170,7 +155,7 @@ function saveWithdrawals(list: WithdrawalRequest[]) {
 
 /**
  * Solicitação de Saque pelo Motorista
- * Saca 100% do saldo líquido acumulado (85% das corridas) sem desconto semanal
+ * Saca o saldo líquido acumulado (85% das corridas) sem mensalidade
  */
 export function requestWithdrawal(
   driver: Driver,

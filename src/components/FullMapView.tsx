@@ -11,7 +11,6 @@ import {
   Route, 
   Clock, 
   CheckCircle2, 
-  Play, 
   Car,
   BellRing,
   Navigation,
@@ -131,7 +130,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const [secondsRemaining, setSecondsRemaining] = useState(180);
   const [distanceRemainingMeters, setDistanceRemainingMeters] = useState(1800);
   const [hasDriverArrived, setHasDriverArrived] = useState(false);
-  const [isRideInProgress, setIsRideInProgress] = useState(false);
+  const [isRideInProgress, setIsRideInProgress] = useState(true);
   const [isRideFinished, setIsRideFinished] = useState(false);
 
   // Estados de Áudio e Voz (Web Speech API + Chime Ding)
@@ -206,7 +205,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     }
   }, [isRideFinished]);
 
-  // 1. Busca rota real pelas ruas via OSRM ao iniciar
+  // 1. Busca rota real pelas ruas via OSRM ao abrir o mapa
   useEffect(() => {
     let active = true;
     fetchRealStreetRoute(startCarLat, startCarLng, pLat, pLng).then((res) => {
@@ -497,17 +496,6 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const minutesLeft = Math.max(Math.ceil(secondsRemaining / 60), 0);
   const distanceKmFormatted = (distanceRemainingMeters / 1000).toFixed(1);
 
-  // Iniciar Corrida
-  const handleStartRide = () => {
-    setHasDriverArrived(false);
-    setIsRideInProgress(true);
-    setSecondsRemaining(240);
-    setDistanceRemainingMeters(3200);
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.setView(carPos, 16, { animate: true });
-    }
-  };
-
   // Ver corrida completa
   const handleViewFullRoute = () => {
     if (!mapInstanceRef.current) return;
@@ -668,8 +656,25 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             </div>
           </div>
 
+          {/* Status automático: Corrida já iniciada após pagamento */}
+          {!hasDriverArrived && !isRideFinished && (
+            <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping shrink-0" />
+                <span className="font-heading font-black text-xs sm:text-sm text-emerald-950 truncate">
+                  {isMotoboy
+                    ? 'Corrida iniciada - Motoboy a caminho'
+                    : 'Corrida iniciada - Motorista a caminho'}
+                </span>
+              </div>
+              <span className="text-[10px] font-mono font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full shrink-0 uppercase">
+                EM ANDAMENTO
+              </span>
+            </div>
+          )}
+
           {/* Alerta de Chegada Próxima (<= 200m) */}
-          {distanceRemainingMeters <= 200 && !hasDriverArrived && !isRideInProgress && !isRideFinished && (
+          {distanceRemainingMeters <= 200 && !hasDriverArrived && !isRideFinished && (
             <div className="bg-amber-50 border border-[#ff6a00] rounded-xl p-2.5 flex items-center justify-between gap-2 animate-pulse">
               <div className="flex items-center gap-2">
                 <BellRing className="w-4 h-4 text-[#ff6a00] shrink-0" />
@@ -681,43 +686,50 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             </div>
           )}
 
-          {/* Quando Chegar no Local: Motorista Chegou! */}
-          {hasDriverArrived && !isRideInProgress && !isRideFinished && (
+          {/* Quando Chegar no Local: Motorista Chegou + Viagem em Andamento Automático */}
+          {hasDriverArrived && !isRideFinished && (
             <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 text-center space-y-2">
               <div className="flex items-center justify-center gap-2 text-emerald-800 font-heading font-black text-sm sm:text-base">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 <span>{isMotoboy ? 'Seu motoboy chegou!' : 'Seu motorista chegou!'}</span>
               </div>
               <p className="text-[11px] text-slate-600 font-medium">
-                Veículo ({effectiveDriver.vehiclePlate}) no ponto de embarque.
+                Veículo ({effectiveDriver.vehiclePlate}) no ponto de embarque • Corrida em andamento automático.
               </p>
               <div className="flex items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={handleTestAudioArrival}
-                  className="py-1 px-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer"
+                  className="py-1.5 px-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer"
                 >
                   <Volume2 className="w-3.5 h-3.5" />
                   <span>Ouvir aviso de voz</span>
                 </button>
                 <button
                   type="button"
-                  onClick={handleStartRide}
-                  className="py-1 px-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white text-xs font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
+                  onClick={() => {
+                    setIsRideInProgress(false);
+                    setIsRideFinished(true);
+                    setDistanceRemainingMeters(0);
+                    setSecondsRemaining(0);
+                    if (onCompleteRide) {
+                      onCompleteRide();
+                    }
+                  }}
+                  className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg cursor-pointer shadow-xs"
                 >
-                  <Play className="w-3.5 h-3.5 fill-white" />
-                  <span>Iniciar corrida</span>
+                  Finalizar viagem
                 </button>
               </div>
             </div>
           )}
 
-          {/* Corrida em andamento */}
-          {isRideInProgress && !isRideFinished && (
+          {/* Opção de Finalizar viagem durante trajeto se desejado */}
+          {!hasDriverArrived && isRideInProgress && !isRideFinished && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-2.5 flex items-center justify-between gap-2">
               <span className="text-xs font-heading font-bold text-blue-900 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                Viagem em andamento para o destino
+                Acompanhamento GPS em tempo real ativo
               </span>
               <button
                 type="button"
