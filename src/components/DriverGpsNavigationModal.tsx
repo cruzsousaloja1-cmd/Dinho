@@ -164,6 +164,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const [secondsRemaining, setSecondsRemaining] = useState(240);
   const [isVoiceMuted, setIsVoiceMuted] = useState<boolean>(() => !isAudioEnabled());
   const [showCancelProblemMenu, setShowCancelProblemMenu] = useState(false);
+  const [showManeuverPill, setShowManeuverPill] = useState(true);
   const lastSpokenManeuverRef = useRef<string>('');
 
   // Confirmação por código de 4 números do passageiro
@@ -755,13 +756,33 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     }
 
     const targetStreet = nextStep.streetName || active.streetName || 'Via local';
+    const shortAction =
+      actionVerb === 'VIRE À DIREITA'
+        ? 'Vire à direita'
+        : actionVerb === 'VIRE À ESQUERDA'
+        ? 'Vire à esquerda'
+        : actionVerb === 'ENTRE À DIREITA'
+        ? 'Entre à direita'
+        : actionVerb === 'ENTRE À ESQUERDA'
+        ? 'Entre à esquerda'
+        : 'Siga em frente';
+
     return {
-      headline: `${actionVerb} EM ${distLabel} - ${targetStreet}`,
+      headline: `${distLabel} - ${shortAction}`,
       street: targetStreet,
       spoken: `${spokenVerb} em ${distSpoken} na ${targetStreet}`,
       modifier: nextStep.modifier || active.modifier || 'straight',
     };
   })();
+
+  // Mostra a pílula branca de manobra por 3 segundos quando houver manobra e esconde depois para deixar o mapa limpo
+  useEffect(() => {
+    setShowManeuverPill(true);
+    const hideTimer = setTimeout(() => {
+      setShowManeuverPill(false);
+    }, 3000);
+    return () => clearTimeout(hideTimer);
+  }, [tripPhase, currentManeuver.street, currentManeuver.modifier]);
 
   // Fala automaticamente cada nova manobra em voz alta enquanto dirige
   useEffect(() => {
@@ -811,19 +832,19 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       ? 'bg-blue-600 text-white border-blue-400'
       : 'bg-[#ff6a00] text-white border-[#ff8533]';
 
-  // Alturas exatas dos 3 estados (minimized compacto para nunca cobrir o mapa enquanto dirige; medium 55%; expanded 88%)
+  // Alturas exatas dos 3 estados: 90px fino enquanto dirige / 55% / 88%
   const cardHeightStyle: React.CSSProperties =
     cardState === 'minimized'
-      ? { minHeight: '196px', maxHeight: '220px' }
+      ? { height: '90px' }
       : cardState === 'medium'
       ? { height: '55%' }
       : { height: '88%' };
 
   return (
     /* Container termina 20px acima da barra inferior (BottomNav z-40) para nunca ficar atrás dela */
-    <div className="fixed top-0 left-0 right-0 bottom-[calc(104px+env(safe-area-inset-bottom,0px))] sm:bottom-[calc(120px+env(safe-area-inset-bottom,0px))] z-50 bg-slate-950 text-white select-none">
-      {/* 1. MAPA GRANDE NO FUNDO COM z-index: 0 E ROTAÇÃO AUTOMÁTICA SEGUINDO O CARRO */}
-      <div className="absolute inset-0 z-0 overflow-hidden bg-slate-200">
+    <div className="fixed top-0 left-0 right-0 bottom-[calc(104px+env(safe-area-inset-bottom,0px))] sm:bottom-[calc(120px+env(safe-area-inset-bottom,0px))] z-50 bg-white text-slate-950 select-none">
+      {/* 1. MAPA 100% LIVRE DO TOPO ATÉ EMBAIXO COM z-index: 0 E ROTAÇÃO AUTOMÁTICA SEGUINDO O CARRO */}
+      <div className="absolute inset-0 z-0 overflow-hidden bg-slate-100">
         <div
           ref={mapContainerRef}
           style={
@@ -837,310 +858,215 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
         />
       </div>
 
-      {/* 2. MODO NAVEGAÇÃO HUD NO TOPO (LIMPO, FONTE GIGANTE, VOZ ON/OFF, TEMPO E DISTÂNCIA) */}
-      <div className="absolute top-2 left-2 right-2 z-20 pointer-events-none space-y-2">
-        {/* Linha Principal: Seta Gigante + Próxima Manobra Grande + Botão de Voz + Velocímetro */}
-        <div className="bg-emerald-700/95 backdrop-blur-md text-white rounded-2xl p-3 shadow-2xl border-2 border-emerald-400 flex items-center justify-between gap-2.5 pointer-events-auto">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="w-14 h-14 rounded-2xl bg-slate-950 text-emerald-400 flex items-center justify-center shrink-0 border-2 border-emerald-400 shadow-lg">
+      {/* 2. SOMENTE PÍLULA BRANCA PEQUENA E TRANSPARENTE EM CIMA (some sozinha após 3s se não tiver nova manobra) */}
+      {showManeuverPill && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none max-w-[90%] transition-opacity duration-300">
+          <div className="bg-white/88 backdrop-blur-md text-slate-950 rounded-full px-4 py-2 shadow-lg border border-slate-200/90 flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
               {currentManeuver.modifier === 'right' ||
               currentManeuver.modifier === 'sharp right' ||
               currentManeuver.modifier === 'slight right' ? (
-                <CornerUpRight className="w-9 h-9 stroke-[3]" />
+                <CornerUpRight className="w-3.5 h-3.5 stroke-[3]" />
               ) : currentManeuver.modifier === 'left' ||
                 currentManeuver.modifier === 'sharp left' ||
                 currentManeuver.modifier === 'slight left' ? (
-                <CornerUpLeft className="w-9 h-9 stroke-[3]" />
+                <CornerUpLeft className="w-3.5 h-3.5 stroke-[3]" />
               ) : (
-                <ArrowUp className="w-9 h-9 stroke-[3]" />
+                <ArrowUp className="w-3.5 h-3.5 stroke-[3]" />
               )}
             </div>
-            <div className="min-w-0 flex-1">
-              <span className="text-[10px] font-mono font-black uppercase tracking-widest text-emerald-200 block">
-                Próxima Manobra
-              </span>
-              <h2 className="font-heading font-black text-lg sm:text-2xl leading-tight text-white line-clamp-2">
-                {currentManeuver.headline}
-              </h2>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Botão de Som Ligado / Desligado bem visível */}
-            <button
-              type="button"
-              onClick={handleToggleVoice}
-              className={`h-12 px-3 rounded-2xl border-2 font-heading font-black text-xs flex flex-col items-center justify-center shadow-lg cursor-pointer active:scale-95 ${
-                isVoiceMuted
-                  ? 'bg-rose-950 border-rose-400 text-rose-200'
-                  : 'bg-slate-950 border-emerald-400 text-emerald-300'
-              }`}
-              title="Ligar ou desligar navegação por voz"
-            >
-              {isVoiceMuted ? (
-                <VolumeX className="w-5 h-5 text-rose-400" />
-              ) : (
-                <Volume2 className="w-5 h-5 text-emerald-400 animate-pulse" />
-              )}
-              <span className="text-[9px] uppercase tracking-wider mt-0.5">
-                {isVoiceMuted ? 'MUDO' : 'VOZ ON'}
-              </span>
-            </button>
-
-            <div className="w-12 h-12 rounded-2xl bg-black/95 border-2 border-white flex flex-col items-center justify-center shrink-0">
-              <span className="font-heading font-black text-white text-base leading-none">
-                {speedKmh}
-              </span>
-              <span className="text-[8px] font-mono text-zinc-400 uppercase">km/h</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Cartão de Relance: Endereço Gigante 24px + Tempo e Distância Grandes ("8 min - 3,2 km") */}
-        <div className="bg-slate-950/92 backdrop-blur-md text-white rounded-2xl px-3.5 py-2.5 shadow-xl border border-zinc-700 pointer-events-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-mono font-black uppercase tracking-wider text-amber-400 block">
-              {tripPhase === 'to_destination' ? '🏁 DESTINO DO PASSAGEIRO' : '📍 COLETA DO PASSAGEIRO'}
+            <span className="font-heading font-black text-xs sm:text-sm whitespace-nowrap truncate">
+              {currentManeuver.headline}
             </span>
-            <p
-              style={{ fontSize: '24px', lineHeight: '1.15' }}
-              className="font-heading font-black text-white line-clamp-2 break-words"
-            >
-              {activeTargetAddress}
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 border-t sm:border-t-0 border-zinc-800 pt-1.5 sm:pt-0">
-            <div className="bg-[#ff6a00] text-white px-3.5 py-1.5 rounded-xl font-heading font-black text-lg sm:text-2xl tracking-tight shadow-md whitespace-nowrap">
-              {minutesLeft} min - {kmLeftFormatted} km
-            </div>
-
-            {!isFollowingCar && (
-              <button
-                type="button"
-                onClick={handleFollowCar}
-                className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-heading font-black text-xs flex items-center gap-1.5 shadow-lg cursor-pointer active:scale-95 border border-blue-400"
-                title="Voltar a centralizar e girar com o carro"
-              >
-                <Crosshair className="w-4 h-4" />
-                <span>SEGUIR</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={handleCenterRoute}
-              className="w-10 h-10 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white rounded-xl flex items-center justify-center cursor-pointer active:scale-95"
-              title="Ver rota completa"
-            >
-              <Route className="w-5 h-5" />
-            </button>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-10 h-10 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-xl flex items-center justify-center cursor-pointer active:scale-95"
-              title="Sair do modo navegação"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* 3. CARD DO MOTORISTA COM z-index: 50 SEMPRE POR CIMA DO MAPA, INICIA MINIMIZADO PARA NÃO COBRIR O MAPA */}
+      {/* 3. CARD DO MOTORISTA EMBAIXO (90px enquanto dirige, arrasta para cima para ver tudo) */}
       <div
         style={cardHeightStyle}
-        className="absolute bottom-0 left-0 right-0 z-50 bg-white text-slate-950 border-t-4 border-[#ff6a00] rounded-t-3xl shadow-[0_-12px_40px_rgba(0,0,0,0.45)] flex flex-col transition-[height] duration-200 ease-out"
+        className="absolute bottom-0 left-0 right-0 z-50 bg-white text-slate-950 rounded-t-3xl shadow-[0_-8px_30px_rgba(0,0,0,0.18)] border-t border-slate-200 flex flex-col transition-[height] duration-200 ease-out"
       >
-        {/* Alça + Cabeçalho de Controle dos 3 Estados */}
-        <div
-          onTouchStart={handleCardTouchStart}
-          onTouchEnd={handleCardTouchEnd}
-          className="px-3.5 pt-2 pb-1.5 flex flex-col items-center gap-1 border-b border-slate-200 bg-white rounded-t-3xl shrink-0"
-        >
-          <div
-            onClick={() =>
-              setCardState((prev) =>
-                prev === 'minimized' ? 'medium' : prev === 'medium' ? 'expanded' : 'minimized'
-              )
-            }
-            className="w-14 h-1.5 rounded-full bg-slate-300 cursor-pointer"
-            title="Arraste para cima para ver tudo"
-          />
-
-          <div className="w-full flex items-center justify-between gap-2">
-            {/* Status Grande */}
-            <div
-              className={`px-2.5 py-1 rounded-xl border font-heading font-black text-[11px] sm:text-xs tracking-wider uppercase flex items-center gap-1.5 shadow-xs ${statusBadgeColor}`}
-            >
-              <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
-              <span className="truncate">{statusText}</span>
-            </div>
-
-            {/* Botões explícitos no cabeçalho: DIGITAR CÓDIGO + EXPANDIR / MINIMIZAR */}
-            <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-              {!isCodeConfirmed && (
-                <button
-                  type="button"
-                  onClick={handleOpenCodeModal}
-                  className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-[11px] flex items-center gap-1 cursor-pointer shadow-sm animate-pulse"
-                >
-                  <KeyRound className="w-3.5 h-3.5 shrink-0" />
-                  <span>DIGITAR CÓDIGO</span>
-                </button>
-              )}
-              {cardState !== 'minimized' && (
-                <button
-                  type="button"
-                  onClick={() => setCardState('minimized')}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-bold text-[11px] flex items-center gap-1 cursor-pointer border border-slate-300"
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
-                  <span>Minimizar</span>
-                </button>
-              )}
-              {cardState !== 'expanded' && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCardState((prev) => (prev === 'minimized' ? 'medium' : 'expanded'))
-                  }
-                  className="px-2.5 py-1 rounded-lg bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-[11px] flex items-center gap-1 cursor-pointer shadow-xs"
-                >
-                  <ChevronUp className="w-3.5 h-3.5" />
-                  <span>EXPANDIR</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ESTADO 1: MINIMIZADO ENQUANTO DIRIGE (Passageiro + Valor + Código + Botões Gigantes CHEGUEI / INICIAR + Segurança) */}
         {cardState === 'minimized' ? (
-          <div className="px-3 py-2 flex-1 flex flex-col justify-between gap-2 bg-white">
-            {/* Passageiro + Valor + Código */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
+          /* ESTADO MINIMIZADO (EXATAMENTE 90px): Foto + Nome + Valor + Coleta em 1 linha + 1 BOTÃO VERDE ÚNICO */
+          <div
+            onTouchStart={handleCardTouchStart}
+            onTouchEnd={handleCardTouchEnd}
+            className="h-[90px] px-3.5 pt-1.5 pb-2 flex flex-col justify-between bg-white rounded-t-3xl"
+          >
+            {/* Alça discreta para arrastar para cima */}
+            <div
+              onClick={() => setCardState('medium')}
+              className="w-10 h-1 rounded-full bg-slate-300 mx-auto shrink-0 cursor-pointer"
+              title="Arraste para cima para ver detalhes"
+            />
+
+            <div className="flex items-center justify-between gap-2.5 flex-1 min-h-0">
+              {/* Esquerda: Linha 1 (Foto pequena + Nome + Valor) / Linha 2 (Coleta: Rua X, 123 em 1 linha) */}
+              <button
+                type="button"
+                onClick={() => setCardState('medium')}
+                className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
+                title="Toque ou arraste para cima para ver detalhes completos"
+              >
                 <img
                   src={
                     effectiveRide.passengerAvatar ||
                     'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
                   }
                   alt={effectiveRide.passengerName}
-                  className="w-9 h-9 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
+                  className="w-11 h-11 rounded-full object-cover border-2 border-emerald-500 shrink-0"
                 />
-                <div className="min-w-0">
-                  <h3 className="font-heading font-black text-xs sm:text-sm text-slate-950 truncate">
-                    {effectiveRide.passengerName} • ★ {(effectiveRide.passengerRating || 5.0).toFixed(1)}
-                  </h3>
-                  <span className="text-[11px] font-bold text-slate-600 block truncate">
-                    {isCodeConfirmed ? '✅ Código confirmado' : '🔐 Código de 4 números pendente'}
-                  </span>
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-heading font-black text-sm text-slate-950 truncate">
+                      {effectiveRide.passengerName}
+                    </span>
+                    <span className="font-heading font-black text-sm text-emerald-700 shrink-0">
+                      {formatBRL(totalValue)}
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-600 truncate">
+                    {tripPhase === 'to_destination' ? 'Destino: ' : 'Coleta: '}
+                    {activeTargetAddress}
+                  </p>
                 </div>
-              </div>
+              </button>
 
-              <div className="text-right shrink-0">
-                <span className="font-heading font-black text-sm text-[#ff6a00] block leading-tight">
-                  {formatBRL(totalValue)}
-                </span>
-                <span className="text-[10px] font-bold text-emerald-700 block">
-                  Você (85%): {formatBRL(driverNetValue)}
-                </span>
-              </div>
-            </div>
-
-            {/* BOTÕES GIGANTES DE DIREÇÃO: VERDE CHEGUEI / FINALIZAR + AZUL INICIAR CORRIDA */}
-            <div className="grid grid-cols-2 gap-2">
-              {tripPhase !== 'to_destination' ? (
+              {/* Direita: APENAS 1 BOTÃO VERDE GRANDE ("CHEGUEI" -> "INICIAR" -> "FINALIZAR") */}
+              {tripPhase === 'to_pickup' ? (
                 <button
                   type="button"
                   onClick={handleArrivedAtPickup}
-                  className="min-h-[54px] px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-2xl font-heading font-black text-base uppercase flex items-center justify-center gap-2 shadow-lg cursor-pointer border-2 border-emerald-400"
+                  className="h-[54px] px-5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-2xl font-heading font-black text-sm sm:text-base uppercase shadow-md cursor-pointer shrink-0 flex items-center justify-center"
                 >
-                  <CheckCircle2 className="w-6 h-6 shrink-0" />
-                  <span>CHEGUEI</span>
+                  CHEGUEI
                 </button>
+              ) : tripPhase === 'arrived_pickup' ? (
+                !isCodeConfirmed ? (
+                  <button
+                    type="button"
+                    onClick={handleOpenCodeModal}
+                    className="h-[54px] px-4 bg-slate-300 hover:bg-slate-400/80 text-slate-700 rounded-2xl font-heading font-black text-xs sm:text-sm uppercase cursor-pointer shrink-0 flex items-center justify-center gap-1.5 border border-slate-400"
+                    title="Digite o código de 4 números para liberar INICIAR"
+                  >
+                    <Lock className="w-4 h-4 shrink-0" />
+                    <span>INICIAR</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStartTripToDestination}
+                    className="h-[54px] px-5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-2xl font-heading font-black text-sm sm:text-base uppercase shadow-md cursor-pointer shrink-0 flex items-center justify-center"
+                  >
+                    INICIAR
+                  </button>
+                )
               ) : (
                 <button
                   type="button"
                   onClick={handleFinishRide}
-                  className="min-h-[54px] px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-lg cursor-pointer border-2 border-emerald-400"
+                  className="h-[54px] px-5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-2xl font-heading font-black text-sm sm:text-base uppercase shadow-md cursor-pointer shrink-0 flex items-center justify-center"
                 >
-                  <CheckCircle2 className="w-6 h-6 shrink-0" />
-                  <span>FINALIZAR</span>
+                  FINALIZAR
                 </button>
               )}
-
-              {!isCodeConfirmed ? (
-                <button
-                  type="button"
-                  onClick={handleOpenCodeModal}
-                  className="min-h-[54px] px-3 py-2.5 bg-slate-300 hover:bg-slate-400/70 text-slate-700 rounded-2xl font-heading font-black text-xs sm:text-sm uppercase flex flex-col items-center justify-center leading-tight border-2 border-slate-400 cursor-pointer"
-                  title="Digite o código de 4 números para desbloquear INICIAR CORRIDA"
-                >
-                  <span className="flex items-center gap-1">
-                    <Lock className="w-4 h-4 shrink-0" />
-                    <span>INICIAR CORRIDA</span>
-                  </span>
-                  <span className="text-[10px] font-bold text-blue-700">Toque p/ código</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleStartTripToDestination}
-                  disabled={tripPhase === 'to_destination'}
-                  className={`min-h-[54px] px-3 py-2.5 rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-lg border-2 ${
-                    tripPhase === 'to_destination'
-                      ? 'bg-blue-100 text-blue-900 border-blue-500 cursor-default'
-                      : 'bg-blue-600 hover:bg-blue-500 active:scale-95 text-white border-blue-400 cursor-pointer'
-                  }`}
-                >
-                  <Play className="w-5 h-5 shrink-0 fill-current" />
-                  <span>{tripPhase === 'to_destination' ? 'EM ROTA' : 'INICIAR CORRIDA'}</span>
-                </button>
-              )}
-            </div>
-
-            {/* BARRA FIXA DE SEGURANÇA E NAVEGAÇÃO EXTERNA */}
-            <div className="grid grid-cols-3 gap-1.5">
-              <button
-                type="button"
-                onClick={() => setShowExternalNavMenu(true)}
-                className="min-h-[42px] px-2 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-heading font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-1 cursor-pointer shadow-sm leading-tight text-center"
-              >
-                <Navigation className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>GOOGLE MAPS / WAZE</span>
-              </button>
-
-              <a
-                href={`tel:+55${cleanPhone}`}
-                className="min-h-[42px] px-2 py-1.5 bg-blue-900 hover:bg-blue-800 text-white rounded-xl font-heading font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-1 shadow-sm leading-tight text-center"
-              >
-                <Phone className="w-3.5 h-3.5 text-blue-300 shrink-0" />
-                <span>LIGAR PASSAGEIRO</span>
-              </a>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setCardState('expanded');
-                  setShowCancelProblemMenu(true);
-                }}
-                className="min-h-[42px] px-2 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-xl font-heading font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-1 cursor-pointer shadow-sm leading-tight text-center"
-              >
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span>EMERGÊNCIA</span>
-              </button>
             </div>
           </div>
         ) : (
-          /* ESTADOS 2 E 3: MÉDIO (55%) e EXPANDIDO (88%) — OVERFLOW-Y-AUTO + PADDING-BOTTOM 180px */
-          <div
-            className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3.5 sm:px-5 pt-3 space-y-3"
-            style={{ paddingBottom: '180px' }}
-          >
-            {/* 1. Foto, nome e nota do passageiro + Ligar / WhatsApp */}
+          /* ESTADOS EXPANDIDOS (55% ou 88% — só aparecem quando o motorista arrasta para cima) */
+          <>
+            {/* Alça + Cabeçalho Interno do Card Expandido */}
+            <div
+              onTouchStart={handleCardTouchStart}
+              onTouchEnd={handleCardTouchEnd}
+              className="px-3.5 pt-2 pb-2 flex flex-col items-center gap-1.5 border-b border-slate-200 bg-white rounded-t-3xl shrink-0"
+            >
+              <div
+                onClick={() =>
+                  setCardState((prev) => (prev === 'expanded' ? 'medium' : 'minimized'))
+                }
+                className="w-14 h-1.5 rounded-full bg-slate-300 cursor-pointer"
+                title="Arraste para baixo para voltar a dirigir"
+              />
+
+              <div className="w-full flex items-center justify-between gap-2">
+                <div
+                  className={`px-2.5 py-1 rounded-xl border font-heading font-black text-[11px] sm:text-xs tracking-wider uppercase flex items-center gap-1.5 shadow-xs ${statusBadgeColor}`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
+                  <span className="truncate">{statusText}</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setCardState('minimized')}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-bold text-[11px] flex items-center gap-1 cursor-pointer border border-slate-300"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    <span>Minimizar</span>
+                  </button>
+                  {cardState !== 'expanded' && (
+                    <button
+                      type="button"
+                      onClick={() => setCardState('expanded')}
+                      className="px-2.5 py-1 rounded-lg bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-[11px] flex items-center gap-1 cursor-pointer shadow-xs"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span>EXPANDIR</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3.5 sm:px-5 pt-3 space-y-3"
+              style={{ paddingBottom: '180px' }}
+            >
+              {/* Controles rápidos de Navegação & Som dentro do Card Expandido */}
+              <div className="flex items-center justify-between gap-2 bg-slate-100 border border-slate-200 rounded-2xl p-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleToggleVoice}
+                  className={`px-3 py-1.5 rounded-xl font-heading font-black text-xs flex items-center gap-1.5 cursor-pointer border ${
+                    isVoiceMuted
+                      ? 'bg-rose-50 border-rose-300 text-rose-700'
+                      : 'bg-emerald-50 border-emerald-400 text-emerald-800'
+                  }`}
+                >
+                  {isVoiceMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                  <span>{isVoiceMuted ? 'Voz Desligada' : 'Voz Ligada'}</span>
+                </button>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleFollowCar}
+                    className="px-2.5 py-1.5 rounded-xl bg-blue-600 text-white font-heading font-bold text-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <Crosshair className="w-3.5 h-3.5" />
+                    <span>Seguir Carro</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCenterRoute}
+                    className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-300 text-slate-800 font-heading font-bold text-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <Route className="w-3.5 h-3.5" />
+                    <span>Rota</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-900 text-white font-heading font-bold text-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Sair</span>
+                  </button>
+                </div>
+              </div>
             <div className="flex items-center justify-between gap-2.5 bg-slate-50 border border-slate-200 rounded-2xl p-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="relative shrink-0">
@@ -1447,6 +1373,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               )}
             </div>
           </div>
+          </>
         )}
       </div>
 
