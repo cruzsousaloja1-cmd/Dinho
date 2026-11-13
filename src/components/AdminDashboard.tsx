@@ -1604,12 +1604,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm"
                 >
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       <span className="font-mono font-extrabold text-amber-800 text-sm">{ride.id}</span>
                       <span className="bg-slate-200 text-slate-800 px-2 py-0.5 rounded text-xs uppercase font-extrabold">
                         {ride.category.replace('_', ' ')}
                       </span>
                       <span className="text-emerald-700 font-bold">{ride.status}</span>
+                      {ride.confirmationCode && (
+                        <span className="bg-slate-950 text-[#ff6a00] border border-[#ff6a00]/60 px-2.5 py-0.5 rounded-lg font-mono font-black text-xs tracking-wider">
+                          🔐 Código: {ride.confirmationCode}
+                        </span>
+                      )}
                     </div>
                     <p className="text-slate-900 font-medium">
                       <strong>De:</strong> {ride.pickup.address}

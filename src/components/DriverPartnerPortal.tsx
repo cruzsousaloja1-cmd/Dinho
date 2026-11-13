@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
-import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE } from '../services/pricingService';
+import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
 import { savePagamentoSupabase } from '../supabase';
 import { 
@@ -300,6 +300,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [comfortWarning, setComfortWarning] = useState<string | null>(null);
   const [isDriverGpsOpen, setIsDriverGpsOpen] = useState(false);
   const [acceptedDriverRide, setAcceptedDriverRide] = useState<Ride | null>(null);
+  const [simulatedRideCode] = useState<string>(() => generateUniqueRideConfirmationCode());
 
   // Galeria de Fotos: Perfil, CNH e Foto do Veículo
   const driverAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -965,6 +966,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       paymentMethod: 'pix',
                       paymentStatus: 'paid',
                       status: 'in_progress',
+                      confirmationCode: simulatedRideCode,
                       createdAt: new Date().toISOString(),
                     };
 

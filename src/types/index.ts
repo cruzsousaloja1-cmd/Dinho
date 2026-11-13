@@ -143,6 +143,7 @@ export interface Ride {
   paymentMethod: 'pix' | 'credit_card' | 'race_pay' | 'money';
   paymentStatus: 'pending' | 'paid';
   status: RideStatus;
+  confirmationCode?: string;
   createdAt: string;
   completedAt?: string;
   ratingGivenToDriver?: number;

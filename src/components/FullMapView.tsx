@@ -41,6 +41,8 @@ import {
   playChimeSound,
   speakText
 } from '../services/audioNotificationService';
+import { generateUniqueRideConfirmationCode } from '../services/pricingService';
+import { ShieldCheck } from 'lucide-react';
 
 interface FullMapViewProps {
   onClose: () => void;
@@ -74,6 +76,8 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
   const stepRef = useRef(0);
   const hasInitialFitBoundsRef = useRef(false);
+  const [fallbackConfirmationCode] = useState<string>(() => generateUniqueRideConfirmationCode());
+  const displayConfirmationCode = activeRide?.confirmationCode || fallbackConfirmationCode;
 
   // Coordenadas padrão em Indaiatuba - SP
   const pLat = pickup?.lat ?? -23.0955;
@@ -701,6 +705,20 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                 {isRideFinished ? 'Destino' : `${speedKmh} km/h`}
               </div>
             </div>
+          </div>
+
+          {/* CÓDIGO DE CONFIRMAÇÃO GIGANTE SEMPRE VISÍVEL PARA O PASSAGEIRO */}
+          <div className="bg-slate-950 border-2 border-[#ff6a00] rounded-2xl px-3.5 py-2.5 text-center shadow-md">
+            <div className="flex items-center justify-center gap-1.5 text-[11px] font-heading font-extrabold text-amber-300 uppercase tracking-wider">
+              <ShieldCheck className="w-4 h-4 text-[#ff6a00] shrink-0" />
+              <span>Confirmação de Embarque</span>
+            </div>
+            <div className="font-mono font-black text-2xl sm:text-3xl text-white tracking-[0.18em] leading-tight mt-0.5 select-text">
+              SEU CÓDIGO: <span className="text-[#ff6a00]">{displayConfirmationCode}</span>
+            </div>
+            <p className="text-xs font-bold text-slate-200 mt-0.5">
+              Mostre esse código para o motorista
+            </p>
           </div>
 
           {/* Status automático compacto + Finalizar viagem */}

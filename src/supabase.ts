@@ -61,8 +61,11 @@ CREATE TABLE IF NOT EXISTS public.corridas (
   rating_dado NUMERIC,
   comentario TEXT,
   detalhe_problema TEXT,
+  codigo_confirmacao TEXT,
   data TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+
+ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS codigo_confirmacao TEXT;
 
 -- 3. TABELA DE PAGAMENTOS (Repasses 85% Motorista e Saques)
 CREATE TABLE IF NOT EXISTS public.pagamentos (
@@ -135,6 +138,7 @@ export interface SupabaseCorridaRow {
   rating_dado?: number;
   comentario?: string;
   detalhe_problema?: string;
+  codigo_confirmacao?: string;
   data: string;
 }
 
@@ -450,12 +454,22 @@ export async function saveCorridaSupabase(
       rating_dado: ride.ratingGivenToDriver,
       comentario: ride.ratingComment,
       detalhe_problema: (ride as any).issueComment,
+      codigo_confirmacao: ride.confirmationCode || '',
       data: ride.createdAt || new Date().toISOString(),
     };
 
     const { error } = await supabase.from('corridas').upsert(payload, { onConflict: 'id' });
 
     if (error) {
+      if (error.message?.includes('codigo_confirmacao')) {
+        const { codigo_confirmacao: _omit, ...fallbackPayload } = payload;
+        const retry = await supabase.from('corridas').upsert(fallbackPayload, { onConflict: 'id' });
+        if (retry.error) {
+          console.warn('Aviso Supabase ao salvar corrida:', retry.error.message);
+          return { success: false, error: retry.error.message };
+        }
+        return { success: true };
+      }
       console.warn('Aviso Supabase ao salvar corrida:', error.message);
       return { success: false, error: error.message };
     }
@@ -560,6 +574,7 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
       paymentMethod: (row.forma_pagamento as any) || 'pix',
       paymentStatus: 'paid',
       status: (row.status as any) || 'completed',
+      confirmationCode: row.codigo_confirmacao || undefined,
       createdAt: row.data,
       ratingGivenToDriver: row.rating_dado,
       ratingComment: row.comentario,

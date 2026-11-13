@@ -6,7 +6,7 @@ import {
   Ride, 
   VehicleCategory 
 } from '../types';
-import { VEHICLE_CATEGORIES, calculateFare, formatBRL } from '../services/pricingService';
+import { VEHICLE_CATEGORIES, calculateFare, formatBRL, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { FINAL_RIDE_MESSAGE, WEEKLY_FEE_TEXT } from '../config/pricing';
 import { 
   searchAddressAutocomplete, 
@@ -375,6 +375,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       paymentMethod,
       paymentStatus: 'paid',
       status: 'in_progress',
+      confirmationCode: generateUniqueRideConfirmationCode(),
       createdAt: new Date().toISOString(),
     };
 

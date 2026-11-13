@@ -25,6 +25,10 @@ import {
   QrCode,
   Wallet,
   Play,
+  Lock,
+  ShieldCheck,
+  KeyRound,
+  Delete,
 } from 'lucide-react';
 import {
   INDAIATUBA_BOUNDS,
@@ -38,7 +42,7 @@ import {
   INDAIATUBA_REAL_STREET_COORDINATES,
   INDAIATUBA_REAL_STEPS,
 } from '../services/osrmRoutingService';
-import { formatBRL } from '../services/pricingService';
+import { formatBRL, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { Driver, Ride } from '../types';
 
 type DriverTripPhase = 'to_pickup' | 'arrived_pickup' | 'to_destination' | 'completed';
@@ -153,6 +157,41 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const [secondsRemaining, setSecondsRemaining] = useState(240);
   const [isVoiceMuted, setIsVoiceMuted] = useState(false);
   const [showCancelProblemMenu, setShowCancelProblemMenu] = useState(false);
+
+  // Confirmação por código de 4 números do passageiro
+  const [fallbackRideCode] = useState<string>(() => generateUniqueRideConfirmationCode());
+  const expectedConfirmationCode = effectiveRide.confirmationCode || fallbackRideCode;
+  const [isCodeConfirmed, setIsCodeConfirmed] = useState(false);
+  const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
+  const [codeDigits, setCodeDigits] = useState<[string, string, string, string]>(['', '', '', '']);
+  const codeInputRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null]);
+  const [wrongAttempts, setWrongAttempts] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const [secondsLeftToUnlock, setSecondsLeftToUnlock] = useState(0);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeSuccessMessage, setCodeSuccessMessage] = useState<string | null>(null);
+  const [showNoCodeOptions, setShowNoCodeOptions] = useState(false);
+
+  useEffect(() => {
+    if (!lockedUntil) {
+      setSecondsLeftToUnlock(0);
+      return;
+    }
+    const updateCountdown = () => {
+      const remaining = Math.ceil((lockedUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setLockedUntil(null);
+        setSecondsLeftToUnlock(0);
+        setWrongAttempts(0);
+        setCodeError(null);
+      } else {
+        setSecondsLeftToUnlock(remaining);
+      }
+    };
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [lockedUntil]);
 
   // Busca as duas rotas reais pelas ruas de Indaiatuba via OSRM
   useEffect(() => {
@@ -457,6 +496,14 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   }, [activeRoute, carHeading, tripPhase]);
 
   // Ações da Corrida do Motorista
+  const handleOpenCodeModal = () => {
+    setShowNoCodeOptions(false);
+    setIsCodeModalOpen(true);
+    setTimeout(() => {
+      codeInputRefs.current[0]?.focus();
+    }, 80);
+  };
+
   const handleArrivedAtPickup = () => {
     setTripPhase('arrived_pickup');
     const pickupPoint: [number, number] = [pickupLat, pickupLng];
@@ -464,9 +511,118 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     setSpeedKmh(0);
     setDistanceRemainingMeters(0);
     setSecondsRemaining(0);
+    if (!isCodeConfirmed) {
+      handleOpenCodeModal();
+    }
+  };
+
+  const handleDigitChange = (index: number, rawValue: string) => {
+    if (lockedUntil && Date.now() < lockedUntil) return;
+    const onlyNums = rawValue.replace(/\D/g, '');
+    if (onlyNums.length > 1) {
+      // Suporta colar os 4 números de uma vez
+      const chars = onlyNums.slice(0, 4).split('');
+      const next: [string, string, string, string] = [
+        chars[0] || '',
+        chars[1] || '',
+        chars[2] || '',
+        chars[3] || '',
+      ];
+      setCodeDigits(next);
+      setCodeError(null);
+      const focusIdx = Math.min(chars.length, 3);
+      codeInputRefs.current[focusIdx]?.focus();
+      return;
+    }
+
+    const next: [string, string, string, string] = [...codeDigits] as [string, string, string, string];
+    next[index] = onlyNums;
+    setCodeDigits(next);
+    setCodeError(null);
+
+    if (onlyNums && index < 3) {
+      codeInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleDigitKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !codeDigits[index] && index > 0) {
+      codeInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleKeypadPress = (num: string) => {
+    if (lockedUntil && Date.now() < lockedUntil) return;
+    const emptyIdx = codeDigits.findIndex((d) => !d);
+    if (emptyIdx === -1) return;
+    const next: [string, string, string, string] = [...codeDigits] as [string, string, string, string];
+    next[emptyIdx] = num;
+    setCodeDigits(next);
+    setCodeError(null);
+    if (emptyIdx < 3) {
+      codeInputRefs.current[emptyIdx + 1]?.focus();
+    }
+  };
+
+  const handleKeypadBackspace = () => {
+    if (lockedUntil && Date.now() < lockedUntil) return;
+    let lastFilled = -1;
+    for (let i = 3; i >= 0; i--) {
+      if (codeDigits[i]) {
+        lastFilled = i;
+        break;
+      }
+    }
+    if (lastFilled === -1) return;
+    const next: [string, string, string, string] = [...codeDigits] as [string, string, string, string];
+    next[lastFilled] = '';
+    setCodeDigits(next);
+    codeInputRefs.current[lastFilled]?.focus();
+  };
+
+  const handleConfirmCode = () => {
+    if (lockedUntil && Date.now() < lockedUntil) {
+      setCodeError('Aguarde 1 minuto para tentar novamente');
+      return;
+    }
+
+    const entered = codeDigits.join('');
+    if (entered.length < 4) {
+      setCodeError('Digite os 4 números do código do passageiro.');
+      return;
+    }
+
+    if (entered === expectedConfirmationCode) {
+      setIsCodeConfirmed(true);
+      setCodeError(null);
+      setCodeSuccessMessage('Passageiro confirmado!');
+      setWrongAttempts(0);
+      setIsCodeModalOpen(false);
+      setTripPhase('arrived_pickup');
+      return;
+    }
+
+    const nextWrong = wrongAttempts + 1;
+    setCodeDigits(['', '', '', '']);
+    setTimeout(() => {
+      codeInputRefs.current[0]?.focus();
+    }, 50);
+
+    if (nextWrong >= 3) {
+      setWrongAttempts(nextWrong);
+      setLockedUntil(Date.now() + 60000);
+      setCodeError('Aguarde 1 minuto para tentar novamente');
+    } else {
+      setWrongAttempts(nextWrong);
+      setCodeError('Código incorreto, peça novamente para o passageiro');
+    }
   };
 
   const handleStartTripToDestination = () => {
+    if (!isCodeConfirmed) {
+      handleOpenCodeModal();
+      return;
+    }
     setTripPhase('to_destination');
     stepRef.current = 0;
     setCurrentStepIndex(0);
@@ -564,16 +720,18 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const externalNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${activeTargetLat},${activeTargetLng}&travelmode=driving`;
 
   const statusText =
-    tripPhase === 'to_destination'
-      ? 'A CAMINHO DO DESTINO'
-      : tripPhase === 'arrived_pickup'
-      ? 'NO LOCAL DE EMBARQUE'
-      : tripPhase === 'completed'
+    tripPhase === 'completed'
       ? 'CORRIDA FINALIZADA'
+      : isCodeConfirmed
+      ? tripPhase === 'to_destination'
+        ? 'CORRIDA INICIADA • A CAMINHO DO DESTINO'
+        : 'CORRIDA INICIADA'
+      : tripPhase === 'arrived_pickup'
+      ? 'NO LOCAL • CONFIRME O CÓDIGO'
       : 'A CAMINHO DO PASSAGEIRO';
 
   const statusBadgeColor =
-    tripPhase === 'to_destination'
+    tripPhase === 'to_destination' || isCodeConfirmed
       ? 'bg-emerald-600 text-white border-emerald-400'
       : tripPhase === 'arrived_pickup'
       ? 'bg-blue-600 text-white border-blue-400'
@@ -925,40 +1083,93 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               </div>
             </div>
 
-            {/* 7. PILHA DOS 3 BOTÕES INTEIROS EM COLUNA (z-index: 60): 1. AZUL, 2. VERDE, 3. VERMELHO */}
+            {/* BANNER DE PASSAGEIRO CONFIRMADO OU AVISO DE CÓDIGO NECESSÁRIO */}
+            {isCodeConfirmed ? (
+              <div className="bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs">
+                <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <span className="font-heading font-black text-sm text-emerald-900 block">
+                    {codeSuccessMessage || 'Passageiro confirmado!'}
+                  </span>
+                  <span className="text-xs font-bold text-emerald-700">
+                    Código verificado. Você já pode iniciar e seguir para o destino.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-300 rounded-2xl p-2.5 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <KeyRound className="w-4 h-4 text-[#ff6a00] shrink-0" />
+                  <span className="text-xs font-bold text-amber-950 leading-snug">
+                    Confirme o código de 4 números do passageiro para liberar "INICIAR CORRIDA".
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenCodeModal}
+                  className="px-2.5 py-1.5 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-[11px] rounded-xl shrink-0 cursor-pointer"
+                >
+                  Digitar Código
+                </button>
+              </div>
+            )}
+
+            {/* 7. PILHA DOS BOTÕES INTEIROS EM COLUNA (z-index: 60): 1. AZUL, (INICIAR BLOQUEADO CINZA se sem código), 2. VERDE, 3. VERMELHO */}
             <div
               className="relative z-[60] flex flex-col gap-3 w-full pt-1"
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 30px)' }}
             >
-              {/* 1. BOTÃO AZUL EM CIMA: CHEGUEI / INICIAR CORRIDA */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (tripPhase === 'to_pickup') {
-                    handleArrivedAtPickup();
-                  } else if (tripPhase === 'arrived_pickup') {
-                    handleStartTripToDestination();
-                  }
-                }}
-                disabled={tripPhase === 'to_destination' || tripPhase === 'completed'}
-                style={{ width: '100%', minHeight: '56px' }}
-                className={`w-full min-h-[56px] py-3.5 px-4 rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] border ${
-                  tripPhase === 'to_pickup'
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500'
-                    : tripPhase === 'arrived_pickup'
-                    ? 'bg-blue-700 hover:bg-blue-600 text-white border-blue-500'
-                    : 'bg-blue-100 text-blue-900 border-2 border-blue-500 cursor-default'
-                }`}
-              >
-                <Play className="w-5 h-5 shrink-0 fill-current" />
-                <span>
-                  {tripPhase === 'to_pickup'
-                    ? 'CHEGUEI / INICIAR CORRIDA'
-                    : tripPhase === 'arrived_pickup'
-                    ? 'INICIAR CORRIDA'
-                    : 'CORRIDA EM ANDAMENTO'}
-                </span>
-              </button>
+              {/* 1. BOTÃO AZUL EM CIMA: CHEGUEI NO LOCAL -> ABRE TELA DE CÓDIGO -> DEPOIS INICIAR CORRIDA */}
+              {!isCodeConfirmed ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (tripPhase === 'to_pickup') {
+                        handleArrivedAtPickup();
+                      } else {
+                        handleOpenCodeModal();
+                      }
+                    }}
+                    style={{ width: '100%', minHeight: '56px' }}
+                    className="w-full min-h-[56px] py-3.5 px-4 rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] border bg-blue-600 hover:bg-blue-500 text-white border-blue-500"
+                  >
+                    <KeyRound className="w-5 h-5 shrink-0" />
+                    <span>
+                      {tripPhase === 'to_pickup' ? 'CHEGUEI NO LOCAL' : 'DIGITAR CÓDIGO DO PASSAGEIRO'}
+                    </span>
+                  </button>
+
+                  {/* Botão INICIAR CORRIDA BLOQUEADO E CINZA até confirmar código */}
+                  <button
+                    type="button"
+                    disabled
+                    style={{ width: '100%', minHeight: '56px' }}
+                    className="w-full min-h-[56px] py-3.5 px-4 rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 border border-slate-300 bg-slate-300 text-slate-600 cursor-not-allowed"
+                    title="Confirme o código de 4 dígitos do passageiro para desbloquear"
+                  >
+                    <Lock className="w-5 h-5 shrink-0" />
+                    <span>INICIAR CORRIDA</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartTripToDestination}
+                  disabled={tripPhase === 'to_destination' || tripPhase === 'completed'}
+                  style={{ width: '100%', minHeight: '56px' }}
+                  className={`w-full min-h-[56px] py-3.5 px-4 rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-md transition-all border ${
+                    tripPhase === 'to_destination' || tripPhase === 'completed'
+                      ? 'bg-blue-100 text-blue-900 border-2 border-blue-500 cursor-default'
+                      : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 cursor-pointer active:scale-[0.99]'
+                  }`}
+                >
+                  <Play className="w-5 h-5 shrink-0 fill-current" />
+                  <span>
+                    {tripPhase === 'to_destination' ? 'CORRIDA INICIADA • EM ROTA' : 'INICIAR CORRIDA'}
+                  </span>
+                </button>
+              )}
 
               {/* 2. BOTÃO VERDE NO MEIO: FINALIZAR CORRIDA */}
               <button
@@ -1014,6 +1225,161 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
           </div>
         )}
       </div>
+
+      {/* TELA DE CONFIRMAÇÃO DO CÓDIGO DE 4 NÚMEROS DO PASSAGEIRO */}
+      {isCodeModalOpen && (
+        <div className="fixed inset-0 z-[1100] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-md bg-white text-slate-950 rounded-3xl border-2 border-[#ff6a00] p-5 sm:p-6 shadow-2xl space-y-4 my-auto">
+            <div className="text-center space-y-1">
+              <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 border border-blue-300 flex items-center justify-center mx-auto">
+                <ShieldCheck className="w-7 h-7" />
+              </div>
+              <h3 className="font-heading font-black text-lg sm:text-xl text-slate-950">
+                Confirmar Passageiro
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-600 font-medium">
+                Peça o código de 4 números exibido no celular de <strong>{effectiveRide.passengerName}</strong>
+              </p>
+            </div>
+
+            {/* 4 CAIXINHAS NUMÉRICAS */}
+            <div className="flex items-center justify-center gap-3 py-1">
+              {[0, 1, 2, 3].map((idx) => (
+                <input
+                  key={idx}
+                  ref={(el) => {
+                    codeInputRefs.current[idx] = el;
+                  }}
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  autoComplete="one-time-code"
+                  disabled={Boolean(lockedUntil && secondsLeftToUnlock > 0)}
+                  value={codeDigits[idx]}
+                  onChange={(e) => handleDigitChange(idx, e.target.value)}
+                  onKeyDown={(e) => handleDigitKeyDown(idx, e)}
+                  className={`w-14 h-16 sm:w-16 sm:h-18 text-center font-mono font-black text-3xl rounded-2xl border-2 focus:outline-none transition-all ${
+                    lockedUntil && secondsLeftToUnlock > 0
+                      ? 'bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed'
+                      : codeError
+                      ? 'bg-rose-50 border-red-500 text-red-700 focus:border-red-600'
+                      : 'bg-slate-50 border-slate-300 text-slate-950 focus:border-blue-600 focus:bg-white'
+                  }`}
+                  aria-label={`Dígito ${idx + 1} do código`}
+                />
+              ))}
+            </div>
+
+            {/* TECLADO NUMÉRICO INTEGRADO PARA FACILITAR NO CELULAR */}
+            <div className="grid grid-cols-3 gap-2">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                <button
+                  key={digit}
+                  type="button"
+                  disabled={Boolean(lockedUntil && secondsLeftToUnlock > 0)}
+                  onClick={() => handleKeypadPress(digit)}
+                  className="h-12 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 font-mono font-black text-xl text-slate-950 border border-slate-300 cursor-pointer disabled:opacity-40"
+                >
+                  {digit}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setIsCodeModalOpen(false)}
+                className="h-12 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 font-heading font-bold text-xs text-slate-700 border border-slate-300 cursor-pointer"
+              >
+                Minimizar
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(lockedUntil && secondsLeftToUnlock > 0)}
+                onClick={() => handleKeypadPress('0')}
+                className="h-12 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 font-mono font-black text-xl text-slate-950 border border-slate-300 cursor-pointer disabled:opacity-40"
+              >
+                0
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(lockedUntil && secondsLeftToUnlock > 0)}
+                onClick={handleKeypadBackspace}
+                className="h-12 rounded-xl bg-slate-200 hover:bg-slate-300 active:scale-95 flex items-center justify-center text-slate-800 border border-slate-300 cursor-pointer disabled:opacity-40"
+                title="Apagar dígito"
+              >
+                <Delete className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* MENSAGEM DE ERRO / BLOQUEIO DE 1 MINUTO */}
+            {codeError && (
+              <div className="bg-rose-50 border-2 border-red-400 rounded-2xl p-3 text-center space-y-1">
+                <p className="text-xs sm:text-sm font-heading font-black text-red-700">
+                  {codeError}
+                </p>
+                {lockedUntil && secondsLeftToUnlock > 0 && (
+                  <p className="text-xs font-mono font-bold text-red-900">
+                    Desbloqueia em {secondsLeftToUnlock}s
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* BOTÕES DA TELA DE CÓDIGO EM COLUNA */}
+            <div className="flex flex-col gap-3 w-full">
+              <button
+                type="button"
+                disabled={Boolean(lockedUntil && secondsLeftToUnlock > 0)}
+                onClick={handleConfirmCode}
+                style={{ width: '100%', minHeight: '56px' }}
+                className={`w-full min-h-[56px] py-3.5 px-4 rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-md transition-all ${
+                  lockedUntil && secondsLeftToUnlock > 0
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300'
+                    : 'bg-blue-600 hover:bg-blue-500 text-white border border-blue-500 cursor-pointer active:scale-[0.99]'
+                }`}
+              >
+                <CheckCircle2 className="w-5 h-5 shrink-0" />
+                <span>CONFIRMAR CÓDIGO</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowNoCodeOptions((prev) => !prev)}
+                style={{ width: '100%', minHeight: '56px' }}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-red-600 hover:bg-red-500 text-white rounded-2xl font-heading font-black text-xs sm:text-sm uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] border border-red-500"
+              >
+                <XCircle className="w-5 h-5 shrink-0" />
+                <span>CANCELAR / PASSAGEIRO NÃO TEM CÓDIGO</span>
+              </button>
+
+              {showNoCodeOptions && (
+                <div className="bg-rose-50 border-2 border-red-300 rounded-2xl p-3 flex flex-col gap-2.5">
+                  <a
+                    href={`tel:+55${cleanPhone}`}
+                    style={{ width: '100%', minHeight: '56px' }}
+                    className="w-full min-h-[56px] py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <Phone className="w-4 h-4 shrink-0" />
+                    <span>Ligar para o passageiro</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCodeModalOpen(false);
+                      if (onCancelRide) onCancelRide();
+                      onClose();
+                    }}
+                    style={{ width: '100%', minHeight: '56px' }}
+                    className="w-full min-h-[56px] py-3 px-4 bg-red-700 hover:bg-red-600 text-white rounded-xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span>Cancelar corrida</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

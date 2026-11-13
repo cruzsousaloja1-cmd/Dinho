@@ -58,7 +58,8 @@ import {
   addDriverEarnings,
   checkMondayAutoDeduction
 } from './services/walletService';
-import { getCorridasSupabase, savePagamentoSupabase } from './supabase';
+import { getCorridasSupabase, saveCorridaSupabase, savePagamentoSupabase } from './supabase';
+import { generateUniqueRideConfirmationCode } from './services/pricingService';
 
 export default function App() {
   // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
@@ -313,10 +314,19 @@ export default function App() {
     }, 6000);
   };
 
-  // Passenger pays -> corrida já começa AUTOMATICAMENTE e vai DIRETO para FullMapView fullscreen
+  // Passenger pays -> gera código único de 4 números, salva no Supabase, corrida começa AUTOMATICAMENTE e abre FullMapView
   const handleStartRide = (ride: Ride) => {
-    const startedRide: Ride = { ...ride, status: 'in_progress' };
+    const confirmationCode = ride.confirmationCode || generateUniqueRideConfirmationCode();
+    const startedRide: Ride = {
+      ...ride,
+      passengerId: ride.passengerId || currentUser?.id,
+      passengerEmail: ride.passengerEmail || currentUser?.email,
+      status: 'in_progress',
+      confirmationCode,
+    };
     setActiveRide(startedRide);
+    setRidesHistory((prev) => [startedRide, ...prev.filter((r) => r.id !== startedRide.id)]);
+    saveCorridaSupabase(startedRide, currentUser).catch(() => {});
     setIsFullMapOpen(true);
     const isMotoboy =
       ride.category === 'moto_passageiro' ||
