@@ -124,6 +124,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [isPaidInApp, setIsPaidInApp] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [pixCopied, setPixCopied] = useState(false);
+  const [rideCodeCopied, setRideCodeCopied] = useState(false);
 
   // Estados Asaas
   const [asaasPayment, setAsaasPayment] = useState<AsaasPaymentResult | null>(null);
@@ -607,9 +608,50 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       )}
 
 
-      {/* 2. Mini Card de Corrida Ativa (permite reabrir o mapa se minimizado) */}
+      {/* 2. Mini Card de Corrida Ativa com CÓDIGO GIGANTE AMARELO NO TOPO */}
       {activeRide && (
-        <div className="bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in">
+        <div className="bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-fade-in">
+          {/* CAIXA AMARELA GRANDE NO TOPO DO CARD DO PASSAGEIRO */}
+          {activeRide.confirmationCode && (
+            <div className="bg-amber-300 border-4 border-amber-500 rounded-2xl p-4 text-center shadow-lg text-slate-950">
+              <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-heading font-black uppercase tracking-wider">
+                <ShieldCheck className="w-5 h-5 text-slate-950 shrink-0" />
+                <span>SEU CÓDIGO DE EMBARQUE</span>
+              </div>
+              <div
+                style={{ fontSize: '48px', lineHeight: 1.05 }}
+                className="font-mono font-black text-slate-950 tracking-[0.2em] my-1.5 select-text"
+              >
+                {activeRide.confirmationCode}
+              </div>
+              <p className="text-xs sm:text-sm font-extrabold text-slate-900">
+                Mostre esse código para o motorista
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(activeRide.confirmationCode || '');
+                  setRideCodeCopied(true);
+                  setTimeout(() => setRideCodeCopied(false), 2500);
+                }}
+                className="mt-2.5 inline-flex items-center justify-center gap-2 px-5 py-2 bg-slate-950 hover:bg-slate-800 active:scale-95 text-white font-heading font-black text-xs sm:text-sm rounded-xl cursor-pointer shadow-md"
+              >
+                {rideCodeCopied ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>CÓDIGO COPIADO!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>COPIAR CÓDIGO</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 w-full sm:w-auto">
             <img
               src={activeRide.driver?.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'}
@@ -661,6 +703,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 Avaliar
               </button>
             )}
+          </div>
           </div>
         </div>
       )}

@@ -860,8 +860,18 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               <span className="truncate">{statusText}</span>
             </div>
 
-            {/* Botões explícitos de tamanho do Card */}
-            <div className="flex items-center gap-1 shrink-0">
+            {/* Botões explícitos no cabeçalho: DIGITAR CÓDIGO sempre visível + controle de tamanho do Card */}
+            <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+              {!isCodeConfirmed && (
+                <button
+                  type="button"
+                  onClick={handleOpenCodeModal}
+                  className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-[11px] flex items-center gap-1 cursor-pointer shadow-sm animate-pulse"
+                >
+                  <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                  <span>DIGITAR CÓDIGO</span>
+                </button>
+              )}
               {cardState !== 'minimized' && (
                 <button
                   type="button"
@@ -1149,7 +1159,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                     title="Confirme o código de 4 dígitos do passageiro para desbloquear"
                   >
                     <Lock className="w-5 h-5 shrink-0" />
-                    <span>INICIAR CORRIDA</span>
+                    <span>Digite o código para iniciar</span>
                   </button>
                 </>
               ) : (
@@ -1234,15 +1244,16 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 border border-blue-300 flex items-center justify-center mx-auto">
                 <ShieldCheck className="w-7 h-7" />
               </div>
-              <h3 className="font-heading font-black text-lg sm:text-xl text-slate-950">
-                Confirmar Passageiro
+              <h3 className="font-heading font-black text-lg sm:text-xl text-slate-950 uppercase tracking-wide">
+                DIGITE O CÓDIGO DO PASSAGEIRO
               </h3>
               <p className="text-xs sm:text-sm text-slate-600 font-medium">
-                Peça o código de 4 números exibido no celular de <strong>{effectiveRide.passengerName}</strong>
+                Peça o código de 4 números exibido na caixa amarela do celular de{' '}
+                <strong>{effectiveRide.passengerName}</strong>
               </p>
             </div>
 
-            {/* 4 CAIXINHAS NUMÉRICAS */}
+            {/* 4 CAIXINHAS NUMÉRICAS GRANDES */}
             <div className="flex items-center justify-center gap-3 py-1">
               {[0, 1, 2, 3].map((idx) => (
                 <input
@@ -1259,7 +1270,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                   value={codeDigits[idx]}
                   onChange={(e) => handleDigitChange(idx, e.target.value)}
                   onKeyDown={(e) => handleDigitKeyDown(idx, e)}
-                  className={`w-14 h-16 sm:w-16 sm:h-18 text-center font-mono font-black text-3xl rounded-2xl border-2 focus:outline-none transition-all ${
+                  className={`w-16 h-20 text-center font-mono font-black text-4xl rounded-2xl border-2 focus:outline-none transition-all ${
                     lockedUntil && secondsLeftToUnlock > 0
                       ? 'bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed'
                       : codeError

@@ -78,6 +78,13 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const hasInitialFitBoundsRef = useRef(false);
   const [fallbackConfirmationCode] = useState<string>(() => generateUniqueRideConfirmationCode());
   const displayConfirmationCode = activeRide?.confirmationCode || fallbackConfirmationCode;
+  const [copiedRideCode, setCopiedRideCode] = useState(false);
+
+  const handleCopyConfirmationCode = () => {
+    navigator.clipboard?.writeText(displayConfirmationCode);
+    setCopiedRideCode(true);
+    setTimeout(() => setCopiedRideCode(false), 2500);
+  };
 
   // Coordenadas padrão em Indaiatuba - SP
   const pLat = pickup?.lat ?? -23.0955;
@@ -664,11 +671,42 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         style={{ width: '100vw', height: '100vh', background: '#ffffff' }}
       />
 
-      {/* 3. CARD COMPACTO DO MOTORISTA EMBAIXO (pointer-events-none no fundo; só botões clicáveis) */}
+      {/* 3. CARD DO MOTORISTA EMBAIXO COM CÓDIGO GIGANTE AMARELO NO TOPO */}
       <div className="absolute bottom-2.5 sm:bottom-3 left-2.5 right-2.5 sm:left-6 sm:right-6 max-w-md mx-auto z-[1000] pointer-events-none">
-        <div className="pointer-events-none bg-white/92 backdrop-blur-xl border border-slate-200 text-slate-900 rounded-2xl p-2.5 sm:p-3 shadow-[0_8px_30px_rgba(0,0,0,0.14)] space-y-2">
+        <div className="pointer-events-none bg-white/95 backdrop-blur-xl border border-slate-200 text-slate-900 rounded-2xl p-2.5 sm:p-3 shadow-[0_8px_30px_rgba(0,0,0,0.18)] space-y-2">
+
+          {/* CAIXA AMARELA GIGANTE NO TOPO DO CARD (SEMPRE VISÍVEL, IMPOSSÍVEL ESCONDER) */}
+          <div className="bg-amber-300 border-2 border-amber-500 rounded-2xl px-3 py-2.5 text-center shadow-md">
+            <div className="flex items-center justify-center gap-1.5 text-[11px] font-heading font-black text-slate-950 uppercase tracking-wider">
+              <ShieldCheck className="w-4 h-4 text-slate-950 shrink-0" />
+              <span>SEU CÓDIGO DE EMBARQUE</span>
+            </div>
+            <div
+              style={{ fontSize: '48px', lineHeight: 1.05 }}
+              className="font-mono font-black text-slate-950 tracking-[0.2em] my-1 select-text"
+            >
+              {displayConfirmationCode}
+            </div>
+            <p className="text-xs font-extrabold text-slate-900">
+              Mostre esse código para o motorista
+            </p>
+            <button
+              type="button"
+              onClick={handleCopyConfirmationCode}
+              className="pointer-events-auto mt-2 inline-flex items-center justify-center gap-1.5 px-4 py-1.5 bg-slate-950 hover:bg-slate-800 active:scale-95 text-white font-heading font-black text-xs rounded-xl cursor-pointer shadow-sm"
+            >
+              {copiedRideCode ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>CÓDIGO COPIADO!</span>
+                </>
+              ) : (
+                <span>COPIAR CÓDIGO</span>
+              )}
+            </button>
+          </div>
           
-          {/* Header Compacto: Foto Pequena + José da Cruz + Chevrolet Onix - Placa RCE9C40 */}
+          {/* Header Compacto: Foto Pequena + Motorista + Veículo */}
           <div className="flex items-center justify-between gap-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative shrink-0">
@@ -705,20 +743,6 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                 {isRideFinished ? 'Destino' : `${speedKmh} km/h`}
               </div>
             </div>
-          </div>
-
-          {/* CÓDIGO DE CONFIRMAÇÃO GIGANTE SEMPRE VISÍVEL PARA O PASSAGEIRO */}
-          <div className="bg-slate-950 border-2 border-[#ff6a00] rounded-2xl px-3.5 py-2.5 text-center shadow-md">
-            <div className="flex items-center justify-center gap-1.5 text-[11px] font-heading font-extrabold text-amber-300 uppercase tracking-wider">
-              <ShieldCheck className="w-4 h-4 text-[#ff6a00] shrink-0" />
-              <span>Confirmação de Embarque</span>
-            </div>
-            <div className="font-mono font-black text-2xl sm:text-3xl text-white tracking-[0.18em] leading-tight mt-0.5 select-text">
-              SEU CÓDIGO: <span className="text-[#ff6a00]">{displayConfirmationCode}</span>
-            </div>
-            <p className="text-xs font-bold text-slate-200 mt-0.5">
-              Mostre esse código para o motorista
-            </p>
           </div>
 
           {/* Status automático compacto + Finalizar viagem */}

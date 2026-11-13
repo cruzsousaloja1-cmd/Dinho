@@ -120,5 +120,6 @@ export function generateUniqueRideConfirmationCode(): string {
     localStorage.setItem('race_last_confirmation_code', code);
   } catch {}
 
+  console.log('[RACE] Código de confirmação gerado:', code);
   return code;
 }

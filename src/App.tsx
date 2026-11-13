@@ -96,8 +96,36 @@ export default function App() {
     } catch {}
     return DEFAULT_NEW_DRIVER;
   });
-  const [ridesHistory, setRidesHistory] = useState<Ride[]>(INITIAL_RIDES_HISTORY);
-  const [activeRide, setActiveRide] = useState<Ride | null>(null);
+  const [ridesHistory, setRidesHistory] = useState<Ride[]>(() => {
+    try {
+      const stored = localStorage.getItem('race_rides_history');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_RIDES_HISTORY;
+  });
+  const [activeRide, setActiveRide] = useState<Ride | null>(() => {
+    try {
+      const stored = localStorage.getItem('race_active_ride');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.id && parsed.status !== 'completed') return parsed;
+      }
+    } catch {}
+    return null;
+  });
+
+  useEffect(() => {
+    try {
+      if (activeRide && activeRide.status !== 'completed') {
+        localStorage.setItem('race_active_ride', JSON.stringify(activeRide));
+      } else {
+        localStorage.removeItem('race_active_ride');
+      }
+    } catch {}
+  }, [activeRide]);
   const [completedRideForRating, setCompletedRideForRating] = useState<Ride | null>(null);
   const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
@@ -314,7 +342,7 @@ export default function App() {
     }, 6000);
   };
 
-  // Passenger pays -> gera código único de 4 números, salva no Supabase, corrida começa AUTOMATICAMENTE e abre FullMapView
+  // Passenger pays -> gera código único de 4 números, salva no Supabase e localStorage, corrida começa AUTOMATICAMENTE e abre FullMapView
   const handleStartRide = (ride: Ride) => {
     const confirmationCode = ride.confirmationCode || generateUniqueRideConfirmationCode();
     const startedRide: Ride = {
@@ -324,8 +352,10 @@ export default function App() {
       status: 'in_progress',
       confirmationCode,
     };
+    console.log('[RACE] Corrida criada com código de confirmação:', confirmationCode, 'ID:', startedRide.id);
     setActiveRide(startedRide);
     setRidesHistory((prev) => [startedRide, ...prev.filter((r) => r.id !== startedRide.id)]);
+    saveIsolatedRide(startedRide, currentUser);
     saveCorridaSupabase(startedRide, currentUser).catch(() => {});
     setIsFullMapOpen(true);
     const isMotoboy =

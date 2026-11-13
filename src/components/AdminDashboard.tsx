@@ -37,7 +37,8 @@ import {
   Cloud,
   Database,
   RefreshCw,
-  Car
+  Car,
+  KeyRound
 } from 'lucide-react';
 import { getWithdrawals, markWithdrawalAsPaid } from '../services/walletService';
 import { WithdrawalRequest } from '../types';
@@ -556,6 +557,70 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* TAB 1: OVERVIEW & KEY PERFORMANCE INDICATORS */}
       {activeTab === 'overview' && (
         <div className="space-y-4">
+          {/* PAINEL DE CÓDIGOS DE EMBARQUE PARA TESTE E CONFERÊNCIA ADM */}
+          {(() => {
+            let storedActive: Ride | null = null;
+            let storedHistory: Ride[] = [];
+            try {
+              const rawActive = localStorage.getItem('race_active_ride');
+              if (rawActive) storedActive = JSON.parse(rawActive);
+              const rawHist = localStorage.getItem('race_rides_history');
+              if (rawHist) storedHistory = JSON.parse(rawHist);
+            } catch {
+              // ignore
+            }
+            const merged = new Map<string, Ride>();
+            if (storedActive) merged.set(storedActive.id, storedActive);
+            rides.forEach((r) => merged.set(r.id, r));
+            storedHistory.forEach((r) => {
+              if (!merged.has(r.id)) merged.set(r.id, r);
+            });
+            const ridesWithCode = Array.from(merged.values()).filter((r) => Boolean(r.confirmationCode));
+            if (ridesWithCode.length === 0) return null;
+            return (
+              <div className="bg-amber-300/95 border-2 border-amber-500 rounded-3xl p-4 sm:p-5 shadow-md space-y-3 text-slate-950">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="w-5 h-5 text-slate-950 shrink-0" />
+                    <h3 className="font-heading font-black text-sm sm:text-base uppercase tracking-wide">
+                      Códigos de Embarque Ativos / Recentes (Conferência ADM)
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('rides')}
+                    className="px-3 py-1 bg-slate-950 text-amber-300 font-heading font-black text-xs rounded-xl cursor-pointer hover:bg-slate-800"
+                  >
+                    Ver Todas no Monitor
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {ridesWithCode.slice(0, 6).map((r) => (
+                    <div
+                      key={r.id}
+                      className="bg-white border-2 border-amber-500 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 block truncate">
+                          {r.id} • {r.status}
+                        </span>
+                        <span className="font-heading font-black text-xs text-slate-900 block truncate">
+                          {r.pickup.address}
+                        </span>
+                        <span className="text-[11px] text-slate-600 font-semibold block truncate">
+                          {formatBRL(r.price)}
+                        </span>
+                      </div>
+                      <div className="bg-slate-950 text-amber-300 px-3 py-1.5 rounded-xl font-mono font-black text-2xl tracking-[0.2em] shrink-0">
+                        {r.confirmationCode}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Alerta de Pagamentos Pendentes no Overview se houver */}
           {pendingDrivers.length > 0 && (
             <div className="bg-amber-50 border-2 border-amber-400 rounded-3xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
