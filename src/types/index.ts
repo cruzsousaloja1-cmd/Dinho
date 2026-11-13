@@ -119,6 +119,7 @@ export interface LocationPoint {
 export type RideStatus = 
   | 'idle' 
   | 'searching' 
+  | 'accepted'
   | 'driver_assigned' 
   | 'driver_arriving' 
   | 'in_progress' 

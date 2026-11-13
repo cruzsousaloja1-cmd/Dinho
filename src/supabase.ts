@@ -755,6 +755,7 @@ export async function zerarDadosTesteSupabase(): Promise<{ success: boolean; err
 }
 
 function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
+  const hasDriverAssigned = Boolean(row.email_motorista || row.nome_motorista || row.id_motorista);
   return {
     id: String(row.id ?? ''),
     passengerId: row.id_passageiro !== undefined && row.id_passageiro !== null ? String(row.id_passageiro) : '',
@@ -762,33 +763,35 @@ function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
     passengerName: row.nome_passageiro || 'Passageiro',
     passengerPhone: '',
     passengerRating: 0,
-    driver: {
-      id: row.id_motorista !== undefined && row.id_motorista !== null ? String(row.id_motorista) : '',
-      name: row.nome_motorista || '',
-      email: row.email_motorista || '',
-      phone: '',
-      category: (row.categoria as any) || 'economica',
-      avatar: '',
-      rating: Number(row.rating_dado || 0),
-      totalRides: 0,
-      vehicleModel: '',
-      vehiclePlate: '',
-      vehicleColor: '',
-      vehicleYear: 2023,
-      cpf: '',
-      cnh: '',
-      weeklyPlanActive: true,
-      weeklyPlanPrice: 0,
-      status: 'online',
-      earningsToday: Number(row.valor || 0),
-      earningsWeek: Number(row.valor || 0),
-      cnhVerified: true,
-      vehicleVerified: true,
-      criminalRecordClear: true,
-      lat: -23.0842,
-      lng: -47.2118,
-      registrationDate: row.data,
-    },
+    driver: hasDriverAssigned
+      ? {
+          id: row.id_motorista !== undefined && row.id_motorista !== null ? String(row.id_motorista) : '',
+          name: row.nome_motorista || '',
+          email: row.email_motorista || '',
+          phone: '',
+          category: (row.categoria as any) || 'economica',
+          avatar: '',
+          rating: Number(row.rating_dado || 0),
+          totalRides: 0,
+          vehicleModel: '',
+          vehiclePlate: '',
+          vehicleColor: '',
+          vehicleYear: 2023,
+          cpf: '',
+          cnh: '',
+          weeklyPlanActive: true,
+          weeklyPlanPrice: 0,
+          status: 'online',
+          earningsToday: Number(row.valor || 0),
+          earningsWeek: Number(row.valor || 0),
+          cnhVerified: true,
+          vehicleVerified: true,
+          criminalRecordClear: true,
+          lat: -23.0842,
+          lng: -47.2118,
+          registrationDate: row.data,
+        }
+      : undefined,
     category: (row.categoria as any) || 'economica',
     pickup: row.origem || {
       address: row.origem_texto || '',
@@ -929,6 +932,84 @@ export async function getAllCorridasForAdminSupabase(): Promise<Ride[]> {
     return (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
   } catch {
     return [];
+  }
+}
+
+export async function getSearchingCorridasSupabase(): Promise<Ride[]> {
+  try {
+    const { data, error } = await supabase
+      .from('corridas')
+      .select('*')
+      .in('status', ['searching', 'procurando'])
+      .order('data', { ascending: false })
+      .limit(20);
+
+    if (error || !data) return [];
+    return (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
+  } catch {
+    return [];
+  }
+}
+
+export async function getCorridaByIdSupabase(rideId: string | number): Promise<Ride | null> {
+  if (!rideId || !/^\d+$/.test(String(rideId))) return null;
+  try {
+    const { data, error } = await supabase
+      .from('corridas')
+      .select('*')
+      .eq('id', Number(rideId))
+      .limit(1);
+
+    if (error || !data || data.length === 0) return null;
+    return mapSupabaseCorridaToRide(data[0] as SupabaseCorridaRow);
+  } catch {
+    return null;
+  }
+}
+
+export async function acceptCorridaSupabase(
+  rideId: string | number,
+  driver: Driver
+): Promise<{ success: boolean; error?: string }> {
+  if (!rideId || !/^\d+$/.test(String(rideId))) {
+    return { success: false, error: 'ID inválido para aceite' };
+  }
+  try {
+    const updatePayload: any = {
+      status: 'accepted',
+      email_motorista: (driver.email || '').toLowerCase().trim(),
+      nome_motorista: driver.name || '',
+    };
+    if (/^\d+$/.test(String(driver.id || ''))) {
+      updatePayload.id_motorista = Number(driver.id);
+    }
+    const { error } = await supabase
+      .from('corridas')
+      .update(updatePayload)
+      .eq('id', Number(rideId));
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao aceitar corrida' };
+  }
+}
+
+export async function updateCorridaStatusSupabase(
+  rideId: string | number,
+  status: string
+): Promise<boolean> {
+  if (!rideId || !/^\d+$/.test(String(rideId))) return false;
+  try {
+    const { error } = await supabase
+      .from('corridas')
+      .update({ status })
+      .eq('id', Number(rideId));
+    return !error;
+  } catch {
+    return false;
   }
 }
 

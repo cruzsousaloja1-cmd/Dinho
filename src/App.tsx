@@ -49,8 +49,7 @@ import {
   activateAllDriverAccounts
 } from './services/userService';
 import {
-  notifyDriverAccepted,
-  notifyDriverArrived,
+  cancelVoiceSpeech,
   notifyRideFinished
 } from './services/audioNotificationService';
 import {
@@ -60,6 +59,9 @@ import {
 } from './services/walletService';
 import {
   getCorridasSupabase,
+  getCorridaByIdSupabase,
+  acceptCorridaSupabase,
+  updateCorridaStatusSupabase,
   saveCorridaSupabase,
   savePagamentoSupabase,
   getUsuarioSupabase,
@@ -238,9 +240,90 @@ export default function App() {
 
   // Motoristas trabalham livres sem bloqueio de taxa semanal (modelo 15% Race / 85% motorista)
 
-  // Simulated GPS movement when a ride is active
+  // Polling em tempo real no Supabase enquanto a corrida do passageiro estiver em MODO PROCURANDO
   useEffect(() => {
-    if (!activeRide || !activeRide.driver || activeRide.status === 'completed') {
+    if (!activeRide || activeRide.status !== 'searching') return;
+
+    let isMounted = true;
+    const checkAccepted = async () => {
+      try {
+        let latestRide: Ride | null = null;
+        if (activeRide.id && /^\d+$/.test(String(activeRide.id))) {
+          latestRide = await getCorridaByIdSupabase(activeRide.id);
+        } else if (currentUser) {
+          const allUserRides = await getCorridasSupabase(currentUser);
+          latestRide = allUserRides[0] || null;
+        }
+        if (!isMounted || !latestRide) return;
+
+        const st = String(latestRide.status || '').toLowerCase();
+        if (st === 'cancelled' || st === 'cancelada') {
+          cancelVoiceSpeech();
+          setActiveRide(null);
+          setIsFullMapOpen(false);
+          return;
+        }
+
+        if (
+          st === 'accepted' ||
+          st === 'aceita' ||
+          st === 'driver_assigned' ||
+          st === 'driver_arriving' ||
+          st === 'in_progress'
+        ) {
+          let fullDriver = latestRide.driver;
+          if (fullDriver) {
+            let matched = drivers.find(
+              (d) =>
+                (fullDriver?.id && d.id === fullDriver.id) ||
+                (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
+            );
+            if (!matched) {
+              const refreshedDrivers = await getAllDriversFromSupabase().catch(() => []);
+              if (!isMounted) return;
+              if (refreshedDrivers.length > 0) setDrivers(refreshedDrivers);
+              matched = refreshedDrivers.find(
+                (d) =>
+                  (fullDriver?.id && d.id === fullDriver.id) ||
+                  (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
+              );
+            }
+            if (matched) {
+              fullDriver = matched;
+            }
+          }
+          setActiveRide((curr) =>
+            curr
+              ? {
+                  ...curr,
+                  id: latestRide!.id || curr.id,
+                  status: 'accepted',
+                  driver: fullDriver || curr.driver,
+                }
+              : curr
+          );
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(checkAccepted, 2500);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeRide?.id, activeRide?.status, currentUser, drivers]);
+
+  // Simulated GPS movement ONLY after ride is accepted by a driver
+  useEffect(() => {
+    const st = String(activeRide?.status || '').toLowerCase();
+    const isRideAccepted =
+      st === 'accepted' ||
+      st === 'aceita' ||
+      st === 'driver_assigned' ||
+      st === 'driver_arriving' ||
+      st === 'in_progress';
+
+    if (!activeRide || !activeRide.driver || !isRideAccepted) {
       setDriverPosition(undefined);
       return;
     }
@@ -286,14 +369,14 @@ export default function App() {
     }, 6000);
   };
 
-  // Passenger pays -> gera código único de 4 números, salva corrida e pagamento pago no Supabase
+  // Passenger pays -> gera código único de 4 números, salva corrida em MODO PROCURANDO no Supabase (SEM voz ainda!)
   const handleStartRide = (ride: Ride) => {
     const confirmationCode = ride.confirmationCode || generateUniqueRideConfirmationCode();
     const startedRide: Ride = {
       ...ride,
       passengerId: ride.passengerId || currentUser?.id,
       passengerEmail: ride.passengerEmail || currentUser?.email,
-      status: 'in_progress',
+      status: ride.status || 'searching',
       confirmationCode,
     };
     setActiveRide(startedRide);
@@ -328,14 +411,8 @@ export default function App() {
       chave_pix: '',
     }).catch(() => {});
     setIsFullMapOpen(true);
-    const isMotoboy =
-      ride.category === 'moto_passageiro' ||
-      ride.category === 'moto_entrega' ||
-      ride.driver?.category === 'moto_passageiro' ||
-      ride.driver?.category === 'moto_entrega';
-    notifyDriverAccepted(isMotoboy);
 
-    // Notificação automática para o motorista na central de alertas
+    // Notificação silenciosa para o radar (sem voz enquanto aguarda motorista aceitar)
     const driverAlert: PushNotification = {
       id: `driver-call-${Date.now()}`,
       title: '🔔 Nova corrida - Aceitar',
@@ -347,8 +424,8 @@ export default function App() {
     setNotifications((prev) => [driverAlert, ...prev]);
 
     triggerPush(
-      isMotoboy ? '🏍️ Corrida iniciada - Motoboy a caminho!' : '🚗 Corrida iniciada - Motorista a caminho!',
-      `${ride.driver?.name || 'Seu condutor'} já está a caminho em um ${ride.driver?.vehicleModel} (${ride.driver?.vehiclePlate}).`,
+      '🔍 Procurando motorista...',
+      'Buscando motoristas online próximos a você no mapa.',
       'ride'
     );
   };
@@ -479,23 +556,28 @@ export default function App() {
     );
   };
 
-  // Cancel active ride
+  // Cancel active ride (para tudo, sem voz e cancela no Supabase)
   const handleCancelRide = () => {
+    cancelVoiceSpeech();
+    if (activeRide?.id) {
+      updateCorridaStatusSupabase(activeRide.id, 'cancelled').catch(() => {});
+    }
     setActiveRide(null);
+    setIsFullMapOpen(false);
+    setDriverPosition(undefined);
     triggerPush(
-      '❌ Corrida Cancelada',
-      'A corrida foi cancelada. Nenhum valor foi debitado.',
+      '❌ Busca Cancelada',
+      'A corrida foi cancelada. Nenhum valor adicional foi cobrado.',
       'system'
     );
   };
 
   // Delivery Flash order
   const handleStartDelivery = (ride: Ride) => {
-    setActiveRide(ride);
-    notifyDriverAccepted(true); // Notificação com voz para motoboy a caminho
+    setActiveRide({ ...ride, status: 'searching' });
     triggerPush(
-      '📦 RACE Flash Acionado!',
-      `O motoboy ${ride.driver?.name} foi despachado para coleta. Código de entrega: ${ride.deliveryDetails?.deliveryCode}.`,
+      '📦 RACE Flash Solicitado!',
+      `Buscando motoboy disponível para coleta. Código de entrega: ${ride.deliveryDetails?.deliveryCode}.`,
       'ride'
     );
   };
@@ -971,7 +1053,11 @@ export default function App() {
               rides={ridesHistory}
               activeRide={activeRide}
               onAcceptIncomingRide={(ride) => {
-                setActiveRide({ ...ride, status: 'in_progress' });
+                const acceptedObj: Ride = { ...ride, driver: currentDriver, status: 'accepted' };
+                setActiveRide(acceptedObj);
+                if (ride.id && /^\d+$/.test(String(ride.id))) {
+                  acceptCorridaSupabase(ride.id, currentDriver).catch(() => {});
+                }
               }}
               onUpdateDriver={handleUpdateDriver}
               onRegisterDriver={(newDriver) => {
@@ -1182,7 +1268,9 @@ export default function App() {
           destination={destination}
           activeDriver={activeRide.driver ?? null}
           activeRide={activeRide}
+          onlineDrivers={drivers.filter((d) => d.status === 'online')}
           onCompleteRide={handleCompleteRide}
+          onCancelRide={handleCancelRide}
           onUpdateDriverPosition={(pos) => {
             setDriverPosition((prev) => {
               if (prev && prev.lat === pos.lat && prev.lng === pos.lng) return prev;

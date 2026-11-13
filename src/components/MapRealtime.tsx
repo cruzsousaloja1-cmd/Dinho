@@ -28,6 +28,7 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
   pickup,
   destination,
   activeDriver,
+  rideStatus,
   driverPosition,
   onMapClick,
   selectionMode,
@@ -107,22 +108,35 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    const driversToShow = activeDriver ? [activeDriver] : drivers;
+    const isAccepted =
+      rideStatus === 'accepted' ||
+      (rideStatus as string) === 'aceita' ||
+      rideStatus === 'driver_assigned' ||
+      rideStatus === 'driver_arriving' ||
+      rideStatus === 'in_progress' ||
+      rideStatus === 'completed';
+
+    const driversToShow = isAccepted && activeDriver
+      ? [activeDriver]
+      : drivers.filter((d) => d.status === 'online');
 
     // Clear old driver markers
     Object.keys(markersRef.current).forEach((id) => {
-      if (!driversToShow.some((d) => d.id === id)) {
+      if (!driversToShow.some((d) => (d.id || d.email) === id)) {
         markersRef.current[id].remove();
         delete markersRef.current[id];
       }
     });
 
-    driversToShow.forEach((drv) => {
+    driversToShow.forEach((drv, idx) => {
+      const markerKey = drv.id || drv.email || `drv-${idx}`;
       const isBike = drv.category.includes('moto');
+      const offsetLat = !isAccepted ? (((idx % 5) - 2) * 0.0022) : 0;
+      const offsetLng = !isAccepted ? ((Math.floor(idx / 5) - 1) * 0.0025 + ((idx % 2) ? 0.0014 : -0.0014)) : 0;
       const pos: [number, number] =
-        activeDriver?.id === drv.id && driverPosition
+        isAccepted && activeDriver && (activeDriver.id === drv.id || activeDriver.email === drv.email) && driverPosition
           ? [driverPosition.lat, driverPosition.lng]
-          : [drv.lat, drv.lng];
+          : [drv.lat + offsetLat, drv.lng + offsetLng];
 
       const vehicleSvg = isBike
         ? `
@@ -180,8 +194,8 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         iconAnchor: [22, 22],
       });
 
-      if (markersRef.current[drv.id]) {
-        markersRef.current[drv.id].setLatLng(pos);
+      if (markersRef.current[markerKey]) {
+        markersRef.current[markerKey].setLatLng(pos);
       } else {
         const marker = L.marker(pos, { icon: customIcon }).addTo(map);
         marker.bindPopup(`
@@ -191,10 +205,10 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
             <span style="font-size: 12px; color: #16a34a; font-weight: bold;">⭐ ${drv.rating.toFixed(2)} • Parceiro Oficial RACE</span>
           </div>
         `);
-        markersRef.current[drv.id] = marker;
+        markersRef.current[markerKey] = marker;
       }
     });
-  }, [drivers, activeDriver, driverPosition]);
+  }, [drivers, activeDriver, driverPosition, rideStatus]);
 
   // Update pickup and destination markers & route polyline
   useEffect(() => {
@@ -255,8 +269,8 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
       destMarkerRef.current = null;
     }
 
-    // Route Polyline com borda branca e linha laranja #ff6a00
-    if (pickup && destination) {
+    // Route Polyline com borda branca e linha laranja #ff6a00 (oculta durante MODO PROCURANDO)
+    if (pickup && destination && rideStatus !== 'searching') {
       const midLat = (pickup.lat + destination.lat) / 2 + 0.003;
       const midLng = (pickup.lng + destination.lng) / 2 - 0.004;
 
@@ -304,7 +318,7 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         routePolylineRef.current = null;
       }
     }
-  }, [pickup, destination]);
+  }, [pickup, destination, rideStatus]);
 
   const handleCenterOnUser = () => {
     if (!mapInstanceRef.current) return;

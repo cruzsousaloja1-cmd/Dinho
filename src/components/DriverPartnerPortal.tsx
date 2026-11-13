@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
-import { savePagamentoSupabase } from '../supabase';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase } from '../supabase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { 
   WEEKLY_FEE, 
@@ -301,8 +301,32 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [comfortWarning, setComfortWarning] = useState<string | null>(null);
   const [isDriverGpsOpen, setIsDriverGpsOpen] = useState(false);
   const [acceptedDriverRide, setAcceptedDriverRide] = useState<Ride | null>(null);
+  const [cloudSearchingRide, setCloudSearchingRide] = useState<Ride | null>(null);
   const [simulatedRideCode] = useState<string>(() => generateUniqueRideConfirmationCode());
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+
+  // Polling real no Supabase por corridas em status 'searching' enquanto o condutor está ONLINE
+  useEffect(() => {
+    if (!isOnline || acceptedDriverRide) {
+      if (!isOnline) setCloudSearchingRide(null);
+      return;
+    }
+    let mounted = true;
+    const fetchSearching = async () => {
+      try {
+        const list = await getSearchingCorridasSupabase();
+        if (!mounted) return;
+        const firstOpen = list.find((r) => r.status === 'searching' || (r.status as string) === 'procurando') || null;
+        setCloudSearchingRide(firstOpen);
+      } catch {}
+    };
+    fetchSearching();
+    const timer = setInterval(fetchSearching, 2500);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, [isOnline, acceptedDriverRide]);
 
   // Galeria de Fotos: Perfil, CNH e Foto do Veículo
   const driverAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -933,15 +957,17 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 </div>
 
                 {isOnline ? (
-                  activeRide ? (
+                  (acceptedDriverRide || (activeRide && activeRide.status === 'searching') || cloudSearchingRide) ? (
                     (() => {
-                      const incomingPassengerAvatar = activeRide.passengerAvatar || '';
-                      const incomingPassengerName = activeRide.passengerName || 'Passageiro';
-                      const incomingPassengerPhone = activeRide.passengerPhone || '';
-                      const incomingPickupAddress = activeRide.pickup?.address || '';
-                      const incomingDestAddress = activeRide.destination?.address || '';
-                      const incomingPrice = activeRide.price || 0;
-                      const incomingRideSnapshot: Ride = activeRide;
+                      const incomingRideSnapshot: Ride =
+                        acceptedDriverRide ||
+                        (activeRide && activeRide.status === 'searching' ? activeRide : cloudSearchingRide)!;
+                      const incomingPassengerAvatar = incomingRideSnapshot.passengerAvatar || '';
+                      const incomingPassengerName = incomingRideSnapshot.passengerName || 'Passageiro';
+                      const incomingPassengerPhone = incomingRideSnapshot.passengerPhone || '';
+                      const incomingPickupAddress = incomingRideSnapshot.pickup?.address || '';
+                      const incomingDestAddress = incomingRideSnapshot.destination?.address || '';
+                      const incomingPrice = incomingRideSnapshot.price || 0;
 
                       return (
                         <div className="bg-gradient-to-b from-white via-slate-50 to-slate-100 p-5 sm:p-6 rounded-3xl border-2 border-[#ff6a00] shadow-xl space-y-4">
@@ -1079,9 +1105,18 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                               onClick={() => {
                                 const driverEarns = Number((incomingPrice * 0.85).toFixed(2));
                                 const raceCommission = Number((incomingPrice * 0.15).toFixed(2));
-                                setAcceptedDriverRide({ ...incomingRideSnapshot, status: 'in_progress' });
+                                const acceptedRideObj: Ride = {
+                                  ...incomingRideSnapshot,
+                                  driver: currentDriver,
+                                  status: 'accepted',
+                                };
+                                setAcceptedDriverRide(acceptedRideObj);
+                                setCloudSearchingRide(null);
+                                if (incomingRideSnapshot.id) {
+                                  acceptCorridaSupabase(incomingRideSnapshot.id, currentDriver).catch(() => {});
+                                }
                                 if (onAcceptIncomingRide) {
-                                  onAcceptIncomingRide({ ...incomingRideSnapshot, status: 'in_progress' });
+                                  onAcceptIncomingRide(acceptedRideObj);
                                 }
                                 setAcceptedRideNotice(`Corrida aceita! Você receberá ${formatBRL(driverEarns)} (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`);
                                 setIsDriverGpsOpen(true);
@@ -1098,7 +1133,19 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                setAcceptedDriverRide({ ...incomingRideSnapshot, status: 'in_progress' });
+                                const acceptedRideObj: Ride = {
+                                  ...incomingRideSnapshot,
+                                  driver: currentDriver,
+                                  status: 'accepted',
+                                };
+                                setAcceptedDriverRide(acceptedRideObj);
+                                setCloudSearchingRide(null);
+                                if (incomingRideSnapshot.id) {
+                                  acceptCorridaSupabase(incomingRideSnapshot.id, currentDriver).catch(() => {});
+                                }
+                                if (onAcceptIncomingRide) {
+                                  onAcceptIncomingRide(acceptedRideObj);
+                                }
                                 setIsDriverGpsOpen(true);
                               }}
                               className="w-full sm:w-auto px-4 py-4 bg-slate-950 hover:bg-zinc-800 text-white rounded-2xl text-xs sm:text-sm font-heading font-bold cursor-pointer border border-zinc-800 flex items-center justify-center gap-2 shadow-xs"
@@ -2694,11 +2741,15 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           onClose={() => setIsDriverGpsOpen(false)}
           onOpenSupport={onOpenSupport}
           onCancelRide={() => {
+            const rid = acceptedDriverRide?.id || activeRide?.id;
+            if (rid) updateCorridaStatusSupabase(rid, 'cancelled').catch(() => {});
             setIsDriverGpsOpen(false);
             setAcceptedDriverRide(null);
             setAcceptedRideNotice('Corrida cancelada.');
           }}
           onCompleteRide={(finishedRide) => {
+            const rid = finishedRide?.id || acceptedDriverRide?.id || activeRide?.id;
+            if (rid) updateCorridaStatusSupabase(rid, 'completed').catch(() => {});
             const totalRideVal = finishedRide?.price || acceptedDriverRide?.price || activeRide?.price || 0;
             const driverEarns = Number((totalRideVal * 0.85).toFixed(2));
             onUpdateDriver({

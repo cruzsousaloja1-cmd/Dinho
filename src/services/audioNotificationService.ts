@@ -135,6 +135,16 @@ export function speakText(text: string, vibratePattern: number | number[] = 500)
   }
 }
 
+// Interrompe imediatamente qualquer fala em andamento (ex: ao cancelar busca)
+export function cancelVoiceSpeech(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  } catch {}
+}
+
 // Notificação 1: Quando o motorista/motoboy chega ao ponto de embarque
 export function notifyDriverArrived(isMotoboy: boolean = false): void {
   const phrase = isMotoboy ? 'Seu motoboy chegou' : 'Seu motorista chegou';
@@ -143,7 +153,7 @@ export function notifyDriverArrived(isMotoboy: boolean = false): void {
 
 // Notificação 2: Quando o motorista/motoboy aceita a corrida e está a caminho
 export function notifyDriverAccepted(isMotoboy: boolean = false): void {
-  const phrase = isMotoboy ? 'Seu motoboy está a caminho' : 'Seu motorista está a caminho';
+  const phrase = isMotoboy ? 'Motoboy a caminho!' : 'Motorista a caminho!';
   speakText(phrase, [200, 100, 200]);
 }
 

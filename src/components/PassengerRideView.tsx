@@ -55,7 +55,6 @@ import {
   isAudioEnabled,
   toggleAudio,
   notifyDriverArrived,
-  notifyDriverAccepted,
   notifyRideFinished
 } from '../services/audioNotificationService';
 import {
@@ -297,8 +296,6 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     const finalCategory = catId || selectedCategory;
     setSelectedCategory(finalCategory);
 
-    const isMoto = finalCategory === 'moto_passageiro' || finalCategory === 'moto_entrega';
-
     const calculated = calculateFare(finalCategory, dynamicDistanceKm);
 
     const finalPickup: LocationPoint = pickup || {
@@ -313,39 +310,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       lng: -47.2050,
     };
 
-    // Find a matching real online driver from Supabase
-    const baseMatched = availableDrivers.find(
-      (d) => d.category === finalCategory && d.status === 'online'
-    ) || availableDrivers.find((d) => d.status === 'online') || availableDrivers[0];
-
-    const matchedDriver: Driver = {
-      id: baseMatched?.id || '',
-      name: baseMatched?.name || (isMoto ? 'Motoboy RACE' : 'Motorista RACE'),
-      avatar: baseMatched?.avatar || '',
-      phone: baseMatched?.phone || '',
-      email: baseMatched?.email || '',
-      cpf: baseMatched?.cpf || '',
-      cnh: baseMatched?.cnh || '',
-      category: finalCategory,
-      vehicleModel: baseMatched?.vehicleModel || (isMoto ? 'Motocicleta' : 'Veículo cadastrado'),
-      vehiclePlate: baseMatched?.vehiclePlate || '',
-      vehicleColor: baseMatched?.vehicleColor || '',
-      vehicleYear: baseMatched?.vehicleYear || 2023,
-      vehiclePhoto: baseMatched?.vehiclePhoto || '',
-      rating: baseMatched?.rating || 0,
-      totalRides: baseMatched?.totalRides || 0,
-      status: 'online',
-      lat: baseMatched?.lat || -23.084087,
-      lng: baseMatched?.lng || -47.212027,
-      weeklyPlanActive: true,
-      earningsToday: 0,
-      earningsWeek: 0,
-      cnhVerified: true,
-      vehicleVerified: true,
-      criminalRecordClear: true,
-      registrationDate: baseMatched?.registrationDate || '',
-    };
-
+    // Inicia em MODO PROCURANDO (status: 'searching'), SEM motorista aceito ainda e SEM voz
     const newRide: Ride = {
       id: '',
       passengerId: currentUser?.id,
@@ -354,7 +319,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       passengerPhone: currentUser?.whatsapp || currentUser?.phone || '',
       passengerAvatar: currentUser?.avatar || '',
       passengerRating: currentUser?.rating || 0,
-      driver: matchedDriver,
+      driver: undefined,
       category: finalCategory,
       pickup: finalPickup,
       destination: finalDest,
@@ -365,24 +330,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       platformFee: calculated.platformFee,       // 15% comissão Race
       paymentMethod,
       paymentStatus: 'paid',
-      status: 'in_progress',
+      status: 'searching',
       confirmationCode: generateUniqueRideConfirmationCode(),
       createdAt: new Date().toISOString(),
     };
 
     onStartRide(newRide);
-    try {
-      notifyDriverAccepted(isMoto);
-    } catch {}
-    try {
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.7 },
-      });
-    } catch {
-      // safe fallback
-    }
   };
 
   const getCategoryDisplayName = (cat: VehicleCategory) => {
@@ -598,111 +551,181 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       )}
 
 
-      {/* 2. Mini Card de Corrida Ativa com CÓDIGO GIGANTE AMARELO NO TOPO */}
-      {activeRide && (
-        <div className="bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-fade-in">
-          {/* CAIXA AMARELA GRANDE NO TOPO DO CARD DO PASSAGEIRO */}
-          {activeRide.confirmationCode && (
-            <div className="bg-amber-300 border-4 border-amber-500 rounded-2xl p-4 text-center shadow-lg text-slate-950">
-              <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-heading font-black uppercase tracking-wider">
-                <ShieldCheck className="w-5 h-5 text-slate-950 shrink-0" />
-                <span>SEU CÓDIGO DE EMBARQUE</span>
+      {/* 2. Mini Card de Corrida Ativa: MODO PROCURANDO vs MODO A CAMINHO */}
+      {activeRide && (() => {
+        const isRideAccepted =
+          activeRide.status === 'accepted' ||
+          (activeRide.status as string) === 'aceita' ||
+          activeRide.status === 'driver_assigned' ||
+          activeRide.status === 'driver_arriving' ||
+          activeRide.status === 'in_progress' ||
+          activeRide.status === 'completed';
+
+        if (!isRideAccepted) {
+          return (
+            <div className="bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-fade-in">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                  <div className="w-12 h-12 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] shrink-0 flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+                      <span className="text-xs font-mono text-[#ff6a00] font-black uppercase">
+                        Procurando motorista...
+                      </span>
+                    </div>
+                    <h4 className="font-heading font-black text-base text-white truncate">
+                      Aguardando motorista aceitar sua corrida
+                    </h4>
+                    <p className="text-xs text-zinc-400 truncate">
+                      {activeRide.pickup?.address} → {activeRide.destination?.address}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  {onOpenFullMap && (
+                    <button
+                      type="button"
+                      onClick={onOpenFullMap}
+                      className="flex-1 sm:flex-none px-4 py-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs sm:text-sm rounded-2xl transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 active:scale-95 border border-[#ff8533]"
+                    >
+                      <Maximize2 className="w-4 h-4 shrink-0" />
+                      <span>VER O MAPA TELA INTEIRA</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onCancelRide}
+                    className="px-4 py-3 bg-rose-600 hover:bg-rose-500 text-white font-heading font-black text-xs sm:text-sm rounded-2xl border border-rose-500 cursor-pointer active:scale-95"
+                  >
+                    Cancelar busca
+                  </button>
+                </div>
               </div>
-              <div
-                style={{ fontSize: '48px', lineHeight: 1.05 }}
-                className="font-mono font-black text-slate-950 tracking-[0.2em] my-1.5 select-text"
-              >
-                {activeRide.confirmationCode}
+            </div>
+          );
+        }
+
+        return (
+          <div className="bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-fade-in">
+            {/* CAIXA AMARELA GRANDE NO TOPO DO CARD DO PASSAGEIRO (SÓ DEPOIS QUE ACEITAR) */}
+            {activeRide.confirmationCode && (
+              <div className="bg-amber-300 border-4 border-amber-500 rounded-2xl p-4 text-center shadow-lg text-slate-950">
+                <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-heading font-black uppercase tracking-wider">
+                  <ShieldCheck className="w-5 h-5 text-slate-950 shrink-0" />
+                  <span>SEU CÓDIGO DE EMBARQUE</span>
+                </div>
+                <div
+                  style={{ fontSize: '48px', lineHeight: 1.05 }}
+                  className="font-mono font-black text-slate-950 tracking-[0.2em] my-1.5 select-text"
+                >
+                  {activeRide.confirmationCode}
+                </div>
+                <p className="text-xs sm:text-sm font-extrabold text-slate-900">
+                  Mostre esse código para o motorista
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(activeRide.confirmationCode || '');
+                    setRideCodeCopied(true);
+                    setTimeout(() => setRideCodeCopied(false), 2500);
+                  }}
+                  className="mt-2.5 inline-flex items-center justify-center gap-2 px-5 py-2 bg-slate-950 hover:bg-slate-800 active:scale-95 text-white font-heading font-black text-xs sm:text-sm rounded-xl cursor-pointer shadow-md"
+                >
+                  {rideCodeCopied ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>CÓDIGO COPIADO!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>COPIAR CÓDIGO</span>
+                    </>
+                  )}
+                </button>
               </div>
-              <p className="text-xs sm:text-sm font-extrabold text-slate-900">
-                Mostre esse código para o motorista
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard?.writeText(activeRide.confirmationCode || '');
-                  setRideCodeCopied(true);
-                  setTimeout(() => setRideCodeCopied(false), 2500);
-                }}
-                className="mt-2.5 inline-flex items-center justify-center gap-2 px-5 py-2 bg-slate-950 hover:bg-slate-800 active:scale-95 text-white font-heading font-black text-xs sm:text-sm rounded-xl cursor-pointer shadow-md"
-              >
-                {rideCodeCopied ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    <span>CÓDIGO COPIADO!</span>
-                  </>
+            )}
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                {activeRide.driver?.avatar ? (
+                  <img
+                    src={activeRide.driver.avatar}
+                    alt={activeRide.driver.name}
+                    className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
+                  />
                 ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    <span>COPIAR CÓDIGO</span>
-                  </>
+                  <div className="w-12 h-12 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] shrink-0 flex items-center justify-center font-heading font-black text-lg">
+                    {(activeRide.driver?.name || 'M').charAt(0).toUpperCase()}
+                  </div>
                 )}
-              </button>
-            </div>
-          )}
-
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5 w-full sm:w-auto">
-            {activeRide.driver?.avatar ? (
-              <img
-                src={activeRide.driver.avatar}
-                alt={activeRide.driver.name}
-                className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
-              />
-            ) : (
-              <div className="w-12 h-12 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] shrink-0 flex items-center justify-center font-heading font-black text-lg">
-                {(activeRide.driver?.name || 'M').charAt(0).toUpperCase()}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                    <span className="text-[11px] font-mono text-[#ff6a00] font-black uppercase">
+                      {activeRide.status === 'completed' ? 'Viagem Finalizada' : 'Motorista a caminho!'}
+                    </span>
+                  </div>
+                  <h4 className="font-heading font-black text-base text-white truncate">
+                    {activeRide.driver?.name} {activeRide.driver?.vehicleModel ? `• ${activeRide.driver.vehicleModel}` : ''}
+                  </h4>
+                  <p className="text-xs text-zinc-300 font-mono">
+                    {activeRide.driver?.vehiclePlate ? `Placa ${activeRide.driver.vehiclePlate}` : 'Condutor confirmado'}
+                    {activeRide.driver?.vehicleColor ? ` • ${activeRide.driver.vehicleColor}` : ''}
+                    {activeRide.driver?.vehicleYear ? ` • ${activeRide.driver.vehicleYear}` : ''}
+                  </p>
+                </div>
               </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                <span className="text-[11px] font-mono text-[#ff6a00] font-black uppercase">
-                  {activeRide.status === 'completed' ? 'Viagem Finalizada' : 'Corrida Iniciada - Motorista a Caminho'}
-                </span>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                {onOpenFullMap && (
+                  <button
+                    type="button"
+                    onClick={onOpenFullMap}
+                    className="flex-1 sm:flex-none px-4 py-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs sm:text-sm rounded-2xl transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 active:scale-95 border border-[#ff8533]"
+                  >
+                    <Maximize2 className="w-4 h-4 shrink-0" />
+                    <span>VER O MAPA TELA INTEIRA</span>
+                  </button>
+                )}
+
+                {activeRide.driver?.phone && activeRide.status !== 'completed' && (
+                  <a
+                    href={`tel:${activeRide.driver.phone.replace(/\D/g, '')}`}
+                    className="px-3.5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs rounded-2xl border border-emerald-500 flex items-center gap-1.5"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Ligar para o motorista</span>
+                  </a>
+                )}
+
+                {activeRide.status !== 'completed' ? (
+                  <button
+                    type="button"
+                    onClick={onCancelRide}
+                    className="px-3.5 py-3 bg-zinc-800 hover:bg-zinc-700 text-rose-400 font-bold text-xs rounded-2xl border border-zinc-700 cursor-pointer active:scale-95"
+                  >
+                    Cancelar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onCompleteRide}
+                    className="px-3.5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-2xl cursor-pointer active:scale-95"
+                  >
+                    Avaliar
+                  </button>
+                )}
               </div>
-              <h4 className="font-heading font-black text-base text-white truncate">
-                {activeRide.driver?.name} • {activeRide.driver?.vehicleModel}
-              </h4>
-              <p className="text-xs text-zinc-300 font-mono">
-                Placa {activeRide.driver?.vehiclePlate} • {activeRide.driver?.vehicleColor} • {activeRide.driver?.vehicleYear}
-              </p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {onOpenFullMap && (
-              <button
-                type="button"
-                onClick={onOpenFullMap}
-                className="flex-1 sm:flex-none px-4 py-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs sm:text-sm rounded-2xl transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 active:scale-95 border border-[#ff8533]"
-              >
-                <Maximize2 className="w-4 h-4 shrink-0" />
-                <span>VER O MAPA TELA INTEIRA</span>
-              </button>
-            )}
-
-            {activeRide.status !== 'completed' ? (
-              <button
-                type="button"
-                onClick={onCancelRide}
-                className="px-3.5 py-3 bg-zinc-800 hover:bg-zinc-700 text-rose-400 font-bold text-xs rounded-2xl border border-zinc-700 cursor-pointer active:scale-95"
-              >
-                Cancelar
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onCompleteRide}
-                className="px-3.5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-2xl cursor-pointer active:scale-95"
-              >
-                Avaliar
-              </button>
-            )}
-          </div>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ETAPA 1: BUSCA DE CORRIDA (Origem com Meu GPS e Destino com Número) */}
       {passengerStep === 'search' && (
