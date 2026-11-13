@@ -299,6 +299,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [acceptedRideNotice, setAcceptedRideNotice] = useState<string | null>(null);
   const [comfortWarning, setComfortWarning] = useState<string | null>(null);
   const [isDriverGpsOpen, setIsDriverGpsOpen] = useState(false);
+  const [acceptedDriverRide, setAcceptedDriverRide] = useState<Ride | null>(null);
 
   // Galeria de Fotos: Perfil, CNH e Foto do Veículo
   const driverAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -938,6 +939,34 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     const incomingPickupAddress = activeRide?.pickup?.address || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba - SP';
                     const incomingDestAddress = activeRide?.destination?.address || 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba - SP';
                     const incomingPrice = activeRide?.price || 28.50;
+                    const incomingRideSnapshot: Ride = activeRide || {
+                      id: `RCE-${Math.floor(1000 + Math.random() * 9000)}`,
+                      passengerName: incomingPassengerName,
+                      passengerPhone: incomingPassengerPhone,
+                      passengerAvatar: incomingPassengerAvatar,
+                      passengerRating: 5.0,
+                      driver: currentDriver,
+                      category: currentDriver.category || 'economica',
+                      pickup: {
+                        address: incomingPickupAddress,
+                        lat: -23.0955,
+                        lng: -47.2250,
+                      },
+                      destination: {
+                        address: incomingDestAddress,
+                        lat: -23.0805,
+                        lng: -47.2050,
+                      },
+                      distanceKm: 3.2,
+                      durationMinutes: 7,
+                      price: incomingPrice,
+                      driverEarnings: Number((incomingPrice * 0.85).toFixed(2)),
+                      platformFee: Number((incomingPrice * 0.15).toFixed(2)),
+                      paymentMethod: 'pix',
+                      paymentStatus: 'paid',
+                      status: 'in_progress',
+                      createdAt: new Date().toISOString(),
+                    };
 
                     return (
                       <div className="bg-gradient-to-b from-white via-slate-50 to-slate-100 p-5 sm:p-6 rounded-3xl border-2 border-[#ff6a00] shadow-xl space-y-4">
@@ -1070,16 +1099,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                             onClick={() => {
                               const driverEarns = Number((incomingPrice * 0.85).toFixed(2));
                               const raceCommission = Number((incomingPrice * 0.15).toFixed(2));
-                              onUpdateDriver({
-                                ...currentDriver,
-                                earningsToday: currentDriver.earningsToday + driverEarns,
-                                earningsWeek: currentDriver.earningsWeek + driverEarns,
-                                totalRides: currentDriver.totalRides + 1,
-                              });
+                              setAcceptedDriverRide({ ...incomingRideSnapshot, status: 'in_progress' });
                               if (activeRide && onAcceptIncomingRide) {
                                 onAcceptIncomingRide({ ...activeRide, status: 'in_progress' });
                               }
-                              setAcceptedRideNotice(`Corrida iniciada automaticamente! Você ganhou ${formatBRL(driverEarns)} nesta corrida (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`);
+                              setAcceptedRideNotice(`Corrida aceita! Você receberá ${formatBRL(driverEarns)} (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`);
                               setIsDriverGpsOpen(true);
                               try {
                                 confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
@@ -1093,7 +1117,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
 
                           <button
                             type="button"
-                            onClick={() => setIsDriverGpsOpen(true)}
+                            onClick={() => {
+                              setAcceptedDriverRide({ ...incomingRideSnapshot, status: 'in_progress' });
+                              setIsDriverGpsOpen(true);
+                            }}
                             className="w-full sm:w-auto px-4 py-4 bg-slate-950 hover:bg-zinc-800 text-white rounded-2xl text-xs sm:text-sm font-heading font-bold cursor-pointer border border-zinc-800 flex items-center justify-center gap-2 shadow-xs"
                           >
                             <Navigation className="w-4 h-4 text-emerald-400" />
@@ -2658,18 +2685,29 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
 
 
 
-      {/* Modal de Navegação GPS estilo Waze / Uber Driver para o Condutor */}
+      {/* Modal de Navegação GPS com Card Fixo da Corrida embaixo para o Condutor */}
       {isDriverGpsOpen && (
         <DriverGpsNavigationModal
           driver={currentDriver}
+          ride={acceptedDriverRide || activeRide}
           onClose={() => setIsDriverGpsOpen(false)}
-          onCompleteRide={() => {
+          onOpenSupport={onOpenSupport}
+          onCancelRide={() => {
+            setIsDriverGpsOpen(false);
+            setAcceptedDriverRide(null);
+            setAcceptedRideNotice('Corrida cancelada.');
+          }}
+          onCompleteRide={(finishedRide) => {
+            const totalRideVal = finishedRide?.price || acceptedDriverRide?.price || activeRide?.price || 28.5;
+            const driverEarns = Number((totalRideVal * 0.85).toFixed(2));
             onUpdateDriver({
               ...currentDriver,
-              earningsToday: currentDriver.earningsToday + 28.5,
-              earningsWeek: currentDriver.earningsWeek + 28.5,
+              earningsToday: currentDriver.earningsToday + driverEarns,
+              earningsWeek: currentDriver.earningsWeek + driverEarns,
               totalRides: currentDriver.totalRides + 1,
             });
+            setAcceptedRideNotice(`Corrida finalizada! Você recebeu ${formatBRL(driverEarns)} (85% líquido).`);
+            setAcceptedDriverRide(null);
             setIsDriverGpsOpen(false);
           }}
         />

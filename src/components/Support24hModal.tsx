@@ -92,7 +92,7 @@ export const Support24hModal: React.FC<Support24hModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
+    <div className="fixed inset-0 z-[1200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
       <div className="bg-white border border-slate-300 max-w-xl w-full rounded-3xl shadow-2xl flex flex-col h-[640px] max-h-[92vh] overflow-hidden">
         {/* Header in White */}
         <div className="bg-white p-5 border-b border-slate-200 flex items-center justify-between">
