@@ -18,9 +18,9 @@ export const RatingModal: React.FC<RatingModalProps> = ({
 }) => {
   const [rating, setRating] = useState<number>(5);
   const [hoverRating, setHoverRating] = useState<number>(0);
-  const [comment, setComment] = useState<string>('Carro limpo, chegou rápido');
+  const [comment, setComment] = useState<string>('');
   const [issueComment, setIssueComment] = useState<string>('');
-  const [selectedTags, setSelectedTags] = useState<string[]>(['Carro limpo', 'Chegou rápido']);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   if (!isOpen || !ride) return null;
 
@@ -30,15 +30,11 @@ export const RatingModal: React.FC<RatingModalProps> = ({
     ride.driver?.category === 'moto_passageiro' ||
     ride.driver?.category === 'moto_entrega';
 
-  const driverName = ride.driver?.name || (isMoto ? 'Lucas Souza' : 'José da Cruz');
+  const driverName = ride.driver?.name || (isMoto ? 'Motoboy RACE' : 'Motorista RACE');
   const driverVehicle = ride.driver?.vehicleModel
-    ? `${ride.driver.vehicleModel} - ${ride.driver.vehiclePlate}`
-    : (isMoto ? 'Honda CG 160 Fan - MTO-1A23' : 'Chevrolet Onix - RCE9C40');
-  const driverAvatar =
-    ride.driver?.avatar ||
-    (isMoto
-      ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=150&auto=format&fit=crop&q=80'
-      : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80');
+    ? `${ride.driver.vehicleModel}${ride.driver.vehiclePlate ? ` - ${ride.driver.vehiclePlate}` : ''}`
+    : (isMoto ? 'Motocicleta' : 'Veículo cadastrado');
+  const driverAvatar = ride.driver?.avatar || '';
 
   const quickTags = isMoto
     ? ['Chegou rápido', 'Capacete limpo', 'Direção segura', 'Educado', 'Pontual']

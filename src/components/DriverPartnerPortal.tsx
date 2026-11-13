@@ -396,7 +396,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   }, [currentDriver?.id]);
 
   const walletSummary = calculateWalletSummary(currentDriver);
-  const ratingStats = getDriverRatingStats(currentDriver?.id, currentDriver?.rating || 4.8, currentDriver?.totalRides || 25);
+  const ratingStats = getDriverRatingStats(currentDriver?.id);
 
   const handleRequestWithdrawalAction = (summary: ReturnType<typeof calculateWalletSummary>) => {
     setWithdrawalErrorMessage(null);
@@ -455,10 +455,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [regCpf, setRegCpf] = useState('');
   const [regCnh, setRegCnh] = useState('');
   const [regCategory, setRegCategory] = useState<VehicleCategory>('economica');
-  const [regModel, setRegModel] = useState('Chevrolet Onix');
-  const [regPlate, setRegPlate] = useState('RCE9C40');
-  const [regYear, setRegYear] = useState('2021');
-  const [regColor, setRegColor] = useState('Prata');
+  const [regModel, setRegModel] = useState('');
+  const [regPlate, setRegPlate] = useState('');
+  const [regYear, setRegYear] = useState('');
+  const [regColor, setRegColor] = useState('');
   const [regPixKey, setRegPixKey] = useState('');
   const [regTrunkType, setRegTrunkType] = useState('Baú 80 Litros');
   const [regHelmetConfirmed, setRegHelmetConfirmed] = useState(true);
@@ -613,20 +613,18 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     const newDriver: Driver = {
       id: `drv-${Math.floor(100 + Math.random() * 900)}`,
       name: regName,
-      avatar: (finalCategory === 'moto_passageiro' || finalCategory === 'moto_entrega')
-        ? 'https://images.unsplash.com/photo-1557862921-37829c790f19?w=150&auto=format&fit=crop&q=80'
-        : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      avatar: '',
       phone: regPhone,
       email: regEmail,
       password: regPassword,
       cpf: regCpf,
-      cnh: `${regCnh || '09283719280'} (EAR Ativo)`,
+      cnh: regCnh ? `${regCnh} (EAR Ativo)` : '',
       category: finalCategory,
       vehicleModel: regModel,
       vehiclePlate: regPlate.toUpperCase(),
-      vehicleColor: regColor || 'Prata',
+      vehicleColor: regColor || '',
       vehicleYear: yearNum,
-      rating: 5.0,
+      rating: 0,
       totalRides: 0,
       status: 'online',
       lat: -23.0903,
@@ -935,212 +933,201 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 </div>
 
                 {isOnline ? (
-                  (() => {
-                    const incomingPassengerAvatar = activeRide?.passengerAvatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80';
-                    const incomingPassengerName = activeRide?.passengerName || 'Marina Gonçalves de Castro';
-                    const incomingPassengerPhone = activeRide?.passengerPhone || '(19) 99887-1122';
-                    const incomingPickupAddress = activeRide?.pickup?.address || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba - SP';
-                    const incomingDestAddress = activeRide?.destination?.address || 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba - SP';
-                    const incomingPrice = activeRide?.price || 28.50;
-                    const incomingRideSnapshot: Ride = activeRide || {
-                      id: `RCE-${Math.floor(1000 + Math.random() * 9000)}`,
-                      passengerName: incomingPassengerName,
-                      passengerPhone: incomingPassengerPhone,
-                      passengerAvatar: incomingPassengerAvatar,
-                      passengerRating: 5.0,
-                      driver: currentDriver,
-                      category: currentDriver.category || 'economica',
-                      pickup: {
-                        address: incomingPickupAddress,
-                        lat: -23.0955,
-                        lng: -47.2250,
-                      },
-                      destination: {
-                        address: incomingDestAddress,
-                        lat: -23.0805,
-                        lng: -47.2050,
-                      },
-                      distanceKm: 3.2,
-                      durationMinutes: 7,
-                      price: incomingPrice,
-                      driverEarnings: Number((incomingPrice * 0.85).toFixed(2)),
-                      platformFee: Number((incomingPrice * 0.15).toFixed(2)),
-                      paymentMethod: 'pix',
-                      paymentStatus: 'paid',
-                      status: 'in_progress',
-                      confirmationCode: simulatedRideCode,
-                      createdAt: new Date().toISOString(),
-                    };
+                  activeRide ? (
+                    (() => {
+                      const incomingPassengerAvatar = activeRide.passengerAvatar || '';
+                      const incomingPassengerName = activeRide.passengerName || 'Passageiro';
+                      const incomingPassengerPhone = activeRide.passengerPhone || '';
+                      const incomingPickupAddress = activeRide.pickup?.address || '';
+                      const incomingDestAddress = activeRide.destination?.address || '';
+                      const incomingPrice = activeRide.price || 0;
+                      const incomingRideSnapshot: Ride = activeRide;
 
-                    return (
-                      <div className="bg-gradient-to-b from-white via-slate-50 to-slate-100 p-5 sm:p-6 rounded-3xl border-2 border-[#ff6a00] shadow-xl space-y-4">
-                        {/* Header da Chamada */}
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 pb-3.5">
-                          <div className="flex items-center gap-2.5">
-                            <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 radar-pulse" />
-                            <div>
-                              <span className="bg-[#ff6a00] text-white font-heading font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
-                                Nova corrida - Aceitar
-                              </span>
-                              <p className="text-xs text-slate-500 font-mono font-bold mt-0.5">
-                                A 1.2 km de você • Chegada estimada: 3 min
-                              </p>
+                      return (
+                        <div className="bg-gradient-to-b from-white via-slate-50 to-slate-100 p-5 sm:p-6 rounded-3xl border-2 border-[#ff6a00] shadow-xl space-y-4">
+                          {/* Header da Chamada */}
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 pb-3.5">
+                            <div className="flex items-center gap-2.5">
+                              <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 radar-pulse" />
+                              <div>
+                                <span className="bg-[#ff6a00] text-white font-heading font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                                  Nova corrida - Aceitar
+                                </span>
+                                <p className="text-xs text-slate-500 font-mono font-bold mt-0.5">
+                                  Chamado em tempo real
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                          <div className="text-right self-end sm:self-auto space-y-0.5">
-                            <span className="text-2xl sm:text-3xl font-heading font-black text-[#ff6a00] block">
-                              {formatBRL(incomingPrice)}
-                            </span>
-                            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full inline-block">
-                              Você ganha {formatBRL(Number((incomingPrice * 0.85).toFixed(2)))} (85%)
-                            </span>
-                            <span className="text-[11px] font-mono text-slate-500 block">
-                              Comissão Race 15%: {formatBRL(Number((incomingPrice * 0.15).toFixed(2)))}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Card do Passageiro com Foto Cadastrada e Nome */}
-                        <div className="bg-white rounded-2xl p-4 border border-slate-200 flex items-center justify-between gap-4 shadow-sm">
-                          <div className="flex items-center gap-3.5">
-                            <div className="relative shrink-0">
-                              <img
-                                src={incomingPassengerAvatar}
-                                alt={incomingPassengerName}
-                                className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-3 border-emerald-500 shadow-md"
-                              />
-                              <span className="absolute -bottom-1 -right-1 bg-white text-slate-900 border border-slate-300 text-[11px] px-1.5 py-0.2 rounded-full font-bold flex items-center shadow">
-                                ★ 5.0
+                            <div className="text-right self-end sm:self-auto space-y-0.5">
+                              <span className="text-2xl sm:text-3xl font-heading font-black text-[#ff6a00] block">
+                                {formatBRL(incomingPrice)}
                               </span>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-mono font-bold text-emerald-700 uppercase tracking-wider block">
-                                Passageiro Solicitante
+                              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full inline-block">
+                                Você ganha {formatBRL(Number((incomingPrice * 0.85).toFixed(2)))} (85%)
                               </span>
-                              <h5 className="font-heading font-black text-slate-950 text-base sm:text-xl">
-                                {incomingPassengerName}
-                              </h5>
-                              <p className="text-xs text-slate-600 font-mono mt-0.5">
-                                Contato: <span className="font-bold text-slate-900">{incomingPassengerPhone}</span>
-                              </p>
+                              <span className="text-[11px] font-mono text-slate-500 block">
+                                Comissão Race 15%: {formatBRL(Number((incomingPrice * 0.15).toFixed(2)))}
+                              </span>
                             </div>
                           </div>
 
-                          <a
-                            href={`https://wa.me/55${incomingPassengerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
-                              `Olá ${incomingPassengerName}! Sou seu condutor da RACE. Recebi sua chamada de corrida e estou a caminho!`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-2xl border border-emerald-300 shadow-sm transition-all active:scale-95 shrink-0"
-                            title="Ligar ou conversar no WhatsApp com o passageiro"
-                          >
-                            <Phone className="w-5 h-5" />
-                          </a>
-                        </div>
+                          {/* Card do Passageiro */}
+                          <div className="bg-white rounded-2xl p-4 border border-slate-200 flex items-center justify-between gap-4 shadow-sm">
+                            <div className="flex items-center gap-3.5">
+                              <div className="relative shrink-0">
+                                {incomingPassengerAvatar ? (
+                                  <img
+                                    src={incomingPassengerAvatar}
+                                    alt={incomingPassengerName}
+                                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-3 border-emerald-500 shadow-md"
+                                  />
+                                ) : (
+                                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-heading font-black text-2xl border-3 border-emerald-500 shadow-md">
+                                    {incomingPassengerName.charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-mono font-bold text-emerald-700 uppercase tracking-wider block">
+                                  Passageiro Solicitante
+                                </span>
+                                <h5 className="font-heading font-black text-slate-950 text-base sm:text-xl">
+                                  {incomingPassengerName}
+                                </h5>
+                                {incomingPassengerPhone && (
+                                  <p className="text-xs text-slate-600 font-mono mt-0.5">
+                                    Contato: <span className="font-bold text-slate-900">{incomingPassengerPhone}</span>
+                                  </p>
+                                )}
+                              </div>
+                            </div>
 
-                        {/* Endereço de Início e Chegada com Número Correto */}
-                        <div className="bg-white rounded-2xl p-4 border border-slate-200 space-y-3 shadow-xs">
-                          {/* Início com Número Correto */}
-                          <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5 border border-emerald-300 shadow-xs">
-                              <MapPin className="w-4 h-4 text-emerald-600" />
-                            </div>
-                            <div className="space-y-0.5">
-                              <span className="text-[11px] font-mono font-bold uppercase text-emerald-800 tracking-wider">
-                                Ponto de Início (Embarque):
-                              </span>
-                              <p className="font-heading font-bold text-slate-900 text-sm sm:text-base leading-snug">
-                                {incomingPickupAddress}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="border-t border-dashed border-slate-200 my-1 ml-11" />
-
-                          {/* Chegada com Número Correto */}
-                          <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 border border-amber-300 shadow-xs">
-                              <Navigation className="w-4 h-4 text-[#ff6a00]" />
-                            </div>
-                            <div className="space-y-0.5">
-                              <span className="text-[11px] font-mono font-bold uppercase text-amber-800 tracking-wider">
-                                Ponto de Chegada (Destino):
-                              </span>
-                              <p className="font-heading font-bold text-slate-900 text-sm sm:text-base leading-snug">
-                                {incomingDestAddress}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {acceptedRideNotice && (
-                          <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-3.5 rounded-xl font-bold text-sm flex items-center justify-between animate-fade-in flex-wrap gap-2">
-                            <div className="flex items-center gap-2">
-                              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                              <span>{acceptedRideNotice}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => setIsDriverGpsOpen(true)}
-                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-heading font-black cursor-pointer flex items-center gap-1 shadow-xs"
+                            {incomingPassengerPhone && (
+                              <a
+                                href={`https://wa.me/55${incomingPassengerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                                  `Olá ${incomingPassengerName}! Sou seu condutor da RACE. Recebi sua chamada de corrida e estou a caminho!`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-2xl border border-emerald-300 shadow-sm transition-all active:scale-95 shrink-0"
+                                title="Ligar ou conversar no WhatsApp com o passageiro"
                               >
-                                <Navigation className="w-3.5 h-3.5" />
-                                <span>Abrir GPS</span>
-                              </button>
-                              <button
-                                onClick={() => setAcceptedRideNotice(null)}
-                                className="text-xs text-emerald-700 hover:text-emerald-900 font-bold ml-1 cursor-pointer"
-                              >
-                                ✕
-                              </button>
+                                <Phone className="w-5 h-5" />
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Endereço de Início e Chegada */}
+                          <div className="bg-white rounded-2xl p-4 border border-slate-200 space-y-3 shadow-xs">
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5 border border-emerald-300 shadow-xs">
+                                <MapPin className="w-4 h-4 text-emerald-600" />
+                              </div>
+                              <div className="space-y-0.5">
+                                <span className="text-[11px] font-mono font-bold uppercase text-emerald-800 tracking-wider">
+                                  Ponto de Início (Embarque):
+                                </span>
+                                <p className="font-heading font-bold text-slate-900 text-sm sm:text-base leading-snug">
+                                  {incomingPickupAddress}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="border-t border-dashed border-slate-200 my-1 ml-11" />
+
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 border border-amber-300 shadow-xs">
+                                <Navigation className="w-4 h-4 text-[#ff6a00]" />
+                              </div>
+                              <div className="space-y-0.5">
+                                <span className="text-[11px] font-mono font-bold uppercase text-amber-800 tracking-wider">
+                                  Ponto de Chegada (Destino):
+                                </span>
+                                <p className="font-heading font-bold text-slate-900 text-sm sm:text-base leading-snug">
+                                  {incomingDestAddress}
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        )}
 
-                        <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
-                          <button
-                            onClick={() => {
-                              const driverEarns = Number((incomingPrice * 0.85).toFixed(2));
-                              const raceCommission = Number((incomingPrice * 0.15).toFixed(2));
-                              setAcceptedDriverRide({ ...incomingRideSnapshot, status: 'in_progress' });
-                              if (activeRide && onAcceptIncomingRide) {
-                                onAcceptIncomingRide({ ...activeRide, status: 'in_progress' });
-                              }
-                              setAcceptedRideNotice(`Corrida aceita! Você receberá ${formatBRL(driverEarns)} (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`);
-                              setIsDriverGpsOpen(true);
-                              try {
-                                confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
-                              } catch {}
-                            }}
-                            className="w-full sm:flex-1 bg-gradient-to-r from-[#ff6a00] to-[#e05e00] hover:from-[#ff7b1a] hover:to-[#eb6800] text-white font-heading font-black py-4 rounded-2xl text-sm sm:text-base transition-all cursor-pointer shadow-lg active:scale-95 text-center border border-[#ff8533] flex items-center justify-center gap-2"
-                          >
-                            <Navigation className="w-4 h-4" />
-                            <span>ACEITAR CORRIDA ({formatBRL(incomingPrice)})</span>
-                          </button>
+                          {acceptedRideNotice && (
+                            <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-3.5 rounded-xl font-bold text-sm flex items-center justify-between animate-fade-in flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                                <span>{acceptedRideNotice}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setIsDriverGpsOpen(true)}
+                                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-heading font-black cursor-pointer flex items-center gap-1 shadow-xs"
+                                >
+                                  <Navigation className="w-3.5 h-3.5" />
+                                  <span>Abrir GPS</span>
+                                </button>
+                                <button
+                                  onClick={() => setAcceptedRideNotice(null)}
+                                  className="text-xs text-emerald-700 hover:text-emerald-900 font-bold ml-1 cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          )}
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAcceptedDriverRide({ ...incomingRideSnapshot, status: 'in_progress' });
-                              setIsDriverGpsOpen(true);
-                            }}
-                            className="w-full sm:w-auto px-4 py-4 bg-slate-950 hover:bg-zinc-800 text-white rounded-2xl text-xs sm:text-sm font-heading font-bold cursor-pointer border border-zinc-800 flex items-center justify-center gap-2 shadow-xs"
-                          >
-                            <Navigation className="w-4 h-4 text-emerald-400" />
-                            <span>GPS (Waze/Uber)</span>
-                          </button>
+                          <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
+                            <button
+                              onClick={() => {
+                                const driverEarns = Number((incomingPrice * 0.85).toFixed(2));
+                                const raceCommission = Number((incomingPrice * 0.15).toFixed(2));
+                                setAcceptedDriverRide({ ...incomingRideSnapshot, status: 'in_progress' });
+                                if (onAcceptIncomingRide) {
+                                  onAcceptIncomingRide({ ...incomingRideSnapshot, status: 'in_progress' });
+                                }
+                                setAcceptedRideNotice(`Corrida aceita! Você receberá ${formatBRL(driverEarns)} (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`);
+                                setIsDriverGpsOpen(true);
+                                try {
+                                  confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
+                                } catch {}
+                              }}
+                              className="w-full sm:flex-1 bg-gradient-to-r from-[#ff6a00] to-[#e05e00] hover:from-[#ff7b1a] hover:to-[#eb6800] text-white font-heading font-black py-4 rounded-2xl text-sm sm:text-base transition-all cursor-pointer shadow-lg active:scale-95 text-center border border-[#ff8533] flex items-center justify-center gap-2"
+                            >
+                              <Navigation className="w-4 h-4" />
+                              <span>ACEITAR CORRIDA ({formatBRL(incomingPrice)})</span>
+                            </button>
 
-                          <button
-                            onClick={onOpenSupport}
-                            className="w-full sm:w-auto px-3.5 py-4 bg-white hover:bg-slate-100 text-slate-800 rounded-2xl text-xs sm:text-sm font-bold cursor-pointer border border-slate-300"
-                          >
-                            Suporte 24h
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAcceptedDriverRide({ ...incomingRideSnapshot, status: 'in_progress' });
+                                setIsDriverGpsOpen(true);
+                              }}
+                              className="w-full sm:w-auto px-4 py-4 bg-slate-950 hover:bg-zinc-800 text-white rounded-2xl text-xs sm:text-sm font-heading font-bold cursor-pointer border border-zinc-800 flex items-center justify-center gap-2 shadow-xs"
+                            >
+                              <Navigation className="w-4 h-4 text-emerald-400" />
+                              <span>GPS</span>
+                            </button>
+
+                            <button
+                              onClick={onOpenSupport}
+                              className="w-full sm:w-auto px-3.5 py-4 bg-white hover:bg-slate-100 text-slate-800 rounded-2xl text-xs sm:text-sm font-bold cursor-pointer border border-slate-300"
+                            >
+                              Suporte 24h
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })()
+                      );
+                    })()
+                  ) : (
+                    <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-2">
+                      <Car className="w-10 h-10 text-emerald-600 mx-auto" />
+                      <p className="text-sm font-heading font-black text-slate-800">
+                        Nenhuma corrida ainda
+                      </p>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                        Você está ONLINE e pronto para atender. Assim que um passageiro confirmar uma corrida real no Supabase, o chamado aparecerá aqui.
+                      </p>
+                    </div>
+                  )
                 ) : (
                   <div className="text-center py-8 text-slate-600 text-sm">
                     <p>Você está atualmente <strong className="text-rose-600">OFFLINE</strong>.</p>
@@ -1634,7 +1621,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </div>
                   <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                     <span className="text-[11px] font-bold text-slate-500 uppercase block">Placa do Veículo</span>
-                    <span className="font-mono font-black text-amber-700">{currentDriver.vehiclePlate || 'RCE9C40'}</span>
+                    <span className="font-mono font-black text-amber-700">{currentDriver.vehiclePlate || 'Não informada'}</span>
                   </div>
                   <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                     <span className="text-[11px] font-bold text-slate-500 uppercase block">Categoria</span>
@@ -1642,7 +1629,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </div>
                   <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                     <span className="text-[11px] font-bold text-slate-500 uppercase block">Cor do Veículo</span>
-                    <span className="font-bold text-slate-900">{currentDriver.vehicleColor || 'Prata'}</span>
+                    <span className="font-bold text-slate-900">{currentDriver.vehicleColor || 'Não informada'}</span>
                   </div>
                 </div>
 
@@ -1666,7 +1653,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1 font-mono">
-                          Número: {currentDriver.cnh || '99887766554'}
+                          Número: {currentDriver.cnh || 'Não informado'}
                         </p>
                       </div>
 
@@ -2712,7 +2699,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             setAcceptedRideNotice('Corrida cancelada.');
           }}
           onCompleteRide={(finishedRide) => {
-            const totalRideVal = finishedRide?.price || acceptedDriverRide?.price || activeRide?.price || 28.5;
+            const totalRideVal = finishedRide?.price || acceptedDriverRide?.price || activeRide?.price || 0;
             const driverEarns = Number((totalRideVal * 0.85).toFixed(2));
             onUpdateDriver({
               ...currentDriver,

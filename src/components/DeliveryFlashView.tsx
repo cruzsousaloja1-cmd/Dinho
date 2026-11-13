@@ -42,13 +42,13 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
   setPickup,
   setDestination,
 }) => {
-  const [pickupInput, setPickupInput] = useState(pickup?.address || 'Av. Paulista, 1000 - Loja Central');
-  const [destInput, setDestInput] = useState(destination?.address || 'Rua Oscar Freire, 800 - Jardins');
-  const [recipientName, setRecipientName] = useState('Fernanda Lima');
-  const [recipientPhone, setRecipientPhone] = useState('(11) 98765-4321');
-  const [packageType, setPackageType] = useState('Documentos & Contratos');
-  const [instructions, setInstructions] = useState('Entregar na recepção com protocolo');
-  const [securityCode] = useState('8419');
+  const [pickupInput, setPickupInput] = useState(pickup?.address || '');
+  const [destInput, setDestInput] = useState(destination?.address || '');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
+  const [packageType, setPackageType] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [securityCode] = useState(() => String(Math.floor(1000 + Math.random() * 9000)));
 
   // Autocomplete state
   const [pickupSuggestions, setPickupSuggestions] = useState<AddressSuggestion[]>([]);

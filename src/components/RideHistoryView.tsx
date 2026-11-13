@@ -85,7 +85,7 @@ export const RideHistoryView: React.FC<RideHistoryViewProps> = ({
       <div className="space-y-3.5">
         {filteredRides.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center text-slate-500 text-sm font-medium shadow-md">
-            Nenhuma viagem encontrada para estes filtros de pesquisa.
+            Nenhuma corrida ainda
           </div>
         ) : (
           filteredRides.map((ride) => {

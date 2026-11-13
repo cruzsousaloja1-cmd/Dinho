@@ -252,14 +252,14 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   const [expandedCardKey, setExpandedCardKey] = useState<WorkCategoryKey | null>(null);
 
   // Form de detalhes operacionais do motorista
-  const [plate, setPlate] = useState('RCE9C40');
-  const [model, setModel] = useState('Chevrolet Onix');
-  const [year, setYear] = useState('2021');
-  const [cnh, setCnh] = useState('09283719280');
+  const [plate, setPlate] = useState('');
+  const [model, setModel] = useState('');
+  const [year, setYear] = useState('');
+  const [cnh, setCnh] = useState('');
   const [cpf, setCpf] = useState('');
   const [pixKey, setPixKey] = useState('');
   const [trunkType, setTrunkType] = useState('Baú 80 Litros');
-  const [color, setColor] = useState('Prata');
+  const [color, setColor] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Checklist de confirmação de exigências para autorizar o cadastro
@@ -324,25 +324,18 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     const newDriver: Driver = {
       id: `drv-${Date.now().toString().slice(-5)}`,
       name: currentUser.name,
-      avatar: currentUser.avatar || ((selectedCategory.role === 'motoboy')
-        ? 'https://images.unsplash.com/photo-1557862921-37829c790f19?w=150&auto=format&fit=crop&q=80'
-        : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'),
+      avatar: currentUser.avatar || '',
       phone: currentUser.phone,
       email: currentUser.email,
       password: currentUser.password || '',
-      cpf: cpf.trim() || '123.456.789-00',
+      cpf: cpf.trim(),
       cnh: `${cleanCnh} (EAR Ativo)`,
       category: selectedCategory.vehicleCategory,
       vehicleModel: cleanModel,
       vehiclePlate: cleanPlate,
-      vehicleColor: color || 'Prata',
+      vehicleColor: color,
       vehicleYear: yearNum,
-      vehiclePhoto: selectedCategory.role === 'motoboy'
-        ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
-        : (selectedCategory.key === 'motorista_confort'
-          ? 'https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=500&auto=format&fit=crop&q=80'
-          : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80'),
-      rating: 5.0,
+      rating: 0,
       totalRides: 0,
       status: 'online', // Ativado diretamente
       lat: -23.0903,

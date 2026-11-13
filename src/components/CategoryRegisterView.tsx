@@ -170,17 +170,17 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
     const newDriver: Driver = {
       id: `drv-${Date.now().toString().slice(-5)}`,
       name: cleanName,
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      avatar: '',
       phone: cleanPhone,
       email: cleanEmail,
-      cpf: '000.***.***-00',
-      cnh: '01234567890 - Habilitação Regular',
+      cpf: '',
+      cnh: '',
       category: config.vehicleCategory,
       vehicleModel: cleanModel,
       vehiclePlate: cleanPlate,
-      vehicleColor: 'Prata',
+      vehicleColor: '',
       vehicleYear: yearNum,
-      rating: 5.0,
+      rating: 0,
       totalRides: 0,
       status: 'online', // Sem taxa para trabalhar, ativo imediatamente
       lat: -23.0903,
@@ -208,13 +208,13 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       role: config.role,
       tipo: config.userTipo,
       placa: newDriver.vehiclePlate,
-      avatar: newDriver.avatar,
-      rating: 5.0,
+      avatar: '',
+      rating: 0,
       password: password,
       driverData: newDriver,
     };
 
-    // Salva no localStorage isolado por usuário: race_user_${email} (sem logar automaticamente)
+    // Salva direto no Supabase (sem usar localStorage)
     saveUserAccount({
       id: newDriver.id,
       name: newDriver.name,
@@ -224,8 +224,8 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       tipo: config.userTipo,
       placa: newDriver.vehiclePlate,
       password: password,
-      avatar: newDriver.avatar,
-      rating: 5.0,
+      avatar: '',
+      rating: 0,
       driverData: newDriver,
       rides: [],
       createdAt: new Date().toISOString(),

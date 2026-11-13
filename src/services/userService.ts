@@ -1,10 +1,12 @@
 import { AppUser, Driver, Ride, UserRole, UserTipo } from '../types';
-import { WEEKLY_FEE } from '../config/pricing';
-import { 
-  saveUsuarioSupabase, 
-  getUsuarioSupabase, 
-  saveCorridaSupabase, 
-  getCorridasSupabase 
+import {
+  saveUsuarioSupabase,
+  getUsuarioSupabase,
+  saveCorridaSupabase,
+  deleteUsuarioSupabase,
+  zerarDadosTesteSupabase,
+  supabase,
+  mapSupabaseRowToDriver,
 } from '../supabase';
 
 export interface StoredUserAccount {
@@ -40,402 +42,163 @@ export function getUserRidesStorageKey(email: string): string {
 }
 
 /**
- * Salva a conta do usuário no localStorage com ID único por e-mail: race_user_${email}
- * e atualiza race_current_user com { id, name, email, tipo, placa } apenas se setActiveSession for true
+ * Salva apenas a sessão mínima do usuário logado (validada no Supabase a cada abertura do app)
+ */
+export function saveSessionUser(user: AppUser | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!user) {
+      localStorage.removeItem('race_current_user');
+      return;
+    }
+    const minimalSession = {
+      id: user.id,
+      name: user.name,
+      email: normalizeEmail(user.email),
+      role: user.role,
+      tipo: user.tipo,
+      isAdmin: user.isAdmin,
+    };
+    localStorage.setItem('race_current_user', JSON.stringify(minimalSession));
+  } catch {}
+}
+
+export function getSessionUser(): AppUser | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('race_current_user');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.email) return parsed;
+  } catch {}
+  return null;
+}
+
+/**
+ * Converte uma linha da tabela public.usuarios do Supabase para AppUser e Driver
+ */
+export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver?: Driver } {
+  const cleanEmail = normalizeEmail(cloudUser['e-mail'] || cloudUser.email || '');
+  const isCloudAdmin =
+    String(cloudUser.tipo || '').toUpperCase() === 'ADM' ||
+    String(cloudUser.tipo || '').toLowerCase() === 'admin';
+
+  const isMoto =
+    !isCloudAdmin &&
+    (cloudUser.tipo === 'motoboy' ||
+      cloudUser.tipo === 'motoboy_passageiro' ||
+      cloudUser.tipo === 'motoboy_entregas' ||
+      cloudUser.categoria === 'moto_passageiro' ||
+      cloudUser.categoria === 'moto_entrega');
+
+  const isDriver =
+    !isCloudAdmin &&
+    (cloudUser.tipo === 'driver' ||
+      cloudUser.tipo === 'motorista_economico' ||
+      cloudUser.tipo === 'motorista_confort' ||
+      isMoto);
+
+  const driverObj: Driver | undefined = isDriver ? mapSupabaseRowToDriver(cloudUser) : undefined;
+  const role: UserRole = isCloudAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
+
+  const userPayload: AppUser = {
+    id: String(cloudUser.id),
+    name: cloudUser.nome || '',
+    email: cleanEmail,
+    phone: cloudUser.celular || cloudUser.whatsapp || '',
+    whatsapp: cloudUser.whatsapp || cloudUser.celular || '',
+    login: cloudUser.login || cleanEmail,
+    role,
+    tipo: (cloudUser.tipo as UserTipo) || role,
+    isAdmin: isCloudAdmin || undefined,
+    placa: cloudUser.placa || '',
+    avatar: cloudUser.avatar || '',
+    rating: Number(cloudUser.rating || 0),
+    driverData: driverObj,
+  };
+
+  return { user: userPayload, driver: driverObj };
+}
+
+/**
+ * Sincroniza a conta do usuário diretamente no Supabase (sem armazenar dados em localStorage)
  */
 export function saveUserAccount(account: StoredUserAccount, setActiveSession: boolean = true): void {
   const cleanEmail = normalizeEmail(account.email);
   if (!cleanEmail) return;
 
-  const userKey = getUserStorageKey(cleanEmail);
-  const normalizedAccount: StoredUserAccount = {
-    ...account,
-    email: cleanEmail,
-    placa: account.placa || account.driverData?.vehiclePlate || '',
-    createdAt: account.createdAt || new Date().toISOString(),
-  };
+  const isAdminAccount =
+    account.role === 'admin' ||
+    String(account.tipo || '').toUpperCase() === 'ADM';
 
-  try {
-    // 1. Salvar no localStorage com id único race_user_${email}
-    localStorage.setItem(userKey, JSON.stringify(normalizedAccount));
-
-    // 2. Preparar payload do usuário
-    const isAdminAccount =
-      normalizedAccount.role === 'admin' ||
-      String(normalizedAccount.tipo || '').toUpperCase() === 'ADM';
-
-    const currentUserPayload: AppUser = {
-      id: normalizedAccount.id,
-      name: normalizedAccount.name,
-      email: normalizedAccount.email,
-      phone: normalizedAccount.phone,
-      whatsapp: normalizedAccount.whatsapp || normalizedAccount.phone,
-      login: normalizedAccount.login || normalizedAccount.email,
-      role: isAdminAccount ? 'admin' : normalizedAccount.role,
-      tipo: normalizedAccount.tipo,
-      isAdmin: isAdminAccount || undefined,
-      placa: normalizedAccount.placa,
-      avatar: normalizedAccount.avatar,
-      rating: normalizedAccount.rating || 5.0,
-      driverData: normalizedAccount.driverData,
-    };
-
-    // Salvar race_current_user com id, nome, email, tipo, placa se setActiveSession for true
-    if (setActiveSession) {
-      localStorage.setItem('race_current_user', JSON.stringify(currentUserPayload));
-    }
-
-    // 3. Atualizar listas globais para acesso exclusivo do Admin (admin@race.com.br)
-    if (normalizedAccount.driverData) {
-      const storedDrivers = localStorage.getItem('race_registered_drivers');
-      const driversList: Driver[] = storedDrivers ? JSON.parse(storedDrivers) : [];
-      const updatedDrivers = [
-        normalizedAccount.driverData,
-        ...driversList.filter((d) => normalizeEmail(d.email) !== cleanEmail),
-      ];
-      localStorage.setItem('race_registered_drivers', JSON.stringify(updatedDrivers));
-    } else if (normalizedAccount.role === 'passenger') {
-      const storedPassengers = localStorage.getItem('race_registered_passengers');
-      const passList: AppUser[] = storedPassengers ? JSON.parse(storedPassengers) : [];
-      const updatedPass = [
-        currentUserPayload,
-        ...passList.filter((p) => normalizeEmail(p.email) !== cleanEmail),
-      ];
-      localStorage.setItem('race_registered_passengers', JSON.stringify(updatedPass));
-    }
-  } catch (err) {
-    console.error('Erro ao salvar conta de usuário no localStorage:', err);
-  }
-
-  // 4. Salvar na nuvem Supabase (tabela public.usuarios)
-  try {
-    saveUsuarioSupabase({
-      id: normalizedAccount.id,
-      nome: normalizedAccount.name,
-      email: normalizedAccount.email,
-      celular: normalizedAccount.phone,
-      whatsapp: normalizedAccount.whatsapp || normalizedAccount.phone,
-      login: normalizedAccount.login || normalizedAccount.email,
-      senha: normalizedAccount.password,
-      tipo: normalizedAccount.tipo || (normalizedAccount.role === 'passenger' ? 'passenger' : 'motorista_economico'),
-      categoria: normalizedAccount.driverData?.category || 'economica',
-      placa: normalizedAccount.placa || normalizedAccount.driverData?.vehiclePlate || '',
-      modelo: normalizedAccount.driverData?.vehicleModel || '',
-      ano: normalizedAccount.driverData?.vehicleYear || 2023,
-      cnh: normalizedAccount.driverData?.cnh || '',
-      avatar: normalizedAccount.avatar || '',
-      rating: normalizedAccount.rating || 5.0,
-      saldo: normalizedAccount.driverData?.walletBalance || 0,
-      plano_ativo: normalizedAccount.driverData?.weeklyPlanActive ?? false,
-    }).catch((cloudErr) => {
-      console.warn('Aviso de sincronização Supabase usuarios:', cloudErr);
-    });
-  } catch (cloudErr) {
-    console.warn('Erro ao disparar sincronização Supabase usuarios:', cloudErr);
-  }
-}
-
-/**
- * Recupera os dados isolados do usuário pelo e-mail
- */
-export function getUserAccount(email: string): StoredUserAccount | null {
-  const cleanEmail = normalizeEmail(email);
-  if (!cleanEmail) return null;
-
-  try {
-    const raw = localStorage.getItem(getUserStorageKey(cleanEmail));
-    if (raw) {
-      return JSON.parse(raw);
-    }
-
-    // Fallback de migração para cadastros anteriores
-    const storedDrivers = localStorage.getItem('race_registered_drivers');
-    if (storedDrivers) {
-      const drivers: Driver[] = JSON.parse(storedDrivers);
-      const matched = drivers.find((d) => normalizeEmail(d.email) === cleanEmail);
-      if (matched) {
-        const isMoto = matched.category === 'moto_entrega' || matched.category === 'moto_passageiro';
-        const migrated: StoredUserAccount = {
-          id: matched.id,
-          name: matched.name,
-          email: cleanEmail,
-          phone: matched.phone,
-          role: isMoto ? 'motoboy' : 'driver',
-          tipo: matched.category === 'economica' ? 'motorista_economico' :
-                matched.category === 'confort' ? 'motorista_confort' :
-                matched.category === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas',
-          placa: matched.vehiclePlate,
-          password: matched.password,
-          avatar: matched.avatar,
-          rating: matched.rating,
-          driverData: matched,
-          createdAt: matched.registrationDate || new Date().toISOString(),
-        };
-        localStorage.setItem(getUserStorageKey(cleanEmail), JSON.stringify(migrated));
-        return migrated;
-      }
-    }
-
-    const storedPassengers = localStorage.getItem('race_registered_passengers');
-    if (storedPassengers) {
-      const passengers: AppUser[] = JSON.parse(storedPassengers);
-      const matched = passengers.find((p) => normalizeEmail(p.email) === cleanEmail);
-      if (matched) {
-        const migrated: StoredUserAccount = {
-          id: matched.id,
-          name: matched.name,
-          email: cleanEmail,
-          phone: matched.phone,
-          role: 'passenger',
-          tipo: 'passenger',
-          placa: '',
-          password: matched.password,
-          avatar: matched.avatar,
-          rating: matched.rating || 5.0,
-          createdAt: new Date().toISOString(),
-        };
-        localStorage.setItem(getUserStorageKey(cleanEmail), JSON.stringify(migrated));
-        return migrated;
-      }
-    }
-  } catch (err) {
-    console.error('Erro ao ler conta de usuário:', err);
-  }
-
-  return null;
-}
-
-export const ADMIN_PASSWORD_STORAGE_KEY = 'race_admin_custom_password';
-
-export function getStoredAdminPassword(): string | null {
-  try {
-    return localStorage.getItem(ADMIN_PASSWORD_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function findLocalUserAccount(identifier: string): StoredUserAccount | null {
-  const clean = normalizeEmail(identifier);
-  if (!clean) return null;
-
-  const direct = getUserAccount(clean);
-  if (direct) return direct;
-
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('race_user_')) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          const parsed: StoredUserAccount = JSON.parse(raw);
-          if (
-            normalizeEmail(parsed.email) === clean ||
-            (parsed.login && parsed.login.trim().toLowerCase() === clean) ||
-            (parsed.phone && clean.replace(/\D/g, '').length >= 8 && parsed.phone.replace(/\D/g, '') === clean.replace(/\D/g, ''))
-          ) {
-            return parsed;
-          }
-        }
-      }
-    }
-
-    // Fallback para contas criadas pelo AuthModal ('race_users')
-    const rawAuthUsers = localStorage.getItem('race_users');
-    if (rawAuthUsers) {
-      const list = JSON.parse(rawAuthUsers);
-      if (Array.isArray(list)) {
-        const matched = list.find((u: any) => normalizeEmail(u.email) === clean);
-        if (matched) {
-          return {
-            id: matched.id || `usr-${Date.now()}`,
-            name: matched.name || clean.split('@')[0],
-            email: normalizeEmail(matched.email),
-            phone: matched.phone || '',
-            login: normalizeEmail(matched.email),
-            role: matched.role || 'passenger',
-            tipo: matched.tipo || 'passenger',
-            password: matched.password,
-            createdAt: matched.createdAt || new Date().toISOString(),
-          };
-        }
-      }
-    }
-  } catch {}
-
-  return null;
-}
-
-export function updateUserPasswordLocal(identifier: string, newPassword: string): void {
-  const clean = normalizeEmail(identifier);
-  if (!clean || !newPassword) return;
-
-  try {
-    // 1. Se for o Administrador
-    if (clean === ADMIN_EMAIL) {
-      localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, newPassword);
-    }
-
-    // 2. Atualiza qualquer race_user_* correspondente (por e-mail ou login)
-    const keysToUpdate: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('race_user_')) {
-        keysToUpdate.push(k);
-      }
-    }
-
-    let resolvedEmail = clean;
-    for (const k of keysToUpdate) {
-      const raw = localStorage.getItem(k);
-      if (!raw) continue;
-      try {
-        const parsed: StoredUserAccount = JSON.parse(raw);
-        if (
-          normalizeEmail(parsed.email) === clean ||
-          (parsed.login && parsed.login.trim().toLowerCase() === clean)
-        ) {
-          resolvedEmail = normalizeEmail(parsed.email) || clean;
-          const updatedAccount: StoredUserAccount = {
-            ...parsed,
-            password: newPassword,
-            driverData: parsed.driverData
-              ? { ...parsed.driverData, password: newPassword }
-              : parsed.driverData,
-          };
-          localStorage.setItem(k, JSON.stringify(updatedAccount));
-        }
-      } catch {}
-    }
-
-    // 3. Atualiza em race_registered_drivers
-    const storedDrivers = localStorage.getItem('race_registered_drivers');
-    if (storedDrivers) {
-      const drivers: Driver[] = JSON.parse(storedDrivers);
-      const nextDrivers = drivers.map((d) =>
-        normalizeEmail(d.email) === resolvedEmail || normalizeEmail(d.email) === clean
-          ? { ...d, password: newPassword }
-          : d
-      );
-      localStorage.setItem('race_registered_drivers', JSON.stringify(nextDrivers));
-    }
-
-    // 4. Atualiza em race_registered_passengers
-    const storedPass = localStorage.getItem('race_registered_passengers');
-    if (storedPass) {
-      const passList: AppUser[] = JSON.parse(storedPass);
-      const nextPass = passList.map((p) =>
-        normalizeEmail(p.email) === resolvedEmail || normalizeEmail(p.email) === clean
-          ? { ...p, password: newPassword }
-          : p
-      );
-      localStorage.setItem('race_registered_passengers', JSON.stringify(nextPass));
-    }
-
-    // 5. Atualiza em race_users
-    const rawAuthUsers = localStorage.getItem('race_users');
-    if (rawAuthUsers) {
-      const usersList: any[] = JSON.parse(rawAuthUsers);
-      const nextUsers = usersList.map((u) =>
-        normalizeEmail(u.email) === resolvedEmail || normalizeEmail(u.email) === clean
-          ? { ...u, password: newPassword }
-          : u
-      );
-      localStorage.setItem('race_users', JSON.stringify(nextUsers));
-    }
-  } catch (err) {
-    console.warn('Erro ao atualizar senha local:', err);
-  }
-}
-
-/**
- * Validação segura de login por e-mail e senha
- */
-export function verifyUserLogin(
-  emailInput: string,
-  passwordInput: string
-): { success: boolean; error?: string; user?: AppUser; driver?: Driver } {
-  const cleanEmail = normalizeEmail(emailInput);
-  if (!cleanEmail || !passwordInput) {
-    return { success: false, error: 'Por favor, informe seu e-mail e sua senha.' };
-  }
-
-  // 0. Conta Mestre de Administrador (admin@race.com.br)
-  if (cleanEmail === ADMIN_EMAIL) {
-    const customAdminPass = getStoredAdminPassword();
-    const validAdminPass = ['race123', 'race@2024', 'admin', 'admin123'];
-    const isAdminPasswordValid = customAdminPass
-      ? passwordInput === customAdminPass
-      : validAdminPass.includes(passwordInput);
-
-    if (!isAdminPasswordValid) {
-      return {
-        success: false,
-        error: customAdminPass
-          ? 'Senha incorreta para a conta de Administrador.'
-          : 'Senha incorreta para a conta de Administrador (use race123).',
-      };
-    }
-
-    const adminUser: AppUser = {
-      id: 'usr-admin-master',
-      name: 'Administrador Geral',
-      email: ADMIN_EMAIL,
-      phone: '(19) 99999-0000',
-      role: 'admin',
-      isAdmin: true,
-      placa: 'ADMIN-01',
-      rating: 5.0,
-    };
-
-    try {
-      localStorage.setItem('race_current_user', JSON.stringify(adminUser));
-    } catch {}
-
-    return { success: true, user: adminUser };
-  }
-
-  // 1. Busca os dados daquele usuário específico (por e-mail, login ou telefone)
-  const account = findLocalUserAccount(cleanEmail);
-
-  if (!account) {
-    return { success: false, error: 'Usuário não encontrado. Verifique seu e-mail/login ou crie uma conta.' };
-  }
-
-  // 2. Valida a senha
-  if (account.password && account.password !== passwordInput) {
-    return { success: false, error: 'Senha incorreta para esta conta.' };
-  }
-
-  // 3. Monta o AppUser com dados isolados
-  const isAdminAcc =
-    account.role === 'admin' || String(account.tipo || '').toUpperCase() === 'ADM';
-
-  const userPayload: AppUser = {
+  const currentUserPayload: AppUser = {
     id: account.id,
     name: account.name,
-    email: account.email,
+    email: cleanEmail,
     phone: account.phone,
     whatsapp: account.whatsapp || account.phone,
-    login: account.login || account.email,
-    role: isAdminAcc ? 'admin' : account.role,
+    login: account.login || cleanEmail,
+    role: isAdminAccount ? 'admin' : account.role,
     tipo: account.tipo,
-    isAdmin: isAdminAcc || undefined,
+    isAdmin: isAdminAccount || undefined,
     placa: account.placa || account.driverData?.vehiclePlate || '',
     avatar: account.avatar,
-    rating: account.rating || 5.0,
+    rating: account.rating || 0,
     driverData: account.driverData,
   };
 
-  try {
-    localStorage.setItem('race_current_user', JSON.stringify(userPayload));
-  } catch {}
+  if (setActiveSession) {
+    saveSessionUser(currentUserPayload);
+  }
 
-  return { success: true, user: userPayload, driver: account.driverData };
+  saveUsuarioSupabase({
+    id: account.id,
+    nome: account.name,
+    email: cleanEmail,
+    celular: account.phone,
+    whatsapp: account.whatsapp || account.phone,
+    login: account.login || cleanEmail,
+    senha: account.password,
+    tipo: account.tipo || (account.role === 'passenger' ? 'passenger' : 'driver'),
+    categoria: account.driverData?.category || 'economica',
+    placa: account.placa || account.driverData?.vehiclePlate || '',
+    modelo: account.driverData?.vehicleModel || '',
+    ano: account.driverData?.vehicleYear || 2023,
+    cnh: account.driverData?.cnh || '',
+    avatar: account.avatar || '',
+    rating: account.rating || 0,
+    saldo: account.driverData?.walletBalance || 0,
+    plano_ativo: account.driverData?.weeklyPlanActive ?? false,
+  }).catch((cloudErr) => {
+    console.warn('Aviso de sincronização Supabase usuarios:', cloudErr);
+  });
+}
+
+export function getUserAccount(_email: string): StoredUserAccount | null {
+  return null;
+}
+
+export function getStoredAdminPassword(): string | null {
+  return null;
+}
+
+export function findLocalUserAccount(_identifier: string): StoredUserAccount | null {
+  return null;
+}
+
+export function updateUserPasswordLocal(_identifier: string, _newPassword: string): void {
+  // Senhas são persistidas exclusivamente no Supabase (public.usuarios)
+}
+
+export function verifyUserLogin(
+  _emailInput: string,
+  _passwordInput: string
+): { success: boolean; error?: string; user?: AppUser; driver?: Driver } {
+  return { success: false, error: 'Use a autenticação online do Supabase.' };
 }
 
 /**
- * Autenticação assíncrona no Supabase com fallback local
+ * Autenticação estritamente via Supabase (tabela public.usuarios)
  */
 export async function verifyUserLoginAsync(
   emailInput: string,
@@ -446,335 +209,76 @@ export async function verifyUserLoginAsync(
     return { success: false, error: 'Por favor, informe seu Login ou E-mail e sua senha.' };
   }
 
-  // 0. Conta Mestre de Administrador (admin@race.com.br)
-  if (cleanIdentifier === ADMIN_EMAIL) {
-    const localAdminCheck = verifyUserLogin(cleanIdentifier, passwordInput);
-    if (localAdminCheck.success) return localAdminCheck;
-
-    // Fallback: verifica se existe linha admin@race.com.br no Supabase com senha atualizada
-    try {
-      const cloudAdmin = await getUsuarioSupabase(ADMIN_EMAIL);
-      if (cloudAdmin && cloudAdmin.senha === passwordInput) {
-        updateUserPasswordLocal(ADMIN_EMAIL, passwordInput);
-        return verifyUserLogin(cleanIdentifier, passwordInput);
-      }
-    } catch {}
-
-    return localAdminCheck;
-  }
-
-  // 1. Tentar buscar primeiro na nuvem Supabase
   try {
     const cloudUser = await getUsuarioSupabase(cleanIdentifier);
-    if (cloudUser) {
-      if (cloudUser.senha && cloudUser.senha !== passwordInput) {
-        return { success: false, error: 'Senha incorreta para esta conta.' };
-      }
-
-      const isCloudAdmin =
-        String(cloudUser.tipo || '').toUpperCase() === 'ADM' ||
-        String(cloudUser.tipo || '').toLowerCase() === 'admin';
-
-      const isMoto =
-        !isCloudAdmin &&
-        (cloudUser.tipo === 'motoboy' ||
-          cloudUser.tipo === 'motoboy_passageiro' ||
-          cloudUser.tipo === 'motoboy_entregas' ||
-          cloudUser.categoria === 'moto_passageiro' ||
-          cloudUser.categoria === 'moto_entrega');
-
-      const isDriver =
-        !isCloudAdmin &&
-        (cloudUser.tipo === 'driver' ||
-          cloudUser.tipo === 'motorista_economico' ||
-          cloudUser.tipo === 'motorista_confort' ||
-          isMoto);
-
-      const cloudEmail = normalizeEmail(cloudUser['e-mail'] || cloudUser.email || cleanIdentifier);
-
-      let driverObj: Driver | undefined = undefined;
-      if (isDriver) {
-        driverObj = {
-          id: cloudUser.id,
-          name: cloudUser.nome,
-          email: cloudEmail,
-          phone: cloudUser.celular || cloudUser.whatsapp || '',
-          avatar: cloudUser.avatar || '',
-          rating: Number(cloudUser.rating || 5.0),
-          totalRides: 0,
-          vehicleModel: cloudUser.modelo || (isMoto ? 'Honda CG 160 Fan' : 'Chevrolet Onix 1.0'),
-          vehiclePlate: cloudUser.placa || (isMoto ? 'MTO-1A23' : 'RCE-2B34'),
-          vehicleColor: isMoto ? 'Vermelha' : 'Branco',
-          vehicleYear: cloudUser.ano || 2023,
-          cpf: '123.456.789-00',
-          cnh: cloudUser.cnh || '99887766554',
-          category: (cloudUser.categoria as any) || (isMoto ? 'moto_passageiro' : 'economica'),
-          weeklyPlanActive: true,
-          weeklyPlanPrice: 0,
-          status: (cloudUser.status as any) || 'online',
-          earningsToday: 0,
-          earningsWeek: 0,
-          walletBalance: Number(cloudUser.saldo || 0),
-          cnhVerified: true,
-          vehicleVerified: true,
-          criminalRecordClear: true,
-          lat: -23.0842,
-          lng: -47.2118,
-          registrationDate: cloudUser.data_cadastro || new Date().toISOString(),
-        };
-      }
-
-      const role = isCloudAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
-      const userPayload: AppUser = {
-        id: cloudUser.id,
-        name: cloudUser.nome,
-        email: cloudEmail,
-        phone: cloudUser.celular || cloudUser.whatsapp || '',
-        whatsapp: cloudUser.whatsapp || cloudUser.celular || '',
-        login: cloudUser.login || cloudEmail,
-        role: role as any,
-        tipo: (cloudUser.tipo as any) || role,
-        isAdmin: isCloudAdmin || undefined,
-        placa: cloudUser.placa || '',
-        avatar: cloudUser.avatar || '',
-        rating: Number(cloudUser.rating || 5.0),
-        driverData: driverObj,
+    if (!cloudUser) {
+      return {
+        success: false,
+        error: 'Usuário não encontrado no Supabase. Verifique seu e-mail ou crie uma conta.',
       };
-
-      // Atualiza cache local
-      saveUserAccount(
-        {
-          id: userPayload.id,
-          name: userPayload.name,
-          email: userPayload.email,
-          phone: userPayload.phone,
-          whatsapp: userPayload.whatsapp,
-          login: userPayload.login,
-          role: userPayload.role,
-          tipo: userPayload.tipo,
-          placa: userPayload.placa,
-          password: cloudUser.senha,
-          avatar: userPayload.avatar,
-          rating: userPayload.rating,
-          driverData: driverObj,
-          createdAt: cloudUser.data_cadastro || new Date().toISOString(),
-        },
-        true
-      );
-
-      return { success: true, user: userPayload, driver: driverObj };
     }
-  } catch (err) {
-    console.warn('Aviso na busca no Supabase durante login, usando cache local:', err);
-  }
 
-  // 2. Se não encontrou no Supabase ou offline, consulta localmente
-  return verifyUserLogin(cleanIdentifier, passwordInput);
+    if (cloudUser.status === 'bloqueado') {
+      return {
+        success: false,
+        error: 'Esta conta está bloqueada pela administração.',
+      };
+    }
+
+    if (cloudUser.senha && cloudUser.senha !== passwordInput) {
+      return { success: false, error: 'Senha incorreta para esta conta.' };
+    }
+
+    const { user: userPayload, driver: driverObj } = mapSupabaseRowToAppUser(cloudUser);
+    saveSessionUser(userPayload);
+
+    return { success: true, user: userPayload, driver: driverObj };
+  } catch (err) {
+    console.warn('Erro ao autenticar no Supabase:', err);
+    return {
+      success: false,
+      error: 'Erro de conexão com o Supabase. Tente novamente.',
+    };
+  }
 }
 
-/**
- * Retorna as corridas isoladas do usuário autenticado
- * Motorista/Motoboy: só as corridas DELE
- * Passageiro: só as corridas que ELE pediu
- * Admin: todas as corridas
- */
-export function getIsolatedUserRides(currentUser: AppUser | null): Ride[] {
-  if (!currentUser) return [];
-
-  const cleanEmail = normalizeEmail(currentUser.email);
-
-  // Admin vê todas as corridas registradas
-  if (currentUser.role === 'admin' || currentUser.isAdmin || cleanEmail === ADMIN_EMAIL) {
-    try {
-      const allRidesRaw = localStorage.getItem('race_rides_history');
-      if (allRidesRaw) return JSON.parse(allRidesRaw);
-    } catch {}
-    return [];
-  }
-
-  // Usuário comum: carregar APENAS as corridas DELE
-  try {
-    // 1. Verifica no storage isolado do usuário
-    const isolatedRaw = localStorage.getItem(getUserRidesStorageKey(cleanEmail));
-    if (isolatedRaw) {
-      const parsed: Ride[] = JSON.parse(isolatedRaw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-
-    // 2. Se não houver storage isolado ainda, filtra da base geral
-    const allRidesRaw = localStorage.getItem('race_rides_history');
-    if (allRidesRaw) {
-      const allRides: Ride[] = JSON.parse(allRidesRaw);
-      const isDriverOrMotoboy = currentUser.role === 'driver' || currentUser.role === 'motoboy';
-
-      const filtered = allRides.filter((ride) => {
-        if (isDriverOrMotoboy) {
-          return (
-            ride.driver?.id === currentUser.id ||
-            normalizeEmail(ride.driver?.email || '') === cleanEmail
-          );
-        } else {
-          return (
-            (ride as any).passengerId === currentUser.id ||
-            normalizeEmail((ride as any).passengerEmail || '') === cleanEmail ||
-            ride.passengerPhone === currentUser.phone
-          );
-        }
-      });
-
-      // Salva no storage isolado para manter a performance
-      if (filtered.length > 0) {
-        localStorage.setItem(getUserRidesStorageKey(cleanEmail), JSON.stringify(filtered));
-      }
-      return filtered;
-    }
-  } catch (err) {
-    console.error('Erro ao ler histórico isolado:', err);
-  }
-
+export function getIsolatedUserRides(_currentUser: AppUser | null): Ride[] {
   return [];
 }
 
 /**
- * Salva uma nova corrida nos dados isolados do usuário e no histórico geral para o Admin
+ * Salva uma nova corrida diretamente no Supabase (tabela public.corridas)
  */
 export function saveIsolatedRide(ride: Ride, currentUser: AppUser | null): void {
-  try {
-    // 1. Salva no histórico geral da plataforma (apenas para o Admin auditar)
-    const allRidesRaw = localStorage.getItem('race_rides_history');
-    const allRides: Ride[] = allRidesRaw ? JSON.parse(allRidesRaw) : [];
-    const nextAll = [ride, ...allRides.filter((r) => r.id !== ride.id)];
-    localStorage.setItem('race_rides_history', JSON.stringify(nextAll));
-
-    // 2. Salva no storage isolado do passageiro
-    const passEmail = normalizeEmail((ride as any).passengerEmail || currentUser?.email || '');
-    if (passEmail && passEmail !== ADMIN_EMAIL) {
-      const passKey = getUserRidesStorageKey(passEmail);
-      const passRidesRaw = localStorage.getItem(passKey);
-      const passRides: Ride[] = passRidesRaw ? JSON.parse(passRidesRaw) : [];
-      const nextPassRides = [ride, ...passRides.filter((r) => r.id !== ride.id)];
-      localStorage.setItem(passKey, JSON.stringify(nextPassRides));
-    }
-
-    // 3. Salva no storage isolado do motorista
-    const driverEmail = normalizeEmail(ride.driver?.email || '');
-    if (driverEmail && driverEmail !== ADMIN_EMAIL) {
-      const drvKey = getUserRidesStorageKey(driverEmail);
-      const drvRidesRaw = localStorage.getItem(drvKey);
-      const drvRides: Ride[] = drvRidesRaw ? JSON.parse(drvRidesRaw) : [];
-      const nextDrvRides = [ride, ...drvRides.filter((r) => r.id !== ride.id)];
-      localStorage.setItem(drvKey, JSON.stringify(nextDrvRides));
-
-      // Atualiza também os ganhos no registro isolado do motorista
-      const drvAccount = getUserAccount(driverEmail);
-      if (drvAccount && drvAccount.driverData) {
-        drvAccount.driverData.earningsToday = (drvAccount.driverData.earningsToday || 0) + ride.price;
-        drvAccount.driverData.earningsWeek = (drvAccount.driverData.earningsWeek || 0) + ride.price;
-        drvAccount.driverData.totalRides = (drvAccount.driverData.totalRides || 0) + 1;
-        saveUserAccount(drvAccount);
-      }
-    }
-  } catch (err) {
-    console.error('Erro ao salvar corrida isolada:', err);
-  }
-
-  // 4. Salvar na nuvem Supabase (tabela public.corridas)
-  try {
-    saveCorridaSupabase(ride, currentUser).catch((cloudErr) => {
-      console.warn('Aviso de sincronização Supabase corridas:', cloudErr);
-    });
-  } catch (cloudErr) {
-    console.warn('Erro ao disparar sincronização Supabase corridas:', cloudErr);
-  }
+  saveCorridaSupabase(ride, currentUser).catch((cloudErr) => {
+    console.warn('Aviso de sincronização Supabase corridas:', cloudErr);
+  });
 }
 
 /**
- * Remove um cadastro individual (motorista ou passageiro)
+ * Remove um cadastro individual do Supabase (motorista ou passageiro)
  */
 export function deleteUserAccount(email: string, id?: string): void {
   const cleanEmail = normalizeEmail(email);
   if (!cleanEmail || cleanEmail === ADMIN_EMAIL) return;
 
-  try {
-    // 1. Remove a chave única race_user_${email}
-    localStorage.removeItem(getUserStorageKey(cleanEmail));
+  deleteUsuarioSupabase({ id, email: cleanEmail }).catch(() => {});
 
-    // 2. Remove as corridas isoladas daquele usuário
-    localStorage.removeItem(getUserRidesStorageKey(cleanEmail));
-
-    // 3. Remove da lista de motoristas cadastrados
-    const storedDrivers = localStorage.getItem('race_registered_drivers');
-    if (storedDrivers) {
-      const drivers: Driver[] = JSON.parse(storedDrivers);
-      const filtered = drivers.filter(
-        (d) => normalizeEmail(d.email) !== cleanEmail && (id ? d.id !== id : true)
-      );
-      localStorage.setItem('race_registered_drivers', JSON.stringify(filtered));
-    }
-
-    // 4. Remove da lista de passageiros cadastrados
-    const storedPassengers = localStorage.getItem('race_registered_passengers');
-    if (storedPassengers) {
-      const passengers: AppUser[] = JSON.parse(storedPassengers);
-      const filtered = passengers.filter(
-        (p) => normalizeEmail(p.email) !== cleanEmail && (id ? p.id !== id : true)
-      );
-      localStorage.setItem('race_registered_passengers', JSON.stringify(filtered));
-    }
-
-    // 5. Se for o usuário logado atualmente (e não for admin), limpa a sessão
-    const currentRaw = localStorage.getItem('race_current_user');
-    if (currentRaw) {
-      const current = JSON.parse(currentRaw);
-      if (normalizeEmail(current.email) === cleanEmail) {
-        localStorage.removeItem('race_current_user');
-      }
-    }
-  } catch (err) {
-    console.error('Erro ao remover cadastro:', err);
+  const session = getSessionUser();
+  if (session && normalizeEmail(session.email) === cleanEmail) {
+    saveSessionUser(null);
   }
 }
 
 /**
- * Remove TODOS os cadastros de motoristas e passageiros (Apenas Admin)
+ * Zera TODOS os dados de teste no Supabase (corridas, pagamentos e usuários não-ADM)
  */
-export function deleteAllUserAccounts(): void {
-  try {
-    // 1. Percorre todas as chaves do localStorage e remove race_user_* (exceto admin)
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.startsWith('race_user_') || key.startsWith('race_rides_'))) {
-        if (!key.includes(ADMIN_EMAIL)) {
-          keysToRemove.push(key);
-        }
-      }
-    }
-    keysToRemove.forEach((k) => localStorage.removeItem(k));
-
-    // 2. Limpa a lista de motoristas registrados
-    localStorage.setItem('race_registered_drivers', JSON.stringify([]));
-
-    // 3. Limpa a lista de passageiros registrados
-    localStorage.setItem('race_registered_passengers', JSON.stringify([]));
-
-    // 4. Se o usuário atual não for o admin, limpa race_current_user
-    const currentRaw = localStorage.getItem('race_current_user');
-    if (currentRaw) {
-      const cur = JSON.parse(currentRaw);
-      if (normalizeEmail(cur.email) !== ADMIN_EMAIL) {
-        localStorage.removeItem('race_current_user');
-      }
-    }
-  } catch (err) {
-    console.error('Erro ao remover todos os cadastros:', err);
-  }
+export async function deleteAllUserAccounts(): Promise<void> {
+  await zerarDadosTesteSupabase();
 }
 
 /**
- * Ativa TODOS os cadastros de motoristas/motoboys (status online com 85% dos ganhos e 15% Race)
+ * Ativa TODOS os cadastros de motoristas/motoboys no Supabase
  */
 export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
   const now = new Date();
@@ -799,43 +303,21 @@ export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
         : null,
     };
 
-    // Atualiza também a conta isolada race_user_${email}
-    if (driver.email) {
-      const cleanEmail = normalizeEmail(driver.email);
-      const acc = getUserAccount(cleanEmail);
-      if (acc) {
-        saveUserAccount(
-          {
-            ...acc,
-            driverData: updated,
-            placa: updated.vehiclePlate,
-          },
-          false // Não substitui a sessão do admin
-        );
-      }
+    if (driver.id) {
+      supabase
+        .from('usuarios')
+        .update({ plano_ativo: true, status: 'online' })
+        .eq('id', driver.id)
+        .then(() => {}, () => {});
     }
 
     return updated;
   });
 
-  try {
-    localStorage.setItem('race_registered_drivers', JSON.stringify(updatedDrivers));
-  } catch {}
-
   return updatedDrivers;
 }
 
-/**
- * Retorna todos os passageiros cadastrados no sistema
- */
 export function getAllRegisteredPassengers(): AppUser[] {
-  try {
-    const stored = localStorage.getItem('race_registered_passengers');
-    if (stored) {
-      const list: AppUser[] = JSON.parse(stored);
-      if (Array.isArray(list)) return list;
-    }
-  } catch {}
   return [];
 }
 

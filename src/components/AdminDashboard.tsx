@@ -40,16 +40,19 @@ import {
   Car,
   KeyRound
 } from 'lucide-react';
-import { getWithdrawals, markWithdrawalAsPaid } from '../services/walletService';
+import { getWithdrawals, markWithdrawalAsPaid, setWithdrawalsFromSupabase } from '../services/walletService';
 import { WithdrawalRequest } from '../types';
-import { getStoredReviews, DriverReview } from '../services/reviewService';
+import { getStoredReviews, DriverReview, setReviewsFromSupabase } from '../services/reviewService';
 import { 
   supabase,
   SUPABASE_URL, 
   SUPABASE_ANON_KEY, 
   SUPABASE_SETUP_SQL, 
   testSupabaseConnection, 
-  saveUsuarioSupabase 
+  saveUsuarioSupabase,
+  getAllCorridasForAdminSupabase,
+  getAllPagamentosSupabase,
+  SupabasePagamentoRow
 } from '../supabase';
 import { 
   getAsaasFinancialSummary, 
@@ -93,32 +96,82 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [previewProofImage, setPreviewProofImage] = useState<string | null>(null);
 
-  // Leitura direta da tabela public.usuarios no Supabase
+  // Leitura direta das tabelas do Supabase (usuarios, corridas, pagamentos)
   const [supabaseUsers, setSupabaseUsers] = useState<any[]>([]);
+  const [supabaseCorridas, setSupabaseCorridas] = useState<Ride[]>(rides);
+  const [supabasePagamentos, setSupabasePagamentos] = useState<SupabasePagamentoRow[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [supabaseUsersError, setSupabaseUsersError] = useState<string | null>(null);
   const [userStatusMap, setUserStatusMap] = useState<Record<string, { status: 'liberado' | 'bloqueado' | 'pendente'; expiresAt?: string }>>({});
   const [selectedUserReviewModal, setSelectedUserReviewModal] = useState<any | null>(null);
 
-  // Busca do Supabase: const { data } = await supabase.from('usuarios').select('*').order('created_at', { ascending: false })
+  useEffect(() => {
+    setSupabaseCorridas(rides);
+  }, [rides]);
+
+  // Busca de usuarios, corridas e pagamentos diretamente do Supabase
   const fetchSupabaseUsuarios = async () => {
     setIsLoadingUsers(true);
     setSupabaseUsersError(null);
     try {
-      const { data, error } = await supabase
-        .from('usuarios')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [usersRes, corridasData, pagamentosData] = await Promise.all([
+        supabase.from('usuarios').select('*').order('created_at', { ascending: false }),
+        getAllCorridasForAdminSupabase(),
+        getAllPagamentosSupabase(),
+      ]);
 
-      if (error) {
-        console.error('Erro ao buscar usuarios no Supabase:', error.message);
-        setSupabaseUsersError(error.message);
-      } else if (data) {
-        setSupabaseUsers(data);
+      if (usersRes.error) {
+        console.error('Erro ao buscar usuarios no Supabase:', usersRes.error.message);
+        setSupabaseUsersError(usersRes.error.message);
+      } else if (usersRes.data) {
+        setSupabaseUsers(usersRes.data);
       }
+
+      setSupabaseCorridas(corridasData);
+      setSupabasePagamentos(pagamentosData);
+
+      // Hidrata saques reais da tabela pagamentos
+      const mappedWithdrawals: WithdrawalRequest[] = pagamentosData
+        .filter((p) => p.tipo === 'saque')
+        .map((p) => ({
+          id: p.id,
+          driverId: p.id_motorista || '',
+          driverName: p.nome_motorista || 'Condutor',
+          driverPhone: '',
+          pixKey: p.chave_pix || '',
+          grossAmount: Number(((Number(p.valor || 0)) / 0.85).toFixed(2)),
+          platformFee15: Number((((Number(p.valor || 0)) / 0.85) * 0.15).toFixed(2)),
+          weeklyFeeDeducted: 0,
+          netAmount: Number(p.valor || 0),
+          status: (p.status === 'paid' || p.status === 'pago' || p.status === 'approved') ? 'paid' : 'pending',
+          requestedAt: p.data || new Date().toISOString(),
+          paidAt: (p.status === 'paid' || p.status === 'pago' || p.status === 'approved') ? p.data : undefined,
+        }));
+      setWithdrawalsFromSupabase(mappedWithdrawals);
+      setWithdrawalsList(mappedWithdrawals);
+
+      // Hidrata avaliações reais das corridas do Supabase
+      const mappedReviews: DriverReview[] = corridasData
+        .filter((r) => typeof r.ratingGivenToDriver === 'number' && r.ratingGivenToDriver > 0)
+        .map((r) => ({
+          id: `rev-${r.id}`,
+          rideId: r.id,
+          driverId: r.driver?.id || '',
+          driverName: r.driver?.name || '',
+          driverVehicle: r.driver?.vehicleModel ? `${r.driver.vehicleModel} - ${r.driver.vehiclePlate}` : '',
+          passengerName: r.passengerName || 'Passageiro',
+          passengerEmail: r.passengerEmail,
+          rating: Number(r.ratingGivenToDriver || 0),
+          comment: r.ratingComment || '',
+          issueComment: r.issueComment,
+          tags: [],
+          createdAt: r.createdAt || new Date().toISOString(),
+        }));
+      setReviewsFromSupabase(mappedReviews);
+      setReviewsList(mappedReviews);
     } catch (err: any) {
       console.error('Falha ao conectar no Supabase:', err);
-      setSupabaseUsersError(err?.message || 'Falha ao buscar usuários do Supabase');
+      setSupabaseUsersError(err?.message || 'Falha ao buscar dados do Supabase');
     } finally {
       setIsLoadingUsers(false);
     }
@@ -138,7 +191,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isSyncingSupabase, setIsSyncingSupabase] = useState(false);
   const [copiedSQL, setCopiedSQL] = useState(false);
 
-  // Avaliações & Reclamações dos Passageiros
+  // Avaliações & Reclamações reais dos Passageiros
   const [reviewsList, setReviewsList] = useState<DriverReview[]>(() => getStoredReviews());
   const [reviewFilterStars, setReviewFilterStars] = useState<'all' | 'issues' | '5' | '4' | '3'>('all');
 
@@ -152,7 +205,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const criticalIssues = reviewsList.filter((r) => r.rating <= 2);
 
-  // Saques dos motoristas
+  // Saques reais dos motoristas (tabela pagamentos)
   const [withdrawalsList, setWithdrawalsList] = useState<WithdrawalRequest[]>(() => getWithdrawals());
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const pendingWithdrawals = withdrawalsList.filter((w) => w.status === 'pending');
@@ -160,6 +213,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handlePayWithdrawal = (withdrawalId: string, driverName: string, netAmount: number) => {
     markWithdrawalAsPaid(withdrawalId);
     setWithdrawalsList(getWithdrawals());
+    setSupabasePagamentos((prev) =>
+      prev.map((p) => (p.id === withdrawalId ? { ...p, status: 'paid' } : p))
+    );
     showToast(`Pagamento de R$ ${netAmount.toFixed(2)} registrado como Pago via PIX para ${driverName}!`);
   };
 
@@ -261,10 +317,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       u.tipo === 'motoboy_passageiro' ||
       u.tipo === 'motoboy_entregas' ||
       (u.categoria && u.categoria.includes('moto'));
-    const userType = isPassenger ? 'Passageiro' : isMotoboy ? 'Motoboy' : 'Motorista';
+    const isAdminRow =
+      String(u.tipo || '').toUpperCase() === 'ADM' ||
+      String(u.tipo || '').toLowerCase() === 'admin' ||
+      email.toLowerCase() === 'admin@race.com.br';
+    const userType = isAdminRow ? 'ADM' : isPassenger ? 'Passageiro' : isMotoboy ? 'Motoboy' : 'Motorista';
 
     let categoryLabel = 'Econômico';
-    if (u.categoria === 'confort' || u.tipo === 'motorista_confort') {
+    if (isAdminRow) {
+      categoryLabel = 'Administrador';
+    } else if (u.categoria === 'confort' || u.tipo === 'motorista_confort') {
       categoryLabel = 'Confort';
     } else if (u.categoria === 'moto_passageiro' || u.tipo === 'motoboy_passageiro') {
       categoryLabel = 'Motoboy Passageiro';
@@ -285,7 +347,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       : 'Recente';
 
     const currentStatus = userStatusMap[String(u.id)] || {
-      status: isPassenger ? 'passageiro' : (u.plano_ativo ? 'liberado' : 'pendente'),
+      status: u.status === 'bloqueado' ? 'bloqueado' : isPassenger ? 'passageiro' : (u.plano_ativo ? 'liberado' : 'pendente'),
       expiresAt: u.plano_ativo ? 'Ativo 7 dias' : undefined,
     };
 
@@ -296,6 +358,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       email,
       phone: phone || 'Não informado',
       login,
+      isAdminRow,
       isPassenger,
       isMotoboy,
       userType,
@@ -306,7 +369,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       year: u.ano || '',
       cnh: u.cnh || '',
       avatar: u.avatar || null,
-      rating: typeof u.rating === 'number' ? u.rating : 5.0,
+      rating: typeof u.rating === 'number' ? u.rating : 0,
       saldo: typeof u.saldo === 'number' ? u.saldo : 0.0,
       createdAt: u.created_at,
       createdAtFormatted,
@@ -331,29 +394,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   });
 
-  const overviewDrivers = parsedUsers.filter((u) => !u.isPassenger);
+  const overviewDrivers = parsedUsers.filter((u) => !u.isPassenger && !u.isAdminRow);
 
   const pendingDrivers = drivers.filter(
     (d) => d.pendingPayment && d.pendingPayment.status === 'pending'
   );
 
-  // Financial calculations - Novo modelo 15% Race / 85% Motorista
-  const activeWeeklySubs = drivers.filter((d) => d.status === 'online').length;
-  const totalRidesAdmin = rides.length > 0 ? rides.length : drivers.reduce((acc, d) => acc + (d.totalRides || 0), 0) || 18;
-  const totalArrecadadoAdmin = (
-    rides.reduce((acc, r) => acc + (r.price || 0), 0) ||
-    drivers.reduce((acc, d) => acc + (d.earningsWeek || d.earningsToday || 0), 0) ||
-    1420.00
-  );
+  // Financial calculations - Soma EXCLUSIVA das tabelas pagamentos e corridas do Supabase (zero valores fixos)
+  const activeWeeklySubs = overviewDrivers.filter((d) => d.raw?.status === 'online' || d.statusInfo.status === 'liberado').length;
+  const paidPaymentsTotal = supabasePagamentos
+    .filter((p) => {
+      const st = String(p.status || '').toLowerCase();
+      return p.tipo !== 'saque' && (st === 'pago' || st === 'paid' || st === 'confirmed' || st === 'received' || st === 'approved');
+    })
+    .reduce((acc, p) => acc + Number(p.valor || 0), 0);
+
+  const ridesTotalFromSupabase = supabaseCorridas.reduce((acc, r) => acc + Number(r.price || 0), 0);
+  const totalRidesAdmin = supabaseCorridas.length;
+  const totalArrecadadoAdmin = Number((paidPaymentsTotal > 0 ? paidPaymentsTotal : ridesTotalFromSupabase).toFixed(2));
   const raceCommissionAdmin = Number((totalArrecadadoAdmin * 0.15).toFixed(2));
   const repasseMotoristasAdmin = Number((totalArrecadadoAdmin * 0.85).toFixed(2));
 
-  // Dados Financeiros Asaas (Saldo, Total Recebido, 15% Race, Repasse 85% toda Sexta-feira)
+  // Dados Financeiros (Saldo, Total Recebido, Comissão 15% Race, Repasse 85% Motoristas)
   const [asaasData, setAsaasData] = useState<AsaasBalanceInfo>({
     balance: 0,
-    totalReceived: totalArrecadadoAdmin,
-    raceCommission15: raceCommissionAdmin,
-    repassarSexta85: repasseMotoristasAdmin,
+    totalReceived: 0,
+    raceCommission15: 0,
+    repassarSexta85: 0,
     nextPayoutDate: 'Toda Sexta-feira às 18:00',
     isLive: false,
   });
@@ -379,10 +446,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
   }, [totalArrecadadoAdmin]);
 
+  const ratedReviews = reviewsList.filter((r) => r.rating > 0);
   const avgFleetRating = (
-    parsedUsers.length > 0
-      ? (parsedUsers.reduce((acc, d) => acc + d.rating, 0) / parsedUsers.length).toFixed(2)
-      : '5.00'
+    ratedReviews.length > 0
+      ? (ratedReviews.reduce((acc, d) => acc + d.rating, 0) / ratedReviews.length).toFixed(2)
+      : '0.00'
   );
 
   const exportReportCSV = () => {
@@ -578,22 +646,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* TAB 1: OVERVIEW & KEY PERFORMANCE INDICATORS */}
       {activeTab === 'overview' && (
         <div className="space-y-4">
-          {/* PAINEL DE CÓDIGOS DE EMBARQUE PARA TESTE E CONFERÊNCIA ADM */}
+          {/* PAINEL DE CÓDIGOS DE EMBARQUE PARA CONFERÊNCIA ADM (SOMENTE CORRIDAS DO SUPABASE) */}
           {(() => {
-            let storedActive: Ride | null = null;
-            let storedHistory: Ride[] = [];
-            try {
-              const rawActive = localStorage.getItem('race_active_ride');
-              if (rawActive) storedActive = JSON.parse(rawActive);
-              const rawHist = localStorage.getItem('race_rides_history');
-              if (rawHist) storedHistory = JSON.parse(rawHist);
-            } catch {
-              // ignore
-            }
             const merged = new Map<string, Ride>();
-            if (storedActive) merged.set(storedActive.id, storedActive);
-            rides.forEach((r) => merged.set(r.id, r));
-            storedHistory.forEach((r) => {
+            supabaseCorridas.forEach((r) => merged.set(r.id, r));
+            rides.forEach((r) => {
               if (!merged.has(r.id)) merged.set(r.id, r);
             });
             const ridesWithCode = Array.from(merged.values()).filter((r) => Boolean(r.confirmationCode));
@@ -894,14 +951,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             ) : (
               <div className="space-y-3">
                 {overviewDrivers.map((driver) => {
-                  const driverRides = rides.filter(
-                    (r) => r.driver?.id === driver.id || r.driver?.email?.toLowerCase() === driver.email?.toLowerCase() || r.driver?.name?.toLowerCase() === driver.name?.toLowerCase()
+                  const driverRides = supabaseCorridas.filter(
+                    (r) => r.driver?.id === driver.id || (driver.email && r.driver?.email?.toLowerCase() === driver.email?.toLowerCase()) || (driver.name && r.driver?.name?.toLowerCase() === driver.name?.toLowerCase())
                   );
-                  const driverRidesCount = driverRides.length || (driver.raw?.totalRides || 0);
-                  const driverTotalArrecadado = driverRides.reduce((acc, r) => acc + (r.price || 0), 0) || (driver.saldo ? Number((driver.saldo / 0.85).toFixed(2)) : 0);
-                  const driverEarnings85 = Number((driverTotalArrecadado * 0.85).toFixed(2)) || driver.saldo || 0;
+                  const driverRidesCount = driverRides.length;
+                  const driverTotalArrecadado = Number(driverRides.reduce((acc, r) => acc + Number(r.price || 0), 0).toFixed(2));
+                  const driverEarnings85 = Number((driverTotalArrecadado * 0.85).toFixed(2));
                   const driverCommission15 = Number((driverTotalArrecadado * 0.15).toFixed(2));
-                  const driverSaldoRepassar = driverEarnings85;
+                  const driverSaldoRepassar = driverEarnings85 || driver.saldo || 0;
 
                   return (
                     <div
@@ -1697,45 +1754,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </h3>
 
             <div className="space-y-3">
-              {rides.map((ride) => (
-                <div
-                  key={ride.id}
-                  className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm"
-                >
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <span className="font-mono font-extrabold text-amber-800 text-sm">{ride.id}</span>
-                      <span className="bg-slate-200 text-slate-800 px-2 py-0.5 rounded text-xs uppercase font-extrabold">
-                        {ride.category.replace('_', ' ')}
-                      </span>
-                      <span className="text-emerald-700 font-bold">{ride.status}</span>
-                      {ride.confirmationCode && (
-                        <span className="bg-slate-950 text-[#ff6a00] border border-[#ff6a00]/60 px-2.5 py-0.5 rounded-lg font-mono font-black text-xs tracking-wider">
-                          🔐 Código: {ride.confirmationCode}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-slate-900 font-medium">
-                      <strong>De:</strong> {ride.pickup.address}
-                    </p>
-                    <p className="text-slate-600">
-                      <strong>Para:</strong> {ride.destination.address}
-                    </p>
-                  </div>
-
-                  <div className="text-right sm:shrink-0">
-                    <div className="font-heading font-black text-slate-950 text-lg">
-                      {formatBRL(ride.price)}
-                    </div>
-                    <span className="text-xs text-emerald-700 block font-extrabold">
-                      Condutor (85%): {formatBRL(ride.driverEarnings || Number((ride.price * 0.85).toFixed(2)))}
-                    </span>
-                    <span className="text-xs text-amber-700 font-bold">
-                      Comissão Race (15%): {formatBRL(ride.platformFee || Number((ride.price * 0.15).toFixed(2)))}
-                    </span>
-                  </div>
+              {supabaseCorridas.length === 0 ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-10 text-center space-y-2">
+                  <MapPin className="w-8 h-8 text-slate-400 mx-auto" />
+                  <p className="font-heading font-black text-slate-800 text-base">
+                    Nenhuma corrida ainda
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Assim que uma corrida real for realizada no aplicativo, ela aparecerá aqui direto do Supabase.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                supabaseCorridas.map((ride) => (
+                  <div
+                    key={ride.id}
+                    className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="font-mono font-extrabold text-amber-800 text-sm">{ride.id}</span>
+                        <span className="bg-slate-200 text-slate-800 px-2 py-0.5 rounded text-xs uppercase font-extrabold">
+                          {ride.category.replace('_', ' ')}
+                        </span>
+                        <span className="text-emerald-700 font-bold">{ride.status}</span>
+                        {ride.confirmationCode && (
+                          <span className="bg-slate-950 text-[#ff6a00] border border-[#ff6a00]/60 px-2.5 py-0.5 rounded-lg font-mono font-black text-xs tracking-wider">
+                            🔐 Código: {ride.confirmationCode}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-slate-900 font-medium">
+                        <strong>De:</strong> {ride.pickup.address}
+                      </p>
+                      <p className="text-slate-600">
+                        <strong>Para:</strong> {ride.destination.address}
+                      </p>
+                    </div>
+
+                    <div className="text-right sm:shrink-0">
+                      <div className="font-heading font-black text-slate-950 text-lg">
+                        {formatBRL(ride.price)}
+                      </div>
+                      <span className="text-xs text-emerald-700 block font-extrabold">
+                        Condutor (85%): {formatBRL(ride.driverEarnings || Number((ride.price * 0.85).toFixed(2)))}
+                      </span>
+                      <span className="text-xs text-amber-700 font-bold">
+                        Comissão Race (15%): {formatBRL(ride.platformFee || Number((ride.price * 0.15).toFixed(2)))}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -1813,9 +1882,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div>
                 <span className="text-xs text-slate-500 font-bold uppercase block">Média da Frota</span>
                 <span className="font-heading font-black text-2xl text-slate-900">
-                  {reviewsList.length > 0
-                    ? (reviewsList.reduce((acc, r) => acc + r.rating, 0) / reviewsList.length).toFixed(2)
-                    : '5.00'}{' '}
+                  {avgFleetRating}{' '}
                   <span className="text-amber-500 text-lg">★</span>
                 </span>
               </div>
@@ -2410,16 +2477,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   if (onRemoveAllAccounts) {
-                    onRemoveAllAccounts();
+                    await onRemoveAllAccounts();
                   }
+                  setSupabaseUsers((prev) =>
+                    prev.filter(
+                      (u) =>
+                        String(u.tipo || '').toUpperCase() === 'ADM' ||
+                        String(u['e-mail'] || u.email || '').toLowerCase() === 'admin@race.com.br'
+                    )
+                  );
+                  setSupabaseCorridas([]);
+                  setSupabasePagamentos([]);
+                  setWithdrawalsList([]);
+                  setReviewsList([]);
                   setIsConfirmRemoveAllModalOpen(false);
-                  showToast('🗑️ Todos os cadastros foram removidos.');
+                  showToast('🗑️ Todos os dados e cadastros não-ADM foram zerados no Supabase!');
                 }}
                 className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95"
               >
-                Sim, Remover Todos
+                Sim, Zerar e Remover Todos
               </button>
             </div>
           </div>
@@ -2527,9 +2605,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </h4>
 
               {(() => {
-                const matchedReviews = reviewsList.filter((r) =>
-                  r.driverName.toLowerCase().includes(selectedUserReviewModal.name.toLowerCase()) ||
-                  (selectedUserReviewModal.name.toLowerCase().includes('josé') && r.driverName.toLowerCase().includes('josé'))
+                const matchedReviews = reviewsList.filter(
+                  (r) =>
+                    r.driverId === selectedUserReviewModal.id ||
+                    (selectedUserReviewModal.name && r.driverName.toLowerCase() === selectedUserReviewModal.name.toLowerCase())
                 );
 
                 if (matchedReviews.length === 0) {

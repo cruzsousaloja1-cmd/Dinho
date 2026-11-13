@@ -155,11 +155,57 @@ export interface SupabasePagamentoRow {
   comprovante_url?: string;
 }
 
+export function purgeLegacyTestLocalStorage(preserveCurrentSession: boolean = true): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const exactKeysToRemove = [
+      'race_registered_drivers',
+      'race_registered_passengers',
+      'race_users',
+      'race_rides_history',
+      'race_active_ride',
+      'race_driver_balances',
+      'race_withdrawals',
+      'race_weekly_fee_deducted',
+      'race_driver_reviews',
+      'race_last_confirmation_code',
+      'race_admin_custom_password',
+    ];
+    if (!preserveCurrentSession) {
+      exactKeysToRemove.push('race_current_user');
+    }
+    exactKeysToRemove.forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {}
+    });
+
+    const dynamicKeys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (
+        k &&
+        (k.startsWith('race_user_') ||
+          k.startsWith('race_rides_') ||
+          k.startsWith('asaas_status_'))
+      ) {
+        dynamicKeys.push(k);
+      }
+    }
+    dynamicKeys.forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {}
+    });
+  } catch {}
+}
+
 /**
  * 1. INSERT DIRETO NO CADASTRO (Novo Cadastro)
  * Insere na tabela 'usuarios' do Supabase com as colunas reais: nome, e-mail, celular, senha, tipo, etc.
  */
 export async function insertUsuarioSupabase(params: {
+  id?: string;
   nome: string;
   email: string;
   celular: string;
@@ -170,6 +216,9 @@ export async function insertUsuarioSupabase(params: {
   modelo?: string;
   ano?: number | string;
   cnh?: string;
+  avatar?: string;
+  status?: string;
+  plano_ativo?: boolean;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = params.email.trim().toLowerCase();
@@ -185,11 +234,14 @@ export async function insertUsuarioSupabase(params: {
       ano: params.ano ? String(params.ano) : null,
       cnh: params.cnh || null,
     };
+    if (params.id) row.id = params.id;
+    if (params.avatar) row.avatar = params.avatar;
+    if (params.status) row.status = params.status;
+    if (typeof params.plano_ativo === 'boolean') row.plano_ativo = params.plano_ativo;
 
     const { data, error } = await supabase.from('usuarios').insert([row]).select();
 
     if (error) {
-      // Se der erro de coluna com 'e-mail', tenta com 'email' sem hífen
       if (error.message?.includes('e-mail')) {
         delete row['e-mail'];
         row.email = cleanEmail;
@@ -198,6 +250,20 @@ export async function insertUsuarioSupabase(params: {
           return { success: false, error: retry.error.message };
         }
         return { success: true, data: retry.data?.[0] };
+      }
+      if (
+        error.message?.includes('avatar') ||
+        error.message?.includes('status') ||
+        error.message?.includes('plano_ativo')
+      ) {
+        delete row.avatar;
+        delete row.status;
+        delete row.plano_ativo;
+        const retry2 = await supabase.from('usuarios').insert([row]).select();
+        if (retry2.error) {
+          return { success: false, error: retry2.error.message };
+        }
+        return { success: true, data: retry2.data?.[0] };
       }
       return { success: false, error: error.message };
     }
@@ -507,24 +573,196 @@ export async function updatePasswordSupabase(
 }
 
 /**
- * Busca todos os usuários do Supabase (Apenas Admin)
+ * Busca todos os usuários do Supabase
  */
-export async function getAllUsuariosSupabase(): Promise<SupabaseUsuarioRow[]> {
+export async function getAllUsuariosSupabase(): Promise<any[]> {
   try {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('*')
-      .order('data_cadastro', { ascending: false });
+      .select('*');
 
     if (error) {
       console.warn('Aviso ao listar usuarios do Supabase:', error.message);
       return [];
     }
 
-    return (data || []) as SupabaseUsuarioRow[];
+    return (data || []) as any[];
   } catch {
     return [];
   }
+}
+
+export function mapSupabaseRowToDriver(u: any): Driver {
+  const email = (u['e-mail'] || u.email || '').trim().toLowerCase();
+  const isMoto =
+    u.tipo === 'motoboy' ||
+    u.tipo === 'motoboy_passageiro' ||
+    u.tipo === 'motoboy_entregas' ||
+    String(u.categoria || '').includes('moto');
+  const category = (u.categoria as any) || (isMoto ? 'moto_passageiro' : 'economica');
+
+  return {
+    id: String(u.id),
+    name: u.nome || '',
+    phone: u.celular || u.whatsapp || '',
+    email,
+    avatar: u.avatar || '',
+    rating: typeof u.rating === 'number' ? u.rating : 0,
+    totalRides: 0,
+    vehicleModel: u.modelo || '',
+    vehiclePlate: u.placa || '',
+    vehicleColor: '',
+    vehicleYear: Number(u.ano) || 2023,
+    cpf: '',
+    cnh: u.cnh || '',
+    category,
+    weeklyPlanActive: Boolean(u.plano_ativo ?? true),
+    weeklyPlanPrice: 0,
+    status: u.status === 'bloqueado' ? 'offline' : ((u.status as any) || 'online'),
+    earningsToday: 0,
+    earningsWeek: 0,
+    walletBalance: Number(u.saldo || 0),
+    cnhVerified: Boolean(u.cnh),
+    vehicleVerified: Boolean(u.placa),
+    criminalRecordClear: true,
+    lat: -23.0842,
+    lng: -47.2118,
+    registrationDate: u.created_at || u.data_cadastro || '',
+  };
+}
+
+export async function getAllDriversFromSupabase(): Promise<Driver[]> {
+  const rows = await getAllUsuariosSupabase();
+  return rows
+    .filter((u) => {
+      const tipo = String(u.tipo || '').toLowerCase();
+      return (
+        tipo !== 'passenger' &&
+        tipo !== 'adm' &&
+        tipo !== 'admin'
+      );
+    })
+    .map(mapSupabaseRowToDriver);
+}
+
+export async function getAllPassengersFromSupabase(): Promise<AppUser[]> {
+  const rows = await getAllUsuariosSupabase();
+  return rows
+    .filter((u) => String(u.tipo || '').toLowerCase() === 'passenger')
+    .map((u) => ({
+      id: String(u.id),
+      name: u.nome || '',
+      email: (u['e-mail'] || u.email || '').trim().toLowerCase(),
+      phone: u.celular || u.whatsapp || '',
+      whatsapp: u.whatsapp || u.celular || '',
+      login: u.login || (u['e-mail'] || u.email || ''),
+      role: 'passenger' as const,
+      tipo: 'passenger' as const,
+      avatar: u.avatar || '',
+      rating: typeof u.rating === 'number' ? u.rating : 0,
+    }));
+}
+
+export async function deleteUsuarioSupabase(params: { id?: string; email?: string }): Promise<boolean> {
+  try {
+    if (params.id) {
+      const { error } = await supabase.from('usuarios').delete().eq('id', params.id);
+      if (!error) return true;
+    }
+    if (params.email) {
+      const clean = params.email.trim().toLowerCase();
+      await supabase.from('usuarios').delete().eq('e-mail', clean);
+      await supabase.from('usuarios').delete().eq('email', clean);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export async function zerarDadosTesteSupabase(): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 1. Apaga todas as corridas
+    await supabase.from('corridas').delete().neq('id', '__never_matches__');
+    // 2. Apaga todos os pagamentos
+    await supabase.from('pagamentos').delete().neq('id', '__never_matches__');
+    // 3. Apaga todos os usuarios que não são ADM
+    const allUsers = await getAllUsuariosSupabase();
+    for (const u of allUsers) {
+      const email = String(u['e-mail'] || u.email || '').trim().toLowerCase();
+      const tipo = String(u.tipo || '').trim().toUpperCase();
+      if (tipo !== 'ADM' && tipo !== 'ADMIN' && email !== 'admin@race.com.br') {
+        await supabase.from('usuarios').delete().eq('id', u.id);
+      }
+    }
+    purgeLegacyTestLocalStorage(true);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao zerar tabelas do Supabase' };
+  }
+}
+
+function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
+  return {
+    id: row.id,
+    passengerId: row.id_passageiro,
+    passengerEmail: row.email_passageiro,
+    passengerName: row.nome_passageiro || 'Passageiro',
+    passengerPhone: '',
+    passengerRating: 0,
+    driver: {
+      id: row.id_motorista || '',
+      name: row.nome_motorista || '',
+      email: row.email_motorista || '',
+      phone: '',
+      category: (row.categoria as any) || 'economica',
+      avatar: '',
+      rating: Number(row.rating_dado || 0),
+      totalRides: 0,
+      vehicleModel: '',
+      vehiclePlate: '',
+      vehicleColor: '',
+      vehicleYear: 2023,
+      cpf: '',
+      cnh: '',
+      weeklyPlanActive: true,
+      weeklyPlanPrice: 0,
+      status: 'online',
+      earningsToday: Number(row.valor || 0),
+      earningsWeek: Number(row.valor || 0),
+      cnhVerified: true,
+      vehicleVerified: true,
+      criminalRecordClear: true,
+      lat: -23.0842,
+      lng: -47.2118,
+      registrationDate: row.data,
+    },
+    category: (row.categoria as any) || 'economica',
+    pickup: row.origem || {
+      address: row.origem_texto || '',
+      lat: -23.0842,
+      lng: -47.2118,
+    },
+    destination: row.destino || {
+      address: row.destino_texto || '',
+      lat: -23.0805,
+      lng: -47.2050,
+    },
+    distanceKm: 0,
+    durationMinutes: 0,
+    price: Number(row.valor || 0),
+    driverEarnings: Number((Number(row.valor || 0) * 0.85).toFixed(2)),
+    platformFee: Number((Number(row.valor || 0) * 0.15).toFixed(2)),
+    paymentMethod: (row.forma_pagamento as any) || 'pix',
+    paymentStatus: 'paid',
+    status: (row.status as any) || 'completed',
+    confirmationCode: row.codigo_confirmacao || undefined,
+    createdAt: row.data,
+    ratingGivenToDriver: row.rating_dado,
+    ratingComment: row.comentario,
+    issueComment: row.detalhe_problema,
+  };
 }
 
 /**
@@ -537,12 +775,12 @@ export async function saveCorridaSupabase(
   try {
     const payload: SupabaseCorridaRow = {
       id: ride.id,
-      id_passageiro: (ride as any).passengerId || currentUser?.id || 'psg-desconhecido',
+      id_passageiro: (ride as any).passengerId || currentUser?.id || '',
       email_passageiro: ((ride as any).passengerEmail || currentUser?.email || '').toLowerCase().trim(),
       nome_passageiro: ride.passengerName || currentUser?.name || 'Passageiro',
-      id_motorista: ride.driver?.id || 'drv-indaiatuba-1',
+      id_motorista: ride.driver?.id || '',
       email_motorista: (ride.driver?.email || '').toLowerCase().trim(),
-      nome_motorista: ride.driver?.name || 'José da Cruz',
+      nome_motorista: ride.driver?.name || '',
       origem: ride.pickup,
       destino: ride.destination,
       origem_texto: ride.pickup?.address || '',
@@ -581,17 +819,32 @@ export async function saveCorridaSupabase(
   }
 }
 
+export async function getAllCorridasForAdminSupabase(): Promise<Ride[]> {
+  try {
+    const { data, error } = await supabase
+      .from('corridas')
+      .select('*')
+      .order('data', { ascending: false });
+
+    if (error || !data) return [];
+    return (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Busca corridas filtradas estritamente de acordo com quem está logado:
- * - Motorista/Motoboy: só as corridas DELE
- * - Passageiro: só as corridas DELE
- * - Admin (admin@race.com.br): todas as corridas
+ * Busca corridas filtradas estritamente de acordo com quem está logado
  */
 export async function getCorridasSupabase(currentUser: AppUser | null): Promise<Ride[]> {
   if (!currentUser) return [];
 
   const cleanEmail = (currentUser.email || '').toLowerCase().trim();
-  const isAdmin = currentUser.role === 'admin' || currentUser.isAdmin || cleanEmail === 'admin@race.com.br';
+  const isAdmin =
+    currentUser.role === 'admin' ||
+    currentUser.isAdmin ||
+    String(currentUser.tipo || '').toUpperCase() === 'ADM' ||
+    cleanEmail === 'admin@race.com.br';
 
   try {
     let query = supabase.from('corridas').select('*').order('data', { ascending: false });
@@ -600,6 +853,8 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
       const isDriverOrMotoboy =
         currentUser.role === 'driver' ||
         currentUser.role === 'motoboy' ||
+        currentUser.tipo === 'driver' ||
+        currentUser.tipo === 'motoboy' ||
         currentUser.tipo === 'motorista_economico' ||
         currentUser.tipo === 'motorista_confort' ||
         currentUser.tipo === 'motoboy_passageiro' ||
@@ -619,67 +874,7 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
     }
 
     if (!data || data.length === 0) return [];
-
-    // Mapeia para o tipo Ride do app
-    return data.map((row: SupabaseCorridaRow) => ({
-      id: row.id,
-      passengerId: row.id_passageiro,
-      passengerEmail: row.email_passageiro,
-      passengerName: row.nome_passageiro || 'Passageiro',
-      passengerPhone: '',
-      passengerRating: 5.0,
-      driver: {
-        id: row.id_motorista,
-        name: row.nome_motorista || 'José da Cruz',
-        email: row.email_motorista || '',
-        phone: '(19) 98765-4321',
-        category: (row.categoria as any) || 'economica',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
-        rating: 5.0,
-        totalRides: 25,
-        vehicleModel: 'Chevrolet Onix',
-        vehiclePlate: 'RCE9C40',
-        vehicleColor: 'Prata',
-        vehicleYear: 2021,
-        cpf: '123.456.789-00',
-        cnh: '99887766554',
-        weeklyPlanActive: true,
-        weeklyPlanPrice: 0,
-        status: 'online',
-        earningsToday: row.valor,
-        earningsWeek: row.valor,
-        cnhVerified: true,
-        vehicleVerified: true,
-        criminalRecordClear: true,
-        lat: -23.0842,
-        lng: -47.2118,
-        registrationDate: row.data,
-      },
-      category: (row.categoria as any) || 'economica',
-      pickup: row.origem || {
-        address: row.origem_texto || 'Indaiatuba - SP',
-        lat: -23.0842,
-        lng: -47.2118,
-      },
-      destination: row.destino || {
-        address: row.destino_texto || 'Indaiatuba - SP',
-        lat: -23.0805,
-        lng: -47.2050,
-      },
-      distanceKm: 2.5,
-      durationMinutes: 7,
-      price: Number(row.valor),
-      driverEarnings: Number((Number(row.valor) * 0.85).toFixed(2)),
-      platformFee: Number((Number(row.valor) * 0.15).toFixed(2)),
-      paymentMethod: (row.forma_pagamento as any) || 'pix',
-      paymentStatus: 'paid',
-      status: (row.status as any) || 'completed',
-      confirmationCode: row.codigo_confirmacao || undefined,
-      createdAt: row.data,
-      ratingGivenToDriver: row.rating_dado,
-      ratingComment: row.comentario,
-      issueComment: row.detalhe_problema,
-    }));
+    return (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
   } catch (err) {
     console.warn('Erro ao consultar corridas no Supabase:', err);
     return [];
@@ -704,10 +899,10 @@ export async function savePagamentoSupabase(pagamento: {
     const payload: SupabasePagamentoRow = {
       id: pagamento.id || `pag-${Date.now()}`,
       id_motorista: pagamento.id_motorista,
-      nome_motorista: pagamento.nome_motorista || 'Motorista Parceiro',
+      nome_motorista: pagamento.nome_motorista || '',
       email_motorista: (pagamento.email_motorista || '').toLowerCase().trim(),
       valor: pagamento.valor ?? 0.0,
-      tipo: pagamento.tipo || 'repasse_semanal',
+      tipo: pagamento.tipo || 'corrida',
       status: pagamento.status || 'pending',
       data: new Date().toISOString(),
       chave_pix: pagamento.chave_pix || '',
@@ -727,6 +922,25 @@ export async function savePagamentoSupabase(pagamento: {
   }
 }
 
+export async function getAllPagamentosSupabase(): Promise<SupabasePagamentoRow[]> {
+  try {
+    const { data, error } = await supabase
+      .from('pagamentos')
+      .select('*')
+      .order('data', { ascending: false });
+
+    if (error) {
+      const retry = await supabase.from('pagamentos').select('*');
+      if (retry.error || !retry.data) return [];
+      return retry.data as SupabasePagamentoRow[];
+    }
+
+    return (data || []) as SupabasePagamentoRow[];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Busca pagamentos no Supabase
  */
@@ -734,16 +948,23 @@ export async function getPagamentosSupabase(currentUser: AppUser | null): Promis
   if (!currentUser) return [];
 
   const cleanEmail = (currentUser.email || '').toLowerCase().trim();
-  const isAdmin = currentUser.role === 'admin' || currentUser.isAdmin || cleanEmail === 'admin@race.com.br';
+  const isAdmin =
+    currentUser.role === 'admin' ||
+    currentUser.isAdmin ||
+    String(currentUser.tipo || '').toUpperCase() === 'ADM' ||
+    cleanEmail === 'admin@race.com.br';
+
+  if (isAdmin) {
+    return getAllPagamentosSupabase();
+  }
 
   try {
-    let query = supabase.from('pagamentos').select('*').order('data', { ascending: false });
+    const { data, error } = await supabase
+      .from('pagamentos')
+      .select('*')
+      .or(`id_motorista.eq.${currentUser.id},email_motorista.eq.${cleanEmail}`)
+      .order('data', { ascending: false });
 
-    if (!isAdmin) {
-      query = query.or(`id_motorista.eq.${currentUser.id},email_motorista.eq.${cleanEmail}`);
-    }
-
-    const { data, error } = await query;
     if (error) {
       console.warn('Aviso ao consultar pagamentos no Supabase:', error.message);
       return [];

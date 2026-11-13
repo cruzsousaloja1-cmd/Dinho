@@ -109,7 +109,7 @@ export function generateFallbackPixCopiaECola(valor: number, desc = 'Corrida RAC
     formatEMVField('53', '986') +
     formatEMVField('54', valorStr) +
     formatEMVField('58', 'BR') +
-    formatEMVField('59', 'Jose Cruz Sousa') +
+    formatEMVField('59', 'RACE Mobilidade') +
     formatEMVField('60', 'Indaiatuba') +
     formatEMVField('62', additionalData) +
     '6304';
@@ -367,6 +367,8 @@ export async function createAsaasCardPayment(params: {
   };
 }
 
+const inMemoryAsaasStatuses = new Map<string, string>();
+
 /**
  * Verifica o status de uma cobrança no Asaas
  */
@@ -398,8 +400,7 @@ export async function checkAsaasPaymentStatus(paymentId: string): Promise<{
     }
   }
 
-  // Verifica se foi marcado localmente como pago
-  const localStatus = localStorage.getItem(`asaas_status_${paymentId}`);
+  const localStatus = inMemoryAsaasStatuses.get(paymentId);
   if (localStatus === 'RECEIVED' || localStatus === 'CONFIRMED') {
     return { id: paymentId, status: 'RECEIVED', isPaid: true };
   }
@@ -408,18 +409,16 @@ export async function checkAsaasPaymentStatus(paymentId: string): Promise<{
 }
 
 /**
- * Marca pagamento como confirmado localmente (simulação / manual / fallback)
+ * Marca pagamento como confirmado na sessão atual (sem salvar dados de teste em localStorage)
  */
 export function markAsaasPaymentPaidLocally(paymentId: string): void {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(`asaas_status_${paymentId}`, 'CONFIRMED');
-  }
+  inMemoryAsaasStatuses.set(paymentId, 'CONFIRMED');
 }
 
 /**
- * Obtém saldo do Asaas e métricas de repasse de sexta-feira (85%) para o Painel ADM
+ * Obtém saldo do Asaas e métricas de repasse de sexta-feira (85%) a partir dos pagamentos reais do Supabase
  */
-export async function getAsaasFinancialSummary(completedRidesTotal = 1420.00): Promise<AsaasBalanceInfo> {
+export async function getAsaasFinancialSummary(completedRidesTotal = 0): Promise<AsaasBalanceInfo> {
   const apiKey = getAsaasApiKey();
   let liveBalance = 0;
   let isLive = false;
@@ -442,8 +441,7 @@ export async function getAsaasFinancialSummary(completedRidesTotal = 1420.00): P
     }
   }
 
-  // Se a API retornar saldo real, usamos ele como referência; caso contrário, usamos o montante das corridas
-  const totalReceived = isLive ? Math.max(liveBalance, completedRidesTotal) : completedRidesTotal;
+  const totalReceived = Number((completedRidesTotal || 0).toFixed(2));
   const raceCommission15 = Number((totalReceived * 0.15).toFixed(2));
   const repassarSexta85 = Number((totalReceived * 0.85).toFixed(2));
 

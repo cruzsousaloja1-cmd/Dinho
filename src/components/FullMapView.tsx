@@ -94,32 +94,30 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
   // Driver details
   const effectiveDriver: Driver = activeRide?.driver || activeDriver || {
-    id: 'drv-indaiatuba-1',
-    name: 'José da Cruz',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    phone: '(19) 99876-5432',
-    email: 'motorista@race.com.br',
-    cpf: '000.***.***-00',
-    cnh: '01234567890',
+    id: '',
+    name: 'Condutor RACE',
+    avatar: '',
+    phone: '',
+    email: '',
+    cpf: '',
+    cnh: '',
     category: 'economica',
-    vehicleModel: 'Chevrolet Onix',
-    vehiclePlate: 'RCE9C40',
-    vehicleColor: 'Prata',
-    vehicleYear: 2021,
-    rating: 4.98,
-    totalRides: 1420,
+    vehicleModel: '',
+    vehiclePlate: '',
+    vehicleColor: '',
+    vehicleYear: 2023,
+    rating: 0,
+    totalRides: 0,
     status: 'online',
     lat: startCarLat,
     lng: startCarLng,
     weeklyPlanActive: true,
-    weeklyFeePaidAt: new Date().toISOString(),
-    weeklyFeeExpiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
-    earningsToday: 180,
-    earningsWeek: 1240,
+    earningsToday: 0,
+    earningsWeek: 0,
     cnhVerified: true,
     vehicleVerified: true,
     criminalRecordClear: true,
-    registrationDate: '2024-01-01',
+    registrationDate: '',
   };
 
   // Rota real consultada via OSRM com ruas e esquinas de Indaiatuba
@@ -729,7 +727,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-700 font-medium truncate">
-                  {effectiveDriver.vehicleModel || 'Chevrolet Onix'} • <strong className="font-mono text-slate-950 font-bold">{effectiveDriver.vehiclePlate || 'RCE9C40'}</strong> • {effectiveDriver.vehicleColor || 'Prata'}
+                  {effectiveDriver.vehicleModel || 'Veículo'} {effectiveDriver.vehiclePlate ? `• ${effectiveDriver.vehiclePlate}` : ''} {effectiveDriver.vehicleColor ? `• ${effectiveDriver.vehicleColor}` : ''}
                 </p>
               </div>
             </div>
@@ -833,18 +831,20 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
           {/* Linha de Botões Pequenos (pointer-events-auto apenas nos botões) */}
           <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
-            <a
-              href={`https://wa.me/55${(effectiveDriver.phone || '19998765432').replace(/\D/g, '')}?text=${encodeURIComponent(
-                `Olá ${effectiveDriver.name}! Sou seu passageiro da corrida RACE. Estou te acompanhando pelo mapa.`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="pointer-events-auto flex-1 py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-bold text-[11px] sm:text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all cursor-pointer border border-emerald-500"
-              title="Ligar para motorista no WhatsApp"
-            >
-              <Phone className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">WhatsApp</span>
-            </a>
+            {effectiveDriver.phone && (
+              <a
+                href={`https://wa.me/55${effectiveDriver.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                  `Olá ${effectiveDriver.name}! Sou seu passageiro da corrida RACE. Estou te acompanhando pelo mapa.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="pointer-events-auto flex-1 py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-bold text-[11px] sm:text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all cursor-pointer border border-emerald-500"
+                title="Ligar para motorista no WhatsApp"
+              >
+                <Phone className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">WhatsApp</span>
+              </a>
+            )}
 
             <button
               type="button"

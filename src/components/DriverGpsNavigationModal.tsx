@@ -90,35 +90,34 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     ride?.category === 'moto_passageiro' ||
     ride?.category === 'moto_entrega';
 
-  // Dados completos da corrida aceita
+  // Dados reais da corrida aceita
   const effectiveRide: Ride = ride || {
-    id: `RCE-${Math.floor(1000 + Math.random() * 9000)}`,
-    passengerName: 'Marina Gonçalves de Castro',
-    passengerPhone: '(19) 99887-1122',
-    passengerAvatar:
-      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
-    passengerRating: 5.0,
+    id: '',
+    passengerName: 'Passageiro',
+    passengerPhone: '',
+    passengerAvatar: '',
+    passengerRating: 0,
     driver,
     category: driver.category || 'economica',
     pickup: {
-      address: 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba - SP',
+      address: '',
       lat: -23.0955,
       lng: -47.2250,
     },
     destination: {
-      address: 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba - SP',
+      address: '',
       lat: -23.0805,
       lng: -47.2050,
     },
-    distanceKm: 3.2,
-    durationMinutes: 7,
-    price: 28.5,
-    driverEarnings: 24.23,
-    platformFee: 4.27,
+    distanceKm: 0,
+    durationMinutes: 0,
+    price: 0,
+    driverEarnings: 0,
+    platformFee: 0,
     paymentMethod: 'pix',
-    paymentStatus: 'paid',
-    status: 'in_progress',
-    createdAt: new Date().toISOString(),
+    paymentStatus: 'pending',
+    status: 'idle',
+    createdAt: '',
   };
 
   const startCarLat = driver.lat || -23.084087;
@@ -795,10 +794,10 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
   const minutesLeft = Math.max(Math.ceil(secondsRemaining / 60), 1);
   const kmLeftFormatted = (distanceRemainingMeters / 1000).toFixed(1).replace('.', ',');
-  const totalValue = effectiveRide.price || 28.5;
+  const totalValue = effectiveRide.price || 0;
   const driverNetValue = Number((totalValue * 0.85).toFixed(2));
   const raceCommissionValue = Number((totalValue * 0.15).toFixed(2));
-  const cleanPhone = (effectiveRide.passengerPhone || '19998871122').replace(/\D/g, '');
+  const cleanPhone = (effectiveRide.passengerPhone || '').replace(/\D/g, '');
   const activeTargetAddress =
     tripPhase === 'to_destination' ? effectiveRide.destination.address : effectiveRide.pickup.address;
 
@@ -909,14 +908,17 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                 className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
                 title="Toque ou arraste para cima para ver detalhes completos"
               >
-                <img
-                  src={
-                    effectiveRide.passengerAvatar ||
-                    'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
-                  }
-                  alt={effectiveRide.passengerName}
-                  className="w-11 h-11 rounded-full object-cover border-2 border-emerald-500 shrink-0"
-                />
+                {effectiveRide.passengerAvatar ? (
+                  <img
+                    src={effectiveRide.passengerAvatar}
+                    alt={effectiveRide.passengerName}
+                    className="w-11 h-11 rounded-full object-cover border-2 border-emerald-500 shrink-0"
+                  />
+                ) : (
+                  <div className="w-11 h-11 rounded-full bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shrink-0 flex items-center justify-center font-heading font-black text-base">
+                    {(effectiveRide.passengerName || 'P').charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-heading font-black text-sm text-slate-950 truncate">
@@ -1070,16 +1072,19 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
             <div className="flex items-center justify-between gap-2.5 bg-slate-50 border border-slate-200 rounded-2xl p-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="relative shrink-0">
-                  <img
-                    src={
-                      effectiveRide.passengerAvatar ||
-                      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
-                    }
-                    alt={effectiveRide.passengerName}
-                    className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shadow-sm"
-                  />
+                  {effectiveRide.passengerAvatar ? (
+                    <img
+                      src={effectiveRide.passengerAvatar}
+                      alt={effectiveRide.passengerName}
+                      className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shadow-sm"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-900 border-2 border-[#ff6a00] shadow-sm flex items-center justify-center font-heading font-black text-lg">
+                      {(effectiveRide.passengerName || 'P').charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-[10px] px-1.5 rounded-full border border-slate-900">
-                    ★ {(effectiveRide.passengerRating || 5.0).toFixed(1)}
+                    ★ {(effectiveRide.passengerRating || 0).toFixed(1)}
                   </span>
                 </div>
                 <div className="min-w-0">

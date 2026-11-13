@@ -3,6 +3,7 @@ import { AppUser, Driver, VehicleCategory } from '../types';
 import { WEEKLY_FEE } from '../config/pricing';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { saveUserAccount } from '../services/userService';
 
 interface DriverRegisterViewProps {
   onRegisterSuccess: (user: AppUser, newDriver: Driver) => void;
@@ -57,19 +58,19 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
     const newDriver: Driver = {
       id: `drv-${Date.now().toString().slice(-5)}`,
       name: cleanName,
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      avatar: '',
       phone: cleanPhone,
       email: cleanEmail,
-      cpf: '000.***.***-00',
+      cpf: '',
       cnh: `${cleanCnh} - Categoria B (EAR)`,
       category,
       vehicleModel: cleanModel,
       vehiclePlate: cleanPlate,
-      vehicleColor: 'Preto',
+      vehicleColor: '',
       vehicleYear: parseInt(vehicleYear, 10) || 2024,
-      rating: 5.0,
+      rating: 0,
       totalRides: 0,
-      status: 'online', // Sem taxa para trabalhar, ativo imediatamente
+      status: 'online',
       lat: -23.0903,
       lng: -47.2180,
       weeklyPlanActive: true,
@@ -94,47 +95,25 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
       role: 'driver',
       tipo: 'driver',
       avatar: newDriver.avatar,
-      rating: 5.0,
+      rating: 0,
       password: password,
       driverData: newDriver,
     };
 
-    // Salvar no localStorage: race_current_user, race_users, race_registered_drivers
-    try {
-      localStorage.setItem('race_current_user', JSON.stringify({
-        id: appUser.id,
-        name: appUser.name,
-        email: appUser.email,
-        phone: appUser.phone,
-        tipo: 'driver',
-        role: 'driver',
-        avatar: appUser.avatar,
-        driverData: newDriver,
-      }));
-
-      const existingUsers = JSON.parse(localStorage.getItem('race_users') || '[]');
-      const updatedUsers = [
-        {
-          id: appUser.id,
-          name: appUser.name,
-          email: appUser.email,
-          phone: appUser.phone,
-          tipo: 'driver',
-          role: 'driver',
-          password: password,
-          createdAt: new Date().toISOString(),
-        },
-        ...existingUsers.filter((u: any) => u.email?.toLowerCase() !== cleanEmail),
-      ];
-      localStorage.setItem('race_users', JSON.stringify(updatedUsers));
-
-      const existingDriversList = JSON.parse(localStorage.getItem('race_registered_drivers') || '[]');
-      const updatedDrivers = [
-        newDriver,
-        ...existingDriversList.filter((d: any) => d.email?.toLowerCase() !== cleanEmail),
-      ];
-      localStorage.setItem('race_registered_drivers', JSON.stringify(updatedDrivers));
-    } catch {}
+    saveUserAccount({
+      id: appUser.id,
+      name: appUser.name,
+      email: appUser.email,
+      phone: appUser.phone,
+      role: 'driver',
+      tipo: 'driver',
+      placa: cleanPlate,
+      password,
+      avatar: '',
+      rating: 0,
+      driverData: newDriver,
+      createdAt: new Date().toISOString(),
+    }, true);
 
     try {
       confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });

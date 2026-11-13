@@ -109,12 +109,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'money' | 'race_pay'>('pix');
-  const [pickupInput, setPickupInput] = useState(
-    pickup?.address || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP'
-  );
-  const [destInput, setDestInput] = useState(
-    destination?.address || 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba-SP'
-  );
+  const [pickupInput, setPickupInput] = useState(pickup?.address || '');
+  const [destInput, setDestInput] = useState(destination?.address || '');
 
   // Estados do Fluxo do Passageiro:
   // 1. 'search': Entrada dos endereços de embarque e destino com número + botão "Buscar corrida"
@@ -151,7 +147,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   // Rating modal state
   const [ratingVal, setRatingVal] = useState(5);
   const [ratingComment, setRatingComment] = useState('');
-  const [ratingCompliments, setRatingCompliments] = useState<string[]>(['Direção Segura', 'Carro Limpo']);
+  const [ratingCompliments, setRatingCompliments] = useState<string[]>([]);
 
   const searchTimeoutRef = useRef<any>(null);
 
@@ -317,53 +313,47 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       lng: -47.2050,
     };
 
-    // Find a matching driver or use default with complete vehicle details
+    // Find a matching real online driver from Supabase
     const baseMatched = availableDrivers.find(
       (d) => d.category === finalCategory && d.status === 'online'
-    ) || availableDrivers[0];
+    ) || availableDrivers.find((d) => d.status === 'online') || availableDrivers[0];
 
     const matchedDriver: Driver = {
-      id: baseMatched?.id || (isMoto ? 'moto-indaiatuba-1' : 'drv-indaiatuba-1'),
-      name: isMoto ? (baseMatched?.name || 'Lucas Souza') : 'José da Cruz',
-      avatar: isMoto
-        ? (baseMatched?.avatar || 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=150&auto=format&fit=crop&q=80')
-        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-      phone: baseMatched?.phone || '(19) 99876-5432',
-      email: baseMatched?.email || 'motorista@race.com.br',
-      cpf: baseMatched?.cpf || '000.***.***-00',
-      cnh: baseMatched?.cnh || '01234567890',
+      id: baseMatched?.id || '',
+      name: baseMatched?.name || (isMoto ? 'Motoboy RACE' : 'Motorista RACE'),
+      avatar: baseMatched?.avatar || '',
+      phone: baseMatched?.phone || '',
+      email: baseMatched?.email || '',
+      cpf: baseMatched?.cpf || '',
+      cnh: baseMatched?.cnh || '',
       category: finalCategory,
-      vehicleModel: isMoto ? 'Honda CG 160 Fan' : 'Chevrolet Onix',
-      vehiclePlate: isMoto ? 'MTO-1A23' : 'RCE9C40',
-      vehicleColor: isMoto ? 'Vermelha' : 'Prata',
-      vehicleYear: isMoto ? 2023 : 2021,
-      vehiclePhoto: isMoto
-        ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80'
-        : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80',
-      rating: baseMatched?.rating || 4.98,
-      totalRides: baseMatched?.totalRides || 1420,
+      vehicleModel: baseMatched?.vehicleModel || (isMoto ? 'Motocicleta' : 'Veículo cadastrado'),
+      vehiclePlate: baseMatched?.vehiclePlate || '',
+      vehicleColor: baseMatched?.vehicleColor || '',
+      vehicleYear: baseMatched?.vehicleYear || 2023,
+      vehiclePhoto: baseMatched?.vehiclePhoto || '',
+      rating: baseMatched?.rating || 0,
+      totalRides: baseMatched?.totalRides || 0,
       status: 'online',
       lat: baseMatched?.lat || -23.084087,
       lng: baseMatched?.lng || -47.212027,
       weeklyPlanActive: true,
-      weeklyFeePaidAt: new Date().toISOString(),
-      weeklyFeeExpiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
-      earningsToday: 180,
-      earningsWeek: 1240,
+      earningsToday: 0,
+      earningsWeek: 0,
       cnhVerified: true,
       vehicleVerified: true,
       criminalRecordClear: true,
-      registrationDate: '2024-01-01',
+      registrationDate: baseMatched?.registrationDate || '',
     };
 
     const newRide: Ride = {
       id: `RCE-${Math.floor(1000 + Math.random() * 9000)}`,
       passengerId: currentUser?.id,
       passengerEmail: currentUser?.email,
-      passengerName: currentUser?.name || 'Você (Passageiro RACE)',
-      passengerPhone: currentUser?.whatsapp || currentUser?.phone || '(19) 99887-1122',
-      passengerAvatar: currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      passengerRating: currentUser?.rating || 5.0,
+      passengerName: currentUser?.name || 'Passageiro RACE',
+      passengerPhone: currentUser?.whatsapp || currentUser?.phone || '',
+      passengerAvatar: currentUser?.avatar || '',
+      passengerRating: currentUser?.rating || 0,
       driver: matchedDriver,
       category: finalCategory,
       pickup: finalPickup,
@@ -653,11 +643,17 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 w-full sm:w-auto">
-            <img
-              src={activeRide.driver?.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'}
-              alt={activeRide.driver?.name}
-              className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
-            />
+            {activeRide.driver?.avatar ? (
+              <img
+                src={activeRide.driver.avatar}
+                alt={activeRide.driver.name}
+                className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] shrink-0 flex items-center justify-center font-heading font-black text-lg">
+                {(activeRide.driver?.name || 'M').charAt(0).toUpperCase()}
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />

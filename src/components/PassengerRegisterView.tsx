@@ -58,12 +58,12 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       phone: cleanPhone,
       role: 'passenger',
       tipo: 'passenger',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      rating: 5.0,
+      avatar: '',
+      rating: 0,
       password: password,
     };
 
-    // Salva no localStorage com ID único race_user_${email} (sem logar automaticamente)
+    // Salva direto no Supabase (sem logar automaticamente)
     saveUserAccount({
       id: newPassenger.id,
       name: newPassenger.name,
@@ -73,8 +73,8 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       tipo: 'passenger',
       placa: '',
       password: password,
-      avatar: newPassenger.avatar,
-      rating: 5.0,
+      avatar: '',
+      rating: 0,
       rides: [],
       createdAt: new Date().toISOString(),
     }, false);

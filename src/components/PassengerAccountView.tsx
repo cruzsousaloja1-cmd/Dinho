@@ -18,7 +18,7 @@ import {
   Camera
 } from 'lucide-react';
 import { reverseGeocodeCoords } from '../services/addressSearchService';
-import { saveUserAccount, getUserAccount } from '../services/userService';
+import { saveUserAccount } from '../services/userService';
 
 interface PassengerAccountViewProps {
   currentUser: AppUser | null;
@@ -45,9 +45,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
 }) => {
   const [gpsStatus, setGpsStatus] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
-  const [userAvatar, setUserAvatar] = useState<string>(
-    currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
-  );
+  const [userAvatar, setUserAvatar] = useState<string>(currentUser?.avatar || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,27 +59,19 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         setUserAvatar(base64);
 
         if (currentUser && currentUser.email) {
-          const userAcc = getUserAccount(currentUser.email);
-          if (userAcc) {
-            saveUserAccount({
-              ...userAcc,
-              avatar: base64,
-            }, true);
-          } else {
-            saveUserAccount({
-              id: currentUser.id,
-              name: currentUser.name,
-              email: currentUser.email,
-              phone: currentUser.phone,
-              whatsapp: currentUser.whatsapp,
-              login: currentUser.login,
-              role: currentUser.role,
-              tipo: currentUser.tipo,
-              avatar: base64,
-              rating: currentUser.rating || 5.0,
-              createdAt: new Date().toISOString(),
-            }, true);
-          }
+          saveUserAccount({
+            id: currentUser.id,
+            name: currentUser.name,
+            email: currentUser.email,
+            phone: currentUser.phone,
+            whatsapp: currentUser.whatsapp,
+            login: currentUser.login,
+            role: currentUser.role,
+            tipo: currentUser.tipo,
+            avatar: base64,
+            rating: currentUser.rating || 0,
+            createdAt: new Date().toISOString(),
+          }, true);
         }
 
         if (onUpdateAvatar) {
@@ -97,9 +87,9 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   );
 
   const displayName = currentUser?.name || 'Passageiro RACE';
-  const displayEmail = currentUser?.email || 'passageiro@race.com.br';
-  const displayPhone = currentUser?.whatsapp || currentUser?.phone || '(19) 99887-1122';
-  const displayLogin = currentUser?.login || currentUser?.email || 'passageiro.indaiatuba';
+  const displayEmail = currentUser?.email || '';
+  const displayPhone = currentUser?.whatsapp || currentUser?.phone || 'Não informado';
+  const displayLogin = currentUser?.login || currentUser?.email || '';
 
   // Atualizar endereço com GPS Real ou Indaiatuba
   const handleUpdateGps = () => {
@@ -167,11 +157,17 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             className="relative group cursor-pointer shrink-0"
           >
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-3 border-[#ff6a00] overflow-hidden shadow-lg bg-zinc-900 ring-4 ring-[#ff6a00]/20 flex items-center justify-center">
-              <img
-                src={userAvatar}
-                alt={displayName}
-                className="w-full h-full object-cover"
-              />
+              {userAvatar ? (
+                <img
+                  src={userAvatar}
+                  alt={displayName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="font-heading font-black text-2xl sm:text-3xl text-[#ff6a00]">
+                  {displayName.charAt(0).toUpperCase()}
+                </span>
+              )}
             </div>
             <button
               type="button"
@@ -211,7 +207,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             <div className="flex items-center gap-3 mt-1 text-xs text-slate-600 font-medium">
               <span className="flex items-center gap-1 text-amber-600 font-bold">
                 <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                {(currentUser?.rating || 5.0).toFixed(1)} Avaliação
+                {(currentUser?.rating || 0).toFixed(1)} Avaliação
               </span>
               <span>•</span>
               <span className="font-mono text-slate-500">ID: {currentUser?.id || 'RCE-USR'}</span>

@@ -3,8 +3,8 @@ import { WEEKLY_FEE, WEEKLY_FEE_TEXT } from '../config/pricing';
 
 export const DEFAULT_NEW_DRIVER: Driver = {
   id: '',
-  name: 'Novo Motorista',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  name: '',
+  avatar: '',
   phone: '',
   email: '',
   cpf: '',
@@ -12,9 +12,9 @@ export const DEFAULT_NEW_DRIVER: Driver = {
   category: 'economica',
   vehicleModel: '',
   vehiclePlate: '',
-  vehicleColor: 'Preto',
+  vehicleColor: '',
   vehicleYear: 2024,
-  rating: 5.0,
+  rating: 0,
   totalRides: 0,
   status: 'offline',
   lat: -23.0903,
@@ -26,10 +26,11 @@ export const DEFAULT_NEW_DRIVER: Driver = {
   weeklyPlanPrice: WEEKLY_FEE,
   earningsToday: 0,
   earningsWeek: 0,
+  walletBalance: 0,
   cnhVerified: false,
   vehicleVerified: false,
   criminalRecordClear: false,
-  registrationDate: new Date().toISOString().split('T')[0],
+  registrationDate: '',
 };
 
 export const INITIAL_DRIVERS: Driver[] = [];
@@ -46,23 +47,6 @@ export const POPULAR_LOCATIONS = [
   { label: 'Rodoviária de Indaiatuba - Jardim Belo Horizonte', lat: -23.0760, lng: -47.2070 },
 ];
 
-export const INITIAL_NOTIFICATIONS: PushNotification[] = [
-  {
-    id: 'notif-1',
-    title: '🚀 RACE: 85% dos Ganhos são Seus!',
-    message: 'Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar. Repasse toda sexta-feira.',
-    time: 'Há 5 minutos',
-    type: 'financial',
-    read: false,
-  },
-  {
-    id: 'notif-2',
-    title: '🛡️ Suporte 24h Ativo',
-    message: 'Nossa central de telemetria e segurança está monitorando todas as rotas com GPS ao vivo.',
-    time: 'Há 25 minutos',
-    type: 'safety',
-    read: false,
-  },
-];
+export const INITIAL_NOTIFICATIONS: PushNotification[] = [];
 
 export const INITIAL_TICKETS: SupportTicket[] = [];

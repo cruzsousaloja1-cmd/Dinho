@@ -99,27 +99,20 @@ export function formatBRL(value: number): string {
   }).format(value);
 }
 
+let lastGeneratedConfirmationCode = '';
+
 /**
  * Gera um código único de 4 dígitos numéricos (ex: 4827) para confirmação da corrida.
  * Garante que o código nunca repita o da corrida imediatamente anterior.
  */
 export function generateUniqueRideConfirmationCode(): string {
-  let lastCode = '';
-  try {
-    lastCode = localStorage.getItem('race_last_confirmation_code') || '';
-  } catch {}
-
   let code = '';
   let guard = 0;
   do {
     code = String(Math.floor(1000 + Math.random() * 9000));
     guard += 1;
-  } while (code === lastCode && guard < 20);
+  } while (code === lastGeneratedConfirmationCode && guard < 20);
 
-  try {
-    localStorage.setItem('race_last_confirmation_code', code);
-  } catch {}
-
-  console.log('[RACE] Código de confirmação gerado:', code);
+  lastGeneratedConfirmationCode = code;
   return code;
 }

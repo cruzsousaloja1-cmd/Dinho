@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
-import { verifyUserLoginAsync } from '../services/userService';
+import { verifyUserLoginAsync, saveUserAccount } from '../services/userService';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -54,10 +54,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // Driver-specific fields
   const [driverCategory, setDriverCategory] = useState<VehicleCategory>('confort');
-  const [vehicleModel, setVehicleModel] = useState('Toyota Corolla Sedã');
-  const [vehicleYear, setVehicleYear] = useState('2024');
-  const [vehiclePlate, setVehiclePlate] = useState('RCE9C40');
-  const [cnh, setCnh] = useState('09283719280');
+  const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleYear, setVehicleYear] = useState('');
+  const [vehiclePlate, setVehiclePlate] = useState('');
+  const [cnh, setCnh] = useState('');
 
   // Validation & Feedback
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -151,18 +151,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       createdDriver = {
         id: `drv-${Math.floor(100 + Math.random() * 900)}`,
         name: name || (email.split('@')[0].toUpperCase()),
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        phone: phone || '(11) 99887-1122',
+        avatar: '',
+        phone: phone || '',
         email,
         password,
-        cpf: '345.890.123-45',
-        cnh: `${cnh} (EAR Aprovado)`,
+        cpf: '',
+        cnh: cnh ? `${cnh} (EAR Aprovado)` : '',
         category: finalCategory,
         vehicleModel,
         vehiclePlate: vehiclePlate.toUpperCase(),
-        vehicleColor: 'Prata',
+        vehicleColor: '',
         vehicleYear: parseInt(vehicleYear, 10) || 2023,
-        rating: 5.0,
+        rating: 0,
         totalRides: 0,
         status: 'online',
         lat: -23.5615,
@@ -186,42 +186,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       id: `usr-${Date.now()}`,
       name: name || (email.split('@')[0]),
       email,
-      phone: phone || '(11) 99887-1122',
+      phone: phone || '',
       role,
       tipo: userTipo,
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      rating: 5.0,
+      avatar: '',
+      rating: 0,
       driverData: createdDriver,
     };
 
-    try {
-      localStorage.setItem('race_current_user', JSON.stringify({
-        id: appUser.id,
-        name: appUser.name,
-        email: appUser.email,
-        phone: appUser.phone,
-        tipo: userTipo,
-        role: appUser.role,
-        avatar: appUser.avatar,
-        driverData: createdDriver,
-      }));
-
-      const existingUsers = JSON.parse(localStorage.getItem('race_users') || '[]');
-      const updatedUsers = [
-        {
-          id: appUser.id,
-          name: appUser.name,
-          email: appUser.email,
-          phone: appUser.phone,
-          tipo: userTipo,
-          role: appUser.role,
-          password,
-          createdAt: new Date().toISOString(),
-        },
-        ...existingUsers.filter((u: any) => u.email?.toLowerCase() !== email.toLowerCase()),
-      ];
-      localStorage.setItem('race_users', JSON.stringify(updatedUsers));
-    } catch {}
+    saveUserAccount({
+      id: appUser.id,
+      name: appUser.name,
+      email: appUser.email,
+      phone: appUser.phone,
+      role: appUser.role,
+      tipo: userTipo,
+      placa: createdDriver?.vehiclePlate || '',
+      password,
+      avatar: '',
+      rating: 0,
+      driverData: createdDriver,
+      createdAt: new Date().toISOString(),
+    }, true);
 
     setTimeout(() => {
       setIsSubmitting(false);

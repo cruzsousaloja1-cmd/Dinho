@@ -31,22 +31,22 @@ import { FullMapView } from './components/FullMapView';
 import { PassengerOptionsView } from './components/PassengerOptionsView';
 import { PassengerAccountView } from './components/PassengerAccountView';
 import { RatingModal } from './components/RatingModal';
-import { saveDriverReview } from './services/reviewService';
+import { saveDriverReview, clearReviewsCache } from './services/reviewService';
 import { AppUser } from './types';
 import { AlertTriangle, CheckCircle2, X, QrCode } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { WEEKLY_FEE, WEEKLY_FEE_TEXT, COMMISSION, WEEKLY_FEE_BADGE } from './config/pricing';
 import { 
-  getIsolatedUserRides, 
+  saveSessionUser,
+  getSessionUser,
+  mapSupabaseRowToAppUser,
   saveIsolatedRide, 
   saveUserAccount, 
-  getUserAccount, 
   normalizeEmail,
   ADMIN_EMAIL,
   deleteUserAccount,
   deleteAllUserAccounts,
-  activateAllDriverAccounts,
-  getAllRegisteredPassengers
+  activateAllDriverAccounts
 } from './services/userService';
 import {
   notifyDriverAccepted,
@@ -56,126 +56,46 @@ import {
 import {
   getDriverBalance,
   addDriverEarnings,
-  checkMondayAutoDeduction
+  clearWalletMemoryCache
 } from './services/walletService';
-import { getCorridasSupabase, saveCorridaSupabase, savePagamentoSupabase } from './supabase';
+import {
+  getCorridasSupabase,
+  saveCorridaSupabase,
+  savePagamentoSupabase,
+  getUsuarioSupabase,
+  getAllDriversFromSupabase,
+  getAllPassengersFromSupabase,
+  purgeLegacyTestLocalStorage
+} from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
 
 export default function App() {
   // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
   const [activeTab, setActiveTab] = useState<TabType>('driver_portal');
   const [isFullMapOpen, setIsFullMapOpen] = useState(false);
-  const [drivers, setDrivers] = useState<Driver[]>(() => {
-    try {
-      const stored = localStorage.getItem('race_registered_drivers');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (
-          Array.isArray(parsed) &&
-          !parsed.some((d: any) => d.email?.includes('raceapp.com.br') || d.id === 'drv-01')
-        ) {
-          return parsed;
-        }
-      }
-    } catch {}
-    return INITIAL_DRIVERS;
-  });
-
-  // currentDriver carrega estritamente os dados do motorista autenticado (ou padrão novo)
-  const [currentDriver, setCurrentDriver] = useState<Driver>(() => {
-    try {
-      const storedUser = localStorage.getItem('race_current_user');
-      if (storedUser) {
-        const u = JSON.parse(storedUser);
-        if (u && u.driverData) return u.driverData;
-        if (u && u.email) {
-          const acc = getUserAccount(u.email);
-          if (acc && acc.driverData) return acc.driverData;
-        }
-      }
-    } catch {}
-    return DEFAULT_NEW_DRIVER;
-  });
-  const [ridesHistory, setRidesHistory] = useState<Ride[]>(() => {
-    try {
-      const stored = localStorage.getItem('race_rides_history');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_RIDES_HISTORY;
-  });
-  const [activeRide, setActiveRide] = useState<Ride | null>(() => {
-    try {
-      const stored = localStorage.getItem('race_active_ride');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && parsed.id && parsed.status !== 'completed') return parsed;
-      }
-    } catch {}
-    return null;
-  });
-
-  useEffect(() => {
-    try {
-      if (activeRide && activeRide.status !== 'completed') {
-        localStorage.setItem('race_active_ride', JSON.stringify(activeRide));
-      } else {
-        localStorage.removeItem('race_active_ride');
-      }
-    } catch {}
-  }, [activeRide]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [currentDriver, setCurrentDriver] = useState<Driver>(DEFAULT_NEW_DRIVER);
+  const [ridesHistory, setRidesHistory] = useState<Ride[]>([]);
+  const [activeRide, setActiveRide] = useState<Ride | null>(null);
   const [completedRideForRating, setCompletedRideForRating] = useState<Ride | null>(null);
   const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
 
-  // Registered Passengers State
-  const [passengers, setPassengers] = useState<AppUser[]>(() => {
-    try {
-      const stored = localStorage.getItem('race_registered_passengers');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {}
-    return [];
-  });
+  // Registered Passengers State (100% Supabase)
+  const [passengers, setPassengers] = useState<AppUser[]>([]);
 
-  // 1. Authentication & Session - Auto-login persistente via localStorage
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
-    try {
-      const stored = localStorage.getItem('race_current_user');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && parsed.email && !parsed.email.includes('raceapp.com.br')) {
-          return parsed;
-        }
-      }
-    } catch {}
-    return null;
-  });
+  // 1. Authentication & Session (validado online no Supabase)
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [loginSuccessBanner, setLoginSuccessBanner] = useState<string | null>(null);
 
-  // Map and Route States (Foco exclusivo em Indaiatuba - SP com número)
-  const [pickup, setPickup] = useState<LocationPoint | null>({
-    address: 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP',
-    lat: -23.0842,
-    lng: -47.2118,
-  });
-  const [destination, setDestination] = useState<LocationPoint | null>({
-    address: 'Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba-SP',
-    lat: -23.0805,
-    lng: -47.2050,
-  });
+  // Map and Route States
+  const [pickup, setPickup] = useState<LocationPoint | null>(null);
+  const [destination, setDestination] = useState<LocationPoint | null>(null);
   const [mapSelectionMode, setMapSelectionMode] = useState<'pickup' | 'destination' | null>(null);
 
-  // Animated driver position along simulated route (Início na Av. Presidente Vargas, Indaiatuba)
-  const [driverPosition, setDriverPosition] = useState<{ lat: number; lng: number } | undefined>({
-    lat: -23.0842,
-    lng: -47.2118,
-  });
+  // Driver live position during active ride
+  const [driverPosition, setDriverPosition] = useState<{ lat: number; lng: number } | undefined>(undefined);
 
   // Modals & Push Notifications
   const [isSupportOpen, setIsSupportOpen] = useState(false);
@@ -185,72 +105,93 @@ export default function App() {
   const [notifications, setNotifications] = useState<PushNotification[]>(INITIAL_NOTIFICATIONS);
   const [currentToast, setCurrentToast] = useState<PushNotification | null>(null);
 
-
-  // 2. Auto-login no App.tsx: verificar localStorage.getItem('race_current_user') e restaurar sessão ativa
+  // 2. Startup: limpar resquícios antigos de localStorage e validar sessão ativa diretamente no Supabase
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('race_current_user');
-      if (stored) {
-        const parsed: AppUser = JSON.parse(stored);
-        if (parsed && parsed.email && !parsed.email.includes('raceapp.com.br')) {
-          setCurrentUser(parsed);
+    purgeLegacyTestLocalStorage(true);
 
-          // Se for admin, direciona para o painel de administração
-          if (
-            parsed.role === 'admin' ||
-            parsed.isAdmin ||
-            String(parsed.tipo || '').toUpperCase() === 'ADM' ||
-            parsed.email.toLowerCase() === 'admin@race.com.br'
-          ) {
-            setActiveTab('admin');
-            return;
-          }
-
-          const isDriverOrMotoboy =
-            parsed.tipo === 'driver' ||
-            parsed.tipo === 'motoboy' ||
-            parsed.role === 'driver' ||
-            parsed.role === 'motoboy' ||
-            parsed.tipo === 'motorista_economico' ||
-            parsed.tipo === 'motorista_confort' ||
-            parsed.tipo === 'motoboy_passageiro' ||
-            parsed.tipo === 'motoboy_entregas';
-
-          if (isDriverOrMotoboy) {
-            // Restaura dados ISOLADOS deste motorista/motoboy
-            const userAcc = getUserAccount(parsed.email);
-            const matched = userAcc?.driverData || parsed.driverData;
-            if (matched) {
-              const currentBalance = getDriverBalance(matched.id, matched.walletBalance || 0);
-
-              const updatedMatched: Driver = {
-                ...matched,
-                walletBalance: currentBalance,
-                weeklyPlanActive: true,
-                status: 'online',
-              };
-              setCurrentDriver(updatedMatched);
-              setLoginSuccessBanner(
-                `Bem-vindo(a) de volta, ${matched.name}! Você recebe 85% de cada corrida sem mensalidade. Central de Corridas pronta para receber chamados.`
-              );
-            }
-            setActiveTab('driver_portal');
-          } else {
-            setActiveTab('rides');
-          }
+    let active = true;
+    const initFromSupabase = async () => {
+      try {
+        const [cloudDrivers, cloudPassengers] = await Promise.all([
+          getAllDriversFromSupabase(),
+          getAllPassengersFromSupabase(),
+        ]);
+        if (active) {
+          setDrivers(cloudDrivers);
+          setPassengers(cloudPassengers);
         }
+      } catch {}
+
+      const session = getSessionUser();
+      if (!session || !session.email) return;
+
+      try {
+        const cloudRow = await getUsuarioSupabase(session.email);
+        if (!active) return;
+
+        if (!cloudRow || cloudRow.status === 'bloqueado') {
+          // Usuário não existe mais no Supabase (tabelas zeradas) ou está bloqueado -> voltar para tela inicial
+          saveSessionUser(null);
+          setCurrentUser(null);
+          setCurrentDriver(DEFAULT_NEW_DRIVER);
+          return;
+        }
+
+        const { user: hydratedUser, driver: hydratedDriver } = mapSupabaseRowToAppUser(cloudRow);
+        setCurrentUser(hydratedUser);
+        saveSessionUser(hydratedUser);
+
+        if (
+          hydratedUser.role === 'admin' ||
+          hydratedUser.isAdmin ||
+          String(hydratedUser.tipo || '').toUpperCase() === 'ADM' ||
+          hydratedUser.email.toLowerCase() === ADMIN_EMAIL
+        ) {
+          setActiveTab('admin');
+          return;
+        }
+
+        const isDriverOrMotoboy =
+          hydratedUser.role === 'driver' ||
+          hydratedUser.role === 'motoboy' ||
+          hydratedUser.tipo === 'motorista_economico' ||
+          hydratedUser.tipo === 'motorista_confort' ||
+          hydratedUser.tipo === 'motoboy_passageiro' ||
+          hydratedUser.tipo === 'motoboy_entregas';
+
+        if (isDriverOrMotoboy && hydratedDriver) {
+          const currentBalance = getDriverBalance(hydratedDriver.id, hydratedDriver.walletBalance || 0);
+          const updatedMatched: Driver = {
+            ...hydratedDriver,
+            walletBalance: currentBalance,
+            weeklyPlanActive: true,
+            status: 'online',
+          };
+          setCurrentDriver(updatedMatched);
+          setActiveTab('driver_portal');
+        } else {
+          setActiveTab('rides');
+        }
+      } catch {
+        // Se offline momentaneamente, mantém sessão mínima sem dados mockados
       }
-    } catch {}
+    };
+
+    initFromSupabase();
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Sincronizar corridas isoladas da nuvem Supabase para o usuário logado
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setRidesHistory([]);
+      return;
+    }
     getCorridasSupabase(currentUser)
       .then((cloudRides) => {
-        if (cloudRides && cloudRides.length > 0) {
-          setRidesHistory(cloudRides);
-        }
+        setRidesHistory(cloudRides || []);
       })
       .catch((err) => {
         console.warn('Aviso ao sincronizar corridas do Supabase:', err);
@@ -265,31 +206,21 @@ export default function App() {
       const isTryingAdmin = hash === '#/admin' || hash === '#admin' || path.endsWith('/admin');
 
       if (isTryingAdmin) {
-        let savedUser: AppUser | null = currentUser;
-        if (!savedUser) {
-          try {
-            const raw = localStorage.getItem('race_current_user');
-            if (raw) savedUser = JSON.parse(raw);
-          } catch {}
-        }
+        const savedUser: AppUser | null = currentUser || getSessionUser();
 
         const isUserAdmin = Boolean(
           savedUser &&
             (savedUser.role === 'admin' ||
               savedUser.isAdmin ||
               String(savedUser.tipo || '').toUpperCase() === 'ADM' ||
-              savedUser.email?.trim().toLowerCase() === 'admin@race.com.br')
+              savedUser.email?.trim().toLowerCase() === ADMIN_EMAIL)
         );
 
         if (isUserAdmin && savedUser) {
-          // Usuário é admin: abre o AdminDashboard
           setCurrentUser(savedUser);
           setActiveTab('admin');
         } else {
-          // Não é admin: volta para a tela preta de login
-          try {
-            localStorage.removeItem('race_current_user');
-          } catch {}
+          saveSessionUser(null);
           setCurrentUser(null);
           if (window.location.hash) {
             try {
@@ -355,7 +286,7 @@ export default function App() {
     }, 6000);
   };
 
-  // Passenger pays -> gera código único de 4 números, salva no Supabase e localStorage, corrida começa AUTOMATICAMENTE e abre FullMapView
+  // Passenger pays -> gera código único de 4 números, salva corrida e pagamento pago no Supabase
   const handleStartRide = (ride: Ride) => {
     const confirmationCode = ride.confirmationCode || generateUniqueRideConfirmationCode();
     const startedRide: Ride = {
@@ -365,11 +296,20 @@ export default function App() {
       status: 'in_progress',
       confirmationCode,
     };
-    console.log('[RACE] Corrida criada com código de confirmação:', confirmationCode, 'ID:', startedRide.id);
     setActiveRide(startedRide);
     setRidesHistory((prev) => [startedRide, ...prev.filter((r) => r.id !== startedRide.id)]);
     saveIsolatedRide(startedRide, currentUser);
     saveCorridaSupabase(startedRide, currentUser).catch(() => {});
+    savePagamentoSupabase({
+      id: `pag-${startedRide.id}`,
+      id_motorista: startedRide.driver?.id || '',
+      nome_motorista: startedRide.driver?.name || '',
+      email_motorista: startedRide.driver?.email || '',
+      valor: startedRide.price,
+      tipo: 'corrida',
+      status: 'pago',
+      chave_pix: '',
+    }).catch(() => {});
     setIsFullMapOpen(true);
     const isMotoboy =
       ride.category === 'moto_passageiro' ||
@@ -460,17 +400,17 @@ export default function App() {
       ratingComment: comment,
       issueComment: issueComment,
     };
-    setRidesHistory((prev) => [finalizedRide, ...prev]);
+    setRidesHistory((prev) => [finalizedRide, ...prev.filter((r) => r.id !== finalizedRide.id)]);
     saveIsolatedRide(finalizedRide, currentUser);
 
-    // Salva na base de avaliações e comentários dos motoristas
+    // Salva avaliação real na memória da sessão e no Supabase
     saveDriverReview({
       rideId: finalizedRide.id,
-      driverId: targetRide.driver?.id || 'drv-indaiatuba-1',
-      driverName: targetRide.driver?.name || 'José da Cruz',
+      driverId: targetRide.driver?.id || '',
+      driverName: targetRide.driver?.name || '',
       driverVehicle: targetRide.driver?.vehicleModel
         ? `${targetRide.driver.vehicleModel} - ${targetRide.driver.vehiclePlate}`
-        : 'Chevrolet Onix - RCE9C40',
+        : '',
       passengerName: currentUser?.name || targetRide.passengerName || 'Passageiro',
       passengerEmail: currentUser?.email,
       rating,
@@ -484,7 +424,7 @@ export default function App() {
       setDrivers((prev) =>
         prev.map((d) => {
           if (d.id === driverId) {
-            const currentTotal = d.totalRides || 25;
+            const currentTotal = d.totalRides || 0;
             const newAverage = Number(((d.rating * currentTotal + rating) / (currentTotal + 1)).toFixed(2));
             return {
               ...d,
@@ -498,7 +438,7 @@ export default function App() {
 
       setCurrentDriver((prev) => {
         if (!prev) return prev;
-        const currentTotal = prev.totalRides || 25;
+        const currentTotal = prev.totalRides || 0;
         const newAverage = Number(((prev.rating * currentTotal + rating) / (currentTotal + 1)).toFixed(2));
         return {
           ...prev,
@@ -553,18 +493,12 @@ export default function App() {
     }
   };
 
-  // Driver register / updates
+  // Driver register / updates (100% Supabase)
   const handleRegisterDriver = (newDriver: Driver) => {
-    setDrivers((prev) => {
-      const next = [newDriver, ...prev.filter((d) => d.id !== newDriver.id)];
-      try {
-        localStorage.setItem('race_registered_drivers', JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+    setDrivers((prev) => [newDriver, ...prev.filter((d) => d.id !== newDriver.id)]);
     setCurrentDriver(newDriver);
 
-    // Sincroniza a conta isolada do condutor
+    // Sincroniza a conta isolada no Supabase
     saveUserAccount({
       id: newDriver.id,
       name: newDriver.name,
@@ -591,24 +525,25 @@ export default function App() {
 
   const handleUpdateDriver = (updated: Driver) => {
     setCurrentDriver(updated);
-    setDrivers((prev) => {
-      const next = prev.map((d) => (d.id === updated.id ? updated : d));
-      try {
-        localStorage.setItem('race_registered_drivers', JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+    setDrivers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
 
-    // Sincroniza a conta isolada do condutor em race_user_${email}
     if (updated.email) {
-      const userAcc = getUserAccount(updated.email);
-      if (userAcc) {
-        saveUserAccount({
-          ...userAcc,
-          driverData: updated,
-          placa: updated.vehiclePlate,
-        });
-      }
+      saveUserAccount({
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        phone: updated.phone,
+        password: updated.password,
+        role: (updated.category === 'moto_passageiro' || updated.category === 'moto_entrega') ? 'motoboy' : 'driver',
+        tipo: updated.category === 'economica' ? 'motorista_economico' :
+              updated.category === 'confort' ? 'motorista_confort' :
+              updated.category === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas',
+        placa: updated.vehiclePlate,
+        avatar: updated.avatar,
+        rating: updated.rating,
+        driverData: updated,
+        createdAt: updated.registrationDate || new Date().toISOString(),
+      }, false);
     }
   };
 
@@ -766,14 +701,18 @@ export default function App() {
     } catch {}
   };
 
-  // Admin Management: Remover TODOS os cadastros
-  const handleRemoveAllAccounts = () => {
-    deleteAllUserAccounts();
+  // Admin Management: Remover e Zerar TODOS os cadastros e dados de teste
+  const handleRemoveAllAccounts = async () => {
+    await deleteAllUserAccounts();
     setDrivers([]);
     setPassengers([]);
+    setRidesHistory([]);
+    setActiveRide(null);
+    clearWalletMemoryCache();
+    clearReviewsCache();
     triggerPush(
-      '🗑️ Todos os Cadastros Removidos',
-      'Todos os cadastros de motoristas e passageiros foram excluídos do sistema.',
+      '🗑️ Dados Zerados no Supabase',
+      'Todos os cadastros não-ADM, corridas e pagamentos foram zerados com sucesso.',
       'system'
     );
   };
@@ -781,6 +720,7 @@ export default function App() {
   // Auth success handler: direciona cada perfil direto para sua tela oficial
   const handleAuthSuccess = (user: AppUser, driver?: Driver) => {
     setCurrentUser(user);
+    saveSessionUser(user);
     if (driver) {
       setDrivers((prev) => [driver, ...prev.filter((d) => d.id !== driver.id)]);
       setCurrentDriver(driver);
@@ -804,11 +744,14 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem('race_current_user');
-    } catch {}
+    saveSessionUser(null);
+    purgeLegacyTestLocalStorage(false);
+    clearWalletMemoryCache();
+    clearReviewsCache();
     setCurrentUser(null);
     setCurrentDriver(DEFAULT_NEW_DRIVER);
+    setRidesHistory([]);
+    setActiveRide(null);
     setActiveTab('rides');
     triggerPush('Sessão Encerrada', 'Você saiu da sua conta RACE.', 'system');
   };
@@ -838,9 +781,7 @@ export default function App() {
         passengers={passengers}
         onLoginSuccess={(user, driver) => {
           setCurrentUser(user);
-          try {
-            localStorage.setItem('race_current_user', JSON.stringify(user));
-          } catch {}
+          saveSessionUser(user);
 
           // Se for Administrador (tipo = ADM ou admin@race.com.br)
           if (
@@ -888,20 +829,14 @@ export default function App() {
             );
           }
         }}
-        onRegisterDriverSuccess={(user, newDriver) => {
+        onRegisterDriverSuccess={(_user, newDriver) => {
           handleRegisterDriver(newDriver);
         }}
-        onRegisterMotoboySuccess={(user, newMotoboy) => {
+        onRegisterMotoboySuccess={(_user, newMotoboy) => {
           handleRegisterDriver(newMotoboy);
         }}
         onRegisterPassengerSuccess={(newUser) => {
-          setPassengers((prev) => {
-            const next = [newUser, ...prev.filter((p) => p.id !== newUser.id)];
-            try {
-              localStorage.setItem('race_registered_passengers', JSON.stringify(next));
-            } catch {}
-            return next;
-          });
+          setPassengers((prev) => [newUser, ...prev.filter((p) => p.id !== newUser.id)]);
         }}
       />
     );
@@ -1015,7 +950,7 @@ export default function App() {
             <DriverPartnerPortal
               currentDriver={currentDriver}
               currentUser={currentUser}
-              rides={getIsolatedUserRides(currentUser)}
+              rides={ridesHistory}
               activeRide={activeRide}
               onAcceptIncomingRide={(ride) => {
                 setActiveRide({ ...ride, status: 'in_progress' });
@@ -1027,9 +962,7 @@ export default function App() {
               onLoginDriverSuccess={(user, driver) => {
                 setCurrentUser(user);
                 if (driver) setCurrentDriver(driver);
-                try {
-                  localStorage.setItem('race_current_user', JSON.stringify(user));
-                } catch {}
+                saveSessionUser(user);
                 setLoginSuccessBanner(
                   `Bem-vindo(a), ${user.name}! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.`
                 );
@@ -1062,9 +995,7 @@ export default function App() {
                 };
                 setCurrentUser(updatedUser);
                 setCurrentDriver(newDriver);
-                try {
-                  localStorage.setItem('race_current_user', JSON.stringify(updatedUser));
-                } catch {}
+                saveSessionUser(updatedUser);
                 setLoginSuccessBanner(
                   `Parabéns, ${newDriver.name}! Cadastro de motorista homologado com sucesso!`
                 );
@@ -1075,9 +1006,9 @@ export default function App() {
           )
         )}
 
-        {/* 4. Histórico Completo & Recibos - APENAS dados do próprio usuário */}
+        {/* 4. Histórico Completo & Recibos - APENAS dados do próprio usuário no Supabase */}
         {activeTab === 'history' && (
-          <RideHistoryView rides={getIsolatedUserRides(currentUser)} />
+          <RideHistoryView rides={ridesHistory} />
         )}
 
         {/* 5. Opções de Categoria para Passageiro (4 Categorias) */}

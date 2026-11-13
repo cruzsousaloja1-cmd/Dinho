@@ -3,35 +3,18 @@
  * - Passageiro paga dentro do app via Asaas
  * - Cada corrida realizada soma 85% líquido no saldo do motorista (15% Comissão Race)
  * - Sem taxa fixa, sem mensalidade, repasse via PIX toda sexta-feira
- * - Gestão de saques pendentes pelo Admin
+ * - Sem uso de localStorage para saldos ou saques
  */
 
 import { Driver, WithdrawalRequest } from '../types';
-import { RACE_PIX_KEY } from '../config/pricing';
+import { savePagamentoSupabase, supabase } from '../supabase';
 
-const STORAGE_KEY_WITHDRAWALS = 'race_withdrawals';
-const STORAGE_KEY_BALANCES = 'race_driver_balances';
-const STORAGE_KEY_FEE_DEDUCTED = 'race_weekly_fee_deducted';
+let inMemoryBalances: Record<string, number> = {};
+let inMemoryWithdrawals: WithdrawalRequest[] = [];
 
-/**
- * Obtém o mapa de saldos dos motoristas
- */
-function getBalancesMap(): Record<string, number> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_BALANCES);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Salva o mapa de saldos
- */
-function saveBalancesMap(map: Record<string, number>) {
-  try {
-    localStorage.setItem(STORAGE_KEY_BALANCES, JSON.stringify(map));
-  } catch {}
+export function clearWalletMemoryCache(): void {
+  inMemoryBalances = {};
+  inMemoryWithdrawals = [];
 }
 
 /**
@@ -39,9 +22,8 @@ function saveBalancesMap(map: Record<string, number>) {
  */
 export function getDriverBalance(driverId: string, initialFallback: number = 0): number {
   if (!driverId) return 0;
-  const map = getBalancesMap();
-  if (typeof map[driverId] === 'number') {
-    return map[driverId];
+  if (typeof inMemoryBalances[driverId] === 'number') {
+    return inMemoryBalances[driverId];
   }
   return initialFallback;
 }
@@ -51,9 +33,7 @@ export function getDriverBalance(driverId: string, initialFallback: number = 0):
  */
 export function setDriverBalance(driverId: string, amount: number): void {
   if (!driverId) return;
-  const map = getBalancesMap();
-  map[driverId] = Math.max(0, Number(amount.toFixed(2)));
-  saveBalancesMap(map);
+  inMemoryBalances[driverId] = Math.max(0, Number(amount.toFixed(2)));
 }
 
 /**
@@ -67,36 +47,16 @@ export function addDriverEarnings(driverId: string, amount: number): number {
   return updated;
 }
 
-/**
- * Obtém a chave de ciclo da semana (ex: "2026-W45")
- */
-function getCurrentWeekCycleKey(): string {
-  const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const pastDaysOfYear = (now.getTime() - startOfYear.getTime()) / 86400000;
-  const weekNum = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
-  return `${now.getFullYear()}-W${weekNum}`;
-}
-
 export function hasWeeklyFeeBeenDeducted(_driverId: string): boolean {
   return false;
 }
 
-export function setWeeklyFeeDeducted(driverId: string, deducted: boolean = false): void {
-  if (!driverId) return;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_FEE_DEDUCTED);
-    const map = raw ? JSON.parse(raw) : {};
-    const cycle = getCurrentWeekCycleKey();
-    map[`${driverId}_${cycle}`] = deducted;
-    localStorage.setItem(STORAGE_KEY_FEE_DEDUCTED, JSON.stringify(map));
-  } catch {}
+export function setWeeklyFeeDeducted(_driverId: string, _deducted: boolean = false): void {
+  // Sem mensalidade / sem taxa semanal fixa
 }
 
 /**
  * Calcula o resumo da carteira do motorista
- * MODELO OFICIAL RACE: A comissão da Race (15%) já é descontada na corrida.
- * O saldo do motorista (85%) fica livre para saque via PIX sem mensalidade.
  */
 export function calculateWalletSummary(driver: Driver): {
   gross: number;
@@ -110,52 +70,37 @@ export function calculateWalletSummary(driver: Driver): {
 
   return {
     gross,
-    weeklyFee: 0, // Sem mensalidade e sem taxa para trabalhar
-    net: gross,   // Motorista recebe seus 85% integralmente
+    weeklyFee: 0,
+    net: gross,
     canWithdraw: gross > 0,
     missingForFee: 0,
     alreadyPaidFee: true,
   };
 }
 
-/**
- * Verifica se hoje é segunda-feira e aplica desconto automático se houver saldo suficiente
- */
 export function checkMondayAutoDeduction(driverOrId: Driver | string): {
   deducted: boolean;
   newBalance: number;
   message?: string;
 } {
-  // Sem desconto fixo; o motorista recebe 85% líquido por corrida.
   const driverId = typeof driverOrId === 'string' ? driverOrId : driverOrId.id;
   const initialBalance = typeof driverOrId === 'string' ? undefined : driverOrId.walletBalance;
   return { deducted: false, newBalance: getDriverBalance(driverId, initialBalance || 0) };
 }
 
 /**
- * Lista de saques solicitados
+ * Lista de saques solicitados na sessão / hidratada do Supabase
  */
 export function getWithdrawals(): WithdrawalRequest[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_WITHDRAWALS);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return inMemoryWithdrawals;
+}
+
+export function setWithdrawalsFromSupabase(list: WithdrawalRequest[]): void {
+  inMemoryWithdrawals = list;
 }
 
 /**
- * Salva a lista de saques
- */
-function saveWithdrawals(list: WithdrawalRequest[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY_WITHDRAWALS, JSON.stringify(list));
-  } catch {}
-}
-
-/**
- * Solicitação de Saque pelo Motorista
- * Saca o saldo líquido acumulado (85% das corridas) sem mensalidade
+ * Solicitação de Saque pelo Motorista -> salva no Supabase pagamentos
  */
 export function requestWithdrawal(
   driver: Driver,
@@ -185,7 +130,6 @@ export function requestWithdrawal(
     };
   }
 
-  // Zera o saldo retirado
   setDriverBalance(driver.id, 0);
 
   const newWithdrawal: WithdrawalRequest = {
@@ -195,15 +139,25 @@ export function requestWithdrawal(
     driverEmail: driver.email,
     driverPhone: driver.phone,
     grossAmount: summary.gross,
-    weeklyFeeDeducted: 0, // Zero taxa de desconto
+    weeklyFeeDeducted: 0,
     netAmount: summary.net,
     pixKey: pixKey.trim(),
     status: 'pending',
     requestedAt: new Date().toISOString(),
   };
 
-  const list = getWithdrawals();
-  saveWithdrawals([newWithdrawal, ...list]);
+  inMemoryWithdrawals = [newWithdrawal, ...inMemoryWithdrawals];
+
+  savePagamentoSupabase({
+    id: newWithdrawal.id,
+    id_motorista: driver.id,
+    nome_motorista: driver.name,
+    email_motorista: driver.email,
+    valor: summary.net,
+    tipo: 'saque',
+    status: 'pending',
+    chave_pix: pixKey.trim(),
+  }).catch(() => {});
 
   return {
     success: true,
@@ -213,12 +167,11 @@ export function requestWithdrawal(
 }
 
 /**
- * Admin marca saque como Pago via PIX
+ * Admin marca saque como Pago via PIX e atualiza no Supabase
  */
 export function markWithdrawalAsPaid(withdrawalId: string): boolean {
-  const list = getWithdrawals();
   let found = false;
-  const updated = list.map((w) => {
+  inMemoryWithdrawals = inMemoryWithdrawals.map((w) => {
     if (w.id === withdrawalId) {
       found = true;
       return {
@@ -231,7 +184,7 @@ export function markWithdrawalAsPaid(withdrawalId: string): boolean {
   });
 
   if (found) {
-    saveWithdrawals(updated);
+    supabase.from('pagamentos').update({ status: 'paid' }).eq('id', withdrawalId).then(() => {}, () => {});
   }
   return found;
 }
