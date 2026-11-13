@@ -152,6 +152,7 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
   const [distanceRemainingMeters, setDistanceRemainingMeters] = useState(1800);
   const [secondsRemaining, setSecondsRemaining] = useState(240);
   const [isVoiceMuted, setIsVoiceMuted] = useState(false);
+  const [showCancelProblemMenu, setShowCancelProblemMenu] = useState(false);
 
   // Busca as duas rotas reais pelas ruas de Indaiatuba via OSRM
   useEffect(() => {
@@ -587,8 +588,8 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       : { height: '88%' };
 
   return (
-    /* Container termina acima da barra inferior (BottomNav) para nunca cobrir o card */
-    <div className="fixed top-0 left-0 right-0 bottom-[84px] sm:bottom-[98px] z-[55] bg-slate-950 text-white overflow-hidden select-none">
+    /* Container termina 20px acima da barra inferior (BottomNav z-40) para nunca ficar atrás dela */
+    <div className="fixed top-0 left-0 right-0 bottom-[calc(104px+env(safe-area-inset-bottom,0px))] sm:bottom-[calc(120px+env(safe-area-inset-bottom,0px))] z-50 bg-slate-950 text-white select-none">
       {/* 1. MAPA NO FUNDO COM z-index: 0 */}
       <div ref={mapContainerRef} className="absolute inset-0 z-0 w-full h-full bg-white" />
 
@@ -674,13 +675,13 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
       {/* 3. CARD DO MOTORISTA COM z-index: 50 SEMPRE POR CIMA DO MAPA, EM 3 ESTADOS (180px / 55% / 88%) */}
       <div
         style={cardHeightStyle}
-        className="absolute bottom-0 left-0 right-0 z-50 bg-white text-slate-950 border-t-4 border-[#ff6a00] rounded-t-3xl shadow-[0_-12px_40px_rgba(0,0,0,0.45)] flex flex-col overflow-hidden transition-[height] duration-200 ease-out"
+        className="absolute bottom-0 left-0 right-0 z-50 bg-white text-slate-950 border-t-4 border-[#ff6a00] rounded-t-3xl shadow-[0_-12px_40px_rgba(0,0,0,0.45)] flex flex-col transition-[height] duration-200 ease-out"
       >
         {/* Alça + Cabeçalho de Controle dos 3 Estados */}
         <div
           onTouchStart={handleCardTouchStart}
           onTouchEnd={handleCardTouchEnd}
-          className="px-3.5 pt-2 pb-2 flex flex-col items-center gap-1.5 border-b border-slate-200 bg-white shrink-0"
+          className="px-3.5 pt-2 pb-2 flex flex-col items-center gap-1.5 border-b border-slate-200 bg-white rounded-t-3xl shrink-0"
         >
           <div
             onClick={() =>
@@ -772,10 +773,10 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
             </div>
           </div>
         ) : (
-          /* ESTADOS 2 E 3: MÉDIO (55%) e EXPANDIDO (88%) — TUDO DENTRO DO OVERFLOW-Y-AUTO + PADDING-BOTTOM 120px */
+          /* ESTADOS 2 E 3: MÉDIO (55%) e EXPANDIDO (88%) — OVERFLOW-Y-AUTO + PADDING-BOTTOM 180px */
           <div
             className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3.5 sm:px-5 pt-3 space-y-3"
-            style={{ paddingBottom: '120px' }}
+            style={{ paddingBottom: '180px' }}
           >
             {/* 1. Foto, nome e nota do passageiro + Ligar / WhatsApp */}
             <div className="flex items-center justify-between gap-2.5 bg-slate-50 border border-slate-200 rounded-2xl p-3">
@@ -924,71 +925,91 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               </div>
             </div>
 
-            {/* 7. BOTÕES GRANDES, UM EMBAIXO DO OUTRO, TODOS ROLÁVEIS E VISÍVEIS */}
-            <div className="flex flex-col gap-2.5 pt-1">
+            {/* 7. PILHA DOS 3 BOTÕES INTEIROS EM COLUNA (z-index: 60): 1. AZUL, 2. VERDE, 3. VERMELHO */}
+            <div
+              className="relative z-[60] flex flex-col gap-3 w-full pt-1"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 30px)' }}
+            >
+              {/* 1. BOTÃO AZUL EM CIMA: CHEGUEI / INICIAR CORRIDA */}
               <button
                 type="button"
-                onClick={handleArrivedAtPickup}
+                onClick={() => {
+                  if (tripPhase === 'to_pickup') {
+                    handleArrivedAtPickup();
+                  } else if (tripPhase === 'arrived_pickup') {
+                    handleStartTripToDestination();
+                  }
+                }}
                 disabled={tripPhase === 'to_destination' || tripPhase === 'completed'}
-                className={`w-full py-3.5 px-4 rounded-2xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] ${
+                style={{ width: '100%', minHeight: '56px' }}
+                className={`w-full min-h-[56px] py-3.5 px-4 rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] border ${
                   tripPhase === 'to_pickup'
-                    ? 'bg-[#ff6a00] hover:bg-[#e05e00] text-white border border-[#ff8533]'
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500'
                     : tripPhase === 'arrived_pickup'
-                    ? 'bg-emerald-100 text-emerald-900 border-2 border-emerald-500'
-                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    ? 'bg-blue-700 hover:bg-blue-600 text-white border-blue-500'
+                    : 'bg-blue-100 text-blue-900 border-2 border-blue-500 cursor-default'
                 }`}
               >
-                <MapPin className="w-4 h-4 shrink-0" />
-                <span>CHEGUEI NO LOCAL</span>
+                <Play className="w-5 h-5 shrink-0 fill-current" />
+                <span>
+                  {tripPhase === 'to_pickup'
+                    ? 'CHEGUEI / INICIAR CORRIDA'
+                    : tripPhase === 'arrived_pickup'
+                    ? 'INICIAR CORRIDA'
+                    : 'CORRIDA EM ANDAMENTO'}
+                </span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleStartTripToDestination}
-                disabled={tripPhase === 'to_destination' || tripPhase === 'completed'}
-                className={`w-full py-3.5 px-4 rounded-2xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] ${
-                  tripPhase === 'arrived_pickup' || tripPhase === 'to_pickup'
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white border border-blue-500'
-                    : 'bg-blue-100 text-blue-900 border-2 border-blue-500'
-                }`}
-              >
-                <Play className="w-4 h-4 shrink-0 fill-current" />
-                <span>INICIAR CORRIDA</span>
-              </button>
-
+              {/* 2. BOTÃO VERDE NO MEIO: FINALIZAR CORRIDA */}
               <button
                 type="button"
                 onClick={handleFinishRide}
-                className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] border border-emerald-500"
+                style={{ width: '100%', minHeight: '56px' }}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] border border-emerald-500"
               >
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <CheckCircle2 className="w-5 h-5 shrink-0" />
                 <span>FINALIZAR CORRIDA</span>
               </button>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onCancelRide) onCancelRide();
-                    onClose();
-                  }}
-                  className="w-full py-3.5 px-3 bg-white hover:bg-rose-50 text-rose-600 border-2 border-rose-300 rounded-2xl font-heading font-black text-xs sm:text-sm uppercase flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99]"
-                >
-                  <XCircle className="w-4 h-4 shrink-0" />
-                  <span>CANCELAR</span>
-                </button>
+              {/* 3. BOTÃO VERMELHO EMBAIXO: CANCELAR / PROBLEMA */}
+              <button
+                type="button"
+                onClick={() => setShowCancelProblemMenu((prev) => !prev)}
+                style={{ width: '100%', minHeight: '56px' }}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-red-600 hover:bg-red-500 text-white rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-[0.99] border border-red-500"
+              >
+                <XCircle className="w-5 h-5 shrink-0" />
+                <span>CANCELAR / PROBLEMA</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onOpenSupport) onOpenSupport();
-                  }}
-                  className="w-full py-3.5 px-3 bg-white hover:bg-amber-50 text-amber-800 border-2 border-amber-300 rounded-2xl font-heading font-black text-xs sm:text-sm uppercase flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99]"
-                >
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-                  <span>PROBLEMA / SUPORTE</span>
-                </button>
-              </div>
+              {showCancelProblemMenu && (
+                <div className="w-full bg-rose-50 border-2 border-red-300 rounded-2xl p-3 flex flex-col gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onCancelRide) onCancelRide();
+                      onClose();
+                    }}
+                    style={{ width: '100%', minHeight: '56px' }}
+                    className="w-full min-h-[56px] py-3 px-4 bg-red-700 hover:bg-red-600 text-white rounded-xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span>CONFIRMAR CANCELAMENTO</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCancelProblemMenu(false);
+                      if (onOpenSupport) onOpenSupport();
+                    }}
+                    style={{ width: '100%', minHeight: '56px' }}
+                    className="w-full min-h-[56px] py-3 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-heading font-black text-sm uppercase flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>ABRIR SUPORTE 24H / PROBLEMA</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
