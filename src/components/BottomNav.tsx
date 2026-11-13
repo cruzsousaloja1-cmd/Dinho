@@ -131,12 +131,18 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       ? [
           {
             id: 'admin' as TabType,
-            label: 'Painel Admin',
+            label: 'Admin',
             sublabel: 'Gestão Geral',
             icon: ShieldCheck,
           },
         ]
       : []),
+    {
+      id: 'passenger_account' as TabType,
+      label: 'CONTA',
+      sublabel: 'Perfil & Sair',
+      icon: User,
+    },
   ];
 
   return (

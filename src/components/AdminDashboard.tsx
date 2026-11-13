@@ -226,6 +226,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showToast(`⛔ Usuário ${u.nome} bloqueado pela administração.`);
   };
 
+  const handleRemoverSupabaseUser = async (u: any) => {
+    const userEmail = (u['e-mail'] || u.email || '').toLowerCase().trim();
+    if (userEmail === 'admin@race.com.br') {
+      showToast('⚠️ A conta principal admin@race.com.br não pode ser removida.');
+      return;
+    }
+
+    try {
+      await supabase.from('usuarios').delete().eq('id', u.id);
+    } catch {}
+
+    setSupabaseUsers((prev) => prev.filter((item) => item.id !== u.id));
+    const isPassenger = u.tipo === 'passenger';
+    if (isPassenger && onRemovePassenger) {
+      onRemovePassenger(String(u.id), userEmail);
+    } else if (!isPassenger && onRemoveDriver) {
+      onRemoveDriver(String(u.id), userEmail);
+    }
+    showToast(`🗑️ Usuário ${u.nome || userEmail} removido com sucesso!`);
+  };
+
   const handleVerAvaliacoes = (userParsed: any) => {
     setSelectedUserReviewModal(userParsed);
   };
@@ -1610,39 +1631,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Os 3 Botões Solicitados: Liberar 7 dias, Bloquear, Ver avaliações */}
+                    {/* Botões de Controle ADM: Ativar / Liberar 7 dias, Bloquear, Remover, Ver avaliações */}
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      {/* Botão 1: Liberar 7 dias */}
+                      {/* Botão 1: Ativar / Liberar 7 dias */}
                       <button
                         type="button"
                         onClick={() => handleLiberar7Dias(u.raw)}
                         className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                        title="Liberar 7 dias online para o condutor"
+                        title="Ativar usuário e liberar 7 dias"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Liberar 7 dias</span>
+                        <span>Ativar / 7 dias</span>
                       </button>
 
                       {/* Botão 2: Bloquear */}
                       <button
                         type="button"
                         onClick={() => handleBloquear(u.raw)}
-                        className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                        className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
                         title="Bloquear usuário"
                       >
-                        <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                        <XCircle className="w-3.5 h-3.5 text-amber-600" />
                         <span>Bloquear</span>
                       </button>
 
-                      {/* Botão 3: Ver avaliações */}
+                      {/* Botão 3: Remover usuário */}
+                      {u.email?.toLowerCase() !== 'admin@race.com.br' && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoverSupabaseUser(u.raw)}
+                          className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                          title="Remover usuário do Supabase e do app"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Remover</span>
+                        </button>
+                      )}
+
+                      {/* Botão 4: Ver avaliações */}
                       <button
                         type="button"
                         onClick={() => handleVerAvaliacoes(u)}
-                        className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                        title="Ver avaliações e comentários deste condutor"
+                        className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                        title="Ver avaliações e comentários deste usuário"
                       >
                         <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                        <span>Ver avaliações</span>
+                        <span>Avaliações</span>
                       </button>
                     </div>
                   </div>

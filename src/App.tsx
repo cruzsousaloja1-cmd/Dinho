@@ -229,8 +229,10 @@ export default function App() {
                 `Bem-vindo(a) de volta, ${matched.name}! Você recebe 85% de cada corrida sem mensalidade. Central de Corridas pronta para receber chamados.`
               );
             }
+            setActiveTab('driver_portal');
+          } else {
+            setActiveTab('rides');
           }
-          setActiveTab('rides');
         }
       }
     } catch {}
@@ -765,14 +767,20 @@ export default function App() {
     );
   };
 
-  // Auth success handler: "Após realização de cadastro com login e senha todos entrarão no aplicativo direto na página de atendimento de corridas"
+  // Auth success handler: direciona cada perfil direto para sua tela oficial
   const handleAuthSuccess = (user: AppUser, driver?: Driver) => {
     setCurrentUser(user);
     if (driver) {
       setDrivers((prev) => [driver, ...prev.filter((d) => d.id !== driver.id)]);
       setCurrentDriver(driver);
     }
-    setActiveTab('rides');
+    const isAdminUser = user.role === 'admin' || user.isAdmin || user.email?.toLowerCase() === ADMIN_EMAIL;
+    const isDriverUser =
+      user.role === 'driver' ||
+      user.role === 'motoboy' ||
+      Boolean(driver) ||
+      Boolean(user.driverData);
+    setActiveTab(isAdminUser ? 'admin' : isDriverUser ? 'driver_portal' : 'rides');
     const roleName = user.role === 'driver' ? 'Motorista/Motoboy Parceiro' : 'Passageiro';
     setLoginSuccessBanner(
       `Bem-vindo(a), ${user.name}! Acesso validado com login e senha (${roleName}). Você entrou direto na página de atendimento de corridas RACE!`
@@ -856,7 +864,7 @@ export default function App() {
             };
             setCurrentDriver(driverWithBal);
             handleUpdateDriver(driverWithBal);
-            setActiveTab('rides');
+            setActiveTab('driver_portal');
             setLoginSuccessBanner(
               `Bem-vindo(a), ${driver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
             );
@@ -1088,11 +1096,16 @@ export default function App() {
             <AdminDashboard
               drivers={drivers}
               rides={ridesHistory}
+              passengers={passengers}
               onApproveDriver={handleApproveDriver}
               onToggleDriverStatus={handleToggleDriverStatus}
               onOpenShare={() => setIsShareOpen(true)}
               onApproveWeeklyPayment={handleApproveWeeklyPayment}
               onRejectWeeklyPayment={handleRejectWeeklyPayment}
+              onRemoveDriver={handleRemoveDriver}
+              onRemovePassenger={handleRemovePassenger}
+              onActivateAllDrivers={handleActivateAllDrivers}
+              onRemoveAllAccounts={handleRemoveAllAccounts}
             />
           ) : (
             <div className="text-center py-12 p-6 bg-zinc-950 border-2 border-[#ff6a00] rounded-3xl text-white space-y-3 shadow-xl">

@@ -24,8 +24,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   onRegisterMotoboySuccess,
   onRegisterPassengerSuccess,
 }) => {
-  // Tela inicial: 'selection' (escolher tipo ou login), 'login' (entrar com credenciais), 'register' (formulário de 5 campos)
-  const [viewMode, setViewMode] = useState<'selection' | 'login' | 'register'>('selection');
+  // Tela inicial: 'selection' (escolher tipo ou login), 'login' (entrar com credenciais), 'admin_login' (ADM restrito), 'register' (formulário de 5 campos)
+  const [viewMode, setViewMode] = useState<'selection' | 'login' | 'admin_login' | 'register'>('selection');
   const [regRole, setRegRole] = useState<RegistrationRole>('passenger');
 
   // Estados do formulário de login
@@ -88,18 +88,28 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
     setIsLoggingIn(true);
     try {
+      // Bloqueio estrito quando tentando entrar pela tela ADM
+      if (viewMode === 'admin_login' && cleanIdentifier !== 'admin@race.com.br') {
+        setLoginErrorMessage('Acesso restrito');
+        return;
+      }
+
       // 0. Conta Mestre de Administrador (admin@race.com.br)
       if (cleanIdentifier === 'admin@race.com.br') {
         const result = verifyUserLogin(cleanIdentifier, loginPassword);
         if (!result.success || !result.user) {
-          setLoginErrorMessage(result.error || 'Credenciais inválidas para o Administrador.');
+          setLoginErrorMessage(
+            viewMode === 'admin_login'
+              ? 'Acesso restrito — senha incorreta para o Administrador.'
+              : result.error || 'Credenciais inválidas para o Administrador.'
+          );
           return;
         }
-        setLoginSuccessMessage('Salvo no Supabase! Conectado como Administrador.');
+        setLoginSuccessMessage('Acesso ADM liberado!');
         try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
         setTimeout(() => {
           onLoginSuccess(result.user!, result.driver);
-        }, 400);
+        }, 300);
         return;
       }
 
@@ -472,7 +482,109 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
               >
                 ENTRAR COM LOGIN E SENHA
               </button>
+
+              {/* Botão ADM exatamente abaixo de ENTRAR COM LOGIN E SENHA: pequeno, discreto, cinza claro, centralizado, sempre visível */}
+              <div className="pt-1 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginErrorMessage(null);
+                    setLoginSuccessMessage(null);
+                    setLoginIdentifier('');
+                    setLoginPassword('');
+                    setViewMode('admin_login');
+                  }}
+                  className="px-4 py-1.5 rounded-lg text-xs font-mono font-bold text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer tracking-widest uppercase"
+                >
+                  ADM
+                </button>
+              </div>
             </div>
+          </div>
+        )}
+
+        {/* 1B. TELA DE LOGIN DO ADMINISTRADOR (RESTRITO A admin@race.com.br) */}
+        {viewMode === 'admin_login' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginErrorMessage(null);
+                  setLoginSuccessMessage(null);
+                  setViewMode('selection');
+                }}
+                className="text-zinc-400 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Voltar</span>
+              </button>
+              <span className="text-[11px] font-mono font-bold text-zinc-400 uppercase flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#ff6a00]" />
+                <span>ADM • Acesso Restrito</span>
+              </span>
+            </div>
+
+            {loginErrorMessage && (
+              <div className="bg-red-950/80 border border-red-500/80 text-red-200 text-xs sm:text-sm p-3.5 rounded-2xl font-bold flex items-center gap-2.5 shadow-sm">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{loginErrorMessage}</span>
+              </div>
+            )}
+
+            {loginSuccessMessage && (
+              <div className="bg-emerald-950/80 border border-emerald-500 text-emerald-200 text-xs sm:text-sm p-3.5 rounded-2xl font-medium flex items-center gap-2.5 shadow-sm animate-pulse">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{loginSuccessMessage}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                  E-MAIL DO ADMINISTRADOR
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={loginIdentifier}
+                  onChange={(e) => setLoginIdentifier(e.target.value)}
+                  placeholder="admin@race.com.br"
+                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3.5 text-base focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                  SENHA ADM
+                </label>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3.5 text-base focus:outline-none focus:border-[#ff6a00] transition-colors pr-12 font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-4 top-3.5 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full bg-[#ff6a00] hover:bg-[#e05e00] disabled:opacity-60 active:scale-[0.99] text-white font-heading font-black text-base py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-5"
+              >
+                {isLoggingIn ? 'VALIDANDO...' : 'ENTRAR NO PAINEL ADM'}
+              </button>
+            </form>
           </div>
         )}
 
