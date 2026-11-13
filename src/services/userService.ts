@@ -60,6 +60,10 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     localStorage.setItem(userKey, JSON.stringify(normalizedAccount));
 
     // 2. Preparar payload do usuário
+    const isAdminAccount =
+      normalizedAccount.role === 'admin' ||
+      String(normalizedAccount.tipo || '').toUpperCase() === 'ADM';
+
     const currentUserPayload: AppUser = {
       id: normalizedAccount.id,
       name: normalizedAccount.name,
@@ -67,8 +71,9 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
       phone: normalizedAccount.phone,
       whatsapp: normalizedAccount.whatsapp || normalizedAccount.phone,
       login: normalizedAccount.login || normalizedAccount.email,
-      role: normalizedAccount.role,
+      role: isAdminAccount ? 'admin' : normalizedAccount.role,
       tipo: normalizedAccount.tipo,
+      isAdmin: isAdminAccount || undefined,
       placa: normalizedAccount.placa,
       avatar: normalizedAccount.avatar,
       rating: normalizedAccount.rating || 5.0,
@@ -403,6 +408,9 @@ export function verifyUserLogin(
   }
 
   // 3. Monta o AppUser com dados isolados
+  const isAdminAcc =
+    account.role === 'admin' || String(account.tipo || '').toUpperCase() === 'ADM';
+
   const userPayload: AppUser = {
     id: account.id,
     name: account.name,
@@ -410,8 +418,9 @@ export function verifyUserLogin(
     phone: account.phone,
     whatsapp: account.whatsapp || account.phone,
     login: account.login || account.email,
-    role: account.role,
+    role: isAdminAcc ? 'admin' : account.role,
     tipo: account.tipo,
+    isAdmin: isAdminAcc || undefined,
     placa: account.placa || account.driverData?.vehiclePlate || '',
     avatar: account.avatar,
     rating: account.rating || 5.0,
@@ -462,18 +471,24 @@ export async function verifyUserLoginAsync(
         return { success: false, error: 'Senha incorreta para esta conta.' };
       }
 
+      const isCloudAdmin =
+        String(cloudUser.tipo || '').toUpperCase() === 'ADM' ||
+        String(cloudUser.tipo || '').toLowerCase() === 'admin';
+
       const isMoto =
-        cloudUser.tipo === 'motoboy' ||
-        cloudUser.tipo === 'motoboy_passageiro' ||
-        cloudUser.tipo === 'motoboy_entregas' ||
-        cloudUser.categoria === 'moto_passageiro' ||
-        cloudUser.categoria === 'moto_entrega';
+        !isCloudAdmin &&
+        (cloudUser.tipo === 'motoboy' ||
+          cloudUser.tipo === 'motoboy_passageiro' ||
+          cloudUser.tipo === 'motoboy_entregas' ||
+          cloudUser.categoria === 'moto_passageiro' ||
+          cloudUser.categoria === 'moto_entrega');
 
       const isDriver =
-        cloudUser.tipo === 'driver' ||
-        cloudUser.tipo === 'motorista_economico' ||
-        cloudUser.tipo === 'motorista_confort' ||
-        isMoto;
+        !isCloudAdmin &&
+        (cloudUser.tipo === 'driver' ||
+          cloudUser.tipo === 'motorista_economico' ||
+          cloudUser.tipo === 'motorista_confort' ||
+          isMoto);
 
       const cloudEmail = normalizeEmail(cloudUser['e-mail'] || cloudUser.email || cleanIdentifier);
 
@@ -509,7 +524,7 @@ export async function verifyUserLoginAsync(
         };
       }
 
-      const role = isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
+      const role = isCloudAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
       const userPayload: AppUser = {
         id: cloudUser.id,
         name: cloudUser.nome,
@@ -519,6 +534,7 @@ export async function verifyUserLoginAsync(
         login: cloudUser.login || cloudEmail,
         role: role as any,
         tipo: (cloudUser.tipo as any) || role,
+        isAdmin: isCloudAdmin || undefined,
         placa: cloudUser.placa || '',
         avatar: cloudUser.avatar || '',
         rating: Number(cloudUser.rating || 5.0),

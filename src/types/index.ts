@@ -8,7 +8,9 @@ export type UserTipo =
   | 'motorista_economico' 
   | 'motorista_confort' 
   | 'motoboy_passageiro' 
-  | 'motoboy_entregas';
+  | 'motoboy_entregas'
+  | 'ADM'
+  | 'admin';
 
 export interface AppUser {
   id: string;

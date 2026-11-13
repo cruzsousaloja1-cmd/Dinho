@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Driver, AppUser, VehicleCategory } from '../types';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { saveUserAccount, verifyUserLogin, getUserAccount } from '../services/userService';
+import { saveUserAccount, verifyUserLogin, getUserAccount, updateUserPasswordLocal } from '../services/userService';
 import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase } from '../supabase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 
@@ -25,8 +25,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   onRegisterMotoboySuccess,
   onRegisterPassengerSuccess,
 }) => {
-  // Tela inicial: 'selection' (escolher tipo ou login), 'login' (entrar com credenciais), 'admin_login' (ADM restrito), 'register' (formulário de 5 campos)
-  const [viewMode, setViewMode] = useState<'selection' | 'login' | 'admin_login' | 'register'>('selection');
+  // Tela inicial: 'selection', 'login', 'admin_login', 'admin_register', 'register'
+  const [viewMode, setViewMode] = useState<'selection' | 'login' | 'admin_login' | 'admin_register' | 'register'>('selection');
   const [regRole, setRegRole] = useState<RegistrationRole>('passenger');
 
   // Estados do formulário de login
@@ -37,6 +37,18 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [loginSuccessMessage, setLoginSuccessMessage] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+
+  // Estados do formulário CRIAR CONTA DE ADM - PRIMEIRA VEZ
+  const [adminRegName, setAdminRegName] = useState('');
+  const [adminRegEmail, setAdminRegEmail] = useState('admin@race.com.br');
+  const [adminRegWhatsApp, setAdminRegWhatsApp] = useState('');
+  const [adminRegPassword, setAdminRegPassword] = useState('');
+  const [adminRegConfirmPassword, setAdminRegConfirmPassword] = useState('');
+  const [showAdminRegPassword, setShowAdminRegPassword] = useState(false);
+  const [showAdminRegConfirmPassword, setShowAdminRegConfirmPassword] = useState(false);
+  const [adminRegErrorMessage, setAdminRegErrorMessage] = useState<string | null>(null);
+  const [adminRegSuccessMessage, setAdminRegSuccessMessage] = useState<string | null>(null);
+  const [isCreatingAdmin, setIsCreatingAdmin] = useState(false);
 
   // Estados do cadastro com 5 campos: Nome, E-mail, WhatsApp, Login, Senha
   const [regName, setRegName] = useState('');
@@ -76,6 +88,120 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setViewMode('register');
   };
 
+  const handleOpenAdminRegister = (prefillEmail?: string) => {
+    setAdminRegErrorMessage(null);
+    setAdminRegSuccessMessage(null);
+    setAdminRegName('');
+    setAdminRegEmail(
+      prefillEmail && prefillEmail.trim().includes('@')
+        ? prefillEmail.trim().toLowerCase()
+        : 'admin@race.com.br'
+    );
+    setAdminRegWhatsApp('');
+    setAdminRegPassword('');
+    setAdminRegConfirmPassword('');
+    setShowAdminRegPassword(false);
+    setShowAdminRegConfirmPassword(false);
+    setViewMode('admin_register');
+  };
+
+  // Submit de Criação de Conta ADM pela Primeira Vez (salva no Supabase com tipo = ADM)
+  const handleCreateAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminRegErrorMessage(null);
+    setAdminRegSuccessMessage(null);
+
+    const cleanName = adminRegName.trim();
+    const cleanEmail = adminRegEmail.trim().toLowerCase();
+    const cleanWhatsApp = adminRegWhatsApp.trim();
+
+    if (!cleanName || !cleanEmail || !cleanWhatsApp || !adminRegPassword || !adminRegConfirmPassword) {
+      setAdminRegErrorMessage('Por favor, preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    if (adminRegPassword.length < 6) {
+      setAdminRegErrorMessage('A senha do ADM deve conter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (adminRegPassword !== adminRegConfirmPassword) {
+      setAdminRegErrorMessage('As senhas não conferem');
+      return;
+    }
+
+    setIsCreatingAdmin(true);
+    try {
+      // Verifica se já existe conta com este e-mail no Supabase
+      const existingCloud = await getUsuarioSupabase(cleanEmail).catch(() => null);
+      if (existingCloud) {
+        setAdminRegErrorMessage(
+          'Já existe um usuário cadastrado com este e-mail. Volte para ENTRAR NO ADM ou use Esqueci a senha.'
+        );
+        return;
+      }
+
+      // Salva na tabela public.usuarios no Supabase com tipo = 'ADM'
+      const supabaseRes = await insertUsuarioSupabase({
+        nome: cleanName,
+        email: cleanEmail,
+        celular: cleanWhatsApp,
+        senha: adminRegPassword,
+        tipo: 'ADM',
+      });
+
+      if (!supabaseRes.success) {
+        setAdminRegErrorMessage(`Erro ao salvar ADM no Supabase: ${supabaseRes.error || 'Falha no banco de dados'}`);
+        return;
+      }
+
+      const createdRow = supabaseRes.data;
+      const adminUser: AppUser = {
+        id: createdRow?.id ? `usr-${createdRow.id}` : `usr-adm-${Date.now()}`,
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanWhatsApp,
+        whatsapp: cleanWhatsApp,
+        login: cleanEmail,
+        role: 'admin',
+        tipo: 'ADM',
+        isAdmin: true,
+        placa: 'ADMIN-01',
+        rating: 5.0,
+      };
+
+      saveUserAccount(
+        {
+          id: adminUser.id,
+          name: adminUser.name,
+          email: adminUser.email,
+          phone: adminUser.phone,
+          whatsapp: adminUser.whatsapp,
+          login: adminUser.login,
+          role: 'admin',
+          tipo: 'ADM',
+          placa: 'ADMIN-01',
+          password: adminRegPassword,
+          rating: 5.0,
+          createdAt: new Date().toISOString(),
+        },
+        true
+      );
+      updateUserPasswordLocal(cleanEmail, adminRegPassword);
+
+      setAdminRegSuccessMessage('Conta de ADM criada e salva no Supabase com sucesso!');
+      try { confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } }); } catch {}
+
+      setTimeout(() => {
+        onLoginSuccess(adminUser);
+      }, 600);
+    } catch (err: any) {
+      setAdminRegErrorMessage(`Erro ao criar conta ADM: ${err?.message || 'Verifique sua conexão e tente novamente.'}`);
+    } finally {
+      setIsCreatingAdmin(false);
+    }
+  };
+
   // Submit de Login - Busca o usuário diretamente na tabela "usuarios" no Supabase pelo email + senha
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,45 +216,123 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
     setIsLoggingIn(true);
     try {
-      // Bloqueio estrito quando tentando entrar pela tela ADM
-      if (viewMode === 'admin_login' && cleanIdentifier !== 'admin@race.com.br') {
-        setLoginErrorMessage('Acesso restrito');
-        return;
-      }
+      // FLUXO DEDICADO DA TELA ADM (aceita conta criada com tipo = ADM/admin ou admin@race.com.br)
+      if (viewMode === 'admin_login') {
+        // 1. Tenta autenticar no Supabase primeiro
+        const cloudAdminRes = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
+        if (cloudAdminRes.success && cloudAdminRes.data) {
+          const row = cloudAdminRes.data;
+          const rowEmail = (row['e-mail'] || row.email || cleanIdentifier).toLowerCase().trim();
+          const rowTipo = String(row.tipo || '').toUpperCase();
+          const isRowAdmin = rowTipo === 'ADM' || rowTipo === 'ADMIN' || rowEmail === 'admin@race.com.br';
 
-      // 0. Conta Mestre de Administrador (admin@race.com.br)
-      if (cleanIdentifier === 'admin@race.com.br') {
-        const result = verifyUserLogin(cleanIdentifier, loginPassword);
-        if (!result.success || !result.user) {
-          // Fallback: verifica se a nova senha do administrador está salva no Supabase (public.usuarios)
-          const cloudAdmin = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
-          if (cloudAdmin.success) {
-            const adminUser: AppUser = {
-              id: 'usr-admin-master',
-              name: 'Administrador Geral',
-              email: 'admin@race.com.br',
-              phone: '(19) 99999-0000',
-              role: 'admin',
-              isAdmin: true,
-              placa: 'ADMIN-01',
-              rating: 5.0,
-            };
-            try {
-              localStorage.setItem('race_current_user', JSON.stringify(adminUser));
-            } catch {}
-            setLoginSuccessMessage('Acesso ADM liberado!');
-            try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
-            setTimeout(() => {
-              onLoginSuccess(adminUser);
-            }, 300);
+          if (!isRowAdmin) {
+            setLoginErrorMessage('Acesso restrito');
             return;
           }
 
-          setLoginErrorMessage(
-            viewMode === 'admin_login'
-              ? 'Acesso restrito — senha incorreta para o Administrador.'
-              : result.error || 'Credenciais inválidas para o Administrador.'
+          const adminUser: AppUser = {
+            id: row.id ? `usr-${row.id}` : 'usr-admin-master',
+            name: row.nome || 'Administrador Geral',
+            email: rowEmail,
+            phone: row.celular || '(19) 99999-0000',
+            whatsapp: row.celular || '(19) 99999-0000',
+            login: rowEmail,
+            role: 'admin',
+            tipo: 'ADM',
+            isAdmin: true,
+            placa: 'ADMIN-01',
+            rating: 5.0,
+          };
+
+          saveUserAccount(
+            {
+              ...adminUser,
+              password: row.senha || loginPassword,
+              createdAt: row.data_cadastro || new Date().toISOString(),
+            },
+            true
           );
+
+          setLoginSuccessMessage('Acesso ADM liberado!');
+          try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
+          setTimeout(() => {
+            onLoginSuccess(adminUser);
+          }, 300);
+          return;
+        }
+
+        // 2. Fallback local (ex: senha mestre ou conta ADM salva offline)
+        const localAdminRes = verifyUserLogin(cleanIdentifier, loginPassword);
+        if (localAdminRes.success && localAdminRes.user) {
+          const isLocalAdmin =
+            localAdminRes.user.role === 'admin' ||
+            localAdminRes.user.isAdmin ||
+            String(localAdminRes.user.tipo || '').toUpperCase() === 'ADM' ||
+            localAdminRes.user.email.toLowerCase() === 'admin@race.com.br';
+
+          if (!isLocalAdmin) {
+            setLoginErrorMessage('Acesso restrito');
+            return;
+          }
+
+          setLoginSuccessMessage('Acesso ADM liberado!');
+          try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
+          setTimeout(() => {
+            onLoginSuccess(localAdminRes.user!);
+          }, 300);
+          return;
+        }
+
+        // 3. Verifica se o usuário existe mas não tem perfil ADM -> exibe "Acesso restrito"
+        const existingUser = await getUsuarioSupabase(cleanIdentifier).catch(() => null);
+        if (existingUser) {
+          const existingTipo = String(existingUser.tipo || '').toUpperCase();
+          const existingEmail = (existingUser['e-mail'] || existingUser.email || '').toLowerCase().trim();
+          if (existingTipo !== 'ADM' && existingTipo !== 'ADMIN' && existingEmail !== 'admin@race.com.br') {
+            setLoginErrorMessage('Acesso restrito');
+            return;
+          }
+          setLoginErrorMessage('Senha incorreta para a conta ADM.');
+          return;
+        }
+
+        setLoginErrorMessage(
+          cleanIdentifier === 'admin@race.com.br'
+            ? 'Acesso restrito — senha incorreta ou conta ADM ainda não criada.'
+            : 'Acesso restrito'
+        );
+        return;
+      }
+
+      // 0. Conta Mestre de Administrador (quando entra pelo login geral com admin@race.com.br)
+      if (cleanIdentifier === 'admin@race.com.br') {
+        const cloudAdmin = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
+        if (cloudAdmin.success && cloudAdmin.data) {
+          const row = cloudAdmin.data;
+          const adminUser: AppUser = {
+            id: row.id ? `usr-${row.id}` : 'usr-admin-master',
+            name: row.nome || 'Administrador Geral',
+            email: 'admin@race.com.br',
+            phone: row.celular || '(19) 99999-0000',
+            role: 'admin',
+            tipo: 'ADM',
+            isAdmin: true,
+            placa: 'ADMIN-01',
+            rating: 5.0,
+          };
+          saveUserAccount({ ...adminUser, password: loginPassword, createdAt: new Date().toISOString() }, true);
+          setLoginSuccessMessage('Acesso ADM liberado!');
+          try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
+          setTimeout(() => {
+            onLoginSuccess(adminUser);
+          }, 300);
+          return;
+        }
+
+        const result = verifyUserLogin(cleanIdentifier, loginPassword);
+        if (!result.success || !result.user) {
+          setLoginErrorMessage(result.error || 'Credenciais inválidas para o Administrador.');
           return;
         }
         setLoginSuccessMessage('Acesso ADM liberado!');
@@ -162,8 +366,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       // Sucesso no Supabase
       const row = cloudRes.data;
       const userEmail = (row['e-mail'] || row.email || cleanIdentifier).toLowerCase().trim();
-      const isMoto = row.tipo === 'motoboy' || row.categoria?.includes('moto');
-      const isDriver = row.tipo === 'driver' || isMoto || Boolean(row.placa);
+      const rowTipoUpper = String(row.tipo || '').toUpperCase();
+      const isCloudAdmin = rowTipoUpper === 'ADM' || rowTipoUpper === 'ADMIN';
+      const isMoto = !isCloudAdmin && (row.tipo === 'motoboy' || row.categoria?.includes('moto'));
+      const isDriver = !isCloudAdmin && (row.tipo === 'driver' || isMoto || Boolean(row.placa));
 
       let driverObj: Driver | undefined = undefined;
       if (isDriver) {
@@ -204,8 +410,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         phone: row.celular || '',
         whatsapp: row.celular || '',
         login: userEmail.split('@')[0],
-        role: isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger',
-        tipo: isMoto ? 'motoboy_passageiro' : isDriver ? 'motorista_economico' : 'passenger',
+        role: isCloudAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger',
+        tipo: isCloudAdmin ? 'ADM' : isMoto ? 'motoboy_passageiro' : isDriver ? 'motorista_economico' : 'passenger',
+        isAdmin: isCloudAdmin || undefined,
         placa: row.placa || '',
         avatar: regAvatar || undefined,
         rating: 5.0,
@@ -632,7 +839,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 disabled={isLoggingIn}
                 className="w-full bg-[#ff6a00] hover:bg-[#e05e00] disabled:opacity-60 active:scale-[0.99] text-white font-heading font-black text-base py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-5"
               >
-                {isLoggingIn ? 'VALIDANDO...' : 'ENTRAR NO PAINEL ADM'}
+                {isLoggingIn ? 'VALIDANDO...' : 'ENTRAR NO ADM'}
               </button>
 
               <div className="pt-1 text-center">
@@ -649,6 +856,162 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                   Esqueci a senha
                 </button>
               </div>
+
+              <div className="pt-2 border-t border-zinc-800 text-center">
+                <button
+                  type="button"
+                  onClick={() => handleOpenAdminRegister(loginIdentifier)}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-[#161616] hover:bg-[#202020] border border-emerald-500/50 hover:border-emerald-400 text-emerald-400 font-heading font-black text-xs sm:text-sm uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  CRIAR CONTA DE ADM - PRIMEIRA VEZ
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* 1C. TELA DE CADASTRO DO ADM - PRIMEIRA VEZ (Salva em public.usuarios com tipo = ADM) */}
+        {viewMode === 'admin_register' && (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminRegErrorMessage(null);
+                  setAdminRegSuccessMessage(null);
+                  setViewMode('admin_login');
+                }}
+                className="text-zinc-400 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Voltar para Login ADM</span>
+              </button>
+              <span className="text-[11px] font-mono font-bold text-emerald-400 uppercase flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>ADM • Primeira Vez</span>
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <h2 className="text-xl sm:text-2xl font-heading font-black text-white tracking-tight uppercase">
+                Criar Conta de ADM
+              </h2>
+              <p className="text-xs text-zinc-400 font-medium">
+                Cadastre o administrador principal do RACE na nuvem Supabase.
+              </p>
+            </div>
+
+            {adminRegErrorMessage && (
+              <div className="bg-red-950/80 border border-red-500/80 text-red-200 text-xs sm:text-sm p-3.5 rounded-2xl font-bold flex items-center gap-2.5 shadow-sm">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{adminRegErrorMessage}</span>
+              </div>
+            )}
+
+            {adminRegSuccessMessage && (
+              <div className="bg-emerald-950/80 border border-emerald-500 text-emerald-200 text-xs sm:text-sm p-3.5 rounded-2xl font-medium flex items-center gap-2.5 shadow-sm animate-pulse">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{adminRegSuccessMessage}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateAdminSubmit} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                  Nome *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adminRegName}
+                  onChange={(e) => setAdminRegName(e.target.value)}
+                  placeholder="Ex: Dinho Administrador"
+                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-emerald-500 transition-colors font-medium"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                  E-mail *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={adminRegEmail}
+                  onChange={(e) => setAdminRegEmail(e.target.value)}
+                  placeholder="admin@race.com.br"
+                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-emerald-500 transition-colors font-medium"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                  WhatsApp *
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={adminRegWhatsApp}
+                  onChange={(e) => setAdminRegWhatsApp(e.target.value)}
+                  placeholder="(19) 99999-9999"
+                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-emerald-500 transition-colors font-medium"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                  Senha (mínimo 6 caracteres) *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showAdminRegPassword ? 'text' : 'password'}
+                    required
+                    value={adminRegPassword}
+                    onChange={(e) => setAdminRegPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-emerald-500 transition-colors pr-12 font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminRegPassword(!showAdminRegPassword)}
+                    className="absolute right-4 top-3 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {showAdminRegPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                  Confirmar Senha *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showAdminRegConfirmPassword ? 'text' : 'password'}
+                    required
+                    value={adminRegConfirmPassword}
+                    onChange={(e) => setAdminRegConfirmPassword(e.target.value)}
+                    placeholder="Repita a senha"
+                    className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:border-emerald-500 transition-colors pr-12 font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminRegConfirmPassword(!showAdminRegConfirmPassword)}
+                    className="absolute right-4 top-3 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {showAdminRegConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isCreatingAdmin}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 active:scale-[0.99] text-white font-heading font-black text-base py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-emerald-600/25 uppercase tracking-wider flex items-center justify-center gap-2 mt-4"
+              >
+                <ShieldCheck className="w-5 h-5" />
+                <span>{isCreatingAdmin ? 'CRIANDO CONTA DE ADM...' : 'CRIAR CONTA DE ADM'}</span>
+              </button>
             </form>
           </div>
         )}
@@ -1072,12 +1435,19 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             ? loginIdentifier || 'admin@race.com.br'
             : loginIdentifier
         }
+        onCreateAccountNow={(unregisteredIdentifier) => {
+          handleOpenAdminRegister(unregisteredIdentifier);
+        }}
         onPasswordResetSuccess={(resolvedIdentifier, successMessage) => {
           setLoginErrorMessage(null);
           setLoginIdentifier(resolvedIdentifier);
           setLoginPassword('');
           setLoginSuccessMessage(successMessage);
-          setViewMode(resolvedIdentifier === 'admin@race.com.br' ? 'admin_login' : 'login');
+          setViewMode(
+            viewMode === 'admin_login' || resolvedIdentifier === 'admin@race.com.br'
+              ? 'admin_login'
+              : 'login'
+          );
         }}
       />
     </div>

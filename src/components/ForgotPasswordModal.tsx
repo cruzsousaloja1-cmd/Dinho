@@ -10,11 +10,13 @@ import {
   EyeOff,
   ArrowLeft,
   MessageSquare,
+  UserPlus,
 } from 'lucide-react';
 import { getUsuarioSupabase, updatePasswordSupabase } from '../supabase';
 import {
   ADMIN_EMAIL,
   findLocalUserAccount,
+  getStoredAdminPassword,
   updateUserPasswordLocal,
 } from '../services/userService';
 
@@ -23,6 +25,7 @@ interface ForgotPasswordModalProps {
   onClose: () => void;
   initialIdentifier?: string;
   onPasswordResetSuccess: (resolvedIdentifier: string, successMessage: string) => void;
+  onCreateAccountNow?: (unregisteredIdentifier: string) => void;
 }
 
 export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
@@ -30,6 +33,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
   onClose,
   initialIdentifier = '',
   onPasswordResetSuccess,
+  onCreateAccountNow,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [identifier, setIdentifier] = useState(initialIdentifier);
@@ -43,6 +47,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [unregisteredEmailPrompt, setUnregisteredEmailPrompt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -59,6 +64,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
       setShowNewPassword(false);
       setShowConfirmPassword(false);
       setErrorMessage(null);
+      setUnregisteredEmailPrompt(null);
       setIsLoading(false);
     }
   }, [isOpen, initialIdentifier]);
@@ -68,6 +74,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setUnregisteredEmailPrompt(null);
 
     const clean = identifier.trim().toLowerCase();
     if (!clean) {
@@ -81,30 +88,29 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
       let foundName = '';
       let foundPhone = '';
 
-      if (clean === ADMIN_EMAIL) {
-        foundEmail = ADMIN_EMAIL;
-        foundName = 'Administrador Geral';
-        foundPhone = '(19) 99999-0000';
+      // 1. Verifica primeiro na tabela public.usuarios no Supabase
+      const cloudUser = await getUsuarioSupabase(clean);
+      if (cloudUser) {
+        foundEmail = (cloudUser['e-mail'] || cloudUser.email || clean).toLowerCase().trim();
+        foundName = cloudUser.nome || 'Usuário RACE';
+        foundPhone = cloudUser.celular || cloudUser.whatsapp || '';
       } else {
-        // 1. Verifica na nuvem (Supabase public.usuarios)
-        const cloudUser = await getUsuarioSupabase(clean);
-        if (cloudUser) {
-          foundEmail = (cloudUser['e-mail'] || cloudUser.email || clean).toLowerCase().trim();
-          foundName = cloudUser.nome || 'Usuário RACE';
-          foundPhone = cloudUser.celular || cloudUser.whatsapp || '';
-        } else {
-          // 2. Verifica no armazenamento local
-          const localUser = findLocalUserAccount(clean);
-          if (localUser) {
-            foundEmail = localUser.email.toLowerCase().trim();
-            foundName = localUser.name || 'Usuário RACE';
-            foundPhone = localUser.whatsapp || localUser.phone || '';
-          }
+        // 2. Verifica nas contas locais já cadastradas
+        const localUser = findLocalUserAccount(clean);
+        if (localUser) {
+          foundEmail = localUser.email.toLowerCase().trim();
+          foundName = localUser.name || 'Usuário RACE';
+          foundPhone = localUser.whatsapp || localUser.phone || '';
+        } else if (clean === ADMIN_EMAIL && getStoredAdminPassword()) {
+          // Apenas se o ADM já definiu senha personalizada localmente
+          foundEmail = ADMIN_EMAIL;
+          foundName = 'Administrador Geral';
+          foundPhone = '(19) 99999-0000';
         }
       }
 
       if (!foundEmail) {
-        setErrorMessage('Login ou E-mail não encontrado no sistema. Confira os dados digitados.');
+        setUnregisteredEmailPrompt(clean);
         return;
       }
 
@@ -170,16 +176,15 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
 
       // 1. Atualiza na tabela public.usuarios no Supabase
       const cloudRes = await updatePasswordSupabase(targetEmail, newPassword, resolvedName);
-      if (!cloudRes.success && targetEmail !== ADMIN_EMAIL) {
-        // Se existir conta local mesmo offline/não encontrada na nuvem, ainda salva localmente
+      if (!cloudRes.success) {
         const localExists = findLocalUserAccount(targetEmail);
-        if (!localExists) {
+        if (!localExists && !(targetEmail === ADMIN_EMAIL && getStoredAdminPassword())) {
           setErrorMessage(cloudRes.error || 'Erro ao salvar nova senha no Supabase.');
           return;
         }
       }
 
-      // 2. Atualiza no armazenamento local (inclui conta ADM, motoristas, motoboys e passageiros)
+      // 2. Atualiza no armazenamento local (inclui ADM, motoristas, motoboys e passageiros)
       updateUserPasswordLocal(targetEmail, newPassword);
 
       // 3. Retorna à tela de login com a mensagem de confirmação
@@ -231,6 +236,31 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
           </div>
         )}
 
+        {/* Aviso de e-mail NÃO cadastrado + botão CRIAR CONTA AGORA */}
+        {step === 1 && unregisteredEmailPrompt && (
+          <div className="bg-amber-950/70 border border-amber-500/80 rounded-2xl p-4 space-y-3">
+            <div className="flex items-start gap-2.5 text-amber-200 text-xs sm:text-sm font-bold">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <span>Esse e-mail não está cadastrado. Quer criar conta agora?</span>
+            </div>
+
+            {onCreateAccountNow && (
+              <button
+                type="button"
+                onClick={() => {
+                  const target = unregisteredEmailPrompt;
+                  onClose();
+                  onCreateAccountNow(target);
+                }}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-heading font-black text-sm py-3.5 px-4 rounded-xl transition-all cursor-pointer shadow-lg shadow-emerald-600/25 uppercase tracking-wider flex items-center justify-center gap-2"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>CRIAR CONTA AGORA</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* PASSO 1: Login / E-mail cadastrado */}
         {step === 1 && (
           <form onSubmit={handleSendCode} className="space-y-4">
@@ -248,7 +278,10 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                   type="text"
                   required
                   value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
+                  onChange={(e) => {
+                    setIdentifier(e.target.value);
+                    if (unregisteredEmailPrompt) setUnregisteredEmailPrompt(null);
+                  }}
                   placeholder="Ex: admin@race.com.br"
                   className="w-full bg-[#1a1a1a] border border-zinc-700 text-white placeholder-zinc-500 rounded-2xl pl-10 pr-4 py-3.5 text-sm sm:text-base focus:outline-none focus:border-[#ff6a00] transition-colors font-medium"
                   autoFocus

@@ -39,7 +39,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     currentUser?.role === 'motoboy' ||
     currentUser?.driverData
   );
-  const isAdmin = currentUser?.email?.trim().toLowerCase() === 'admin@race.com.br';
+  const isAdmin = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.isAdmin ||
+    String(currentUser?.tipo || '').toUpperCase() === 'ADM' ||
+    currentUser?.email?.trim().toLowerCase() === 'admin@race.com.br'
+  );
   const isPassenger = !isDriverOrMotoboy && !isAdmin;
 
   // 1. BARRA EXCLUSIVA DO PASSAGEIRO: SÓ 4 BOTÕES (CORRIDA, OPÇÃO, ATIVIDADE, CONTA)

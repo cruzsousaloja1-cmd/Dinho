@@ -196,7 +196,12 @@ export default function App() {
           setCurrentUser(parsed);
 
           // Se for admin, direciona para o painel de administração
-          if (parsed.role === 'admin' || parsed.isAdmin || parsed.email.toLowerCase() === 'admin@race.com.br') {
+          if (
+            parsed.role === 'admin' ||
+            parsed.isAdmin ||
+            String(parsed.tipo || '').toUpperCase() === 'ADM' ||
+            parsed.email.toLowerCase() === 'admin@race.com.br'
+          ) {
             setActiveTab('admin');
             return;
           }
@@ -268,7 +273,13 @@ export default function App() {
           } catch {}
         }
 
-        const isUserAdmin = savedUser?.email?.trim().toLowerCase() === 'admin@race.com.br';
+        const isUserAdmin = Boolean(
+          savedUser &&
+            (savedUser.role === 'admin' ||
+              savedUser.isAdmin ||
+              String(savedUser.tipo || '').toUpperCase() === 'ADM' ||
+              savedUser.email?.trim().toLowerCase() === 'admin@race.com.br')
+        );
 
         if (isUserAdmin && savedUser) {
           // Usuário é admin: abre o AdminDashboard
@@ -831,10 +842,11 @@ export default function App() {
             localStorage.setItem('race_current_user', JSON.stringify(user));
           } catch {}
 
-          // Se for Administrador (ex: admin@race.com.br)
+          // Se for Administrador (tipo = ADM ou admin@race.com.br)
           if (
             user.role === 'admin' ||
             user.isAdmin ||
+            String(user.tipo || '').toUpperCase() === 'ADM' ||
             user.email?.toLowerCase() === 'admin@race.com.br'
           ) {
             setActiveTab('admin');
@@ -919,7 +931,10 @@ export default function App() {
         activeRole={
           activeTab === 'admin'
             ? 'admin'
-            : currentUser?.role === 'admin' || currentUser?.isAdmin || currentUser?.email?.toLowerCase() === 'admin@race.com.br'
+            : currentUser?.role === 'admin' ||
+              currentUser?.isAdmin ||
+              String(currentUser?.tipo || '').toUpperCase() === 'ADM' ||
+              currentUser?.email?.toLowerCase() === 'admin@race.com.br'
             ? 'admin'
             : currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy'
             ? 'driver'
@@ -934,7 +949,8 @@ export default function App() {
             const isUserAdmin = Boolean(
               currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
               currentUser?.role === 'admin' ||
-              currentUser?.isAdmin === true
+              currentUser?.isAdmin === true ||
+              String(currentUser?.tipo || '').toUpperCase() === 'ADM'
             );
             if (isUserAdmin) {
               setActiveTab('admin');
@@ -1090,9 +1106,9 @@ export default function App() {
           />
         )}
 
-        {/* 5. Painel Administrativo Master - APENAS admin@race.com.br */}
+        {/* 5. Painel Administrativo Master - ADM */}
         {activeTab === 'admin' && (
-          (currentUser?.email?.toLowerCase() === ADMIN_EMAIL || currentUser?.role === 'admin' || currentUser?.isAdmin) ? (
+          (currentUser?.email?.toLowerCase() === ADMIN_EMAIL || currentUser?.role === 'admin' || currentUser?.isAdmin || String(currentUser?.tipo || '').toUpperCase() === 'ADM') ? (
             <AdminDashboard
               drivers={drivers}
               rides={ridesHistory}
@@ -1181,7 +1197,8 @@ export default function App() {
             const isUserAdmin = Boolean(
               currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
               currentUser?.role === 'admin' ||
-              currentUser?.isAdmin === true
+              currentUser?.isAdmin === true ||
+              String(currentUser?.tipo || '').toUpperCase() === 'ADM'
             );
             if (!isUserAdmin) return;
           }
