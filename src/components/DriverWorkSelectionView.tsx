@@ -22,7 +22,9 @@ import {
   Award,
   Clock,
   Lock,
-  Loader2
+  Loader2,
+  Camera,
+  LogOut
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { RACE_PIX_KEY, RACE_PIX_BANK, RACE_PIX_NAME, WEEKLY_FEE } from '../config/pricing';
@@ -63,11 +65,11 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
   motorista_economico: {
     key: 'motorista_economico',
     title: 'Motorista Econômico',
-    subtitle: 'Carro comum - ganhe com corridas baratas em Indaiatuba',
+    subtitle: 'Carro popular, corridas mais baratas',
     tagline: 'Ideal para hatch, sedã e carros populares',
     badge: 'R$ 2,50/km • 85% para Você',
     pricePerKm: 'R$ 2,50/km',
-    icon: <Car className="w-8 h-8 text-zinc-400" />,
+    icon: <Car className="w-8 h-8 text-slate-700" />,
     vehicleCategory: 'economica',
     role: 'driver',
     userTipo: 'motorista_economico',
@@ -107,11 +109,16 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
   motorista_confort: {
     key: 'motorista_confort',
     title: 'Motorista Confort',
-    subtitle: 'Carro novo - corridas com mais conforto e preço maior',
+    subtitle: 'Carro 2020+, mais conforto',
     tagline: 'Veículos sedã, SUV e premium ano 2020 ou superior',
     badge: 'R$ 3,50/km • Carro 2020+',
     pricePerKm: 'R$ 3,50/km',
-    icon: <Car className="w-8 h-8 text-[#ff6a00]" />,
+    icon: (
+      <div className="relative flex items-center justify-center">
+        <Car className="w-8 h-8 text-[#ff6a00]" />
+        <Sparkles className="w-4 h-4 text-amber-500 absolute -top-1.5 -right-2" />
+      </div>
+    ),
     vehicleCategory: 'confort',
     role: 'driver',
     userTipo: 'motorista_confort',
@@ -151,17 +158,17 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
   motoboy_passageiro: {
     key: 'motoboy_passageiro',
     title: 'Motoboy Passageiro',
-    subtitle: 'Moto para levar passageiro rápido',
+    subtitle: 'Levar passageiro de moto',
     tagline: 'Agilidade no trânsito para corridas individuais rápidas',
     badge: 'R$ 1,80/km • Moto Táxi',
     pricePerKm: 'R$ 1,80/km',
-    icon: <Bike className="w-8 h-8 text-cyan-400" />,
+    icon: <Bike className="w-8 h-8 text-cyan-500" />,
     vehicleCategory: 'moto_passageiro',
     role: 'motoboy',
     userTipo: 'motoboy_passageiro',
     modelLabel: 'MODELO DA MOTO',
     modelPlaceholder: 'Ex: Honda CG 160 Titan, Yamaha Fazer 250, Honda Bros, Factor 150',
-    hasYear: false,
+    hasYear: true,
     hasTrunkType: false,
     defaultModel: 'Honda CG 160 Titan',
     defaultYear: '2022',
@@ -194,17 +201,17 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
   motoboy_entregas: {
     key: 'motoboy_entregas',
     title: 'Motoboy Entregas',
-    subtitle: 'Moto para entregar encomendas em Indaiatuba',
+    subtitle: 'Fazer entregas',
     tagline: 'Delivery de pacotes, compras, documentos e itens do comércio',
     badge: 'R$ 2,00/km • Entregas & Flash',
     pricePerKm: 'R$ 2,00/km',
-    icon: <Package className="w-8 h-8 text-amber-400" />,
+    icon: <Package className="w-8 h-8 text-amber-500" />,
     vehicleCategory: 'moto_entrega',
     role: 'motoboy',
     userTipo: 'motoboy_entregas',
     modelLabel: 'MODELO DA MOTO',
     modelPlaceholder: 'Ex: Honda CG 160 Start, Yamaha Factor 150, Honda Bros',
-    hasYear: false,
+    hasYear: true,
     hasTrunkType: true,
     defaultModel: 'Honda CG 160 Start',
     defaultYear: '2022',
@@ -239,22 +246,56 @@ interface DriverWorkSelectionViewProps {
   onCompleteDriverRegister: (driver: Driver) => void;
   onBackToRides?: () => void;
   onRenewWeeklyPlan?: (driver?: Driver) => void;
+  onLogout?: () => void;
   isMandatorySetup?: boolean;
   hideLockedOnlineButton?: boolean;
+}
+
+function compressUploadImage(file: File, callback: (dataUrl: string) => void) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const raw = ev.target?.result as string;
+    if (!raw) return;
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 720;
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        callback(canvas.toDataURL('image/jpeg', 0.72));
+      } else {
+        callback(raw);
+      }
+    };
+    img.onerror = () => callback(raw);
+    img.src = raw;
+  };
+  reader.readAsDataURL(file);
 }
 
 export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = ({
   currentUser,
   onCompleteDriverRegister,
   onBackToRides,
+  onLogout,
   isMandatorySetup = false,
   hideLockedOnlineButton = false,
 }) => {
   const [stage, setStage] = useState<'select_category' | 'fill_details'>('select_category');
   const [selectedKey, setSelectedKey] = useState<WorkCategoryKey>('motorista_economico');
-
-  // Estado para expandir detalhes de exigências nos cards
-  const [expandedCardKey, setExpandedCardKey] = useState<WorkCategoryKey | null>(null);
 
   // Form de detalhes operacionais do motorista / motoboy
   const [plate, setPlate] = useState(currentUser.driverData?.vehiclePlate || '');
@@ -265,15 +306,17 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   const [cnh, setCnh] = useState(currentUser.driverData?.cnh || '');
   const [cpf, setCpf] = useState(currentUser.driverData?.cpf || '');
   const [pixKey, setPixKey] = useState(currentUser.driverData?.pixKey || '');
+  const [hasTrunk, setHasTrunk] = useState<'Sim' | 'Não'>(
+    currentUser.driverData?.hasTrunk ? 'Sim' : 'Não'
+  );
   const [trunkType, setTrunkType] = useState(
     currentUser.driverData?.trunkType || 'Baú 80 Litros'
   );
   const [color, setColor] = useState(currentUser.driverData?.vehicleColor || '');
+  const [vehiclePhoto, setVehiclePhoto] = useState(currentUser.driverData?.vehiclePhoto || '');
+  const [cnhPhoto, setCnhPhoto] = useState(currentUser.driverData?.cnhPhoto || '');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-
-  // Checklist de conformidade (pré-marcado opcional ou fácil confirmação)
-  const [checkCompliance, setCheckCompliance] = useState(true);
 
   const selectedCategory = WORK_CATEGORIES[selectedKey];
 
@@ -282,13 +325,14 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     const cat = WORK_CATEGORIES[key];
     setModel('');
     setYear(cat.defaultYear);
-    if (key === 'motoboy_passageiro') {
-      setTrunkType('Sem baú (Transporte de Passageiro)');
-    } else if (key === 'motoboy_entregas') {
+    if (key === 'motoboy_entregas') {
+      setHasTrunk('Sim');
       setTrunkType('Baú 80 Litros');
+    } else if (key === 'motoboy_passageiro') {
+      setHasTrunk('Não');
+      setTrunkType('Não');
     }
     setErrorMessage(null);
-    setCheckCompliance(true);
     setStage('fill_details');
   };
 
@@ -302,7 +346,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     const cleanCnh = cnh.trim();
     const cleanColor = color.trim();
     const cleanCpf = cpf.trim();
-    const cleanBau = isCarCategory ? '' : trunkType.trim();
+    const cleanBau = isCarCategory
+      ? ''
+      : hasTrunk === 'Sim'
+      ? `Sim (${trunkType})`
+      : 'Não';
     const yearNum = parseInt(year, 10) || 2022;
 
     if (isCarCategory) {
@@ -315,15 +363,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         return;
       }
     } else {
-      if (!cleanPlate || !cleanModel || !year.trim() || !cleanCnh || !cleanBau) {
-        setErrorMessage('Preencha todos os campos obrigatórios: Placa moto, Modelo moto, Ano, CNH A e Baú.');
+      if (!cleanPlate || !cleanModel || !year.trim() || !cleanColor || !cleanCnh || !cleanCpf) {
+        setErrorMessage('Preencha todos os campos obrigatórios: Placa moto, Modelo moto, Ano, Cor, CNH A e CPF.');
         return;
       }
-    }
-
-    if (!checkCompliance) {
-      setErrorMessage('Confirme a declaração de conformidade abaixo para liberar seu botão ONLINE.');
-      return;
     }
 
     setIsSaving(true);
@@ -345,9 +388,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         vehiclePlate: cleanPlate,
         vehicleColor: cleanColor,
         vehicleYear: yearNum,
+        vehiclePhoto: vehiclePhoto || undefined,
+        cnhPhoto: cnhPhoto || undefined,
+        hasTrunk: !isCarCategory && hasTrunk === 'Sim',
         rating: existingDriver?.rating || currentUser.rating || 0,
         totalRides: existingDriver?.totalRides || 0,
-        status: 'offline', // Categoria escolhida -> libera o botão ONLINE verde no painel do motorista
+        status: 'online', // "Salvar e ficar ONLINE" -> libera app já ONLINE
         lat: existingDriver?.lat || -23.0903,
         lng: existingDriver?.lng || -47.2180,
         weeklyPlanActive: true,
@@ -387,7 +433,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
       saveUserAccount(updatedAccount, true);
 
-      // Salva categoria exata no Supabase na tabela public.usuarios (ex: categoria = 'Motorista Confort')
+      // Salva no Supabase na tabela usuarios: categoria = 'Motorista Confort' (ou a que escolheu), online = true, status = 'online'
       const updRes = await updateMotoristaSupabase(currentUser.email, {
         categoria: selectedCategory.title,
         placa: cleanPlate,
@@ -397,8 +443,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         cnh: cleanCnh,
         cpf: cleanCpf,
         bau: cleanBau,
+        foto_veiculo: vehiclePhoto,
+        foto_cnh: cnhPhoto,
         tipo: selectedCategory.userTipo,
-        status: 'offline',
+        status: 'online',
+        online: true,
         plano_ativo: true,
       }).catch(() => ({ success: false, data: null }));
 
@@ -421,8 +470,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           bau: cleanBau,
           foto: newDriver.avatar,
           avatar: newDriver.avatar,
+          foto_veiculo: vehiclePhoto,
+          foto_cnh: cnhPhoto,
           plano_ativo: true,
-          status: 'offline',
+          online: true,
+          status: 'online',
         }).catch(() => {});
       }
 
@@ -436,46 +488,62 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     }
   };
 
-  // ESTÁGIO 1: ESCOLHA OBRIGATÓRIA DE CATEGORIA DENTRO DO APP ANTES DE FICAR ONLINE
+  // ESTÁGIO 1: TELA OBRIGATÓRIA DE ESCOLHA DE MODALIDADE
   if (stage === 'select_category') {
     return (
-      <div className="space-y-5 max-w-2xl mx-auto py-2 animate-fade-in">
-        {/* Topo com navegação (se não for bloqueio obrigatório, permite voltar) */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+      <div className="space-y-6 max-w-2xl mx-auto py-2 animate-fade-in">
+        {/* Topo com identificação RACE e Sair opcional */}
+        <div className="flex items-center justify-between gap-2 pb-2 border-b border-zinc-800/40">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-heading font-black text-[#ff6a00] tracking-tighter uppercase">
+              RACE
+            </span>
+            <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/15 px-3 py-1 rounded-full border border-amber-500/40">
+              Complete seu cadastro para começar a trabalhar
+            </span>
+          </div>
           {!isMandatorySetup && onBackToRides ? (
             <button
               type="button"
               onClick={onBackToRides}
-              className="text-slate-600 hover:text-slate-900 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              className="text-slate-600 hover:text-slate-900 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Voltar</span>
             </button>
-          ) : (
-            <span className="text-xs font-mono font-black text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-300">
-              PASSO OBRIGATÓRIO ANTES DE FICAR ONLINE
-            </span>
-          )}
-          <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-            85% para Você • 15% Race • Sem mensalidade
-          </span>
+          ) : onLogout ? (
+            <button
+              type="button"
+              onClick={onLogout}
+              className="text-xs font-bold text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sair</span>
+            </button>
+          ) : null}
         </div>
 
-        {/* Título obrigatório solicitado */}
-        <div className="text-center space-y-2 bg-zinc-950 text-white rounded-3xl p-5 sm:p-6 border-2 border-[#ff6a00] shadow-xl">
-          <h2 className="text-xl sm:text-2xl font-heading font-black text-white tracking-tight">
-            Escolha como quer trabalhar para receber corridas
+        {/* Cabeçalho e Título Principal */}
+        <div className="bg-zinc-950 text-white rounded-3xl p-6 sm:p-7 border-2 border-[#ff6a00] shadow-2xl space-y-4 text-center">
+          <div className="inline-flex items-center gap-2 bg-[#ff6a00]/15 text-[#ff6a00] border border-[#ff6a00]/40 px-3.5 py-1 rounded-full text-xs font-heading font-black uppercase tracking-wider">
+            <ShieldCheck className="w-4 h-4" />
+            <span>Complete seu cadastro para começar a trabalhar</span>
+          </div>
+
+          <h2 className="text-2xl sm:text-3xl font-heading font-black text-white tracking-tight">
+            Escolha em qual modalidade você vai trabalhar
           </h2>
+
           <p className="text-xs sm:text-sm text-zinc-300 font-medium max-w-lg mx-auto">
-            Selecione uma das 4 categorias abaixo e informe os dados do seu veículo para liberar o botão verde ONLINE e começar a receber chamados da sua categoria.
+            Olá, <strong className="text-white">{currentUser.name}</strong>! Para receber chamados de passageiros e entregas, selecione uma das 4 modalidades abaixo e informe os dados do veículo.
           </p>
 
           {!hideLockedOnlineButton && (
-            <div className="pt-2">
+            <div className="pt-1">
               <button
                 type="button"
                 disabled
-                className="w-full py-3.5 px-5 rounded-2xl bg-slate-600 text-slate-200 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed border border-slate-500 opacity-90"
+                className="w-full py-3.5 px-5 rounded-2xl bg-zinc-800 text-zinc-400 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed border border-zinc-700"
               >
                 <Lock className="w-4 h-4 shrink-0" />
                 <span>Escolha sua categoria para ficar ONLINE</span>
@@ -484,8 +552,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           )}
         </div>
 
-        {/* 4 Botões Obrigatórios de Categoria */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* 4 Cards Grandes Clicáveis */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {(Object.keys(WORK_CATEGORIES) as WorkCategoryKey[]).map((catKey) => {
             const cat = WORK_CATEGORIES[catKey];
             return (
@@ -493,340 +561,399 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                 key={cat.key}
                 type="button"
                 onClick={() => handleSelectCategory(catKey)}
-                className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-center justify-between gap-3 shadow-sm hover:shadow-md active:scale-[0.99] ${
+                className={`p-5 sm:p-6 rounded-3xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-4 shadow-lg hover:shadow-xl active:scale-[0.98] ${
                   catKey === 'motorista_confort'
-                    ? 'border-[#ff6a00]/60 hover:border-[#ff6a00] bg-[#fffaf5]'
+                    ? 'border-[#ff6a00] bg-gradient-to-br from-[#fff6ef] to-white hover:bg-[#fff0e3]'
                     : catKey === 'motoboy_passageiro'
-                    ? 'border-cyan-400 hover:border-cyan-600 bg-[#f7fdff]'
+                    ? 'border-cyan-400 bg-gradient-to-br from-[#f2fbff] to-white hover:border-cyan-600'
                     : catKey === 'motoboy_entregas'
-                    ? 'border-amber-400 hover:border-amber-600 bg-[#fffdf7]'
-                    : 'border-slate-300 hover:border-slate-900 bg-white'
+                    ? 'border-amber-400 bg-gradient-to-br from-[#fffaf0] to-white hover:border-amber-600'
+                    : 'border-slate-300 bg-white hover:border-slate-900'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-xs">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-sm">
                     {cat.icon}
                   </div>
-                  <div>
-                    <span className="font-heading font-black text-slate-950 text-base block">
-                      {cat.title}
-                    </span>
-                    <span className="text-[11px] font-bold text-slate-600 block">
-                      {cat.pricePerKm} • {cat.role === 'driver' ? 'Carro' : 'Moto'}
-                    </span>
-                  </div>
+                  <span className="text-xs font-mono font-black px-3 py-1 rounded-full bg-slate-950 text-white">
+                    {cat.pricePerKm}
+                  </span>
                 </div>
-                <ArrowRight className="w-5 h-5 text-slate-700 shrink-0" />
+
+                <div className="space-y-1">
+                  <h3 className="font-heading font-black text-slate-950 text-lg sm:text-xl">
+                    {cat.title}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-600 font-semibold">
+                    {cat.subtitle}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-200/80 text-xs font-heading font-black text-[#ff6a00]">
+                  <span>Selecionar esta modalidade</span>
+                  <ArrowRight className="w-4 h-4" />
+                </div>
               </button>
             );
           })}
         </div>
 
-        {/* Lista detalhada com Exigências de cada categoria */}
-        <div className="grid grid-cols-1 gap-3">
-          {(Object.keys(WORK_CATEGORIES) as WorkCategoryKey[]).map((catKey) => {
-            const cat = WORK_CATEGORIES[catKey];
-            const isExpanded = expandedCardKey === catKey;
-
-            return (
-              <div
-                key={`info-${cat.key}`}
-                className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <h3 className="font-heading font-black text-slate-900 text-sm">
-                      {cat.title} — {cat.subtitle}
-                    </h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectCategory(catKey)}
-                    className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-[#ff6a00] text-white font-heading font-black text-xs transition-all cursor-pointer shrink-0"
-                  >
-                    Escolher
-                  </button>
-                </div>
-
-                {/* Destaques das Exigências Obrigatórias */}
-                <div className="mt-3 pt-2 border-t border-slate-100">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
-                    {cat.keyHighlights.map((highlight, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5 text-slate-600 font-medium">
-                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>{highlight}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedCardKey(isExpanded ? null : catKey)}
-                    className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 cursor-pointer transition-colors"
-                  >
-                    <Info className="w-3.5 h-3.5" />
-                    <span>{isExpanded ? 'Ocultar exigências detalhadas' : 'Ver exigências detalhadas'}</span>
-                    {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </button>
-
-                  {isExpanded && (
-                    <div className="mt-2.5 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5 text-xs animate-fade-in">
-                      <div>
-                        <span className="font-bold text-slate-900 block mb-1">1. Requisitos do Condutor:</span>
-                        <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
-                          {cat.driverRequirements.map((req, rIdx) => (
-                            <li key={rIdx}>{req}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <span className="font-bold text-slate-900 block mb-1">2. Requisitos do Veículo:</span>
-                        <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
-                          {cat.vehicleRequirements.map((req, rIdx) => (
-                            <li key={rIdx}>{req}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {/* Texto obrigatório embaixo */}
+        <p className="text-center text-xs sm:text-sm font-bold text-zinc-400 pt-1">
+          Você pode trocar depois em Perfil
+        </p>
       </div>
     );
   }
 
-  // ESTÁGIO 2: FORMULÁRIO ESPECÍFICO DA CATEGORIA ESCOLHIDA
+  // ESTÁGIO 2: FORMULÁRIO DA MODALIDADE ESCOLHIDA
   if (stage === 'fill_details') {
     const isCarCategory = selectedCategory.role === 'driver';
     return (
       <div className="space-y-5 max-w-2xl mx-auto py-2 animate-fade-in">
-        {/* Navegação e Categoria Ativa */}
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        {/* Navegação e Modalidade Ativa */}
+        <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
           <button
             type="button"
             onClick={() => setStage('select_category')}
-            className="text-slate-600 hover:text-slate-900 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+            className="text-amber-400 hover:text-amber-300 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 bg-zinc-900 px-3 py-2 rounded-xl border border-zinc-700"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Trocar categoria</span>
+            <span>Voltar para modalidades</span>
           </button>
-          <span className="text-xs font-mono font-black text-slate-900 bg-amber-100 border border-amber-300 px-3 py-1 rounded-full">
+          <span className="text-xs font-mono font-black text-slate-950 bg-amber-400 px-3.5 py-1.5 rounded-full">
             {selectedCategory.title}
           </span>
         </div>
 
-        {/* Título Principal */}
+        {/* Cabeçalho do Formulário */}
         <div className="space-y-1">
-          <h2 className="text-xl sm:text-2xl font-heading font-black text-slate-950 tracking-tight">
-            Dados para {selectedCategory.title}
+          <h2 className="text-xl sm:text-2xl font-heading font-black tracking-tight">
+            Cadastro: {selectedCategory.title}
           </h2>
-          <p className="text-xs sm:text-sm text-slate-600 font-medium">
-            Preencha os dados abaixo para salvar sua categoria e liberar o botão verde <strong>ONLINE</strong>.
+          <p className="text-xs sm:text-sm opacity-80 font-medium">
+            Preencha os dados do seu {isCarCategory ? 'carro' : 'veículo'} abaixo para salvar e ficar ONLINE imediatamente.
           </p>
         </div>
 
         {/* Mensagem de Erro */}
         {errorMessage && (
-          <div className="bg-rose-50 border-2 border-rose-300 text-rose-900 text-xs sm:text-sm p-4 rounded-2xl font-bold flex items-center gap-2.5 shadow-sm">
+          <div className="bg-rose-50 border-2 border-rose-400 text-rose-900 text-xs sm:text-sm p-4 rounded-2xl font-bold flex items-center gap-2.5 shadow-sm">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmitDetails} className="space-y-4 bg-white border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-sm">
+        <form onSubmit={handleSubmitDetails} className="space-y-4 bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl">
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-700 flex flex-wrap gap-x-4 gap-y-1">
             <span><strong>Condutor:</strong> {currentUser.name}</span>
             <span><strong>E-mail:</strong> {currentUser.email}</span>
-            <span><strong>Categoria:</strong> {selectedCategory.title}</span>
+            <span><strong>Modalidade:</strong> {selectedCategory.title}</span>
           </div>
 
           {isCarCategory ? (
-            /* FORMULÁRIO MOTORISTA ECONÔMICO / CONFORT: Placa, Modelo, Ano, Cor, CNH, CPF */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Placa *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={plate}
-                  onChange={(e) => setPlate(e.target.value.toUpperCase())}
-                  placeholder="Ex: ABC1D23"
-                  maxLength={8}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 uppercase"
-                />
+            /* MOTORISTA ECONÔMICO / CONFORT: Placa, Modelo, Ano, Cor, CNH, CPF, Foto do carro, Foto CNH */
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    Placa *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={plate}
+                    onChange={(e) => setPlate(e.target.value.toUpperCase())}
+                    placeholder="Ex: ABC1D23"
+                    maxLength={8}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 uppercase"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    Modelo *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder={selectedCategory.modelPlaceholder}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    Ano *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={selectedCategory.minYear || 2005}
+                    max={2026}
+                    value={year}
+                    onChange={(e) => setYear(e.target.value)}
+                    placeholder={selectedCategory.key === 'motorista_confort' ? 'Ex: 2022' : 'Ex: 2019'}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                  {selectedCategory.key === 'motorista_confort' && (
+                    <span className="text-[11px] font-bold text-[#ff6a00] block">
+                      Exigência Confort: ano 2020 ou superior.
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    Cor *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    placeholder="Ex: Prata, Preto, Branco"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    CNH *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={cnh}
+                    onChange={(e) => setCnh(e.target.value)}
+                    placeholder="Número da CNH (com EAR)"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    CPF *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={cpf}
+                    onChange={(e) => setCpf(e.target.value)}
+                    placeholder="000.000.000-00"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Modelo *
+              {/* Fotos do Carro e da CNH */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) compressUploadImage(f, setVehiclePhoto);
+                    }}
+                  />
+                  {vehiclePhoto ? (
+                    <>
+                      <img src={vehiclePhoto} alt="Foto do carro" className="w-full h-24 object-cover rounded-xl" />
+                      <span className="text-xs font-bold text-emerald-700">Foto do carro anexada ✓ (Trocar)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-6 h-6 text-[#ff6a00]" />
+                      <span className="text-xs font-bold text-slate-800">Foto do carro</span>
+                      <span className="text-[11px] text-slate-500">Clique para escolher da galeria ou câmera</span>
+                    </>
+                  )}
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder={selectedCategory.modelPlaceholder}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-              </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Ano *
+                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) compressUploadImage(f, setCnhPhoto);
+                    }}
+                  />
+                  {cnhPhoto ? (
+                    <>
+                      <img src={cnhPhoto} alt="Foto CNH" className="w-full h-24 object-cover rounded-xl" />
+                      <span className="text-xs font-bold text-emerald-700">Foto CNH anexada ✓ (Trocar)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-6 h-6 text-[#ff6a00]" />
+                      <span className="text-xs font-bold text-slate-800">Foto CNH</span>
+                      <span className="text-[11px] text-slate-500">Clique para escolher da galeria ou câmera</span>
+                    </>
+                  )}
                 </label>
-                <input
-                  type="number"
-                  required
-                  min={selectedCategory.minYear || 2005}
-                  max={2026}
-                  value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  placeholder={selectedCategory.key === 'motorista_confort' ? 'Ex: 2022' : 'Ex: 2019'}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-                {selectedCategory.key === 'motorista_confort' && (
-                  <span className="text-[11px] font-bold text-[#ff6a00] block">
-                    Exigência Confort: ano 2020 ou superior.
-                  </span>
+              </div>
+            </>
+          ) : (
+            /* MOTOBOY PASSAGEIRO / ENTREGAS: Placa moto, Modelo moto, Ano, Cor, CNH A, CPF, Tem baú?, Foto da moto */
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    Placa moto *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={plate}
+                    onChange={(e) => setPlate(e.target.value.toUpperCase())}
+                    placeholder="Ex: RCE9M22"
+                    maxLength={8}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 uppercase"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    Modelo moto *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder={selectedCategory.modelPlaceholder}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    Ano *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={2005}
+                    max={2026}
+                    value={year}
+                    onChange={(e) => setYear(e.target.value)}
+                    placeholder="Ex: 2022"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    Cor *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    placeholder="Ex: Preta, Vermelha, Azul"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    CNH A *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={cnh}
+                    onChange={(e) => setCnh(e.target.value)}
+                    placeholder="Número da CNH A (com EAR)"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    CPF *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={cpf}
+                    onChange={(e) => setCpf(e.target.value)}
+                    placeholder="000.000.000-00"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    Tem baú? *
+                  </label>
+                  <select
+                    value={hasTrunk}
+                    onChange={(e) => setHasTrunk(e.target.value as 'Sim' | 'Não')}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    <option value="Sim">Sim, tenho baú / bag</option>
+                    <option value="Não">Não</option>
+                  </select>
+                </div>
+
+                {hasTrunk === 'Sim' && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                      Capacidade do Baú
+                    </label>
+                    <select
+                      value={trunkType}
+                      onChange={(e) => setTrunkType(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      <option value="Baú 80 Litros">Baú 80 Litros</option>
+                      <option value="Baú 90 Litros">Baú 90 Litros</option>
+                      <option value="Baú 120 Litros">Baú 120 Litros</option>
+                      <option value="Mochila / Bag Térmica (até 20kg)">Mochila / Bag Térmica (até 20kg)</option>
+                    </select>
+                  </div>
                 )}
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Cor *
-                </label>
+              {/* Foto da Moto */}
+              <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
                 <input
-                  type="text"
-                  required
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                  placeholder="Ex: Prata, Preto, Branco"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) compressUploadImage(f, setVehiclePhoto);
+                  }}
                 />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  CNH *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={cnh}
-                  onChange={(e) => setCnh(e.target.value)}
-                  placeholder="Número da CNH (com EAR)"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  CPF *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={cpf}
-                  onChange={(e) => setCpf(e.target.value)}
-                  placeholder="000.000.000-00"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-            </div>
-          ) : (
-            /* FORMULÁRIO MOTOBOY PASSAGEIRO / ENTREGAS: Placa moto, Modelo moto, Ano, CNH A, Baú */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Placa moto *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={plate}
-                  onChange={(e) => setPlate(e.target.value.toUpperCase())}
-                  placeholder="Ex: RCE9M22"
-                  maxLength={8}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 uppercase"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Modelo moto *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder={selectedCategory.modelPlaceholder}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Ano *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={2005}
-                  max={2026}
-                  value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  placeholder="Ex: 2022"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  CNH A *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={cnh}
-                  onChange={(e) => setCnh(e.target.value)}
-                  placeholder="Número da CNH A (com EAR)"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="space-y-1.5 sm:col-span-2">
-                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Baú *
-                </label>
-                <select
-                  value={trunkType}
-                  onChange={(e) => setTrunkType(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
-                >
-                  {selectedCategory.key === 'motoboy_passageiro' && (
-                    <option value="Sem baú (Transporte de Passageiro)">Sem baú (Transporte de Passageiro com 2 capacetes)</option>
-                  )}
-                  <option value="Baú 80 Litros">Baú 80 Litros</option>
-                  <option value="Baú 90 Litros">Baú 90 Litros</option>
-                  <option value="Baú 120 Litros">Baú 120 Litros</option>
-                  <option value="Mochila / Bag Térmica (até 20kg)">Mochila / Bag Térmica (até 20kg)</option>
-                </select>
-              </div>
-            </div>
+                {vehiclePhoto ? (
+                  <>
+                    <img src={vehiclePhoto} alt="Foto da moto" className="w-full h-28 object-cover rounded-xl" />
+                    <span className="text-xs font-bold text-emerald-700">Foto da moto anexada ✓ (Trocar)</span>
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-6 h-6 text-[#ff6a00]" />
+                    <span className="text-xs font-bold text-slate-800">Foto da moto</span>
+                    <span className="text-[11px] text-slate-500">Clique para escolher da galeria ou câmera</span>
+                  </>
+                )}
+              </label>
+            </>
           )}
 
           {/* Chave PIX Opcional para Saques */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-              Chave PIX (para receber seus 85% das corridas)
+              Chave PIX (para receber seus 85% das corridas toda sexta)
             </label>
             <input
               type="text"
@@ -837,33 +964,20 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             />
           </div>
 
-          {/* Confirmação de Conformidade */}
-          <label className="flex items-start gap-3 p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl cursor-pointer transition-colors">
-            <input
-              type="checkbox"
-              checked={checkCompliance}
-              onChange={(e) => setCheckCompliance(e.target.checked)}
-              className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
-            />
-            <span className="text-xs text-slate-800 font-medium leading-relaxed">
-              Confirmo que possuo CNH válida com EAR e que meu veículo atende aos requisitos da categoria <strong>{selectedCategory.title}</strong>. Modelo RACE: <strong>85% para você e 15% Race, sem mensalidade</strong>.
-            </span>
-          </label>
-
           <button
             type="submit"
             disabled={isSaving}
-            className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-heading font-black text-base transition-all cursor-pointer shadow-lg uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.99]"
+            className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-heading font-black text-base sm:text-lg transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 active:scale-[0.99]"
           >
             {isSaving ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>SALVANDO CATEGORIA NO SUPABASE...</span>
+                <span>Salvando no Supabase...</span>
               </>
             ) : (
               <>
                 <CheckCircle2 className="w-5 h-5" />
-                <span>SALVAR CATEGORIA E LIBERAR BOTÃO ONLINE</span>
+                <span>Salvar e ficar ONLINE</span>
               </>
             )}
           </button>

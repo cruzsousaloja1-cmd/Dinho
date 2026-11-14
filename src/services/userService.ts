@@ -85,21 +85,22 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
     String(cloudUser.tipo || '').toUpperCase() === 'ADM' ||
     String(cloudUser.tipo || '').toLowerCase() === 'admin';
 
+  const tipoLower = String(cloudUser.tipo || '').toLowerCase().trim();
   const rawCatNorm = cloudUser.categoria ? normalizeRideCategory(cloudUser.categoria) : null;
   const isMoto =
     !isCloudAdmin &&
-    (cloudUser.tipo === 'motoboy' ||
-      cloudUser.tipo === 'motoboy_passageiro' ||
-      cloudUser.tipo === 'motoboy_entregas' ||
+    (tipoLower === 'motoboy' ||
+      tipoLower === 'motoboy_passageiro' ||
+      tipoLower === 'motoboy_entregas' ||
       rawCatNorm === 'moto_passageiro' ||
       rawCatNorm === 'moto_entrega');
 
   const isDriver =
     !isCloudAdmin &&
-    (cloudUser.tipo === 'driver' ||
-      cloudUser.tipo === 'motorista' ||
-      cloudUser.tipo === 'motorista_economico' ||
-      cloudUser.tipo === 'motorista_confort' ||
+    (tipoLower === 'driver' ||
+      tipoLower === 'motorista' ||
+      tipoLower === 'motorista_economico' ||
+      tipoLower === 'motorista_confort' ||
       isMoto);
 
   const driverObj: Driver | undefined = isDriver ? mapSupabaseRowToDriver(cloudUser) : undefined;
@@ -183,9 +184,12 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     bau: account.driverData?.trunkType || '',
     foto: account.avatar || '',
     avatar: account.avatar || '',
+    foto_veiculo: account.driverData?.vehiclePhoto || '',
+    foto_cnh: account.driverData?.cnhPhoto || '',
     rating: account.rating || 0,
     saldo: account.driverData?.walletBalance || 0,
     plano_ativo: account.driverData?.weeklyPlanActive ?? false,
+    online: isConfiguredDriver && account.driverData?.status === 'online',
     status: isConfiguredDriver ? account.driverData?.status : 'offline',
     lat: account.driverData?.lat,
     lng: account.driverData?.lng,

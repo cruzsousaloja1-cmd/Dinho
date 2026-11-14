@@ -157,13 +157,17 @@ export default function App() {
           return;
         }
 
+        const hydratedTipoLower = String(hydratedUser.tipo || '').toLowerCase().trim();
         const isDriverOrMotoboy =
           hydratedUser.role === 'driver' ||
           hydratedUser.role === 'motoboy' ||
-          hydratedUser.tipo === 'motorista_economico' ||
-          hydratedUser.tipo === 'motorista_confort' ||
-          hydratedUser.tipo === 'motoboy_passageiro' ||
-          hydratedUser.tipo === 'motoboy_entregas';
+          hydratedTipoLower === 'driver' ||
+          hydratedTipoLower === 'motorista' ||
+          hydratedTipoLower === 'motoboy' ||
+          hydratedTipoLower === 'motorista_economico' ||
+          hydratedTipoLower === 'motorista_confort' ||
+          hydratedTipoLower === 'motoboy_passageiro' ||
+          hydratedTipoLower === 'motoboy_entregas';
 
         if (isDriverOrMotoboy && hydratedDriver) {
           const isConfigured =
@@ -1120,27 +1124,40 @@ export default function App() {
             return;
           }
 
+          const loginTipoLower = String(user.tipo || '').toLowerCase().trim();
           const isDriverOrMotoboy =
             user.role === 'driver' ||
             user.role === 'motoboy' ||
-            user.tipo === 'driver' ||
-            user.tipo === 'motoboy' ||
-            user.tipo === 'motorista_economico' ||
-            user.tipo === 'motorista_confort' ||
-            user.tipo === 'motoboy_passageiro' ||
-            user.tipo === 'motoboy_entregas';
+            loginTipoLower === 'driver' ||
+            loginTipoLower === 'motorista' ||
+            loginTipoLower === 'motoboy' ||
+            loginTipoLower === 'motorista_economico' ||
+            loginTipoLower === 'motorista_confort' ||
+            loginTipoLower === 'motoboy_passageiro' ||
+            loginTipoLower === 'motoboy_entregas';
 
-          if (isDriverOrMotoboy && driver) {
+          if (isDriverOrMotoboy) {
+            const targetDriver: Driver = driver || user.driverData || {
+              ...DEFAULT_NEW_DRIVER,
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              phone: user.phone,
+              avatar: user.avatar || '',
+              category: user.role === 'motoboy' || loginTipoLower.includes('moto') ? 'moto_passageiro' : 'economica',
+              categoryConfigured: false,
+              status: 'offline',
+            };
             const isConfigured =
-              driver.categoryConfigured !== false &&
-              Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim());
-            const currentBal = getDriverBalance(driver.id, driver.walletBalance || 0);
+              targetDriver.categoryConfigured !== false &&
+              Boolean(targetDriver.vehiclePlate?.trim() && targetDriver.vehicleModel?.trim());
+            const currentBal = getDriverBalance(targetDriver.id, targetDriver.walletBalance || 0);
             const driverWithBal: Driver = {
-              ...driver,
+              ...targetDriver,
               categoryConfigured: isConfigured,
               walletBalance: currentBal,
               weeklyPlanActive: isConfigured,
-              status: isConfigured && driver.status === 'online' ? 'online' : 'offline',
+              status: isConfigured && targetDriver.status === 'online' ? 'online' : 'offline',
             };
             setCurrentDriver(driverWithBal);
             setDrivers((prev) => [driverWithBal, ...prev.filter((d) => d.id !== driverWithBal.id)]);
@@ -1150,8 +1167,8 @@ export default function App() {
             setActiveTab('driver_portal');
             setLoginSuccessBanner(
               isConfigured
-                ? `Bem-vindo(a), ${driver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
-                : `Bem-vindo(a), ${driver.name}! Escolha sua categoria abaixo e preencha os dados do veículo para liberar o botão verde ONLINE.`
+                ? `Bem-vindo(a), ${targetDriver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
+                : `Bem-vindo(a), ${targetDriver.name}! Escolha sua modalidade e preencha os dados do veículo para liberar o botão verde ONLINE.`
             );
           } else {
             // Passageiro: vai direto para tela de pedir corrida com mapa
@@ -1174,17 +1191,75 @@ export default function App() {
     );
   }
 
+  const userTipoLower = String(currentUser.tipo || '').toLowerCase().trim();
   const isUserDriver = Boolean(
     currentUser && (
       currentUser.role === 'driver' ||
       currentUser.role === 'motoboy' ||
       Boolean(currentUser.driverData) ||
-      currentUser.tipo === 'motorista_economico' ||
-      currentUser.tipo === 'motorista_confort' ||
-      currentUser.tipo === 'motoboy_passageiro' ||
-      currentUser.tipo === 'motoboy_entregas'
+      userTipoLower === 'driver' ||
+      userTipoLower === 'motorista' ||
+      userTipoLower === 'motoboy' ||
+      userTipoLower === 'motorista_economico' ||
+      userTipoLower === 'motorista_confort' ||
+      userTipoLower === 'motoboy_passageiro' ||
+      userTipoLower === 'motoboy_entregas'
     )
   );
+
+  const isDriverCategoryConfigured = Boolean(
+    currentDriver.categoryConfigured !== false &&
+    currentDriver.vehiclePlate?.trim() &&
+    currentDriver.vehicleModel?.trim()
+  );
+
+  // TELA FULLSCREEN OBRIGATÓRIA DE ESCOLHA DE MODALIDADE APÓS CADASTRO DO MOTORISTA / MOTOBOY
+  // Não mostra tela de passageiro, Header ou BottomNav até concluir o preenchimento da modalidade.
+  if (isUserDriver && !isDriverCategoryConfigured) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] text-white px-4 py-6 sm:py-10 overflow-y-auto">
+        <DriverWorkSelectionView
+          currentUser={currentUser}
+          isMandatorySetup={true}
+          onLogout={handleLogout}
+          onCompleteDriverRegister={(newDriver) => {
+            const configuredDriver: Driver = {
+              ...newDriver,
+              categoryConfigured: true,
+              status: 'online',
+              weeklyPlanActive: true,
+            };
+            const isMoto =
+              configuredDriver.category === 'moto_passageiro' ||
+              configuredDriver.category === 'moto_entrega';
+            const nextTipo =
+              configuredDriver.category === 'economica'
+                ? 'motorista_economico'
+                : configuredDriver.category === 'confort'
+                ? 'motorista_confort'
+                : configuredDriver.category === 'moto_passageiro'
+                ? 'motoboy_passageiro'
+                : 'motoboy_entregas';
+            const updatedUser: AppUser = {
+              ...currentUser,
+              role: isMoto ? 'motoboy' : 'driver',
+              tipo: nextTipo,
+              placa: configuredDriver.vehiclePlate,
+              driverData: configuredDriver,
+            };
+            setCurrentUser(updatedUser);
+            saveSessionUser(updatedUser);
+            handleRegisterDriver(configuredDriver);
+            captureAndSyncDriverGps(configuredDriver, 'online');
+            setActiveTab('driver_portal');
+            setLoginSuccessBanner(
+              `Modalidade configurada! Você já está ONLINE e pronto para receber corridas na RACE.`
+            );
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans pb-28 selection:bg-slate-900 selection:text-white w-full max-w-full overflow-x-hidden box-border">

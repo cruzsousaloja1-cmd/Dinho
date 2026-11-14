@@ -42,7 +42,10 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   rating NUMERIC DEFAULT 0.0,
   saldo NUMERIC DEFAULT 0.0,
   plano_ativo BOOLEAN DEFAULT false,
+  online BOOLEAN DEFAULT false,
   status TEXT DEFAULT 'offline',
+  foto_veiculo TEXT,
+  foto_cnh TEXT,
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
   data_cadastro TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
@@ -52,6 +55,9 @@ ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS codigo_usuario TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS cor TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS cpf TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS bau TEXT;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS online BOOLEAN DEFAULT false;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto_veiculo TEXT;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto_cnh TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
@@ -157,9 +163,12 @@ export interface SupabaseUsuarioRow {
   bau?: string;
   foto?: string;
   avatar?: string;
+  foto_veiculo?: string;
+  foto_cnh?: string;
   rating?: number;
   saldo?: number;
   plano_ativo?: boolean;
+  online?: boolean;
   status?: string;
   lat?: number;
   lng?: number;
@@ -278,7 +287,10 @@ export async function insertUsuarioSupabase(params: {
   bau?: string;
   foto?: string;
   avatar?: string;
+  foto_veiculo?: string;
+  foto_cnh?: string;
   status?: string;
+  online?: boolean;
   plano_ativo?: boolean;
   lat?: number;
   lng?: number;
@@ -308,7 +320,10 @@ export async function insertUsuarioSupabase(params: {
       row.foto = photoValue;
       row.avatar = photoValue;
     }
+    if (params.foto_veiculo) row.foto_veiculo = params.foto_veiculo;
+    if (params.foto_cnh) row.foto_cnh = params.foto_cnh;
     if (params.status) row.status = params.status;
+    if (typeof params.online === 'boolean') row.online = params.online;
     if (typeof params.plano_ativo === 'boolean') row.plano_ativo = params.plano_ativo;
     if (typeof params.lat === 'number' && !Number.isNaN(params.lat)) row.lat = params.lat;
     if (typeof params.lng === 'number' && !Number.isNaN(params.lng)) row.lng = params.lng;
@@ -322,9 +337,12 @@ export async function insertUsuarioSupabase(params: {
       'lng',
       'foto',
       'avatar',
+      'foto_veiculo',
+      'foto_cnh',
       'whatsapp',
       'login',
       'status',
+      'online',
       'plano_ativo',
       'categoria',
       'placa',
@@ -443,8 +461,11 @@ export async function updateMotoristaSupabase(
     cnh: string;
     cpf?: string;
     bau?: string;
+    foto_veiculo?: string;
+    foto_cnh?: string;
     tipo?: string;
     status?: string;
+    online?: boolean;
     plano_ativo?: boolean;
   }
 ): Promise<{ success: boolean; data?: any; error?: string }> {
@@ -461,12 +482,19 @@ export async function updateMotoristaSupabase(
     if (params.cor !== undefined) updatePayload.cor = params.cor;
     if (params.cpf !== undefined) updatePayload.cpf = params.cpf;
     if (params.bau !== undefined) updatePayload.bau = params.bau;
+    if (params.foto_veiculo !== undefined && params.foto_veiculo !== '') {
+      updatePayload.foto_veiculo = params.foto_veiculo;
+    }
+    if (params.foto_cnh !== undefined && params.foto_cnh !== '') {
+      updatePayload.foto_cnh = params.foto_cnh;
+    }
     if (params.status !== undefined) updatePayload.status = params.status;
+    if (typeof params.online === 'boolean') updatePayload.online = params.online;
     if (typeof params.plano_ativo === 'boolean') updatePayload.plano_ativo = params.plano_ativo;
 
-    const optionalCols = ['cor', 'cpf', 'bau', 'status', 'plano_ativo', 'tipo', 'ano', 'cnh'];
+    const optionalCols = ['cor', 'cpf', 'bau', 'foto_veiculo', 'foto_cnh', 'online', 'status', 'plano_ativo', 'tipo', 'ano', 'cnh'];
 
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 12; attempt++) {
       let { data, error } = await supabase
         .from('usuarios')
         .update(updatePayload)
@@ -527,9 +555,12 @@ export async function saveUsuarioSupabase(user: {
   bau?: string;
   foto?: string;
   avatar?: string;
+  foto_veiculo?: string;
+  foto_cnh?: string;
   rating?: number;
   saldo?: number;
   plano_ativo?: boolean;
+  online?: boolean;
   status?: string;
   lat?: number;
   lng?: number;
@@ -556,8 +587,13 @@ export async function saveUsuarioSupabase(user: {
       if (user.cor !== undefined) updateData.cor = user.cor;
       if (user.cpf !== undefined) updateData.cpf = user.cpf;
       if (user.bau !== undefined) updateData.bau = user.bau;
+      if (user.foto_veiculo) updateData.foto_veiculo = user.foto_veiculo;
+      if (user.foto_cnh) updateData.foto_cnh = user.foto_cnh;
       if (user.status) {
         updateData.status = user.status;
+      }
+      if (typeof user.online === 'boolean') {
+        updateData.online = user.online;
       }
       if (typeof user.plano_ativo === 'boolean') {
         updateData.plano_ativo = user.plano_ativo;
@@ -573,7 +609,7 @@ export async function saveUsuarioSupabase(user: {
         updateData.foto = user.foto || user.avatar;
       }
 
-      for (let attempt = 0; attempt < 8; attempt++) {
+      for (let attempt = 0; attempt < 12; attempt++) {
         const { data, error } = await supabase
           .from('usuarios')
           .update(updateData)
@@ -586,7 +622,7 @@ export async function saveUsuarioSupabase(user: {
 
         const msg = error.message || '';
         let removed = false;
-        for (const col of ['avatar', 'foto', 'lat', 'lng', 'status', 'cor', 'cpf', 'bau', 'plano_ativo']) {
+        for (const col of ['avatar', 'foto', 'foto_veiculo', 'foto_cnh', 'lat', 'lng', 'online', 'status', 'cor', 'cpf', 'bau', 'plano_ativo']) {
           if (col in updateData && msg.includes(col)) {
             delete updateData[col];
             removed = true;
@@ -618,6 +654,9 @@ export async function saveUsuarioSupabase(user: {
         bau: user.bau,
         foto: user.foto || user.avatar,
         avatar: user.avatar || user.foto,
+        foto_veiculo: user.foto_veiculo,
+        foto_cnh: user.foto_cnh,
+        online: user.online ?? (user.status === 'online'),
         status: user.status || 'offline',
         plano_ativo: user.plano_ativo,
         lat: user.lat,
@@ -640,7 +679,10 @@ export async function updateDriverOnlineStatusSupabase(params: {
   lng?: number;
 }): Promise<boolean> {
   try {
-    const payload: Record<string, any> = { status: params.status };
+    const payload: Record<string, any> = {
+      status: params.status,
+      online: params.status === 'online',
+    };
     if (typeof params.lat === 'number' && !Number.isNaN(params.lat)) {
       payload.lat = params.lat;
     }
@@ -663,11 +705,20 @@ export async function updateDriverOnlineStatusSupabase(params: {
       return { error: { message: 'Sem identificador' } } as any;
     };
 
-    let res = await executeUpdate({ ...payload });
-    if (res.error && (res.error.message?.includes('lat') || res.error.message?.includes('lng'))) {
-      res = await executeUpdate({ status: params.status });
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const res = await executeUpdate({ ...payload });
+      if (!res.error) return true;
+      const msg = res.error.message || '';
+      let removed = false;
+      for (const col of ['online', 'lat', 'lng']) {
+        if (col in payload && msg.includes(col)) {
+          delete payload[col];
+          removed = true;
+        }
+      }
+      if (!removed) return false;
     }
-    return !res.error;
+    return false;
   } catch {
     return false;
   }
@@ -847,9 +898,10 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     : 'economica';
 
   const rawStatus = String(u.status || '').toLowerCase().trim();
+  const isRowOnline = rawStatus === 'online' || u.online === true;
   const driverStatus: Driver['status'] = !categoryConfigured
     ? 'offline'
-    : rawStatus === 'online'
+    : isRowOnline
     ? 'online'
     : rawStatus === 'in_ride'
     ? 'in_ride'
@@ -872,9 +924,12 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     vehiclePlate: u.placa || '',
     vehicleColor: u.cor || '',
     vehicleYear: Number(u.ano) || 2023,
+    vehiclePhoto: u.foto_veiculo || '',
+    cnhPhoto: u.foto_cnh || '',
     cpf: u.cpf || '',
     cnh: u.cnh || '',
     trunkType: u.bau || undefined,
+    hasTrunk: Boolean(u.bau && !String(u.bau).toLowerCase().includes('não') && !String(u.bau).toLowerCase().includes('sem')),
     category,
     categoryConfigured,
     weeklyPlanActive: Boolean(u.plano_ativo ?? true),

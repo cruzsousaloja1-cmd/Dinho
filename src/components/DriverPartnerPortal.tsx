@@ -1153,11 +1153,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               onBackToRides={isEditingCategory ? () => setIsEditingCategory(false) : undefined}
               onCompleteDriverRegister={(updatedDriver) => {
                 onUpdateDriver(updatedDriver);
+                setIsOnline(updatedDriver.status === 'online');
                 setIsEditingCategory(false);
                 if (onTriggerToast) {
                   onTriggerToast(
-                    'Categoria configurada!',
-                    'Sua categoria foi salva no Supabase. Agora clique no botão verde FICAR ONLINE para receber corridas!',
+                    'Modalidade atualizada!',
+                    'Sua modalidade e dados do veículo foram salvos no Supabase e você já está ONLINE.',
                     'system'
                   );
                 }
@@ -1905,12 +1906,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         ))}
                       </div>
                     ) : (
-                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs text-slate-700 space-y-1">
-                        <div className="flex items-center gap-2 text-amber-500 font-bold">
-                          <span>★★★★★</span>
-                          <span className="text-slate-800 font-bold">- Chegou rápido e carro limpo</span>
-                          <span className="text-slate-500 font-normal">— Maria</span>
-                        </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs text-slate-500 font-medium">
+                        Nenhuma avaliação recebida ainda. As notas reais dos passageiros aparecerão aqui após as corridas.
                       </div>
                     )}
                   </div>
@@ -1964,9 +1961,31 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <span className="text-[11px] font-bold text-slate-500 uppercase block">Placa do Veículo</span>
                     <span className="font-mono font-black text-amber-700">{currentDriver.vehiclePlate || 'Não informada'}</span>
                   </div>
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[11px] font-bold text-slate-500 uppercase block">Categoria</span>
-                    <span className="font-bold text-slate-900 capitalize">{currentDriver.category.replace('_', ' ')}</span>
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[11px] font-bold text-slate-500 uppercase block">Modalidade / Categoria</span>
+                      <span className="font-bold text-slate-900 capitalize">
+                        {currentDriver.category === 'economica'
+                          ? 'Motorista Econômico'
+                          : currentDriver.category === 'confort'
+                          ? 'Motorista Confort'
+                          : currentDriver.category === 'moto_passageiro'
+                          ? 'Motoboy Passageiro'
+                          : currentDriver.category === 'moto_entrega'
+                          ? 'Motoboy Entregas'
+                          : String(currentDriver.category || '').replace('_', ' ')}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDashboardSection('corridas');
+                        setIsEditingCategory(true);
+                      }}
+                      className="text-xs font-black bg-[#ff6a00]/10 hover:bg-[#ff6a00]/20 text-[#ff6a00] px-3 py-1.5 rounded-xl border border-[#ff6a00]/30 transition-colors cursor-pointer shrink-0"
+                    >
+                      Trocar modalidade
+                    </button>
                   </div>
                   <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                     <span className="text-[11px] font-bold text-slate-500 uppercase block">Cor do Veículo</span>
