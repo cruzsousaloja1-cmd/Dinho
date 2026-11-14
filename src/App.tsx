@@ -27,6 +27,7 @@ import { PushNotificationToast } from './components/PushNotificationToast';
 import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
 import { DriverLoginScreen } from './components/DriverLoginScreen';
+import { SplashScreen } from './components/SplashScreen';
 import { FullMapView } from './components/FullMapView';
 import { PassengerOptionsView } from './components/PassengerOptionsView';
 import { PassengerAccountView } from './components/PassengerAccountView';
@@ -101,6 +102,7 @@ export default function App() {
   }>({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [loginSuccessBanner, setLoginSuccessBanner] = useState<string | null>(null);
+  const [showPostAuthSplash, setShowPostAuthSplash] = useState(false);
 
   // Map and Route States
   const [pickup, setPickup] = useState<LocationPoint | null>(null);
@@ -1110,6 +1112,7 @@ export default function App() {
   const handleAuthSuccess = (user: AppUser, driver?: Driver) => {
     setCurrentUser(user);
     saveSessionUser(user);
+    setShowPostAuthSplash(true);
     if (driver) {
       const isConfigured =
         driver.categoryConfigured !== false &&
@@ -1156,6 +1159,7 @@ export default function App() {
     clearWalletMemoryCache();
     clearReviewsCache();
     setCurrentUser(null);
+    setShowPostAuthSplash(false);
     setCurrentDriver(DEFAULT_NEW_DRIVER);
     setRidesHistory([]);
     setActiveRide(null);
@@ -1179,6 +1183,16 @@ export default function App() {
     />
   );
 
+  // Tela preta Splash com logo RACE vermelho/laranja grande por 3 segundos após cadastro e login
+  if (showPostAuthSplash) {
+    return (
+      <SplashScreen
+        durationMs={3000}
+        onComplete={() => setShowPostAuthSplash(false)}
+      />
+    );
+  }
+
   // 1. Quando o app abre deslogado, NÃO mostrar PassengerRideView, Header ou BottomNav.
   // Mostrar tela de login de motorista full-screen com design preto e laranja igual ao print.
   if (!currentUser) {
@@ -1189,6 +1203,7 @@ export default function App() {
         onLoginSuccess={(user, driver) => {
           setCurrentUser(user);
           saveSessionUser(user);
+          setShowPostAuthSplash(true);
 
           // Se for Administrador (tipo = ADM ou admin@race.com.br)
           if (
@@ -1466,6 +1481,7 @@ export default function App() {
               }}
               onLoginDriverSuccess={(user, driver) => {
                 setCurrentUser(user);
+                setShowPostAuthSplash(true);
                 if (driver) {
                   const isConfigured =
                     driver.categoryConfigured !== false &&
