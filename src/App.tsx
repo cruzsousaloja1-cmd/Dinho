@@ -85,10 +85,13 @@ export default function App() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [currentDriver, setCurrentDriver] = useState<Driver>(DEFAULT_NEW_DRIVER);
   const [ridesHistory, setRidesHistory] = useState<Ride[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
   const [completedRideForRating, setCompletedRideForRating] = useState<Ride | null>(null);
   const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'credit_card' | 'dinheiro'>('pix');
+  const [optionsLaunchNonce, setOptionsLaunchNonce] = useState(0);
 
   // Registered Passengers State (100% Supabase)
   const [passengers, setPassengers] = useState<AppUser[]>([]);
@@ -264,6 +267,22 @@ export default function App() {
     }
   };
 
+  const refreshRidesHistory = async (userTarget: AppUser | null = currentUser) => {
+    if (!userTarget) {
+      setRidesHistory([]);
+      return;
+    }
+    setIsLoadingHistory(true);
+    try {
+      const cloudRides = await getCorridasSupabase(userTarget);
+      setRidesHistory(cloudRides || []);
+    } catch (err) {
+      console.warn('Aviso ao sincronizar corridas do Supabase:', err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
   // Sincronizar corridas isoladas da nuvem Supabase para o usuário logado
   useEffect(() => {
     if (!currentUser) {
@@ -271,13 +290,7 @@ export default function App() {
       setPassengerDebt({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
       return;
     }
-    getCorridasSupabase(currentUser)
-      .then((cloudRides) => {
-        setRidesHistory(cloudRides || []);
-      })
-      .catch((err) => {
-        console.warn('Aviso ao sincronizar corridas do Supabase:', err);
-      });
+    refreshRidesHistory(currentUser);
 
     getPassengerDebtSupabase(currentUser)
       .then((debt) => {
@@ -1428,6 +1441,11 @@ export default function App() {
             onClearLoginBanner={() => setLoginSuccessBanner(null)}
             passengerDebt={passengerDebt}
             onClearPassengerDebt={handleClearPassengerDebt}
+            selectedCategoryProp={selectedCategory}
+            onCategoryChange={setSelectedCategory}
+            paymentMethodProp={selectedPaymentMethod}
+            onPaymentMethodChange={setSelectedPaymentMethod}
+            optionsLaunchNonce={optionsLaunchNonce}
             onOpenFullMap={() => {
               const isRideAuthorized = Boolean(
                 activeRide &&
@@ -1542,15 +1560,30 @@ export default function App() {
 
         {/* 4. Histórico Completo & Recibos - APENAS dados do próprio usuário no Supabase */}
         {activeTab === 'history' && (
-          <RideHistoryView rides={ridesHistory} />
+          <RideHistoryView
+            rides={ridesHistory}
+            activeRide={activeRide}
+            isLoading={isLoadingHistory}
+            onRefresh={() => refreshRidesHistory(currentUser)}
+          />
         )}
 
-        {/* 5. Opções de Categoria para Passageiro (4 Categorias) */}
+        {/* 5. Opções de Categoria para Passageiro (4 Categorias + Forma de Pagamento) */}
         {activeTab === 'passenger_options' && (
           <PassengerOptionsView
             selectedCategory={selectedCategory}
             onSelectCategory={(cat) => setSelectedCategory(cat)}
-            onNavigateToRides={() => setActiveTab('rides')}
+            selectedPaymentMethod={selectedPaymentMethod}
+            onSelectPaymentMethod={(method) => setSelectedPaymentMethod(method)}
+            pickup={pickup}
+            destination={destination}
+            onNavigateToRides={(chosenCategory) => {
+              if (chosenCategory) {
+                setSelectedCategory(chosenCategory);
+              }
+              setOptionsLaunchNonce((n) => n + 1);
+              setActiveTab('rides');
+            }}
           />
         )}
 
@@ -1666,27 +1699,6 @@ export default function App() {
               String(currentUser?.tipo || '').toUpperCase() === 'ADM'
             );
             if (!isUserAdmin) return;
-          }
-
-          // Se for passageiro e tentar abrir OPÇÃO ou ATIVIDADE antes de ter corrida confirmada (paga ou dinheiro):
-          const isPassenger = !currentUser?.role || currentUser.role === 'passenger';
-          const hasAuthorizedRide = Boolean(
-            activeRide &&
-            (activeRide.paymentStatus === 'paid' ||
-              activeRide.paymentMethod === 'money' ||
-              activeRide.paymentMethod === 'dinheiro')
-          );
-
-          if (isPassenger && (tab === 'passenger_options' || tab === 'history')) {
-            if (!hasAuthorizedRide) {
-              triggerPush(
-                'Pague o PIX primeiro, estamos aguardando confirmação do Asaas',
-                'Preencha endereço de início e chegada com número, escolha a categoria e aguarde a confirmação do Asaas (ou escolha Dinheiro) antes de acessar.',
-                'ride'
-              );
-              setActiveTab('rides');
-              return;
-            }
           }
 
           setActiveTab(tab);

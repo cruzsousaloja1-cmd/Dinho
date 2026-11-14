@@ -74,7 +74,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     ];
 
     return (
-      <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
+      <nav className="fixed bottom-0 left-0 right-0 z-[100] pointer-events-auto bg-white border-t border-slate-200 px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
         <div className="w-full max-w-md mx-auto flex flex-row items-stretch">
           {passengerTabs.map((tab) => {
             const Icon = tab.icon;
@@ -85,7 +85,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => onChangeTab(tab.id)}
-                className={`relative flex flex-col items-center justify-center w-1/4 shrink-0 box-border py-2 px-0.5 rounded-2xl transition-colors duration-200 cursor-pointer ${
+                className={`relative pointer-events-auto touch-manipulation flex flex-col items-center justify-center w-1/4 shrink-0 box-border py-2 px-0.5 rounded-2xl transition-colors duration-200 cursor-pointer ${
                   isActive
                     ? 'text-[#ff6a00] bg-orange-50 font-black border border-[#ff6a00]/30 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'

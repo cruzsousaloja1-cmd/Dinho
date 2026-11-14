@@ -93,6 +93,11 @@ interface PassengerRideViewProps {
     asaasPaymentId: string,
     asaasStatus: 'RECEIVED' | 'CONFIRMED'
   ) => Promise<void> | void;
+  selectedCategoryProp?: VehicleCategory;
+  onCategoryChange?: (category: VehicleCategory) => void;
+  paymentMethodProp?: 'pix' | 'credit_card' | 'dinheiro';
+  onPaymentMethodChange?: (method: 'pix' | 'credit_card' | 'dinheiro') => void;
+  optionsLaunchNonce?: number;
 }
 
 export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
@@ -115,9 +120,18 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   onOpenFullMap,
   passengerDebt,
   onClearPassengerDebt,
+  selectedCategoryProp,
+  onCategoryChange,
+  paymentMethodProp,
+  onPaymentMethodChange,
+  optionsLaunchNonce = 0,
 }) => {
-  const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'money' | 'dinheiro' | 'race_pay'>('pix');
+  const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>(
+    selectedCategoryProp || 'economica'
+  );
+  const [paymentMethod, setPaymentMethod] = useState<
+    'pix' | 'credit_card' | 'money' | 'dinheiro' | 'race_pay'
+  >(paymentMethodProp || 'pix');
   const [pickupInput, setPickupInput] = useState(pickup?.address || '');
   const [destInput, setDestInput] = useState(destination?.address || '');
 
@@ -199,6 +213,42 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       setDestInput(destination.address);
     }
   }, [destination]);
+
+  // Keep category & payment method synced from OPÇÃO tab
+  useEffect(() => {
+    if (selectedCategoryProp) {
+      setSelectedCategory(selectedCategoryProp);
+    }
+  }, [selectedCategoryProp]);
+
+  useEffect(() => {
+    if (paymentMethodProp) {
+      setPaymentMethod(paymentMethodProp);
+    }
+  }, [paymentMethodProp]);
+
+  const lastLaunchNonceRef = useRef<number>(optionsLaunchNonce);
+  useEffect(() => {
+    if (optionsLaunchNonce > 0 && optionsLaunchNonce !== lastLaunchNonceRef.current) {
+      lastLaunchNonceRef.current = optionsLaunchNonce;
+      if (
+        !hasOpenDebt &&
+        !activeRide &&
+        hasAddressNumber(pickupInput) &&
+        hasAddressNumber(destInput)
+      ) {
+        const cat = selectedCategoryProp || selectedCategory;
+        const method = paymentMethodProp || paymentMethod;
+        setSelectedCategory(cat);
+        setPaymentMethod(method);
+        setIsPaidInApp(false);
+        setAsaasConfirmedStatus('PENDING');
+        setPaymentBlockedError(null);
+        setPassengerStep('payment');
+        initAsaasPayment(method, cat);
+      }
+    }
+  }, [optionsLaunchNonce]);
 
   // Handle Automatic Search for Pickup
   const handlePickupChange = (value: string) => {
@@ -568,6 +618,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
   const handleSelectCategory = (cat: VehicleCategory) => {
     setSelectedCategory(cat);
+    onCategoryChange?.(cat);
     setIsPaidInApp(false);
     setAsaasConfirmedStatus('PENDING');
     setPaymentBlockedError(null);
@@ -1813,6 +1864,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   type="button"
                   onClick={() => {
                     setPaymentMethod('pix');
+                    onPaymentMethodChange?.('pix');
                     initAsaasPayment('pix', selectedCategory);
                   }}
                   className={`min-w-0 p-3.5 sm:p-4 rounded-2xl border-2 flex flex-row sm:flex-col items-center justify-between sm:justify-center gap-2 sm:gap-1 transition-all cursor-pointer text-left sm:text-center ${
@@ -1832,6 +1884,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   type="button"
                   onClick={() => {
                     setPaymentMethod('credit_card');
+                    onPaymentMethodChange?.('credit_card');
                     initAsaasPayment('credit_card', selectedCategory);
                   }}
                   className={`min-w-0 p-3.5 sm:p-4 rounded-2xl border-2 flex flex-row sm:flex-col items-center justify-between sm:justify-center gap-2 sm:gap-1 transition-all cursor-pointer text-left sm:text-center ${
@@ -1853,6 +1906,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
                     setIsPollingAsaas(false);
                     setPaymentMethod('dinheiro');
+                    onPaymentMethodChange?.('dinheiro');
                   }}
                   className={`min-w-0 p-3.5 sm:p-4 rounded-2xl border-2 flex flex-row sm:flex-col items-center justify-between sm:justify-center gap-2 sm:gap-1 transition-all cursor-pointer text-left sm:text-center ${
                     isCashMethod(paymentMethod)
