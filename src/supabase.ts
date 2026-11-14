@@ -270,7 +270,7 @@ export function purgeLegacyTestLocalStorage(preserveCurrentSession: boolean = tr
       'race_admin_custom_password',
     ];
     if (!preserveCurrentSession) {
-      exactKeysToRemove.push('race_current_user');
+      exactKeysToRemove.push('race_current_user', 'race_usuario_logado');
     }
     exactKeysToRemove.forEach((k) => {
       try {

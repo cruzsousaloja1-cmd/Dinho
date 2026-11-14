@@ -228,6 +228,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             phone: row.celular || '',
             whatsapp: row.whatsapp || row.celular || '',
             login: row.login || rowEmail,
+            password: loginPassword,
             role: 'admin',
             tipo: 'ADM',
             isAdmin: true,
@@ -298,6 +299,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             name: row.nome || 'Administrador Geral',
             email: 'admin@race.com.br',
             phone: row.celular || '',
+            login: row.login || 'admin@race.com.br',
+            password: loginPassword,
             role: 'admin',
             tipo: 'ADM',
             isAdmin: true,
@@ -351,6 +354,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const { user: mappedUser, driver: mappedDriver } = mapSupabaseRowToAppUser(row);
       const userPayload: AppUser = {
         ...mappedUser,
+        password: loginPassword,
         avatar: regAvatar || mappedUser.avatar || undefined,
       };
       const driverObj: Driver | undefined = mappedDriver

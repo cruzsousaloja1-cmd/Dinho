@@ -43,23 +43,86 @@ export function getUserRidesStorageKey(email: string): string {
   return `race_rides_${normalizeEmail(email)}`;
 }
 
+export const LOGGED_USER_STORAGE_KEY = 'race_usuario_logado';
+
 /**
- * Salva apenas a sessão mínima do usuário logado (validada no Supabase a cada abertura do app)
+ * Salva o usuário logado em localStorage (race_usuario_logado = { login, senha, tipo, nome, foto, ... })
+ * para não pedir cadastro novamente enquanto não clicar em Sair.
  */
 export function saveSessionUser(user: AppUser | null): void {
   if (typeof window === 'undefined') return;
   try {
     if (!user) {
       localStorage.removeItem('race_current_user');
+      localStorage.removeItem(LOGGED_USER_STORAGE_KEY);
       return;
     }
-    const minimalSession = {
-      id: user.id,
-      name: user.name,
-      email: normalizeEmail(user.email),
+
+    let existingSaved: any = null;
+    try {
+      const rawExisting = localStorage.getItem(LOGGED_USER_STORAGE_KEY);
+      if (rawExisting) existingSaved = JSON.parse(rawExisting);
+    } catch {}
+
+    const cleanEmail = normalizeEmail(user.email || existingSaved?.email || '');
+    const resolvedLogin = (user.login || existingSaved?.login || cleanEmail).trim().toLowerCase();
+    const resolvedFoto = user.avatar || existingSaved?.foto || existingSaved?.avatar || '';
+    const resolvedSenha = user.password || existingSaved?.senha || existingSaved?.password || '';
+    const resolvedDriverData = user.driverData || existingSaved?.driverData;
+
+    const fullSavedSession = {
+      id: user.id || existingSaved?.id || '',
+      login: resolvedLogin,
+      email: cleanEmail,
+      senha: resolvedSenha,
+      tipo: user.tipo || user.role || existingSaved?.tipo || 'passenger',
       role: user.role,
-      tipo: user.tipo,
+      nome: user.name || existingSaved?.nome || '',
+      name: user.name || existingSaved?.nome || '',
+      foto: resolvedFoto,
+      avatar: resolvedFoto,
+      phone: user.phone || existingSaved?.phone || '',
+      whatsapp: user.whatsapp || user.phone || existingSaved?.whatsapp || '',
+      placa: user.placa || existingSaved?.placa || '',
+      rating: user.rating ?? existingSaved?.rating ?? 0,
       isAdmin: user.isAdmin,
+      driverData: resolvedDriverData,
+    };
+
+    try {
+      localStorage.setItem(LOGGED_USER_STORAGE_KEY, JSON.stringify(fullSavedSession));
+    } catch {
+      // Caso a foto ou driverData excedam a cota, garante ao menos os dados principais em race_usuario_logado
+      const compactSavedSession = {
+        ...fullSavedSession,
+        driverData: resolvedDriverData
+          ? {
+              ...resolvedDriverData,
+              avatar: '',
+              vehiclePhoto: '',
+              cnhPhoto: '',
+              crlvPhoto: '',
+            }
+          : undefined,
+      };
+      try {
+        localStorage.setItem(LOGGED_USER_STORAGE_KEY, JSON.stringify(compactSavedSession));
+      } catch {
+        localStorage.setItem(
+          LOGGED_USER_STORAGE_KEY,
+          JSON.stringify({ ...compactSavedSession, foto: '', avatar: '' })
+        );
+      }
+    }
+
+    const minimalSession = {
+      id: fullSavedSession.id,
+      name: fullSavedSession.name,
+      email: fullSavedSession.email,
+      login: fullSavedSession.login,
+      role: fullSavedSession.role,
+      tipo: fullSavedSession.tipo,
+      isAdmin: fullSavedSession.isAdmin,
     };
     localStorage.setItem('race_current_user', JSON.stringify(minimalSession));
   } catch {}
@@ -68,10 +131,55 @@ export function saveSessionUser(user: AppUser | null): void {
 export function getSessionUser(): AppUser | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem('race_current_user');
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.email) return parsed;
+    const rawSaved =
+      localStorage.getItem(LOGGED_USER_STORAGE_KEY) ||
+      localStorage.getItem('race_current_user');
+    if (!rawSaved) return null;
+    const parsed = JSON.parse(rawSaved);
+    if (!parsed || (!parsed.email && !parsed.login)) return null;
+
+    const cleanEmail = normalizeEmail(parsed.email || parsed.login || '');
+    const tipoStr = String(parsed.tipo || parsed.role || 'passenger');
+    const tipoLower = tipoStr.toLowerCase().trim();
+    const isAdmin =
+      Boolean(parsed.isAdmin) ||
+      parsed.role === 'admin' ||
+      tipoLower === 'adm' ||
+      tipoLower === 'admin' ||
+      cleanEmail === ADMIN_EMAIL;
+    const isMoto =
+      !isAdmin &&
+      (parsed.role === 'motoboy' ||
+        tipoLower === 'motoboy' ||
+        tipoLower === 'motoboy_passageiro' ||
+        tipoLower === 'motoboy_entregas');
+    const isDriver =
+      !isAdmin &&
+      (parsed.role === 'driver' ||
+        tipoLower === 'driver' ||
+        tipoLower === 'motorista' ||
+        tipoLower === 'motorista_economico' ||
+        tipoLower === 'motorista_confort' ||
+        isMoto);
+
+    const role: UserRole = isAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
+
+    return {
+      id: String(parsed.id || ''),
+      name: parsed.nome || parsed.name || '',
+      email: cleanEmail,
+      phone: parsed.phone || parsed.whatsapp || '',
+      whatsapp: parsed.whatsapp || parsed.phone || '',
+      login: parsed.login || cleanEmail,
+      password: parsed.senha || parsed.password || '',
+      role,
+      tipo: tipoStr as UserTipo,
+      isAdmin: isAdmin || undefined,
+      placa: parsed.placa || '',
+      avatar: parsed.foto || parsed.avatar || '',
+      rating: Number(parsed.rating || 0),
+      driverData: parsed.driverData,
+    };
   } catch {}
   return null;
 }

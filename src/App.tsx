@@ -79,11 +79,41 @@ import {
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
 
 export default function App() {
-  // Global States - Inicialmente no Portal de Motorista e deslogado para exibir a tela preta e laranja
-  const [activeTab, setActiveTab] = useState<TabType>('driver_portal');
+  const initialSessionRef = React.useRef<AppUser | null | undefined>(undefined);
+  if (initialSessionRef.current === undefined) {
+    initialSessionRef.current = getSessionUser();
+  }
+  const initialUser = initialSessionRef.current;
+
+  const resolveInitialTab = (u: AppUser | null): TabType => {
+    if (!u) return 'driver_portal';
+    const isAdminUser =
+      u.role === 'admin' ||
+      u.isAdmin ||
+      String(u.tipo || '').toUpperCase() === 'ADM' ||
+      (u.email || '').toLowerCase() === ADMIN_EMAIL;
+    if (isAdminUser) return 'admin';
+    const tLower = String(u.tipo || '').toLowerCase().trim();
+    const isDriverUser =
+      u.role === 'driver' ||
+      u.role === 'motoboy' ||
+      tLower === 'driver' ||
+      tLower === 'motorista' ||
+      tLower === 'motoboy' ||
+      tLower === 'motorista_economico' ||
+      tLower === 'motorista_confort' ||
+      tLower === 'motoboy_passageiro' ||
+      tLower === 'motoboy_entregas';
+    return isDriverUser ? 'driver_portal' : 'rides';
+  };
+
+  // Global States
+  const [activeTab, setActiveTab] = useState<TabType>(() => resolveInitialTab(initialUser));
   const [isFullMapOpen, setIsFullMapOpen] = useState(false);
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [currentDriver, setCurrentDriver] = useState<Driver>(DEFAULT_NEW_DRIVER);
+  const [currentDriver, setCurrentDriver] = useState<Driver>(
+    () => initialUser?.driverData || DEFAULT_NEW_DRIVER
+  );
   const [ridesHistory, setRidesHistory] = useState<Ride[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
@@ -96,8 +126,8 @@ export default function App() {
   // Registered Passengers State (100% Supabase)
   const [passengers, setPassengers] = useState<AppUser[]>([]);
 
-  // 1. Authentication & Session (validado online no Supabase)
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  // 1. Authentication & Session (salvo em race_usuario_logado + sincronizado no Supabase)
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => initialUser);
   const [passengerDebt, setPassengerDebt] = useState<{
     debtAmount: number;
     isBlocked: boolean;
@@ -105,6 +135,7 @@ export default function App() {
   }>({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [loginSuccessBanner, setLoginSuccessBanner] = useState<string | null>(null);
+  const [showStartupSplash, setShowStartupSplash] = useState(true);
   const [showPostAuthSplash, setShowPostAuthSplash] = useState(false);
 
   // Map and Route States
@@ -142,23 +173,34 @@ export default function App() {
       } catch {}
 
       const session = getSessionUser();
-      if (!session || !session.email) return;
+      const sessionIdentifier = session?.email || session?.login || '';
+      if (!session || !sessionIdentifier) return;
 
       try {
-        const cloudRow = await getUsuarioSupabase(session.email);
+        const cloudRow = await getUsuarioSupabase(sessionIdentifier);
         if (!active) return;
 
-        if (!cloudRow || cloudRow.status === 'bloqueado') {
-          // Usuário não existe mais no Supabase (tabelas zeradas) ou está bloqueado -> voltar para tela inicial
+        if (cloudRow && cloudRow.status === 'bloqueado') {
+          // Conta explicitamente bloqueada pela administração
           saveSessionUser(null);
           setCurrentUser(null);
           setCurrentDriver(DEFAULT_NEW_DRIVER);
           return;
         }
 
+        if (!cloudRow) {
+          // Mantém o race_usuario_logado salvo no dispositivo até clicar em Sair
+          return;
+        }
+
         const { user: hydratedUser, driver: hydratedDriver } = mapSupabaseRowToAppUser(cloudRow);
-        setCurrentUser(hydratedUser);
-        saveSessionUser(hydratedUser);
+        const mergedUser: AppUser = {
+          ...hydratedUser,
+          password: session.password || hydratedUser.password,
+          avatar: hydratedUser.avatar || session.avatar || '',
+        };
+        setCurrentUser(mergedUser);
+        saveSessionUser(mergedUser);
 
         if (
           hydratedUser.role === 'admin' ||
@@ -1201,12 +1243,15 @@ export default function App() {
     />
   );
 
-  // Tela preta Splash com logo RACE vermelho/laranja grande por 3 segundos após cadastro e login
-  if (showPostAuthSplash) {
+  // Tela preta Splash com logo RACE vermelho/laranja grande (90px) por 3 segundos toda vez que entrar no app
+  if (showStartupSplash || showPostAuthSplash) {
     return (
       <SplashScreen
         durationMs={3000}
-        onComplete={() => setShowPostAuthSplash(false)}
+        onComplete={() => {
+          setShowStartupSplash(false);
+          setShowPostAuthSplash(false);
+        }}
       />
     );
   }
