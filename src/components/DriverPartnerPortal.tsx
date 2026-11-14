@@ -43,7 +43,7 @@ const CATEGORY_GUIDES: Record<VehicleCategory, CategoryGuideInfo> = {
   economica: {
     id: 'economica',
     title: 'Motorista Econômico',
-    tagline: 'Transporte de passageiros em carro de passeio 4 portas',
+    tagline: 'Automóvel a partir de 2015 (até 10 anos de uso)',
     badge: 'R$ 2,50/km • 85% para Você',
     badgeColor: 'bg-zinc-800 text-zinc-200 border-zinc-700',
     pricePerKm: 'R$ 2,50',
@@ -52,161 +52,138 @@ const CATEGORY_GUIDES: Record<VehicleCategory, CategoryGuideInfo> = {
       'Atendimento a chamados diários no Centro, bairros e condomínios de Indaiatuba.',
       'Transporte individual ou familiar de passageiros (trabalho, compras, compromissos).',
       'Liberdade total para definir seus horários de início e parada sem metas obrigatórias.',
-      'Recebimento imediato direto na sua conta bancária via PIX ou em dinheiro.',
+      'Recebimento garantido de 85% via PIX toda sexta-feira ou direto em dinheiro.',
     ],
     driverRequirements: [
-      'CNH Definitiva Categoria B com anotação EAR ("Exerce Atividade Remunerada").',
-      'Idade mínima de 21 anos completos.',
-      'Atestado de Antecedentes Criminais sem restrições.',
-      'Comprovante de residência em Indaiatuba ou cidades vizinhas.',
+      'CNH B válida, sem suspensão',
+      'CRLV do veículo em dia',
+      'Seguro obrigatório',
     ],
     vehicleRequirements: [
-      'Veículo de passeio 4 portas com ar-condicionado em pleno funcionamento.',
-      'Capacidade legal para 5 ocupantes (motorista + 4 passageiros).',
-      'Ano de fabricação a partir de 2012 em bom estado de conservação mecânica e visual.',
-      'Documento do veículo (CRLV) devidamente licenciado e regular.',
+      'Automóvel a partir de 2015 (até 10 anos de uso)',
+      'Carro com 4 portas, ar-condicionado funcionando',
+      'Veículo em bom estado, sem amassados grandes',
+      'Carro limpo, com cinto de segurança para todos os passageiros',
     ],
     mandatoryEquipment: [
-      'Suporte automotivo firme e articulado para celular no painel ou para-brisa.',
-      'Carregador veicular rápido com cabos USB-C e Lightning.',
-      'Ar-condicionado sempre pronto e limpo para acionamento a pedido do passageiro.',
-      'Pneus em ótimo estado de segurança (acima do limite TWI) e estepe operacional.',
+      'Foto do carro (4 lados), Foto da CNH e Foto do CRLV',
+      'Cinto de segurança funcional para todos os passageiros',
+      'Ar-condicionado funcionando em todas as corridas',
     ],
   },
   confort: {
     id: 'confort',
     title: 'Motorista Confort',
-    tagline: 'Corridas premium em Sedãs Médios, Compactos Novos e SUVs',
-    badge: 'R$ 3,50/km • Alta Rentabilidade',
+    tagline: 'SUV, Sedã ou Hatch Premium a partir de 2020 (até 5 anos de uso)',
+    badge: 'R$ 3,50/km • Carro 2020+',
     badgeColor: 'bg-[#ff6a00]/20 text-[#ff6a00] border-[#ff6a00]/40',
     pricePerKm: 'R$ 3,50',
     earningsDescription: 'Tarifa valorizada de R$ 3,50/km com 85% para você e 15% para a Race - sem mensalidade, sem taxa para trabalhar.',
     activitiesList: [
-      'Atendimento executivo em Indaiatuba, transfer para Viracopos, hotéis e centro empresarial.',
-      'Corridas nos condomínios de alto padrão de Indaiatuba (Helvetia, Parque Suíça, Mosteiro de Itaici, etc.).',
-      'Passageiros que prezam por silêncio, ar-condicionado constante, espaço e pontualidade.',
-      'Viagens mais longas e ticket médio significativamente maior.',
+      'Atendimento executivo em Indaiatuba, hotéis, condomínios e centro empresarial.',
+      'Passageiros que prezam por conforto superior, ar-condicionado e pontualidade.',
+      'Viagens de maior ticket médio e remuneração diferenciada.',
     ],
     driverRequirements: [
-      'CNH Categoria B definitiva com anotação EAR ativa.',
-      'Postura executiva, pontualidade britânica e atendimento cortês.',
-      'Nota mínima de avaliação 4.85 estrelas no histórico de atendimento.',
-      'Certidão negativa de antecedentes criminais atualizada.',
+      'CNH B válida, sem pontos',
+      'CRLV em dia, Seguro total',
+      'Avaliação mínima 4.8 para continuar no Confort',
     ],
     vehicleRequirements: [
-      'Sedãs Médios e SUVs (Corolla, Civic, HR-V, Compass, Tracker, T-Cross, Renegade) ano 2018+.',
-      'Sedãs Populares Novos (Voyage, Cronos, Onix Plus, Virtus, Etios) ano 2019+.',
-      'Compactos Premium Novos (Polo, Argo) ano 2023+.',
-      'Regra geral: ano de fabricação 2020 ou superior para aprovação imediata.',
-      'Porta-malas sempre limpo e 100% desocupado para malas e bagagens.',
+      'Automóvel a partir de 2020 (até 5 anos de uso)',
+      'SUV, Sedã, ou Hatch Premium - ex: Corolla, Honda Civic, T-Cross, Creta, Compass, Nivus, Virtus, Onix Plus',
+      'NÃO aceita carro popular 1.0 básico',
+      'Ar-condicionado, vidro elétrico, direção hidráulica',
+      'Carro impecável, sem riscos, limpo, com cheirinho',
     ],
     mandatoryEquipment: [
-      'Ar-condicionado obrigatoriamente ligado e refrigerando em todas as corridas.',
-      'Suporte profissional de celular com carregamento por indução ou cabo turbo.',
-      'Veículo impecável: estofamento higienizado, sem odores e lataria polida.',
-      'Água mineral e balas lacradas cortesia (diferencial altamente recomendado).',
+      'Foto do carro, Foto CNH e Foto CRLV',
+      'Ar-condicionado, vidro elétrico e direção hidráulica em perfeito estado',
     ],
   },
   moto_passageiro: {
     id: 'moto_passageiro',
-    title: 'Motoboy Passageiro (Moto Táxi)',
-    tagline: 'Transporte individual ágil de passageiros em motocicleta 150cc+',
+    title: 'Motoboy Passageiro',
+    tagline: 'Moto a partir de 2018 (até 8 anos de uso), mínimo 150cc',
     badge: 'R$ 1,80/km • Velocidade no Trânsito',
     badgeColor: 'bg-cyan-100 text-cyan-900 border-cyan-300',
     pricePerKm: 'R$ 1,80',
-    earningsDescription: 'Você fica com 85% de cada corrida e a Race com 15% - sem mensalidade. Com baixíssimo consumo (40 a 50 km/L), seu ganho líquido é excelente!',
+    earningsDescription: 'Você fica com 85% de cada corrida e a Race com 15% - sem mensalidade.',
     activitiesList: [
-      'Transporte individual ágil de passageiros que precisam chegar rápido ao destino.',
-      'Agilidade no trânsito de Indaiatuba nos horários de pico (7h-9h e 17h-19h).',
-      'Corridas curtas e médias com embarque e desembarque imediato sem dificuldade de vaga.',
-      'Repasse automático toda sexta-feira de 85% do valor integral direto na sua chave PIX.',
+      'Transporte individual ágil de passageiros em Indaiatuba.',
+      'Agilidade no trânsito nos horários de pico.',
+      'Repasse toda sexta-feira de 85% na sua chave PIX.',
     ],
     driverRequirements: [
-      'CNH Definitiva Categoria A com anotação EAR ("Exerce Atividade Remunerada").',
-      'Idade mínima de 21 anos.',
-      'Prática de pilotagem defensiva e histórico responsável de trânsito.',
-      'Atestado de Antecedentes Criminais sem anotações judiciais.',
+      'CNH A válida',
+      'CRLV da moto em dia',
+      'Seguro obrigatório',
     ],
     vehicleRequirements: [
-      'Motocicleta com motor a partir de 150cc em perfeitas condições mecânicas.',
-      'Pneus dianteiro e traseiro novos ou com boa profundidade de borracha.',
-      'Freios regulados, farol, lanterna de freio, setas e buzina 100% funcionando.',
-      'CRLV da motocicleta regularizado e licenciado.',
-      'Escapamento regulamentar de acordo com as normas de ruído do Detran/Contran.',
+      'Moto a partir de 2018 (até 8 anos de uso), mínimo 150cc - ex: Honda CG 160, Yamaha Fazer 250, Honda CB 300',
+      'Baú ou alça para passageiro segurar',
     ],
     mandatoryEquipment: [
-      '2 Capacetes certificados pelo INMETRO com selo e adesivos refletivos (1 para você e 1 exclusivo para o passageiro com fita jugular e viseira cristal limpa).',
-      'Kit de toucas higiênicas descartáveis para fornecer a todo e qualquer passageiro.',
-      'Colete ou jaqueta com faixas retrorrefletivas de segurança para alta visibilidade.',
-      'Suporte de guidão firme e impermeável com trava anti-queda para celular.',
+      'Capacete extra para passageiro, limpo, com viseira',
+      'Jaqueta, luvas e capa de chuva',
+      'Foto da moto, Foto CNH A e Foto CRLV',
     ],
   },
   moto_entrega: {
     id: 'moto_entrega',
-    title: 'Motoboy Entregas (Flash & Delivery)',
-    tagline: 'Entrega expressa de mercadorias, pacotes e encomendas até 20kg',
+    title: 'Motoboy Entregas',
+    tagline: 'Moto a partir de 2015, mínimo 125cc, com baú mínimo 90L',
     badge: 'R$ 2,00/km • Encomendas Flash',
     badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
     pricePerKm: 'R$ 2,00',
     earningsDescription: 'Você fica com 85% de cada entrega e a Race com 15% - sem mensalidade, sem taxa para trabalhar.',
     activitiesList: [
-      'Coleta e entrega expressa ponto a ponto de pacotes, documentos, peças e compras em Indaiatuba.',
-      'Atendimento a farmácias, autopeças, escritórios, e-commerce e comércio local.',
-      'Sem transporte de passageiros: foco total na integridade da encomenda e rota otimizada.',
-      'Confirmação de entrega segura com código de 4 dígitos digitado pelo destinatário.',
+      'Coleta e entrega expressa ponto a ponto de pacotes, documentos e compras em Indaiatuba.',
+      'Sem transporte de passageiros: foco total na entrega com baú fixo.',
+      'Confirmação segura com código de 4 dígitos.',
     ],
     driverRequirements: [
-      'CNH Categoria A definitiva com anotação EAR ("Exerce Atividade Remunerada").',
-      'Pontualidade na coleta e zelo absoluto com embalagens e produtos frágeis.',
-      'Atestado de Antecedentes Criminais limpo.',
-      'Conhecimento das ruas, avenidas e zonas comerciais de Indaiatuba.',
+      'CNH A válida',
+      'CRLV em dia',
     ],
     vehicleRequirements: [
-      'Motocicleta de 125cc a 300cc em dia com a documentação (CRLV).',
-      'Suporte metálico traseiro reforçado para baú ou fixação segura de mochila/bag.',
-      'Pneus e sistema de freios preparados para tráfego contínuo com carga até 20kg.',
+      'Moto a partir de 2015, mínimo 125cc',
+      'Baú de entregas com no mínimo 90L, fixo, com trava, higienizado',
     ],
     mandatoryEquipment: [
-      'Baú homologado (80L, 90L ou 120L) com tranca/cadeado OU Mochila Bag Térmica impermeável para até 20kg.',
-      'Capa de chuva completa impermeável e polainas para operação em tempo chuvoso.',
-      'Rede elástica interna para estabilizar encomendas menores dentro do baú.',
-      'Capacete INMETRO com viseira cristal transparente e adesivos refletivos.',
+      'Celular com suporte para moto',
+      'Foto da moto com baú e Foto CNH A',
     ],
   },
 };
 
 const CATEGORY_PRESETS: Record<VehicleCategory, { name: string; year: string; highlight?: string }[]> = {
   economica: [
-    { name: 'Chevrolet Onix', year: '2021', highlight: 'Econômico' },
-    { name: 'Fiat Argo', year: '2022', highlight: 'Econômico' },
-    { name: 'Hyundai HB20', year: '2020', highlight: 'Econômico' },
-    { name: 'Renault Kwid', year: '2021', highlight: 'Compacto' },
-    { name: 'VW Gol 1.0', year: '2019', highlight: 'Popular' },
-    { name: 'Ford Ka 1.0', year: '2018', highlight: 'Popular' },
+    { name: 'Chevrolet Onix', year: '2020', highlight: 'Econômico 2015+' },
+    { name: 'Fiat Argo', year: '2021', highlight: 'Econômico 2015+' },
+    { name: 'Hyundai HB20', year: '2019', highlight: 'Econômico 2015+' },
+    { name: 'Renault Kwid', year: '2020', highlight: 'Popular 2015+' },
+    { name: 'VW Gol 1.0', year: '2018', highlight: 'Popular 2015+' },
   ],
   confort: [
-    { name: 'Toyota Corolla Sedã', year: '2023', highlight: 'Sedã Médio 2018+' },
-    { name: 'Honda Civic Sedã', year: '2022', highlight: 'Sedã Médio 2018+' },
-    { name: 'Jeep Compass', year: '2023', highlight: 'SUV Médio 2018+' },
-    { name: 'VW T-Cross', year: '2022', highlight: 'SUV Compacto 2018+' },
-    { name: 'Honda HR-V', year: '2021', highlight: 'SUV 2018+' },
-    { name: 'VW Voyage', year: '2020', highlight: 'Sedã Popular 2019+' },
-    { name: 'Fiat Cronos', year: '2021', highlight: 'Sedã Popular 2019+' },
-    { name: 'VW Polo TSI', year: '2023', highlight: 'Premium 2023+' },
+    { name: 'Toyota Corolla', year: '2022', highlight: 'Sedã 2020+' },
+    { name: 'Honda Civic', year: '2022', highlight: 'Sedã 2020+' },
+    { name: 'VW T-Cross', year: '2022', highlight: 'SUV 2020+' },
+    { name: 'Hyundai Creta', year: '2022', highlight: 'SUV 2020+' },
+    { name: 'Jeep Compass', year: '2022', highlight: 'SUV 2020+' },
+    { name: 'VW Nivus', year: '2022', highlight: 'SUV 2020+' },
+    { name: 'VW Virtus', year: '2021', highlight: 'Sedã 2020+' },
+    { name: 'Chevrolet Onix Plus', year: '2022', highlight: 'Sedã 2020+' },
   ],
   moto_passageiro: [
-    { name: 'Honda CG 160 Titan', year: '2022', highlight: '160cc Mais Usada' },
-    { name: 'Yamaha Fazer 250', year: '2023', highlight: '250cc Conforto' },
-    { name: 'Honda NXR 160 Bros', year: '2021', highlight: 'Trail Conforto' },
-    { name: 'Yamaha Factor 150', year: '2022', highlight: '150cc Econômica' },
-    { name: 'Honda CB 300F Twister', year: '2023', highlight: 'Potência' },
+    { name: 'Honda CG 160', year: '2022', highlight: '160cc 2018+' },
+    { name: 'Yamaha Fazer 250', year: '2023', highlight: '250cc 2018+' },
+    { name: 'Honda CB 300', year: '2023', highlight: '300cc 2018+' },
   ],
   moto_entrega: [
-    { name: 'Honda CG 160 Start', year: '2022', highlight: 'Ideal para Baú' },
-    { name: 'Honda Biz 125', year: '2021', highlight: 'Praticidade Carga' },
-    { name: 'Yamaha Factor 150', year: '2022', highlight: 'Econômica' },
-    { name: 'Honda NXR 160 Bros', year: '2020', highlight: 'Reforçada' },
-    { name: 'Honda Pop 110i', year: '2022', highlight: 'Baú 80L' },
+    { name: 'Honda CG 160 Start', year: '2021', highlight: '160cc • Baú 90L+' },
+    { name: 'Honda Biz 125', year: '2020', highlight: '125cc • Baú 90L+' },
+    { name: 'Yamaha Factor 150', year: '2021', highlight: '150cc • Baú 90L+' },
   ],
 };
 import { 
@@ -312,7 +289,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const isCategoryConfigured = Boolean(
     currentDriver.categoryConfigured !== false &&
     currentDriver.vehiclePlate?.trim() &&
-    currentDriver.vehicleModel?.trim()
+    currentDriver.vehicleModel?.trim() &&
+    currentDriver.requirementsConfirmed === true
   );
 
   const [dismissedTick, setDismissedTick] = useState(0);
@@ -565,9 +543,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [regYear, setRegYear] = useState('');
   const [regColor, setRegColor] = useState('');
   const [regPixKey, setRegPixKey] = useState('');
-  const [regTrunkType, setRegTrunkType] = useState('Baú 80 Litros');
-  const [regHelmetConfirmed, setRegHelmetConfirmed] = useState(true);
-  const [regAcConfirmed, setRegAcConfirmed] = useState(true);
+  const [regTrunkType, setRegTrunkType] = useState('Baú 90 Litros');
+  const [regRequirementsConfirmed, setRegRequirementsConfirmed] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
   const [registeredSuccess, setRegisteredSuccess] = useState(false);
 
@@ -575,6 +552,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     setRegCategory(newCat);
     setRegError(null);
     setComfortWarning(null);
+    setRegRequirementsConfirmed(false);
     // Auto-fill default vehicle for that category if using another category's default
     const presets = CATEGORY_PRESETS[newCat];
     if (presets && presets.length > 0) {
@@ -674,11 +652,17 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         email: loggedUser.email,
         name: loggedUser.name,
         phone: loggedUser.phone,
-        status: 'online',
+        status: 'offline',
       });
     }
 
-    setIsOnline(true);
+    const resolvedDriver = verification.driver || loggedUser.driverData;
+    const canStartOnline = Boolean(
+      resolvedDriver?.requirementsConfirmed === true &&
+      resolvedDriver?.vehiclePlate?.trim() &&
+      resolvedDriver?.vehicleModel?.trim()
+    );
+    setIsOnline(canStartOnline);
     setActiveSubTab('dashboard');
 
     try {
@@ -724,32 +708,35 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       return;
     }
 
-    if (regCategory === 'moto_passageiro' && !regHelmetConfirmed) {
-      setRegError('Para exercer a atividade de Moto Táxi, é obrigatório possuir 2 capacetes INMETRO e fornecer toucas higiênicas.');
+    const yearNum = parseInt(regYear, 10) || 2023;
+    if (regCategory === 'economica' && yearNum < 2015) {
+      setRegError('Seu veículo não atende aos requisitos de Motorista Econômico (mínimo 2015). Escolha outra modalidade ou cadastre outro veículo.');
       return;
     }
-
-    const yearNum = parseInt(regYear, 10) || 2023;
-    let finalCategory = regCategory;
-    let comfortEligible = false;
-    let reason = '';
-
-    // Rigorous Comfort Validation
     if (regCategory === 'confort') {
       const check = validateComfortEligibility(regModel, yearNum);
       if (!check.eligible) {
-        // Did not meet year requirement for Confort!
-        finalCategory = 'economica';
-        comfortEligible = false;
-        reason = `Não atende exigência de ano Confort: ${check.ruleDescription}. Homologado em RACE Econômica.`;
-        setComfortWarning(
-          `Aviso Confort: Seu veículo (${regModel} ano ${yearNum}) não atende à exigência mínima do modelo Confort (${check.ruleDescription}). Seu cadastro foi automaticamente homologado na categoria RACE Econômica (R$ 2,50/km) — você fica com 85% de cada corrida!`
-        );
-      } else {
-        comfortEligible = true;
-        reason = `Aprovado para Confort: atende às exigências de ano (${check.badgeText}).`;
+        setRegError(check.feedbackMessage);
+        return;
       }
     }
+    if (regCategory === 'moto_passageiro' && yearNum < 2018) {
+      setRegError('Sua moto não atende aos requisitos de Motoboy Passageiro (mínimo 2018, 150cc+). Escolha outra modalidade ou cadastre outra moto.');
+      return;
+    }
+    if (regCategory === 'moto_entrega' && yearNum < 2015) {
+      setRegError('Sua moto não atende aos requisitos de Motoboy Entregas (mínimo 2015, 125cc+). Cadastre uma moto a partir de 2015.');
+      return;
+    }
+
+    if (!regRequirementsConfirmed) {
+      setRegError('Marque a caixa obrigatória: "Li e confirmo que meu veículo atende a todas as exigências acima".');
+      return;
+    }
+
+    const finalCategory = regCategory;
+    const comfortEligible = finalCategory === 'confort';
+    const reason = comfortEligible ? 'Aprovado para Confort (2020+).' : '';
 
     const newDriver: Driver = {
       id: '',
@@ -761,6 +748,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       cpf: regCpf,
       cnh: regCnh ? `${regCnh} (EAR Ativo)` : '',
       category: finalCategory,
+      categoryConfigured: true,
+      requirementsConfirmed: true,
+      requirementsConfirmedAt: new Date().toISOString(),
       vehicleModel: regModel,
       vehiclePlate: regPlate.toUpperCase(),
       vehicleColor: regColor || '',
@@ -2458,10 +2448,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-4 space-y-2">
                   <div className="flex items-center gap-2 text-purple-950 font-heading font-black text-xs uppercase">
                     <Sparkles className="w-4 h-4 text-purple-700" />
-                    <span>Regulamento Específico Confort (Ano Mínimo Obrigatório)</span>
+                    <span>Motorista Confort - Requisitos (Mínimo 2020)</span>
                   </div>
                   <p className="text-xs text-purple-950 font-medium">
-                    Para manter a nota média e o padrão executivo: <strong>Sedãs Médios e SUVs</strong> (2018+), <strong>Sedãs Populares</strong> como Voyage e Cronos (2019+) e <strong>Compactos Premium</strong> como Polo e Argo (2023+). Regra geral para outros modelos: <strong>2020 ou superior</strong>.
+                    <strong>Automóvel a partir de 2020</strong> (até 5 anos de uso): <strong>SUV, Sedã ou Hatch Premium</strong> (Corolla, Civic, T-Cross, Creta, Compass, Nivus, Virtus, Onix Plus). <strong>NÃO aceita carro popular 1.0 básico</strong>. Avaliação mínima <strong>4.8</strong> para continuar no Confort.
                   </p>
                 </div>
               )}
@@ -2791,46 +2781,45 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                           onChange={(e) => setRegTrunkType(e.target.value)}
                           className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm sm:text-base text-slate-950 focus:outline-none focus:border-amber-500 font-medium cursor-pointer"
                         >
-                          <option value="Baú 80 Litros">Baú Homologado 80 Litros</option>
-                          <option value="Baú 90 Litros">Baú Homologado 90 Litros</option>
-                          <option value="Baú 120 Litros">Baú Homologado 120 Litros</option>
-                          <option value="Mochila / Bag Térmica (até 20kg)">Mochila / Bag Térmica Impermeável (até 20kg)</option>
+                          <option value="Baú 90 Litros">Baú 90 Litros (Mínimo Entregas)</option>
+                          <option value="Baú 100 Litros">Baú 100 Litros</option>
+                          <option value="Baú 120 Litros">Baú 120 Litros</option>
+                          <option value="Baú 135 Litros">Baú 135 Litros</option>
                         </select>
                       </div>
                     )}
                   </div>
 
-                  {/* Declaração de Equipamento para Motoboy Passageiro */}
-                  {regCategory === 'moto_passageiro' && (
-                    <div className="bg-cyan-50 border border-cyan-300 rounded-xl p-3.5 flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        id="helmet_check"
-                        checked={regHelmetConfirmed}
-                        onChange={(e) => setRegHelmetConfirmed(e.target.checked)}
-                        className="mt-1 w-4 h-4 text-cyan-600 rounded border-cyan-400 cursor-pointer"
-                      />
-                      <label htmlFor="helmet_check" className="text-xs sm:text-sm text-cyan-950 font-medium cursor-pointer">
-                        <strong>Declaração Obrigatória:</strong> Confirmo que possuo 2 capacetes regulamentados pelo INMETRO com viseira transparente e selo de segurança, e fornecerei toucas higiênicas descartáveis a cada passageiro transportado.
-                      </label>
-                    </div>
-                  )}
-
-                  {/* Confirmação de Ar-Condicionado para Motoristas */}
-                  {(regCategory === 'economica' || regCategory === 'confort') && (
-                    <div className="bg-slate-100 border border-slate-300 rounded-xl p-3.5 flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        id="ac_check"
-                        checked={regAcConfirmed}
-                        onChange={(e) => setRegAcConfirmed(e.target.checked)}
-                        className="mt-1 w-4 h-4 text-amber-600 rounded border-slate-400 cursor-pointer"
-                      />
-                      <label htmlFor="ac_check" className="text-xs sm:text-sm text-slate-900 font-medium cursor-pointer">
-                        <strong>Padrão de Conforto:</strong> Confirmo que meu veículo possui 4 portas, 5 lugares e ar-condicionado em pleno funcionamento para acionamento durante as viagens.
-                      </label>
-                    </div>
-                  )}
+                  {/* Alerta em tempo real de ano mínimo por modalidade */}
+                  {(() => {
+                    const y = parseInt(regYear, 10);
+                    if (!regYear || Number.isNaN(y)) return null;
+                    if (regCategory === 'economica' && y < 2015) {
+                      return (
+                        <div className="bg-rose-50 border-2 border-rose-400 text-rose-950 text-xs sm:text-sm p-3.5 rounded-2xl font-bold flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                          <span>Seu veículo não atende aos requisitos de Motorista Econômico (mínimo 2015). Escolha outra modalidade ou cadastre outro veículo.</span>
+                        </div>
+                      );
+                    }
+                    if (regCategory === 'moto_passageiro' && y < 2018) {
+                      return (
+                        <div className="bg-rose-50 border-2 border-rose-400 text-rose-950 text-xs sm:text-sm p-3.5 rounded-2xl font-bold flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                          <span>Sua moto não atende aos requisitos de Motoboy Passageiro (mínimo 2018, 150cc+). Escolha outra modalidade ou cadastre outra moto.</span>
+                        </div>
+                      );
+                    }
+                    if (regCategory === 'moto_entrega' && y < 2015) {
+                      return (
+                        <div className="bg-rose-50 border-2 border-rose-400 text-rose-950 text-xs sm:text-sm p-3.5 rounded-2xl font-bold flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                          <span>Sua moto não atende aos requisitos de Motoboy Entregas (mínimo 2015, 125cc+). Cadastre uma moto a partir de 2015.</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
 
                   {/* Validador Visual do Modelo Confort em Tempo Real */}
                   {regCategory === 'confort' && (
@@ -2838,7 +2827,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       className={`p-4 rounded-2xl border-2 transition-all space-y-1.5 ${
                         comfortCheck.eligible
                           ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
-                          : 'bg-amber-50 border-amber-400 text-amber-950'
+                          : 'bg-rose-50 border-rose-400 text-rose-950'
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -2846,12 +2835,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                           {comfortCheck.eligible ? (
                             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                           ) : (
-                            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
                           )}
                           <span className="font-heading font-black text-sm sm:text-base">
                             {comfortCheck.eligible
                               ? 'VEÍCULO APROVADO PARA O MODELO CONFORT'
-                              : 'RESTRIÇÃO DE ANO PARA O MODELO CONFORT'}
+                              : 'VEÍCULO NÃO ATENDE EXIGÊNCIAS DO CONFORT'}
                           </span>
                         </div>
                         <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-white border shadow-sm">
@@ -2862,19 +2851,28 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       <p className="text-xs sm:text-sm font-medium">
                         {comfortCheck.feedbackMessage}
                       </p>
-
-                      <div className="text-xs text-slate-600 border-t border-slate-200/80 pt-1.5 mt-1">
-                        <strong>Critério aplicado:</strong> {comfortCheck.ruleDescription}
-                      </div>
                     </div>
                   )}
+
+                  {/* Checkbox Obrigatório de Confirmação das Exigências */}
+                  <label className="bg-amber-50 border-2 border-amber-400 rounded-xl p-3.5 flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={regRequirementsConfirmed}
+                      onChange={(e) => setRegRequirementsConfirmed(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-amber-500 cursor-pointer shrink-0"
+                    />
+                    <span className="text-xs sm:text-sm text-slate-950 font-black cursor-pointer">
+                      Li e confirmo que meu veículo atende a todas as exigências acima
+                    </span>
+                  </label>
                 </div>
 
                 {/* Selo de Auditoria e Criptografia */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm text-slate-700 font-medium">
                   <div className="flex items-center gap-2.5">
                     <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <span>Auditoria automática de antecedentes criminais, dados veiculares e CNH com EAR</span>
+                    <span>Auditoria automática de antecedentes criminais, dados veiculares e CNH válida</span>
                   </div>
                   <span className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200 shrink-0">
                     Criptografia Segura
@@ -2884,9 +2882,14 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 {/* Botão de Finalização com Categoria Específica */}
                 <button
                   type="submit"
-                  className="w-full bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 text-sm sm:text-base border border-orange-500 uppercase tracking-wider active:scale-[0.99]"
+                  disabled={!regRequirementsConfirmed}
+                  className={`w-full font-heading font-black py-4 px-6 rounded-2xl transition-all text-sm sm:text-base border uppercase tracking-wider ${
+                    regRequirementsConfirmed
+                      ? 'bg-[#ff6a00] hover:bg-[#e05e00] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/25 border-orange-500 active:scale-[0.99]'
+                      : 'bg-slate-300 text-slate-600 border-slate-400 cursor-not-allowed opacity-80'
+                  }`}
                 >
-                  FINALIZAR CADASTRO DE {selectedGuide.title.toUpperCase()} & ATIVAR ATIVIDADES ({WEEKLY_FEE_BADGE})
+                  Salvar e ficar ONLINE ({selectedGuide.title})
                 </button>
               </form>
             )}

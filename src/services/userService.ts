@@ -189,6 +189,8 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     avatar: account.avatar || '',
     foto_veiculo: account.driverData?.vehiclePhoto || '',
     foto_cnh: account.driverData?.cnhPhoto || '',
+    foto_crlv: account.driverData?.crlvPhoto || '',
+    exigencias_confirmadas: account.driverData?.requirementsConfirmed === true,
     rating: account.rating || 0,
     saldo: account.driverData?.walletBalance || 0,
     plano_ativo: account.driverData?.weeklyPlanActive ?? false,

@@ -1,45 +1,42 @@
 import React, { useState } from 'react';
 import { AppUser, Driver, VehicleCategory, UserTipo } from '../types';
-import { 
-  Car, 
-  Bike, 
-  Package, 
-  ArrowRight, 
-  ArrowLeft, 
-  CheckCircle2, 
-  AlertTriangle, 
-  ShieldCheck, 
-  Copy, 
-  Check, 
+import {
+  Car,
+  Bike,
+  Package,
+  ArrowRight,
+  ArrowLeft,
+  CheckCircle2,
+  AlertTriangle,
+  ShieldCheck,
   Sparkles,
-  ChevronDown,
-  ChevronUp,
   FileText,
-  Shield,
-  Info,
-  CheckSquare,
-  Square,
-  Award,
-  Clock,
   Lock,
   Loader2,
   Camera,
-  LogOut
+  LogOut,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { RACE_PIX_KEY, RACE_PIX_BANK, RACE_PIX_NAME, WEEKLY_FEE } from '../config/pricing';
 import { saveUserAccount } from '../services/userService';
-import { updateMotoristaSupabase, saveUsuarioSupabase } from '../supabase';
+import {
+  updateMotoristaSupabase,
+  saveUsuarioSupabase,
+  setDriverRequirementsConfirmedLocal,
+} from '../supabase';
+import { isBasicPopularOneLiterModel } from '../services/vehicleValidationService';
 
-export type WorkCategoryKey = 
-  | 'motorista_economico' 
-  | 'motorista_confort' 
-  | 'motoboy_passageiro' 
+export type WorkCategoryKey =
+  | 'motorista_economico'
+  | 'motorista_confort'
+  | 'motoboy_passageiro'
   | 'motoboy_entregas';
 
-interface CategoryWorkInfo {
+export interface CategoryWorkInfo {
   key: WorkCategoryKey;
   title: string;
+  requirementsTitle: string;
   subtitle: string;
   tagline: string;
   badge: string;
@@ -51,68 +48,60 @@ interface CategoryWorkInfo {
   modelLabel: string;
   modelPlaceholder: string;
   hasYear: boolean;
-  minYear?: number;
+  minYear: number;
+  yearAlertMessage: string;
   hasTrunkType: boolean;
   defaultModel: string;
   defaultYear: string;
-  keyHighlights: string[];
-  driverRequirements: string[];
-  vehicleRequirements: string[];
-  safetyRequirements: string[];
+  requirementsList: string[];
+  vehiclePhotoLabel: string;
+  cnhPhotoLabel: string;
+  crlvPhotoLabel: string;
 }
 
-const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
+export const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
   motorista_economico: {
     key: 'motorista_economico',
     title: 'Motorista Econômico',
+    requirementsTitle: 'Motorista Econômico - Requisitos',
     subtitle: 'Carro popular, corridas mais baratas',
-    tagline: 'Ideal para hatch, sedã e carros populares',
+    tagline: 'Automóvel 4 portas a partir de 2015 com ar-condicionado',
     badge: 'R$ 2,50/km • 85% para Você',
-    pricePerKm: 'R$ 2,50/km',
+    pricePerKm: 'R$ 2,50',
     icon: <Car className="w-8 h-8 text-slate-700" />,
     vehicleCategory: 'economica',
     role: 'driver',
     userTipo: 'motorista_economico',
     modelLabel: 'MODELO DO CARRO',
-    modelPlaceholder: 'Ex: Chevrolet Onix, Fiat Argo, Renault Kwid, Hyundai HB20',
+    modelPlaceholder: 'Ex: Chevrolet Onix, Fiat Argo, Hyundai HB20, Renault Kwid',
     hasYear: true,
-    minYear: 2012,
+    minYear: 2015,
+    yearAlertMessage:
+      'Seu veículo não atende aos requisitos de Motorista Econômico (mínimo 2015). Escolha outra modalidade ou cadastre outro veículo.',
     hasTrunkType: false,
     defaultModel: 'Chevrolet Onix',
-    defaultYear: '2021',
-    keyHighlights: [
-      'CNH com anotação EAR ativa',
-      'Carro 4 portas com Ar-condicionado',
-      'Ano 2012 ou superior',
-      'Você fica com 85% de cada corrida (Race 15%) - Sem mensalidade'
+    defaultYear: '2020',
+    requirementsList: [
+      'Automóvel a partir de 2015 (até 10 anos de uso)',
+      'Carro com 4 portas, ar-condicionado funcionando',
+      'Veículo em bom estado, sem amassados grandes',
+      'CNH B válida, sem suspensão',
+      'CRLV do veículo em dia',
+      'Seguro obrigatório',
+      'Carro limpo, com cinto de segurança para todos os passageiros',
     ],
-    driverRequirements: [
-      'CNH definitiva com anotação EAR (Exerce Atividade Remunerada) ativa',
-      'Atestado de antecedentes criminais sem apontamentos impeditivos',
-      'Idade mínima de 21 anos completos',
-      'Cadastro de CPF regularizado na Receita Federal'
-    ],
-    vehicleRequirements: [
-      'Veículo de passeio (hatch, sedã ou minivan) com 4 portas',
-      'Capacidade legal para 5 ocupantes (motorista + 4 passageiros)',
-      'Ano de fabricação 2012 ou mais novo devidamente licenciado',
-      'Ar-condicionado em pleno funcionamento',
-      'Cintos de segurança de 3 pontos para todos os ocupantes',
-      'Documento do veículo (CRLV) vigente e em dia'
-    ],
-    safetyRequirements: [
-      'Suporte veicular seguro para smartphone com carregador veicular',
-      'Pneus em excelente estado de rodagem (sem desgaste no TWI) e estepe calibrado',
-      'Chave PIX cadastrada para recebimento dos seus ganhos (85%)'
-    ],
+    vehiclePhotoLabel: 'Foto do carro (4 lados)',
+    cnhPhotoLabel: 'Foto da CNH',
+    crlvPhotoLabel: 'Foto do CRLV',
   },
   motorista_confort: {
     key: 'motorista_confort',
     title: 'Motorista Confort',
+    requirementsTitle: 'Motorista Confort - Requisitos',
     subtitle: 'Carro 2020+, mais conforto',
-    tagline: 'Veículos sedã, SUV e premium ano 2020 ou superior',
+    tagline: 'SUV, Sedã ou Hatch Premium a partir de 2020',
     badge: 'R$ 3,50/km • Carro 2020+',
-    pricePerKm: 'R$ 3,50/km',
+    pricePerKm: 'R$ 3,50',
     icon: (
       <div className="relative flex items-center justify-center">
         <Car className="w-8 h-8 text-[#ff6a00]" />
@@ -122,124 +111,103 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
     vehicleCategory: 'confort',
     role: 'driver',
     userTipo: 'motorista_confort',
-    modelLabel: 'MODELO DO CARRO (SEDÃ / SUV)',
-    modelPlaceholder: 'Ex: Toyota Corolla, Honda Civic, Jeep Compass, VW T-Cross, Renegade, Virtus',
+    modelLabel: 'MODELO DO CARRO (SUV / SEDÃ / HATCH PREMIUM)',
+    modelPlaceholder: 'Ex: Corolla, Honda Civic, T-Cross, Creta, Compass, Nivus, Virtus, Onix Plus',
     hasYear: true,
-    minYear: 2020, // Validação estrita: 2020 em diante
+    minYear: 2020,
+    yearAlertMessage:
+      'Seu veículo não atende Confort (mínimo 2020). Você pode se cadastrar como Motorista Econômico.',
     hasTrunkType: false,
     defaultModel: 'Toyota Corolla',
     defaultYear: '2022',
-    keyHighlights: [
-      'Carro ano 2020 ou superior (Obrigatório)',
-      'Sedã médio/grande, SUV ou premium',
-      'Ar-condicionado obrigatório sempre',
-      'R$ 3,50/km • Alta rentabilidade'
+    requirementsList: [
+      'Automóvel a partir de 2020 (até 5 anos de uso)',
+      'SUV, Sedã, ou Hatch Premium - ex: Corolla, Honda Civic, T-Cross, Creta, Compass, Nivus, Virtus, Onix Plus',
+      'NÃO aceita carro popular 1.0 básico',
+      'Ar-condicionado, vidro elétrico, direção hidráulica',
+      'Carro impecável, sem riscos, limpo, com cheirinho',
+      'CNH B válida, sem pontos',
+      'CRLV em dia, Seguro total',
+      'Avaliação mínima 4.8 para continuar no Confort',
     ],
-    driverRequirements: [
-      'CNH definitiva com anotação EAR (Exerce Atividade Remunerada) ativa',
-      'Atestado de antecedentes criminais sem restrições',
-      'Histórico de condução exemplar e postura cordial',
-      'Manter nota mínima média de avaliação (4.85 ou superior)'
-    ],
-    vehicleRequirements: [
-      'Veículo ano de fabricação 2020 em diante (Validação estrita)',
-      'Modelos sedã médio/grande, SUV ou premium (Corolla, Civic, Compass, T-Cross, Tracker, Virtus, Nivus, etc.)',
-      '4 portas, ar-condicionado em perfeito estado gelando em todas as viagens',
-      'Porta-malas espaçoso livre e disponível para malas dos passageiros',
-      'Interior impecável, estofamento sem avarias e bancos limpos',
-      'CRLV atualizado e licenciado'
-    ],
-    safetyRequirements: [
-      'Carregador de celular (USB / Tipo C / Lightning) disponível para o passageiro',
-      'Vidros elétricos nas 4 portas e travas elétricas ativas',
-      'Chave PIX própria para recebimento de 85% da corrida direto para você'
-    ],
+    vehiclePhotoLabel: 'Foto do carro',
+    cnhPhotoLabel: 'Foto CNH',
+    crlvPhotoLabel: 'Foto CRLV',
   },
   motoboy_passageiro: {
     key: 'motoboy_passageiro',
     title: 'Motoboy Passageiro',
+    requirementsTitle: 'Motoboy Passageiro - Requisitos',
     subtitle: 'Levar passageiro de moto',
-    tagline: 'Agilidade no trânsito para corridas individuais rápidas',
+    tagline: 'Moto a partir de 2018 e mínimo 150cc',
     badge: 'R$ 1,80/km • Moto Táxi',
-    pricePerKm: 'R$ 1,80/km',
+    pricePerKm: 'R$ 1,80',
     icon: <Bike className="w-8 h-8 text-cyan-500" />,
     vehicleCategory: 'moto_passageiro',
     role: 'motoboy',
     userTipo: 'motoboy_passageiro',
-    modelLabel: 'MODELO DA MOTO',
-    modelPlaceholder: 'Ex: Honda CG 160 Titan, Yamaha Fazer 250, Honda Bros, Factor 150',
+    modelLabel: 'MODELO DA MOTO (MÍN. 150CC)',
+    modelPlaceholder: 'Ex: Honda CG 160, Yamaha Fazer 250, Honda CB 300',
     hasYear: true,
+    minYear: 2018,
+    yearAlertMessage:
+      'Sua moto não atende aos requisitos de Motoboy Passageiro (mínimo 2018, 150cc+). Você pode escolher Motoboy Entregas ou cadastrar outra moto.',
     hasTrunkType: false,
-    defaultModel: 'Honda CG 160 Titan',
+    defaultModel: 'Honda CG 160',
     defaultYear: '2022',
-    keyHighlights: [
-      'CNH categoria A definitiva com EAR',
-      '2 Capacetes INMETRO com viseira',
-      'Toucas descartáveis obrigatórias',
-      'R$ 1,80/km • Moto Táxi rápido'
+    requirementsList: [
+      'Moto a partir de 2018 (até 8 anos de uso), mínimo 150cc - ex: Honda CG 160, Yamaha Fazer 250, Honda CB 300',
+      'Capacete extra para passageiro, limpo, com viseira',
+      'Baú ou alça para passageiro segurar',
+      'CNH A válida',
+      'CRLV da moto em dia',
+      'Seguro obrigatório',
+      'Jaqueta, luvas e capa de chuva',
     ],
-    driverRequirements: [
-      'CNH categoria A definitiva há pelo menos 2 anos com anotação EAR',
-      'Certidão de antecedentes criminais sem restrições',
-      'Uso obrigatório de colete ou vestimenta com faixas retrorrefletivas',
-      'Idade mínima de 21 anos completos'
-    ],
-    vehicleRequirements: [
-      'Motocicleta entre 125cc e 300cc em perfeito estado mecânico e de conservação',
-      'Alças laterais ou traseiras firmes para apoio do passageiro',
-      'Pedaleiras traseiras emborrachadas e firmes para a garupa',
-      'Pneus novos ou meia-vida com sulcos dentro do limite de segurança',
-      'CRLV da moto regularizado e licenciado'
-    ],
-    safetyRequirements: [
-      '2 Capacetes com selo INMETRO e viseiras transparentes sem riscos (1 condutor + 1 passageiro)',
-      'Fornecimento obrigatório de touca higiênica descartável a cada passageiro transportado',
-      'Suporte de guidão firme e resistente a intempéries para navegação GPS',
-      'Chave PIX para recebimento de 85% dos ganhos de cada corrida'
-    ],
+    vehiclePhotoLabel: 'Foto da moto',
+    cnhPhotoLabel: 'Foto CNH A',
+    crlvPhotoLabel: 'Foto CRLV',
   },
   motoboy_entregas: {
     key: 'motoboy_entregas',
     title: 'Motoboy Entregas',
+    requirementsTitle: 'Motoboy Entregas - Requisitos',
     subtitle: 'Fazer entregas',
-    tagline: 'Delivery de pacotes, compras, documentos e itens do comércio',
+    tagline: 'Moto 2015+ (mín. 125cc) com baú fixo mínimo 90L',
     badge: 'R$ 2,00/km • Entregas & Flash',
-    pricePerKm: 'R$ 2,00/km',
+    pricePerKm: 'R$ 2,00',
     icon: <Package className="w-8 h-8 text-amber-500" />,
     vehicleCategory: 'moto_entrega',
     role: 'motoboy',
     userTipo: 'motoboy_entregas',
-    modelLabel: 'MODELO DA MOTO',
-    modelPlaceholder: 'Ex: Honda CG 160 Start, Yamaha Factor 150, Honda Bros',
+    modelLabel: 'MODELO DA MOTO (MÍN. 125CC)',
+    modelPlaceholder: 'Ex: Honda CG 160 Start, Honda Biz 125, Yamaha Factor 150',
     hasYear: true,
+    minYear: 2015,
+    yearAlertMessage:
+      'Sua moto não atende aos requisitos de Motoboy Entregas (mínimo 2015, 125cc+). Cadastre uma moto a partir de 2015.',
     hasTrunkType: true,
     defaultModel: 'Honda CG 160 Start',
-    defaultYear: '2022',
-    keyHighlights: [
-      'CNH categoria A com EAR',
-      'Baú 80L/90L/120L ou Bag Térmica',
-      'Entregas de encomendas e compras',
-      'Você fica com 85% e Race com 15% - Sem mensalidade'
+    defaultYear: '2021',
+    requirementsList: [
+      'Moto a partir de 2015, mínimo 125cc',
+      'Baú de entregas com no mínimo 90L, fixo, com trava, higienizado',
+      'CNH A válida',
+      'CRLV em dia',
+      'Celular com suporte para moto',
     ],
-    driverRequirements: [
-      'CNH categoria A com anotação EAR ativa',
-      'Certidão de antecedentes criminais sem restrições',
-      'Idade mínima de 21 anos',
-      'Compromisso com o cuidado, integridade e rapidez na entrega das encomendas'
-    ],
-    vehicleRequirements: [
-      'Motocicleta licenciada em perfeitas condições de rodagem',
-      'Compartimento de carga homologado pelo CONTRAN: Baú rígido fixado (80L, 90L ou 120L) ou Mochila/Bag térmica impermeável (até 20kg)',
-      'Faixas retrorrefletivas de segurança regulamentadas afixadas no compartimento',
-      'Proibição expressa de transporte de passageiro simultaneamente à carga'
-    ],
-    safetyRequirements: [
-      'Capacete com selo do INMETRO e faixas refletivas',
-      'Capa de proteção contra chuva e suporte estanque para smartphone',
-      'Chave PIX pessoal para recebimento de 85% do frete'
-    ],
+    vehiclePhotoLabel: 'Foto da moto com baú',
+    cnhPhotoLabel: 'Foto CNH A',
+    crlvPhotoLabel: 'Foto CRLV',
   },
 };
+
+export function mapVehicleCategoryToWorkKey(cat?: VehicleCategory): WorkCategoryKey {
+  if (cat === 'confort') return 'motorista_confort';
+  if (cat === 'moto_passageiro') return 'motoboy_passageiro';
+  if (cat === 'moto_entrega') return 'motoboy_entregas';
+  return 'motorista_economico';
+}
 
 interface DriverWorkSelectionViewProps {
   currentUser: AppUser;
@@ -294,8 +262,22 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   isMandatorySetup = false,
   hideLockedOnlineButton = false,
 }) => {
-  const [stage, setStage] = useState<'select_category' | 'fill_details'>('select_category');
-  const [selectedKey, setSelectedKey] = useState<WorkCategoryKey>('motorista_economico');
+  const hasExistingVehicleSetup = Boolean(
+    currentUser.driverData?.vehiclePlate?.trim() &&
+      currentUser.driverData?.vehicleModel?.trim() &&
+      currentUser.driverData?.categoryConfigured !== false
+  );
+
+  const initialKey: WorkCategoryKey = hasExistingVehicleSetup
+    ? mapVehicleCategoryToWorkKey(currentUser.driverData?.category)
+    : currentUser.role === 'motoboy'
+    ? 'motoboy_passageiro'
+    : 'motorista_economico';
+
+  const [stage, setStage] = useState<'select_category' | 'fill_details'>(
+    hasExistingVehicleSetup ? 'fill_details' : 'select_category'
+  );
+  const [selectedKey, setSelectedKey] = useState<WorkCategoryKey>(initialKey);
 
   // Form de detalhes operacionais do motorista / motoboy
   const [plate, setPlate] = useState(currentUser.driverData?.vehiclePlate || '');
@@ -307,14 +289,20 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   const [cpf, setCpf] = useState(currentUser.driverData?.cpf || '');
   const [pixKey, setPixKey] = useState(currentUser.driverData?.pixKey || '');
   const [hasTrunk, setHasTrunk] = useState<'Sim' | 'Não'>(
-    currentUser.driverData?.hasTrunk ? 'Sim' : 'Não'
+    currentUser.driverData?.hasTrunk !== false ? 'Sim' : 'Não'
   );
-  const [trunkType, setTrunkType] = useState(
-    currentUser.driverData?.trunkType || 'Baú 80 Litros'
-  );
+  const [trunkType, setTrunkType] = useState(() => {
+    const existing = currentUser.driverData?.trunkType || '';
+    if (existing.includes('100')) return 'Baú 100 Litros';
+    if (existing.includes('120')) return 'Baú 120 Litros';
+    if (existing.includes('135')) return 'Baú 135 Litros';
+    return 'Baú 90 Litros';
+  });
   const [color, setColor] = useState(currentUser.driverData?.vehicleColor || '');
   const [vehiclePhoto, setVehiclePhoto] = useState(currentUser.driverData?.vehiclePhoto || '');
   const [cnhPhoto, setCnhPhoto] = useState(currentUser.driverData?.cnhPhoto || '');
+  const [crlvPhoto, setCrlvPhoto] = useState(currentUser.driverData?.crlvPhoto || '');
+  const [requirementsChecked, setRequirementsChecked] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -323,55 +311,116 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   const handleSelectCategory = (key: WorkCategoryKey) => {
     setSelectedKey(key);
     const cat = WORK_CATEGORIES[key];
-    setModel('');
-    setYear(cat.defaultYear);
+    if (!hasExistingVehicleSetup) {
+      setModel('');
+      setYear(cat.defaultYear);
+    } else if (!year) {
+      setYear(cat.defaultYear);
+    }
     if (key === 'motoboy_entregas') {
       setHasTrunk('Sim');
-      setTrunkType('Baú 80 Litros');
+      if (!trunkType || trunkType === 'Não' || trunkType.includes('80')) {
+        setTrunkType('Baú 90 Litros');
+      }
     } else if (key === 'motoboy_passageiro') {
       setHasTrunk('Não');
-      setTrunkType('Não');
     }
+    setRequirementsChecked(false);
     setErrorMessage(null);
     setStage('fill_details');
   };
+
+  // Validação em tempo real do ano e modelo conforme a modalidade selecionada
+  const parsedYear = parseInt(year.trim(), 10);
+  const hasTypedFullYear = year.trim().length === 4 && !Number.isNaN(parsedYear);
+  const isYearBelowMinimum = hasTypedFullYear && parsedYear < selectedCategory.minYear;
+  const isConfortPopularOneLiter =
+    selectedCategory.key === 'motorista_confort' && isBasicPopularOneLiterModel(model);
+  const isEntregasMissingTrunk =
+    selectedCategory.key === 'motoboy_entregas' && hasTrunk !== 'Sim';
+
+  const getLiveBlockingAlert = (): string | null => {
+    if (isYearBelowMinimum) {
+      return selectedCategory.yearAlertMessage;
+    }
+    if (isConfortPopularOneLiter) {
+      return 'Motorista Confort NÃO aceita carro popular 1.0 básico. Você pode se cadastrar como Motorista Econômico.';
+    }
+    if (isEntregasMissingTrunk) {
+      return 'Motoboy Entregas exige baú fixo com no mínimo 90L, com trava e higienizado.';
+    }
+    return null;
+  };
+
+  const liveBlockingAlert = getLiveBlockingAlert();
 
   const handleSubmitDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     const isCarCategory = selectedCategory.role === 'driver';
+    const isDeliveryMoto = selectedCategory.key === 'motoboy_entregas';
     const cleanPlate = plate.trim().toUpperCase();
     const cleanModel = model.trim();
     const cleanCnh = cnh.trim();
-    const cleanColor = color.trim();
+    const cleanColor = color.trim() || (isDeliveryMoto ? 'Não informada' : '');
     const cleanCpf = cpf.trim();
     const cleanBau = isCarCategory
       ? ''
       : hasTrunk === 'Sim'
       ? `Sim (${trunkType})`
       : 'Não';
-    const yearNum = parseInt(year, 10) || 2022;
+    const yearNum = parseInt(year.trim(), 10);
+
+    if (!cleanPlate || !cleanModel || !year.trim() || Number.isNaN(yearNum)) {
+      setErrorMessage('Preencha Placa, Modelo e Ano do veículo.');
+      return;
+    }
+
+    if (yearNum < selectedCategory.minYear) {
+      setErrorMessage(selectedCategory.yearAlertMessage);
+      return;
+    }
+
+    if (selectedCategory.key === 'motorista_confort' && isBasicPopularOneLiterModel(cleanModel)) {
+      setErrorMessage(
+        'Motorista Confort NÃO aceita carro popular 1.0 básico. Você pode se cadastrar como Motorista Econômico.'
+      );
+      return;
+    }
 
     if (isCarCategory) {
-      if (!cleanPlate || !cleanModel || !year.trim() || !cleanColor || !cleanCnh || !cleanCpf) {
+      if (!cleanColor || !cleanCnh || !cleanCpf) {
         setErrorMessage('Preencha todos os campos obrigatórios: Placa, Modelo, Ano, Cor, CNH e CPF.');
         return;
       }
-      if (selectedCategory.key === 'motorista_confort' && yearNum < 2020) {
-        setErrorMessage('A categoria Motorista Confort exige veículo ano 2020 ou superior.');
-        return;
-      }
-    } else {
-      if (!cleanPlate || !cleanModel || !year.trim() || !cleanColor || !cleanCnh || !cleanCpf) {
+    } else if (selectedCategory.key === 'motoboy_passageiro') {
+      if (!cleanColor || !cleanCnh || !cleanCpf) {
         setErrorMessage('Preencha todos os campos obrigatórios: Placa moto, Modelo moto, Ano, Cor, CNH A e CPF.');
         return;
       }
+    } else if (isDeliveryMoto) {
+      if (hasTrunk !== 'Sim') {
+        setErrorMessage('Motoboy Entregas exige baú fixo de no mínimo 90L.');
+        return;
+      }
+      if (!cleanCnh || !cleanCpf) {
+        setErrorMessage('Preencha CNH A válida e CPF para concluir seu cadastro.');
+        return;
+      }
+    }
+
+    if (!requirementsChecked) {
+      setErrorMessage('Marque a caixa obrigatória: "Li e confirmo que meu veículo atende a todas as exigências acima".');
+      return;
     }
 
     setIsSaving(true);
     try {
       const existingDriver = currentUser.driverData;
+      const confirmedTimestamp = new Date().toISOString();
+      setDriverRequirementsConfirmedLocal(currentUser.email, true);
+
       const newDriver: Driver = {
         ...(existingDriver || {}),
         id: existingDriver?.id || currentUser.id || '',
@@ -384,20 +433,23 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         cnh: cleanCnh,
         category: selectedCategory.vehicleCategory,
         categoryConfigured: true,
+        requirementsConfirmed: true,
+        requirementsConfirmedAt: confirmedTimestamp,
         vehicleModel: cleanModel,
         vehiclePlate: cleanPlate,
         vehicleColor: cleanColor,
         vehicleYear: yearNum,
         vehiclePhoto: vehiclePhoto || undefined,
         cnhPhoto: cnhPhoto || undefined,
+        crlvPhoto: crlvPhoto || undefined,
         hasTrunk: !isCarCategory && hasTrunk === 'Sim',
         rating: existingDriver?.rating || currentUser.rating || 0,
         totalRides: existingDriver?.totalRides || 0,
-        status: 'online', // "Salvar e ficar ONLINE" -> libera app já ONLINE
+        status: 'online',
         lat: existingDriver?.lat || -23.0903,
         lng: existingDriver?.lng || -47.2180,
         weeklyPlanActive: true,
-        weeklyFeePaidAt: existingDriver?.weeklyFeePaidAt || new Date().toISOString(),
+        weeklyFeePaidAt: existingDriver?.weeklyFeePaidAt || confirmedTimestamp,
         weeklyFeeExpiresAt: null,
         weeklyPlanExpiresAt: null,
         weeklyPlanPrice: 0,
@@ -409,9 +461,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         cnhVerified: true,
         vehicleVerified: true,
         criminalRecordClear: true,
-        registrationDate: existingDriver?.registrationDate || new Date().toISOString().split('T')[0],
+        registrationDate: existingDriver?.registrationDate || confirmedTimestamp.split('T')[0],
         comfortEligible: selectedCategory.key === 'motorista_confort',
-        comfortEligibilityReason: selectedCategory.key === 'motorista_confort' ? 'Aprovado para Confort (2020+)' : undefined,
+        comfortEligibilityReason:
+          selectedCategory.key === 'motorista_confort'
+            ? 'Aprovado para Confort (2020+)'
+            : undefined,
       };
 
       const updatedAccount = {
@@ -428,12 +483,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         avatar: newDriver.avatar,
         rating: newDriver.rating,
         driverData: newDriver,
-        createdAt: new Date().toISOString(),
+        createdAt: confirmedTimestamp,
       };
 
       saveUserAccount(updatedAccount, true);
 
-      // Salva no Supabase na tabela usuarios: categoria = 'Motorista Confort' (ou a que escolheu), online = true, status = 'online'
       const updRes = await updateMotoristaSupabase(currentUser.email, {
         categoria: selectedCategory.title,
         placa: cleanPlate,
@@ -445,6 +499,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         bau: cleanBau,
         foto_veiculo: vehiclePhoto,
         foto_cnh: cnhPhoto,
+        foto_crlv: crlvPhoto,
+        exigencias_confirmadas: true,
         tipo: selectedCategory.userTipo,
         status: 'online',
         online: true,
@@ -472,6 +528,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           avatar: newDriver.avatar,
           foto_veiculo: vehiclePhoto,
           foto_cnh: cnhPhoto,
+          foto_crlv: crlvPhoto,
+          exigencias_confirmadas: true,
           plano_ativo: true,
           online: true,
           status: 'online',
@@ -494,7 +552,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       <div className="space-y-6 max-w-2xl mx-auto py-2 animate-fade-in">
         {/* Topo com identificação RACE e Sair opcional */}
         <div className="flex items-center justify-between gap-2 pb-2 border-b border-zinc-800/40">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-2xl font-heading font-black text-[#ff6a00] tracking-tighter uppercase">
               RACE
             </span>
@@ -535,7 +593,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           </h2>
 
           <p className="text-xs sm:text-sm text-zinc-300 font-medium max-w-lg mx-auto">
-            Olá, <strong className="text-white">{currentUser.name}</strong>! Para receber chamados de passageiros e entregas, selecione uma das 4 modalidades abaixo e informe os dados do veículo.
+            Olá, <strong className="text-white">{currentUser.name}</strong>! Selecione uma das 4 modalidades abaixo para ver os requisitos obrigatórios, informar os dados do veículo e confirmar suas exigências.
           </p>
 
           {!hideLockedOnlineButton && (
@@ -552,7 +610,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           )}
         </div>
 
-        {/* 4 Cards Grandes Clicáveis */}
+        {/* 4 Cards Grandes Clicáveis com Prévia dos Requisitos */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {(Object.keys(WORK_CATEGORIES) as WorkCategoryKey[]).map((catKey) => {
             const cat = WORK_CATEGORIES[catKey];
@@ -580,17 +638,20 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   </span>
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <h3 className="font-heading font-black text-slate-950 text-lg sm:text-xl">
                     {cat.title}
                   </h3>
                   <p className="text-xs sm:text-sm text-slate-600 font-semibold">
                     {cat.subtitle}
                   </p>
+                  <p className="text-[11px] font-bold text-slate-500">
+                    • {cat.requirementsList[0]}
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-between pt-2 border-t border-slate-200/80 text-xs font-heading font-black text-[#ff6a00]">
-                  <span>Selecionar esta modalidade</span>
+                  <span>Ver requisitos e selecionar</span>
                   <ArrowRight className="w-4 h-4" />
                 </div>
               </button>
@@ -606,9 +667,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     );
   }
 
-  // ESTÁGIO 2: FORMULÁRIO DA MODALIDADE ESCOLHIDA
+  // ESTÁGIO 2: EXIGÊNCIAS DA MODALIDADE + FORMULÁRIO + CHECKBOX OBRIGATÓRIO
   if (stage === 'fill_details') {
     const isCarCategory = selectedCategory.role === 'driver';
+    const isDeliveryMoto = selectedCategory.key === 'motoboy_entregas';
+    const isSaveBlocked = isSaving || !requirementsChecked || Boolean(liveBlockingAlert);
+
     return (
       <div className="space-y-5 max-w-2xl mx-auto py-2 animate-fade-in">
         {/* Navegação e Modalidade Ativa */}
@@ -626,17 +690,80 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           </span>
         </div>
 
+        {/* Aviso para cadastros já existentes confirmarem exigências */}
+        {hasExistingVehicleSetup && !currentUser.driverData?.requirementsConfirmed && (
+          <div className="bg-amber-50 border-2 border-amber-400 text-amber-950 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
+            <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+            <div className="text-xs sm:text-sm font-bold">
+              Cadastro já existente localizado! Seus dados foram mantidos abaixo — revise os requisitos da modalidade e marque a confirmação obrigatória para voltar a ficar ONLINE.
+            </div>
+          </div>
+        )}
+
         {/* Cabeçalho do Formulário */}
         <div className="space-y-1">
           <h2 className="text-xl sm:text-2xl font-heading font-black tracking-tight">
             Cadastro: {selectedCategory.title}
           </h2>
           <p className="text-xs sm:text-sm opacity-80 font-medium">
-            Preencha os dados do seu {isCarCategory ? 'carro' : 'veículo'} abaixo para salvar e ficar ONLINE imediatamente.
+            Confira as exigências, preencha os dados do seu {isCarCategory ? 'carro' : 'veículo'} e confirme os requisitos para salvar e ficar ONLINE.
           </p>
         </div>
 
-        {/* Mensagem de Erro */}
+        {/* CARD OFICIAL DE EXIGÊNCIAS DA MODALIDADE ESCOLHIDA */}
+        <div
+          className={`rounded-3xl p-5 sm:p-6 border-2 shadow-md space-y-3 ${
+            selectedCategory.key === 'motorista_confort'
+              ? 'bg-[#fff8f2] border-[#ff6a00] text-slate-900'
+              : selectedCategory.key === 'motoboy_passageiro'
+              ? 'bg-cyan-50 border-cyan-500 text-slate-900'
+              : selectedCategory.key === 'motoboy_entregas'
+              ? 'bg-amber-50 border-amber-500 text-slate-900'
+              : 'bg-slate-50 border-slate-800 text-slate-900'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-3">
+            <div className="flex items-center gap-2.5">
+              <FileText className="w-5 h-5 text-[#ff6a00] shrink-0" />
+              <h3 className="font-heading font-black text-base sm:text-lg text-slate-950">
+                {selectedCategory.requirementsTitle}
+              </h3>
+            </div>
+            <span className="text-[11px] font-mono font-black px-2.5 py-1 rounded-full bg-slate-950 text-white shrink-0">
+              Ano {selectedCategory.minYear}+
+            </span>
+          </div>
+
+          <ul className="space-y-2">
+            {selectedCategory.requirementsList.map((req, idx) => (
+              <li key={idx} className="flex items-start gap-2.5 text-xs sm:text-sm font-semibold text-slate-800">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span>{req}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Alerta em Tempo Real se Ano / Modelo / Baú não atenderem */}
+        {liveBlockingAlert && (
+          <div className="bg-rose-50 border-2 border-rose-500 text-rose-950 text-xs sm:text-sm p-4 rounded-2xl font-bold space-y-2.5 shadow-md">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <span>{liveBlockingAlert}</span>
+            </div>
+            {selectedCategory.key === 'motorista_confort' && (
+              <button
+                type="button"
+                onClick={() => handleSelectCategory('motorista_economico')}
+                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs cursor-pointer transition-all"
+              >
+                Mudar para Motorista Econômico
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Mensagem de Erro de Submit */}
         {errorMessage && (
           <div className="bg-rose-50 border-2 border-rose-400 text-rose-900 text-xs sm:text-sm p-4 rounded-2xl font-bold flex items-center gap-2.5 shadow-sm">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
@@ -644,15 +771,24 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           </div>
         )}
 
-        <form onSubmit={handleSubmitDetails} className="space-y-4 bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl">
+        <form
+          onSubmit={handleSubmitDetails}
+          className="space-y-4 bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl"
+        >
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-700 flex flex-wrap gap-x-4 gap-y-1">
-            <span><strong>Condutor:</strong> {currentUser.name}</span>
-            <span><strong>E-mail:</strong> {currentUser.email}</span>
-            <span><strong>Modalidade:</strong> {selectedCategory.title}</span>
+            <span>
+              <strong>Condutor:</strong> {currentUser.name}
+            </span>
+            <span>
+              <strong>E-mail:</strong> {currentUser.email}
+            </span>
+            <span>
+              <strong>Modalidade:</strong> {selectedCategory.title}
+            </span>
           </div>
 
           {isCarCategory ? (
-            /* MOTORISTA ECONÔMICO / CONFORT: Placa, Modelo, Ano, Cor, CNH, CPF, Foto do carro, Foto CNH */
+            /* MOTORISTA ECONÔMICO / CONFORT: Placa, Modelo, Ano, Cor, CNH, CPF, Foto do carro (4 lados), Foto da CNH, Foto do CRLV */
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -691,18 +827,20 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   <input
                     type="number"
                     required
-                    min={selectedCategory.minYear || 2005}
-                    max={2026}
+                    min={1995}
+                    max={2027}
                     value={year}
                     onChange={(e) => setYear(e.target.value)}
                     placeholder={selectedCategory.key === 'motorista_confort' ? 'Ex: 2022' : 'Ex: 2019'}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                    className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none ${
+                      isYearBelowMinimum
+                        ? 'border-rose-500 bg-rose-50 text-rose-900'
+                        : 'border-slate-300 focus:border-amber-500'
+                    }`}
                   />
-                  {selectedCategory.key === 'motorista_confort' && (
-                    <span className="text-[11px] font-bold text-[#ff6a00] block">
-                      Exigência Confort: ano 2020 ou superior.
-                    </span>
-                  )}
+                  <span className="text-[11px] font-bold text-slate-500 block">
+                    Exigência mínima: ano {selectedCategory.minYear} ou superior.
+                  </span>
                 </div>
 
                 <div className="space-y-1.5">
@@ -721,14 +859,14 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    CNH *
+                    CNH B *
                   </label>
                   <input
                     type="text"
                     required
                     value={cnh}
                     onChange={(e) => setCnh(e.target.value)}
-                    placeholder="Número da CNH (com EAR)"
+                    placeholder="Número da CNH B válida"
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -748,8 +886,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                 </div>
               </div>
 
-              {/* Fotos do Carro e da CNH */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              {/* Fotos do Carro, CNH e CRLV */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
                 <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
                   <input
                     type="file"
@@ -762,14 +900,14 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   />
                   {vehiclePhoto ? (
                     <>
-                      <img src={vehiclePhoto} alt="Foto do carro" className="w-full h-24 object-cover rounded-xl" />
-                      <span className="text-xs font-bold text-emerald-700">Foto do carro anexada ✓ (Trocar)</span>
+                      <img src={vehiclePhoto} alt={selectedCategory.vehiclePhotoLabel} className="w-full h-24 object-cover rounded-xl" />
+                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.vehiclePhotoLabel} ✓</span>
                     </>
                   ) : (
                     <>
                       <Camera className="w-6 h-6 text-[#ff6a00]" />
-                      <span className="text-xs font-bold text-slate-800">Foto do carro</span>
-                      <span className="text-[11px] text-slate-500">Clique para escolher da galeria ou câmera</span>
+                      <span className="text-xs font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel}</span>
+                      <span className="text-[11px] text-slate-500">Galeria ou câmera</span>
                     </>
                   )}
                 </label>
@@ -786,21 +924,45 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   />
                   {cnhPhoto ? (
                     <>
-                      <img src={cnhPhoto} alt="Foto CNH" className="w-full h-24 object-cover rounded-xl" />
-                      <span className="text-xs font-bold text-emerald-700">Foto CNH anexada ✓ (Trocar)</span>
+                      <img src={cnhPhoto} alt={selectedCategory.cnhPhotoLabel} className="w-full h-24 object-cover rounded-xl" />
+                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.cnhPhotoLabel} ✓</span>
                     </>
                   ) : (
                     <>
                       <Camera className="w-6 h-6 text-[#ff6a00]" />
-                      <span className="text-xs font-bold text-slate-800">Foto CNH</span>
-                      <span className="text-[11px] text-slate-500">Clique para escolher da galeria ou câmera</span>
+                      <span className="text-xs font-bold text-slate-800">{selectedCategory.cnhPhotoLabel}</span>
+                      <span className="text-[11px] text-slate-500">Galeria ou câmera</span>
+                    </>
+                  )}
+                </label>
+
+                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) compressUploadImage(f, setCrlvPhoto);
+                    }}
+                  />
+                  {crlvPhoto ? (
+                    <>
+                      <img src={crlvPhoto} alt={selectedCategory.crlvPhotoLabel} className="w-full h-24 object-cover rounded-xl" />
+                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.crlvPhotoLabel} ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-6 h-6 text-[#ff6a00]" />
+                      <span className="text-xs font-bold text-slate-800">{selectedCategory.crlvPhotoLabel}</span>
+                      <span className="text-[11px] text-slate-500">Documento em dia</span>
                     </>
                   )}
                 </label>
               </div>
             </>
           ) : (
-            /* MOTOBOY PASSAGEIRO / ENTREGAS: Placa moto, Modelo moto, Ano, Cor, CNH A, CPF, Tem baú?, Foto da moto */
+            /* MOTOBOY PASSAGEIRO / ENTREGAS */
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -839,22 +1001,29 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   <input
                     type="number"
                     required
-                    min={2005}
-                    max={2026}
+                    min={1995}
+                    max={2027}
                     value={year}
                     onChange={(e) => setYear(e.target.value)}
-                    placeholder="Ex: 2022"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                    placeholder={selectedCategory.key === 'motoboy_passageiro' ? 'Ex: 2022' : 'Ex: 2020'}
+                    className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none ${
+                      isYearBelowMinimum
+                        ? 'border-rose-500 bg-rose-50 text-rose-900'
+                        : 'border-slate-300 focus:border-amber-500'
+                    }`}
                   />
+                  <span className="text-[11px] font-bold text-slate-500 block">
+                    Exigência mínima: ano {selectedCategory.minYear} ou superior.
+                  </span>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Cor *
+                    Cor {isDeliveryMoto ? '(Opcional)' : '*'}
                   </label>
                   <input
                     type="text"
-                    required
+                    required={!isDeliveryMoto}
                     value={color}
                     onChange={(e) => setColor(e.target.value)}
                     placeholder="Ex: Preta, Vermelha, Azul"
@@ -871,7 +1040,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                     required
                     value={cnh}
                     onChange={(e) => setCnh(e.target.value)}
-                    placeholder="Número da CNH A (com EAR)"
+                    placeholder="Número da CNH A válida"
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -899,7 +1068,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                     onChange={(e) => setHasTrunk(e.target.value as 'Sim' | 'Não')}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
-                    <option value="Sim">Sim, tenho baú / bag</option>
+                    <option value="Sim">Sim, tenho baú fixo</option>
                     <option value="Não">Não</option>
                   </select>
                 </div>
@@ -907,46 +1076,96 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                 {hasTrunk === 'Sim' && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                      Capacidade do Baú
+                      Tamanho do baú {isDeliveryMoto ? '(mín. 90L) *' : ''}
                     </label>
                     <select
                       value={trunkType}
                       onChange={(e) => setTrunkType(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
                     >
-                      <option value="Baú 80 Litros">Baú 80 Litros</option>
-                      <option value="Baú 90 Litros">Baú 90 Litros</option>
+                      <option value="Baú 90 Litros">Baú 90 Litros (Mínimo Entregas)</option>
+                      <option value="Baú 100 Litros">Baú 100 Litros</option>
                       <option value="Baú 120 Litros">Baú 120 Litros</option>
-                      <option value="Mochila / Bag Térmica (até 20kg)">Mochila / Bag Térmica (até 20kg)</option>
+                      <option value="Baú 135 Litros">Baú 135 Litros</option>
                     </select>
                   </div>
                 )}
               </div>
 
-              {/* Foto da Moto */}
-              <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) compressUploadImage(f, setVehiclePhoto);
-                  }}
-                />
-                {vehiclePhoto ? (
-                  <>
-                    <img src={vehiclePhoto} alt="Foto da moto" className="w-full h-28 object-cover rounded-xl" />
-                    <span className="text-xs font-bold text-emerald-700">Foto da moto anexada ✓ (Trocar)</span>
-                  </>
-                ) : (
-                  <>
-                    <Camera className="w-6 h-6 text-[#ff6a00]" />
-                    <span className="text-xs font-bold text-slate-800">Foto da moto</span>
-                    <span className="text-[11px] text-slate-500">Clique para escolher da galeria ou câmera</span>
-                  </>
-                )}
-              </label>
+              {/* Fotos: Moto (ou Moto com Baú), CNH A e CRLV */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) compressUploadImage(f, setVehiclePhoto);
+                    }}
+                  />
+                  {vehiclePhoto ? (
+                    <>
+                      <img src={vehiclePhoto} alt={selectedCategory.vehiclePhotoLabel} className="w-full h-24 object-cover rounded-xl" />
+                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.vehiclePhotoLabel} ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-6 h-6 text-[#ff6a00]" />
+                      <span className="text-xs font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel}</span>
+                      <span className="text-[11px] text-slate-500">Galeria ou câmera</span>
+                    </>
+                  )}
+                </label>
+
+                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) compressUploadImage(f, setCnhPhoto);
+                    }}
+                  />
+                  {cnhPhoto ? (
+                    <>
+                      <img src={cnhPhoto} alt={selectedCategory.cnhPhotoLabel} className="w-full h-24 object-cover rounded-xl" />
+                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.cnhPhotoLabel} ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-6 h-6 text-[#ff6a00]" />
+                      <span className="text-xs font-bold text-slate-800">{selectedCategory.cnhPhotoLabel}</span>
+                      <span className="text-[11px] text-slate-500">Galeria ou câmera</span>
+                    </>
+                  )}
+                </label>
+
+                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) compressUploadImage(f, setCrlvPhoto);
+                    }}
+                  />
+                  {crlvPhoto ? (
+                    <>
+                      <img src={crlvPhoto} alt={selectedCategory.crlvPhotoLabel} className="w-full h-24 object-cover rounded-xl" />
+                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.crlvPhotoLabel} ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-6 h-6 text-[#ff6a00]" />
+                      <span className="text-xs font-bold text-slate-800">{selectedCategory.crlvPhotoLabel}</span>
+                      <span className="text-[11px] text-slate-500">Documento em dia</span>
+                    </>
+                  )}
+                </label>
+              </div>
             </>
           )}
 
@@ -964,10 +1183,39 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             />
           </div>
 
+          {/* CHECKBOX OBRIGATÓRIO ANTES DE "Salvar e ficar ONLINE" */}
+          <label
+            onClick={() => setRequirementsChecked((prev) => !prev)}
+            className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all select-none ${
+              requirementsChecked
+                ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
+                : 'bg-amber-50 border-amber-400 text-slate-900 hover:border-[#ff6a00]'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={requirementsChecked}
+              onChange={(e) => setRequirementsChecked(e.target.checked)}
+              className="sr-only"
+            />
+            {requirementsChecked ? (
+              <CheckSquare className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <Square className="w-6 h-6 text-amber-700 shrink-0 mt-0.5" />
+            )}
+            <span className="text-xs sm:text-sm font-black leading-snug">
+              Li e confirmo que meu veículo atende a todas as exigências acima
+            </span>
+          </label>
+
           <button
             type="submit"
-            disabled={isSaving}
-            className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-heading font-black text-base sm:text-lg transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 active:scale-[0.99]"
+            disabled={isSaveBlocked}
+            className={`w-full py-4 px-6 rounded-2xl font-heading font-black text-base sm:text-lg transition-all shadow-lg flex items-center justify-center gap-2 ${
+              isSaveBlocked
+                ? 'bg-slate-300 text-slate-600 border-2 border-slate-400 cursor-not-allowed opacity-85'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-[0.99]'
+            }`}
           >
             {isSaving ? (
               <>

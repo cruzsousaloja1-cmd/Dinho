@@ -179,11 +179,15 @@ export default function App() {
         if (isDriverOrMotoboy && hydratedDriver) {
           const isConfigured =
             hydratedDriver.categoryConfigured !== false &&
-            Boolean(hydratedDriver.vehiclePlate?.trim() && hydratedDriver.vehicleModel?.trim());
+            Boolean(hydratedDriver.vehiclePlate?.trim() && hydratedDriver.vehicleModel?.trim()) &&
+            hydratedDriver.requirementsConfirmed === true;
           const currentBalance = getDriverBalance(hydratedDriver.id, hydratedDriver.walletBalance || 0);
           const updatedMatched: Driver = {
             ...hydratedDriver,
-            categoryConfigured: isConfigured,
+            categoryConfigured:
+              hydratedDriver.categoryConfigured !== false &&
+              Boolean(hydratedDriver.vehiclePlate?.trim() && hydratedDriver.vehicleModel?.trim()),
+            requirementsConfirmed: hydratedDriver.requirementsConfirmed === true,
             walletBalance: currentBalance,
             weeklyPlanActive: true,
             status: isConfigured && hydratedDriver.status === 'online' ? 'online' : 'offline',
@@ -1224,13 +1228,15 @@ export default function App() {
               categoryConfigured: false,
               status: 'offline',
             };
-            const isConfigured =
+            const hasVehicleFields =
               targetDriver.categoryConfigured !== false &&
               Boolean(targetDriver.vehiclePlate?.trim() && targetDriver.vehicleModel?.trim());
+            const isConfigured = hasVehicleFields && targetDriver.requirementsConfirmed === true;
             const currentBal = getDriverBalance(targetDriver.id, targetDriver.walletBalance || 0);
             const driverWithBal: Driver = {
               ...targetDriver,
-              categoryConfigured: isConfigured,
+              categoryConfigured: hasVehicleFields,
+              requirementsConfirmed: targetDriver.requirementsConfirmed === true,
               walletBalance: currentBal,
               weeklyPlanActive: isConfigured,
               status: isConfigured && targetDriver.status === 'online' ? 'online' : 'offline',
@@ -1244,6 +1250,8 @@ export default function App() {
             setLoginSuccessBanner(
               isConfigured
                 ? `Bem-vindo(a), ${targetDriver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
+                : hasVehicleFields
+                ? `Bem-vindo(a), ${targetDriver.name}! Confirme as exigências da sua modalidade para voltar a ficar ONLINE.`
                 : `Bem-vindo(a), ${targetDriver.name}! Escolha sua modalidade e preencha os dados do veículo para liberar o botão verde ONLINE.`
             );
           } else {
@@ -1286,11 +1294,12 @@ export default function App() {
   const isDriverCategoryConfigured = Boolean(
     currentDriver.categoryConfigured !== false &&
     currentDriver.vehiclePlate?.trim() &&
-    currentDriver.vehicleModel?.trim()
+    currentDriver.vehicleModel?.trim() &&
+    currentDriver.requirementsConfirmed === true
   );
 
-  // TELA FULLSCREEN OBRIGATÓRIA DE ESCOLHA DE MODALIDADE APÓS CADASTRO DO MOTORISTA / MOTOBOY
-  // Não mostra tela de passageiro, Header ou BottomNav até concluir o preenchimento da modalidade.
+  // TELA FULLSCREEN OBRIGATÓRIA DE ESCOLHA DE MODALIDADE E CONFIRMAÇÃO DE EXIGÊNCIAS
+  // Não mostra tela de passageiro, Header ou BottomNav até concluir o preenchimento e confirmação das exigências.
   if (isUserDriver && !isDriverCategoryConfigured) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] text-white px-4 py-6 sm:py-10 overflow-y-auto">
@@ -1302,6 +1311,7 @@ export default function App() {
             const configuredDriver: Driver = {
               ...newDriver,
               categoryConfigured: true,
+              requirementsConfirmed: true,
               status: 'online',
               weeklyPlanActive: true,
             };

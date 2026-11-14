@@ -70,7 +70,10 @@ export interface Driver {
   vehicleYear: number;
   vehiclePhoto?: string;
   cnhPhoto?: string;
+  crlvPhoto?: string;
   hasTrunk?: boolean;
+  requirementsConfirmed?: boolean;
+  requirementsConfirmedAt?: string;
   rating: number;
   totalRides: number;
   status: 'online' | 'offline' | 'in_ride' | 'pending_approval';

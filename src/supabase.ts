@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   status TEXT DEFAULT 'offline',
   foto_veiculo TEXT,
   foto_cnh TEXT,
+  foto_crlv TEXT,
+  exigencias_confirmadas BOOLEAN DEFAULT false,
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
   divida NUMERIC DEFAULT 0.00,
@@ -61,6 +63,8 @@ ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS bau TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS online BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto_veiculo TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto_cnh TEXT;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto_crlv TEXT;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS exigencias_confirmadas BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
@@ -179,6 +183,8 @@ export interface SupabaseUsuarioRow {
   avatar?: string;
   foto_veiculo?: string;
   foto_cnh?: string;
+  foto_crlv?: string;
+  exigencias_confirmadas?: boolean;
   rating?: number;
   saldo?: number;
   plano_ativo?: boolean;
@@ -285,6 +291,27 @@ export function purgeLegacyTestLocalStorage(preserveCurrentSession: boolean = tr
   } catch {}
 }
 
+export function setDriverRequirementsConfirmedLocal(email: string, confirmed: boolean): void {
+  if (typeof window === 'undefined' || !email) return;
+  try {
+    const key = `race_req_confirmed_${email.trim().toLowerCase()}`;
+    if (confirmed) {
+      localStorage.setItem(key, 'true');
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch {}
+}
+
+export function getDriverRequirementsConfirmedLocal(email: string): boolean {
+  if (typeof window === 'undefined' || !email) return false;
+  try {
+    return localStorage.getItem(`race_req_confirmed_${email.trim().toLowerCase()}`) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 1. INSERT DIRETO NO CADASTRO (Novo Cadastro)
  * Insere na tabela 'usuarios' do Supabase SEM enviar o campo `id`, deixando o banco gerar o bigint automaticamente.
@@ -310,6 +337,8 @@ export async function insertUsuarioSupabase(params: {
   avatar?: string;
   foto_veiculo?: string;
   foto_cnh?: string;
+  foto_crlv?: string;
+  exigencias_confirmadas?: boolean;
   status?: string;
   online?: boolean;
   plano_ativo?: boolean;
@@ -318,6 +347,9 @@ export async function insertUsuarioSupabase(params: {
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = params.email.trim().toLowerCase();
+    if (params.exigencias_confirmadas === true) {
+      setDriverRequirementsConfirmedLocal(cleanEmail, true);
+    }
     const row: any = {
       nome: params.nome.trim(),
       'e-mail': cleanEmail,
@@ -343,6 +375,10 @@ export async function insertUsuarioSupabase(params: {
     }
     if (params.foto_veiculo) row.foto_veiculo = params.foto_veiculo;
     if (params.foto_cnh) row.foto_cnh = params.foto_cnh;
+    if (params.foto_crlv) row.foto_crlv = params.foto_crlv;
+    if (typeof params.exigencias_confirmadas === 'boolean') {
+      row.exigencias_confirmadas = params.exigencias_confirmadas;
+    }
     if (params.status) row.status = params.status;
     if (typeof params.online === 'boolean') row.online = params.online;
     if (typeof params.plano_ativo === 'boolean') row.plano_ativo = params.plano_ativo;
@@ -360,6 +396,8 @@ export async function insertUsuarioSupabase(params: {
       'avatar',
       'foto_veiculo',
       'foto_cnh',
+      'foto_crlv',
+      'exigencias_confirmadas',
       'whatsapp',
       'login',
       'status',
@@ -484,6 +522,8 @@ export async function updateMotoristaSupabase(
     bau?: string;
     foto_veiculo?: string;
     foto_cnh?: string;
+    foto_crlv?: string;
+    exigencias_confirmadas?: boolean;
     tipo?: string;
     status?: string;
     online?: boolean;
@@ -491,6 +531,9 @@ export async function updateMotoristaSupabase(
   }
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   const cleanEmail = emailInput.trim().toLowerCase();
+  if (params.exigencias_confirmadas === true) {
+    setDriverRequirementsConfirmedLocal(cleanEmail, true);
+  }
   try {
     const updatePayload: any = {
       categoria: params.categoria,
@@ -509,11 +552,17 @@ export async function updateMotoristaSupabase(
     if (params.foto_cnh !== undefined && params.foto_cnh !== '') {
       updatePayload.foto_cnh = params.foto_cnh;
     }
+    if (params.foto_crlv !== undefined && params.foto_crlv !== '') {
+      updatePayload.foto_crlv = params.foto_crlv;
+    }
+    if (typeof params.exigencias_confirmadas === 'boolean') {
+      updatePayload.exigencias_confirmadas = params.exigencias_confirmadas;
+    }
     if (params.status !== undefined) updatePayload.status = params.status;
     if (typeof params.online === 'boolean') updatePayload.online = params.online;
     if (typeof params.plano_ativo === 'boolean') updatePayload.plano_ativo = params.plano_ativo;
 
-    const optionalCols = ['cor', 'cpf', 'bau', 'foto_veiculo', 'foto_cnh', 'online', 'status', 'plano_ativo', 'tipo', 'ano', 'cnh'];
+    const optionalCols = ['cor', 'cpf', 'bau', 'foto_veiculo', 'foto_cnh', 'foto_crlv', 'exigencias_confirmadas', 'online', 'status', 'plano_ativo', 'tipo', 'ano', 'cnh'];
 
     for (let attempt = 0; attempt < 12; attempt++) {
       let { data, error } = await supabase
@@ -578,6 +627,8 @@ export async function saveUsuarioSupabase(user: {
   avatar?: string;
   foto_veiculo?: string;
   foto_cnh?: string;
+  foto_crlv?: string;
+  exigencias_confirmadas?: boolean;
   rating?: number;
   saldo?: number;
   plano_ativo?: boolean;
@@ -588,6 +639,9 @@ export async function saveUsuarioSupabase(user: {
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = user.email.toLowerCase().trim();
+    if (user.exigencias_confirmadas === true) {
+      setDriverRequirementsConfirmedLocal(cleanEmail, true);
+    }
 
     // Verifica se já existe na nuvem
     const existing = await getUsuarioSupabase(cleanEmail);
@@ -610,6 +664,10 @@ export async function saveUsuarioSupabase(user: {
       if (user.bau !== undefined) updateData.bau = user.bau;
       if (user.foto_veiculo) updateData.foto_veiculo = user.foto_veiculo;
       if (user.foto_cnh) updateData.foto_cnh = user.foto_cnh;
+      if (user.foto_crlv) updateData.foto_crlv = user.foto_crlv;
+      if (typeof user.exigencias_confirmadas === 'boolean') {
+        updateData.exigencias_confirmadas = user.exigencias_confirmadas;
+      }
       if (user.status) {
         updateData.status = user.status;
       }
@@ -630,7 +688,7 @@ export async function saveUsuarioSupabase(user: {
         updateData.foto = user.foto || user.avatar;
       }
 
-      for (let attempt = 0; attempt < 12; attempt++) {
+      for (let attempt = 0; attempt < 14; attempt++) {
         const { data, error } = await supabase
           .from('usuarios')
           .update(updateData)
@@ -643,7 +701,7 @@ export async function saveUsuarioSupabase(user: {
 
         const msg = error.message || '';
         let removed = false;
-        for (const col of ['avatar', 'foto', 'foto_veiculo', 'foto_cnh', 'lat', 'lng', 'online', 'status', 'cor', 'cpf', 'bau', 'plano_ativo']) {
+        for (const col of ['avatar', 'foto', 'foto_veiculo', 'foto_cnh', 'foto_crlv', 'exigencias_confirmadas', 'lat', 'lng', 'online', 'status', 'cor', 'cpf', 'bau', 'plano_ativo']) {
           if (col in updateData && msg.includes(col)) {
             delete updateData[col];
             removed = true;
@@ -677,6 +735,8 @@ export async function saveUsuarioSupabase(user: {
         avatar: user.avatar || user.foto,
         foto_veiculo: user.foto_veiculo,
         foto_cnh: user.foto_cnh,
+        foto_crlv: user.foto_crlv,
+        exigencias_confirmadas: user.exigencias_confirmadas,
         online: user.online ?? (user.status === 'online'),
         status: user.status || 'offline',
         plano_ativo: user.plano_ativo,
@@ -947,10 +1007,17 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     vehicleYear: Number(u.ano) || 2023,
     vehiclePhoto: u.foto_veiculo || '',
     cnhPhoto: u.foto_cnh || '',
+    crlvPhoto: u.foto_crlv || '',
     cpf: u.cpf || '',
     cnh: u.cnh || '',
     trunkType: u.bau || undefined,
     hasTrunk: Boolean(u.bau && !String(u.bau).toLowerCase().includes('não') && !String(u.bau).toLowerCase().includes('sem')),
+    requirementsConfirmed:
+      u.exigencias_confirmadas === true
+        ? true
+        : u.exigencias_confirmadas === false
+        ? false
+        : getDriverRequirementsConfirmedLocal(email),
     category,
     categoryConfigured,
     weeklyPlanActive: Boolean(u.plano_ativo ?? true),

@@ -8,123 +8,67 @@ export interface ComfortValidationResult {
 }
 
 export const COMFORT_POPULAR_MODELS = [
-  // Grupo 1: a partir de 2019
-  { name: 'Etios Sedan', minYear: 2019, type: 'Sedan' },
-  { name: 'Voyage', minYear: 2019, type: 'Sedan' },
-  { name: 'Prisma', minYear: 2019, type: 'Sedan' },
-  { name: 'Logan', minYear: 2019, type: 'Sedan' },
-  { name: 'Cobalt', minYear: 2019, type: 'Sedan' },
-
-  // Grupo 2: a partir de 2023
-  { name: 'Argo', minYear: 2023, type: 'Hatch Premium' },
-  { name: 'Polo', minYear: 2023, type: 'Hatch Premium' },
-
-  // Grupo 3: Demais modelos (SUV, CR-V, Sedã): a partir de 2018
-  { name: 'Honda CR-V', minYear: 2018, type: 'SUV' },
-  { name: 'Honda HR-V', minYear: 2018, type: 'SUV' },
-  { name: 'Toyota Corolla Sedã', minYear: 2018, type: 'Sedan Médio' },
-  { name: 'Honda Civic Sedã', minYear: 2018, type: 'Sedan Médio' },
-  { name: 'Nissan Sentra Sedã', minYear: 2018, type: 'Sedan Médio' },
-  { name: 'Chevrolet Onix Plus Sedã', minYear: 2018, type: 'Sedan' },
-  { name: 'Volkswagen Virtus Sedã', minYear: 2018, type: 'Sedan' },
-  { name: 'Fiat Cronos Sedã', minYear: 2018, type: 'Sedan' },
-  { name: 'Jeep Compass SUV', minYear: 2018, type: 'SUV' },
-  { name: 'Jeep Renegade SUV', minYear: 2018, type: 'SUV' },
-  { name: 'Chevrolet Tracker SUV', minYear: 2018, type: 'SUV' },
-  { name: 'Volkswagen T-Cross SUV', minYear: 2018, type: 'SUV' },
-  { name: 'Hyundai Creta SUV', minYear: 2018, type: 'SUV' },
-  { name: 'Nissan Kicks SUV', minYear: 2018, type: 'SUV' },
+  { name: 'Toyota Corolla', minYear: 2020, type: 'Sedã' },
+  { name: 'Honda Civic', minYear: 2020, type: 'Sedã' },
+  { name: 'VW T-Cross', minYear: 2020, type: 'SUV' },
+  { name: 'Hyundai Creta', minYear: 2020, type: 'SUV' },
+  { name: 'Jeep Compass', minYear: 2020, type: 'SUV' },
+  { name: 'VW Nivus', minYear: 2020, type: 'SUV' },
+  { name: 'VW Virtus', minYear: 2020, type: 'Sedã' },
+  { name: 'Chevrolet Onix Plus', minYear: 2020, type: 'Sedã' },
 ];
 
+export function isBasicPopularOneLiterModel(modelName: string): boolean {
+  const n = (modelName || '').toLowerCase().trim();
+  if (!n) return false;
+  if (n.includes('onix plus')) return false;
+  if (n.includes('1.0') && !n.includes('turbo') && !n.includes('tsi') && !n.includes('virtus') && !n.includes('nivus') && !n.includes('t-cross')) {
+    return true;
+  }
+  const basicPopularTerms = ['kwid', 'mobi', 'uno ', 'gol ', 'celta', 'palio', 'march', 'ka 1.0', 'sandero 1.0', 'básico', 'basico'];
+  return basicPopularTerms.some((term) => n.includes(term));
+}
+
 /**
- * Valida se um modelo e ano atendem às exigências oficiais do modelo RACE Confort:
- * 1. Etios Sedan, Voyage, Prisma, Logan e Cobalt: a partir de 2019.
- * 2. Argo e Polo: a partir de 2023.
- * 3. Demais modelos: a partir de 2018 (SUV, CR-V, Sedã).
+ * Valida se um modelo e ano atendem às exigências oficiais do Motorista Confort:
+ * - Automóvel a partir de 2020 (até 5 anos de uso)
+ * - SUV, Sedã ou Hatch Premium (NÃO aceita carro popular 1.0 básico)
  */
 export function validateComfortEligibility(
   modelName: string,
   year: number
 ): ComfortValidationResult {
-  const normalized = (modelName || '').toLowerCase().trim();
   const validYear = Number(year) || 0;
+  const minYear = 2020;
 
-  // 1. Grupo: Etios Sedan, Voyage, Prisma, Logan e Cobalt (a partir de 2019)
-  const isGroup2019 = 
-    normalized.includes('etios') ||
-    normalized.includes('voyage') ||
-    normalized.includes('prisma') ||
-    normalized.includes('logan') ||
-    normalized.includes('cobalt');
-
-  if (isGroup2019) {
-    const minYear = 2019;
-    const eligible = validYear >= minYear;
+  if (validYear > 0 && validYear < minYear) {
     return {
-      eligible,
+      eligible: false,
       minYearRequired: minYear,
-      ruleCategory: 'sedans_populares',
-      ruleDescription: 'Etios Sedan, Voyage, Prisma, Logan e Cobalt exigem ano a partir de 2019.',
-      badgeText: eligible ? 'Confort Homologado (2019+)' : 'Ano Inferior a 2019 (Apenas Econômica)',
-      feedbackMessage: eligible
-        ? `✅ Veículo elegível para RACE Confort! Modelo atende à exigência mínima de fabricação (2019+).`
-        : `⚠️ Para Etios Sedan, Voyage, Prisma, Logan e Cobalt o ano mínimo exigido no Confort é 2019 (seu veículo é ano ${validYear}). O cadastro será direcionado para RACE Econômica.`,
+      ruleCategory: 'incompativel',
+      ruleDescription: 'Automóvel a partir de 2020 (SUV, Sedã ou Hatch Premium).',
+      badgeText: 'Ano Inferior a 2020',
+      feedbackMessage: 'Seu veículo não atende Confort (mínimo 2020). Você pode se cadastrar como Motorista Econômico.',
     };
   }
 
-  // 2. Grupo: Argo e Polo (a partir de 2023)
-  const isGroup2023 = 
-    normalized.includes('argo') ||
-    normalized.includes('polo');
-
-  if (isGroup2023) {
-    const minYear = 2023;
-    const eligible = validYear >= minYear;
+  if (isBasicPopularOneLiterModel(modelName)) {
     return {
-      eligible,
+      eligible: false,
       minYearRequired: minYear,
-      ruleCategory: 'compactos_recentes',
-      ruleDescription: 'Argo e Polo exigem ano a partir de 2023.',
-      badgeText: eligible ? 'Confort Homologado (2023+)' : 'Ano Inferior a 2023 (Apenas Econômica)',
-      feedbackMessage: eligible
-        ? `✅ Veículo elegível para RACE Confort! Argo / Polo com fabricação recente (2023+).`
-        : `⚠️ Para Argo e Polo o ano de fabricação exigido para o Confort é a partir de 2023 (seu veículo é ano ${validYear}). O veículo poderá operar na categoria RACE Econômica.`,
+      ruleCategory: 'incompativel',
+      ruleDescription: 'NÃO aceita carro popular 1.0 básico (apenas SUV, Sedã ou Hatch Premium 2020+).',
+      badgeText: 'Popular 1.0 Básico Não Aceito',
+      feedbackMessage: 'Motorista Confort NÃO aceita carro popular 1.0 básico. Você pode se cadastrar como Motorista Econômico.',
     };
   }
-
-  // 3. Demais modelos autorizados: SUV, CR-V, Sedã (a partir de 2018)
-  const minYear = 2018;
-  const eligible = validYear >= minYear;
-
-  const isSUVorSedan = 
-    normalized.includes('suv') ||
-    normalized.includes('crv') ||
-    normalized.includes('cr-v') ||
-    normalized.includes('hr-v') ||
-    normalized.includes('hrv') ||
-    normalized.includes('seda') ||
-    normalized.includes('sedan') ||
-    normalized.includes('corolla') ||
-    normalized.includes('civic') ||
-    normalized.includes('sentra') ||
-    normalized.includes('virtus') ||
-    normalized.includes('cronos') ||
-    normalized.includes('compass') ||
-    normalized.includes('renegade') ||
-    normalized.includes('tracker') ||
-    normalized.includes('t-cross') ||
-    normalized.includes('creta') ||
-    normalized.includes('kicks') ||
-    normalized.includes('duster');
 
   return {
-    eligible,
+    eligible: true,
     minYearRequired: minYear,
     ruleCategory: 'suv_sedan_geral',
-    ruleDescription: 'Demais modelos autorizados (SUV, CR-V, Sedãs) exigem ano a partir de 2018.',
-    badgeText: eligible ? 'Confort Homologado (2018+)' : 'Ano Inferior a 2018 (Apenas Econômica)',
-    feedbackMessage: eligible
-      ? `✅ Veículo elegível para RACE Confort! Modelo SUV / CR-V / Sedã atende à exigência mínima de fabricação (2018+).`
-      : `⚠️ Demais modelos Confort (SUVs, CR-V, Sedãs) exigem ano de fabricação a partir de 2018 (seu veículo é ano ${validYear}). O cadastro será liberado na categoria RACE Econômica.`,
+    ruleDescription: 'Automóvel a partir de 2020 (SUV, Sedã ou Hatch Premium).',
+    badgeText: 'Confort Homologado (2020+)',
+    feedbackMessage: 'Veículo compatível com Motorista Confort (ano 2020+ e categoria SUV/Sedã/Hatch Premium).',
   };
 }
