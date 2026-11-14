@@ -1358,8 +1358,8 @@ export default function App() {
               );
               if (!isRideAuthorized) {
                 triggerPush(
-                  'Pague primeiro para chamar o motorista',
-                  'Preencha seu endereço de início e chegada com número, escolha a categoria e conclua o pagamento no Asaas (ou Dinheiro) para liberar o mapa.',
+                  'Pague o PIX primeiro, estamos aguardando confirmação do Asaas',
+                  'Preencha seu endereço de início e chegada com número, escolha a categoria e aguarde o Asaas confirmar o pagamento (ou escolha Dinheiro) para liberar o mapa.',
                   'ride'
                 );
                 return;
@@ -1600,8 +1600,8 @@ export default function App() {
           if (isPassenger && (tab === 'passenger_options' || tab === 'history')) {
             if (!hasAuthorizedRide) {
               triggerPush(
-                'Pague primeiro para chamar o motorista',
-                'Preencha endereço de início e chegada com número, escolha a categoria e conclua o pagamento no Asaas (ou Dinheiro) antes de acessar.',
+                'Pague o PIX primeiro, estamos aguardando confirmação do Asaas',
+                'Preencha endereço de início e chegada com número, escolha a categoria e aguarde a confirmação do Asaas (ou escolha Dinheiro) antes de acessar.',
                 'ride'
               );
               setActiveTab('rides');
