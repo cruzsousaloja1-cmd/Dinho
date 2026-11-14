@@ -64,20 +64,20 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs w-full max-w-full overflow-x-hidden">
       {/* Main Bar */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 w-full box-border">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 w-full max-w-[100vw] box-border">
         {/* Brand RACE em Destaque */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
           <div 
             className="flex items-center gap-2 sm:gap-2.5 group cursor-pointer" 
             onClick={() => onChangeRole('passenger')}
           >
-            <div className="relative flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-slate-950 text-white font-black shadow-md border border-slate-800">
-              <span className="font-heading text-xl sm:text-2xl tracking-tighter italic font-black">R</span>
+            <div className="relative flex items-center justify-center w-9 h-9 sm:w-12 sm:h-12 rounded-2xl bg-slate-950 text-white font-black shadow-md border border-slate-800 shrink-0">
+              <span className="font-heading text-lg sm:text-2xl tracking-tighter italic font-black">R</span>
               <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow"></div>
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="font-heading font-black text-2xl sm:text-3xl md:text-4xl tracking-wider text-slate-950 italic leading-none">
+                <span className="font-heading font-black text-xl sm:text-3xl md:text-4xl tracking-wider text-slate-950 italic leading-none">
                   RACE
                 </span>
                 <span className="text-[10px] sm:text-xs font-extrabold tracking-widest px-1.5 py-0.5 rounded bg-slate-900 text-white uppercase border border-slate-800 font-mono">

@@ -42,7 +42,7 @@ export const SosModal: React.FC<SosModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[1200] bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
       <div className="bg-white border-2 border-rose-500 max-w-md w-full rounded-3xl p-6 shadow-2xl space-y-5 text-slate-900">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-3.5">

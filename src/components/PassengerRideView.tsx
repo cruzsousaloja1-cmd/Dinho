@@ -723,16 +723,16 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
   // Normal request mode in Clean White
   return (
-    <div className="space-y-5">
+    <div className="w-full max-w-full min-w-0 overflow-x-hidden box-border space-y-5">
       {/* 1. Login / Cadastro Success Direct Entry Notification */}
       {loginSuccessBanner && (
-        <div className="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-4 sm:p-5 flex items-center justify-between shadow-sm animate-fade-in">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-xs">
-              <CheckCircle2 className="w-6 h-6" />
+        <div className="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-4 sm:p-5 flex items-start sm:items-center justify-between gap-3 shadow-sm animate-fade-in min-w-0">
+          <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-xs">
+              <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-heading font-black text-slate-950 text-sm sm:text-base">
                   Acesso Concluído com Sucesso
                 </span>
@@ -947,10 +947,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         ).trim();
 
         return (
-          <div className="bg-white border-2 border-rose-500 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4 animate-fade-in">
-            <div className="bg-rose-50 border-2 border-rose-300 rounded-2xl p-4 flex items-start gap-3">
+          <div className="bg-white border-2 border-rose-500 rounded-3xl p-4 sm:p-6 shadow-xl space-y-4 animate-fade-in min-w-0 w-full box-border">
+            <div className="bg-rose-50 border-2 border-rose-300 rounded-2xl p-4 flex items-start gap-3 min-w-0">
               <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
-              <div>
+              <div className="min-w-0 flex-1">
                 <h3 className="font-heading font-black text-rose-950 text-base sm:text-lg">
                   Conta bloqueada para novas corridas
                 </h3>
@@ -969,8 +969,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 text-center space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="bg-slate-50 border border-slate-200 rounded-3xl p-4 sm:p-5 text-center space-y-4 min-w-0 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
                   <span className="font-heading font-black text-slate-900 text-sm">
                     Quitação de Corrida Pendente (PIX Asaas)
                   </span>
@@ -983,16 +983,16 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   <img
                     src={asaasDebtPayment.pixQrCode.encodedImage}
                     alt="QR Code Quitação PIX Asaas"
-                    className="w-52 h-52 mx-auto rounded-2xl border-2 border-emerald-500 shadow-md p-2 bg-white object-contain"
+                    className="w-48 h-48 sm:w-52 sm:h-52 mx-auto rounded-2xl border-2 border-emerald-500 shadow-md p-2 bg-white object-contain"
                   />
                 ) : (
-                  <div className="w-52 h-52 mx-auto bg-white p-3 border-2 border-emerald-500 rounded-2xl flex items-center justify-center">
+                  <div className="w-48 h-48 sm:w-52 sm:h-52 mx-auto bg-white p-3 border-2 border-emerald-500 rounded-2xl flex items-center justify-center">
                     <QrCode className="w-32 h-32 text-slate-900" />
                   </div>
                 )}
 
-                <div className="space-y-2 text-left bg-white p-4 rounded-2xl border-2 border-emerald-500">
-                  <div className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 overflow-x-auto whitespace-nowrap">
+                <div className="space-y-2 text-left bg-white p-3.5 sm:p-4 rounded-2xl border-2 border-emerald-500 min-w-0 overflow-hidden">
+                  <div className="w-full max-w-full min-w-0 bg-slate-50 border border-slate-300 rounded-xl p-2.5 overflow-x-auto whitespace-nowrap">
                     <code className="text-xs font-mono font-bold text-slate-900 select-all">
                       {debtPixPayload}
                     </code>
@@ -1062,107 +1062,102 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
       {/* ETAPA 1: BUSCA DE CORRIDA (Origem com Meu GPS e Destino com Número) */}
       {!hasOpenDebt && passengerStep === 'search' && (
-        <div id="route-details" className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4 animate-fade-in">
+        <div id="route-details" className="w-full max-w-full min-w-0 box-border bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-md space-y-4 animate-fade-in">
         {/* Banner de Erro de Validação de Número */}
         {addressValidationError && (
-          <div className="bg-rose-50 border-2 border-rose-400 p-4 rounded-2xl flex items-center justify-between text-rose-950 font-bold text-xs sm:text-sm shadow-md animate-bounce">
-            <div className="flex items-center gap-2.5">
+          <div className="bg-rose-50 border-2 border-rose-400 p-3.5 sm:p-4 rounded-2xl flex items-center justify-between gap-2 text-rose-950 font-bold text-xs sm:text-sm shadow-md animate-bounce min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-              <span>{addressValidationError}</span>
+              <span className="break-words">{addressValidationError}</span>
             </div>
             <button
               type="button"
               onClick={() => setAddressValidationError(null)}
-              className="text-rose-700 hover:text-rose-950 p-1 cursor-pointer font-bold text-sm"
+              className="text-rose-700 hover:text-rose-950 p-1 cursor-pointer font-bold text-sm shrink-0"
             >
               ✕
             </button>
           </div>
         )}
 
-        <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-          <div>
-            <h2 className="font-heading font-black text-slate-950 text-xl sm:text-2xl flex items-center gap-2.5">
-              <Navigation className="w-6 h-6 text-amber-600" />
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200 min-w-0">
+          <div className="min-w-0 flex-1">
+            <h2 className="font-heading font-black text-slate-950 text-lg sm:text-2xl flex items-center gap-2">
+              <Navigation className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600 shrink-0" />
               <span>Para onde vamos hoje?</span>
             </h2>
-            <p className="text-xs sm:text-sm text-slate-600 font-medium mt-0.5">
+            <p className="text-xs sm:text-sm text-slate-600 font-medium mt-0.5 leading-snug">
               Informe o ponto de embarque e destino com o número exato para o trajeto em Indaiatuba
             </p>
           </div>
-          <span className="text-xs sm:text-sm font-mono text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 font-extrabold shrink-0">
+          <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 font-extrabold shrink-0">
             {availableDrivers.filter((d) => d.status === 'online').length} condutores online
           </span>
         </div>
 
         {/* Pickup Input com Busca Automática & Geolocalização */}
-        <div className="relative">
+        <div className="relative w-full min-w-0">
           {/* Barra Superior de Embarque com Botão 'Meu GPS' Acima do Endereço de Saída */}
-          <div className="flex items-center justify-between mb-2">
-            <label className="flex items-center gap-2 text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wide">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2 min-w-0">
+            <label className="flex items-center gap-1.5 text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wide min-w-0">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-xs"></span>
-              <span>Endereço de Saída / Embarque (Com Número)</span>
+              <span className="leading-snug">Endereço de Saída / Embarque (Com Número)</span>
             </label>
             <button
               type="button"
               onClick={handleUseCurrentLocation}
               title="Detectar Minha Localização GPS Atual"
               disabled={isLocatingUser}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-60"
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-60 shrink-0"
             >
               {isLocatingUser ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" />
                   <span>Buscando seu GPS...</span>
                 </>
               ) : (
                 <>
-                  <Crosshair className="w-4 h-4 text-emerald-100" />
+                  <Crosshair className="w-4 h-4 text-emerald-100 shrink-0" />
                   <span>Meu GPS</span>
                 </>
               )}
             </button>
           </div>
 
-          <div className="relative flex items-center">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border-2 border-emerald-200 shadow-xs">
-              <MapPin className="w-6 h-6" />
-            </div>
-
-            <div className="relative flex-1 ml-3">
-              <input
-                type="text"
-                value={pickupInput}
-                onChange={(e) => handlePickupChange(e.target.value)}
-                onFocus={() => {
-                  setActiveDropdown('pickup');
-                  if (!pickupSuggestions.length) setPickupSuggestions(POPULAR_DATABASE_LOCATIONS.slice(0, 4));
+          <div className="relative w-full min-w-0">
+            <MapPin className="w-5 h-5 text-emerald-600 shrink-0 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={pickupInput}
+              onChange={(e) => handlePickupChange(e.target.value)}
+              onFocus={() => {
+                setActiveDropdown('pickup');
+                if (!pickupSuggestions.length) setPickupSuggestions(POPULAR_DATABASE_LOCATIONS.slice(0, 4));
+              }}
+              placeholder="Ex: Av. Presidente Vargas, 1250"
+              className={`w-full min-w-0 box-border bg-white border-2 ${
+                !hasAddressNumber(pickupInput) && pickupInput.trim().length > 3
+                  ? 'border-amber-400 focus:border-amber-500'
+                  : 'border-slate-300 hover:border-emerald-400 focus:border-emerald-600'
+              } rounded-2xl pl-10 pr-10 py-3.5 text-[16px] leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 font-bold shadow-xs transition-all`}
+            />
+            {isSearchingPickup && (
+              <Loader2 className="w-5 h-5 text-emerald-600 animate-spin absolute right-3.5 top-1/2 -translate-y-1/2" />
+            )}
+            {pickupInput && !isSearchingPickup && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPickupInput('');
+                  setPickup(null);
+                  setGpsDetectedNotice(null);
                 }}
-                placeholder="Ex: Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP"
-                className={`w-full bg-white border-2 ${
-                  !hasAddressNumber(pickupInput) && pickupInput.trim().length > 3
-                    ? 'border-amber-400 focus:border-amber-500'
-                    : 'border-slate-300 hover:border-emerald-400 focus:border-emerald-600'
-                } rounded-2xl px-4 py-3.5 text-base sm:text-lg text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 font-bold pr-11 shadow-xs transition-all`}
-              />
-              {isSearchingPickup && (
-                <Loader2 className="w-5 h-5 text-emerald-600 animate-spin absolute right-3.5 top-4" />
-              )}
-              {pickupInput && !isSearchingPickup && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPickupInput('');
-                    setPickup(null);
-                    setGpsDetectedNotice(null);
-                  }}
-                  className="absolute right-3.5 top-4 text-slate-400 hover:text-slate-800 cursor-pointer p-0.5"
-                  title="Limpar endereço de saída"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 cursor-pointer p-0.5"
+                title="Limpar endereço de saída"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
           </div>
 
           {/* 3. Alerta de Validação: Se endereço não tiver número */}
@@ -1204,16 +1199,16 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
           {/* Endereço de Saída detectado pelo Meu GPS */}
           {gpsDetectedNotice && (
-            <div className="mt-2.5 flex items-center justify-between bg-emerald-50 border-2 border-emerald-300 px-4 py-3 rounded-2xl text-xs sm:text-sm text-emerald-950 font-bold animate-fade-in shadow-xs">
-              <div className="flex items-center gap-2 truncate">
+            <div className="mt-2.5 flex items-center justify-between gap-2 bg-emerald-50 border-2 border-emerald-300 px-3.5 py-3 rounded-2xl text-xs sm:text-sm text-emerald-950 font-bold animate-fade-in shadow-xs min-w-0">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse shrink-0" />
-                <span className="text-emerald-800 font-black uppercase font-mono shrink-0">Saída Detectada via GPS:</span>
+                <span className="text-emerald-800 font-black uppercase font-mono shrink-0">GPS:</span>
                 <span className="text-slate-900 truncate font-extrabold">{gpsDetectedNotice}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setGpsDetectedNotice(null)}
-                className="text-emerald-700 hover:text-emerald-950 font-bold text-xs ml-2 cursor-pointer p-0.5"
+                className="text-emerald-700 hover:text-emerald-950 font-bold text-xs ml-1 cursor-pointer p-0.5 shrink-0"
                 title="Fechar"
               >
                 ✕
@@ -1229,7 +1224,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveDropdown(null)}
-                  className="text-emerald-700 hover:text-emerald-950 text-xs font-bold"
+                  className="text-emerald-700 hover:text-emerald-950 text-xs font-bold shrink-0"
                 >
                   Fechar ✕
                 </button>
@@ -1242,8 +1237,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   className="p-3.5 hover:bg-emerald-50/60 cursor-pointer transition-all flex items-start gap-3"
                 >
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <span className="font-bold text-slate-900 text-sm sm:text-base block">
+                  <div className="flex-1 min-w-0">
+                    <span className="font-bold text-slate-900 text-sm sm:text-base block truncate">
                       {sug.label}
                     </span>
                     <span className="text-xs sm:text-sm text-slate-500 block truncate">
@@ -1257,53 +1252,48 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
 
         {/* Destination Input com Busca Automática */}
-        <div className="relative">
+        <div className="relative w-full min-w-0">
           {/* Barra Superior do Destino */}
           <div className="flex items-center justify-between mb-2">
-            <label className="flex items-center gap-2 text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wide">
+            <label className="flex items-center gap-1.5 text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wide min-w-0">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0 shadow-xs"></span>
-              <span>Endereço de Chegada / Destino (Com Número)</span>
+              <span className="leading-snug">Endereço de Chegada / Destino (Com Número)</span>
             </label>
           </div>
 
-          <div className="relative flex items-center">
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border-2 border-amber-200 shadow-xs">
-              <Navigation className="w-6 h-6" />
-            </div>
-
-            <div className="relative flex-1 ml-3">
-              <input
-                type="text"
-                value={destInput}
-                onChange={(e) => handleDestChange(e.target.value)}
-                onFocus={() => {
-                  setActiveDropdown('destination');
-                  if (!destSuggestions.length) setDestSuggestions(POPULAR_DATABASE_LOCATIONS.slice(0, 4));
+          <div className="relative w-full min-w-0">
+            <Navigation className="w-5 h-5 text-amber-600 shrink-0 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={destInput}
+              onChange={(e) => handleDestChange(e.target.value)}
+              onFocus={() => {
+                setActiveDropdown('destination');
+                if (!destSuggestions.length) setDestSuggestions(POPULAR_DATABASE_LOCATIONS.slice(0, 4));
+              }}
+              placeholder="Ex: Av. dos Trabalhadores, 350"
+              className={`w-full min-w-0 box-border bg-white border-2 ${
+                !hasAddressNumber(destInput) && destInput.trim().length > 3
+                  ? 'border-amber-400 focus:border-amber-500'
+                  : 'border-slate-300 hover:border-amber-400 focus:border-amber-500'
+              } rounded-2xl pl-10 pr-10 py-3.5 text-[16px] leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-amber-500/10 font-bold shadow-xs transition-all`}
+            />
+            {isSearchingDest && (
+              <Loader2 className="w-5 h-5 text-amber-600 animate-spin absolute right-3.5 top-1/2 -translate-y-1/2" />
+            )}
+            {destInput && !isSearchingDest && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDestInput('');
+                  setDestination(null);
                 }}
-                placeholder="Ex: Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba-SP"
-                className={`w-full bg-white border-2 ${
-                  !hasAddressNumber(destInput) && destInput.trim().length > 3
-                    ? 'border-amber-400 focus:border-amber-500'
-                    : 'border-slate-300 hover:border-amber-400 focus:border-amber-500'
-                } rounded-2xl px-4 py-3.5 text-base sm:text-lg text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-amber-500/10 font-bold pr-11 shadow-xs transition-all`}
-              />
-              {isSearchingDest && (
-                <Loader2 className="w-5 h-5 text-amber-600 animate-spin absolute right-3.5 top-4" />
-              )}
-              {destInput && !isSearchingDest && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDestInput('');
-                    setDestination(null);
-                  }}
-                  className="absolute right-3.5 top-4 text-slate-400 hover:text-slate-800 cursor-pointer p-0.5"
-                  title="Limpar destino"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 cursor-pointer p-0.5"
+                title="Limpar destino"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
           </div>
 
           {/* 3. Alerta de Validação: Se endereço não tiver número */}
@@ -1379,12 +1369,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
 
         {/* Quick Popular Addresses */}
-        <div className="pt-1">
+        <div className="pt-1 w-full min-w-0 overflow-hidden">
           <p className="text-xs text-slate-500 font-extrabold mb-2 uppercase tracking-wider flex items-center gap-1.5">
-            <Search className="w-3.5 h-3.5 text-slate-400" />
+            <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <span>Destinos Frequentes de Indaiatuba com Número</span>
           </p>
-          <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
+          <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none w-full min-w-0">
             {POPULAR_DATABASE_LOCATIONS.slice(0, 5).map((loc) => (
               <button
                 key={loc.id}
@@ -1395,10 +1385,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   setActiveDropdown(null);
                   if (addressValidationError) setAddressValidationError(null);
                 }}
-                className="shrink-0 bg-slate-50 hover:bg-amber-50 border border-slate-300 hover:border-amber-400 text-slate-800 hover:text-amber-900 text-xs sm:text-sm font-semibold px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                className="shrink-0 bg-slate-50 hover:bg-amber-50 border border-slate-300 hover:border-amber-400 text-slate-800 hover:text-amber-900 text-xs sm:text-sm font-semibold px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm max-w-[230px]"
               >
-                <Clock className="w-3.5 h-3.5 text-slate-500" />
-                <span className="truncate max-w-[200px]">{loc.mainText}</span>
+                <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span className="truncate">{loc.mainText}</span>
               </button>
             ))}
           </div>
@@ -1408,20 +1398,20 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         <button
           type="button"
           onClick={handleSearchRides}
-          className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider mt-4"
+          className="w-full min-w-0 box-border bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-4 rounded-2xl shadow-xl flex items-center justify-center gap-2.5 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider mt-4"
         >
-          <Search className="w-6 h-6 stroke-[2.5]" />
+          <Search className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5] shrink-0" />
           <span>Buscar corrida</span>
         </button>
 
         {/* Botão DESABILITADO no início (cinza, não clicável) */}
-        <div className="pt-2">
+        <div className="pt-2 w-full min-w-0">
           <button
             type="button"
             disabled
-            className="w-full bg-slate-100 border-2 border-slate-300 text-slate-400 font-heading font-black text-xs sm:text-sm py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed uppercase tracking-wider shadow-none select-none"
+            className="w-full min-w-0 box-border bg-slate-100 border-2 border-slate-300 text-slate-400 font-heading font-black text-xs sm:text-sm py-3.5 px-3 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed uppercase tracking-wider shadow-none select-none text-center leading-snug"
           >
-            <Lock className="w-4 h-4 text-slate-400" />
+            <Lock className="w-4 h-4 text-slate-400 shrink-0" />
             <span>Complete endereço e pagamento para ver o mapa</span>
           </button>
         </div>
@@ -1430,9 +1420,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
       {/* ETAPA 2: ESCOLHA DA CATEGORIA COM VALOR FINAL */}
       {!hasOpenDebt && passengerStep === 'options' && (
-        <div className="space-y-4 animate-fade-in">
+        <div className="space-y-4 animate-fade-in min-w-0 w-full">
           {/* Card Resumo do Trajeto com Botão Alterar Endereços */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0 w-full box-border">
             <div className="space-y-1.5 flex-1 min-w-0">
               <div className="flex items-center gap-2 text-xs text-slate-500 font-bold uppercase tracking-wider font-mono">
                 <span>Trajeto Selecionado</span>
@@ -1460,15 +1450,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           </div>
 
           {/* BOTÃO BLOQUEADO: Só libera após as 4 etapas (Endereço início com número + Chegada com número + Escolha da opção + Pagamento/Dinheiro confirmado) */}
-          <div className="w-full">
+          <div className="w-full min-w-0">
             {isRideMapAllowed ? (
               onOpenFullMap && (
                 <button
                   type="button"
                   onClick={onOpenFullMap}
-                  className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider animate-fade-in"
+                  className="w-full min-w-0 box-border bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-4 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider animate-fade-in"
                 >
-                  <Maximize2 className="w-6 h-6 stroke-[2.5]" />
+                  <Maximize2 className="w-6 h-6 stroke-[2.5] shrink-0" />
                   <span>VER O MAPA TELA INTEIRA</span>
                 </button>
               )
@@ -1477,9 +1467,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 <button
                   type="button"
                   disabled
-                  className="w-full bg-slate-100 border-2 border-slate-300 text-slate-400 font-heading font-black text-xs sm:text-sm py-4 px-6 rounded-2xl flex items-center justify-center gap-2.5 cursor-not-allowed shadow-none select-none uppercase tracking-wider"
+                  className="w-full min-w-0 box-border bg-slate-100 border-2 border-slate-300 text-slate-400 font-heading font-black text-xs sm:text-sm py-4 px-3 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed shadow-none select-none uppercase tracking-wider text-center leading-snug"
                 >
-                  <Lock className="w-5 h-5 text-slate-400" />
+                  <Lock className="w-5 h-5 text-slate-400 shrink-0" />
                   <span>Complete endereço e pagamento para ver o mapa</span>
                 </button>
                 <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 font-mono text-center flex-wrap">
@@ -1494,17 +1484,17 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           </div>
 
           {/* Opções de Corrida para Passageiro (4 Opções com VALOR FINAL) */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="space-y-3 min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-sm font-heading font-black text-slate-950 uppercase tracking-wider">
                 Escolha sua Categoria de Viagem
               </label>
-              <span className="text-xs text-slate-600 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+              <span className="text-xs text-slate-600 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200 shrink-0">
                 Distância da rota: {dynamicDistanceKm} km
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 min-w-0">
               {/* 1. Motorista Econômico */}
               {(() => {
                 const cat = VEHICLE_CATEGORIES.economica;
@@ -1512,20 +1502,20 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 return (
                   <div
                     onClick={() => handleSelectCategory('economica')}
-                    className="p-5 rounded-2xl border-2 border-slate-200 hover:border-amber-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group"
+                    className="p-4 sm:p-5 rounded-2xl border-2 border-slate-200 hover:border-amber-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group min-w-0"
                   >
-                    <div>
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-13 h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
-                            <Car className="w-7 h-7" />
+                    <div className="min-w-0">
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
+                            <Car className="w-6 h-6 sm:w-7 sm:h-7" />
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg leading-tight">
                                 Motorista Econômico
                               </span>
-                              <span className="bg-emerald-100 text-emerald-800 font-bold text-[11px] px-2 py-0.5 rounded-full border border-emerald-300 font-mono">
+                              <span className="bg-emerald-100 text-emerald-800 font-bold text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full border border-emerald-300 font-mono shrink-0">
                                 Mais Pedida
                               </span>
                             </div>
@@ -1535,15 +1525,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <span className="font-heading font-black text-slate-950 text-2xl sm:text-3xl text-amber-600">
+                        <div className="text-right shrink-0">
+                          <span className="font-heading font-black text-xl sm:text-3xl text-amber-600 whitespace-nowrap">
                             {formatBRL(fare.totalPrice)}
                           </span>
-                          <p className="text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
+                          <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
                         </div>
                       </div>
 
-                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex items-center justify-between font-medium">
+                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
                         <span>{cat.tagline}</span>
                         <span className="text-slate-500 font-mono">Ar-condicionado</span>
                       </div>
@@ -1555,7 +1545,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         e.stopPropagation();
                         handleSelectCategory('economica');
                       }}
-                      className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 uppercase tracking-wide"
+                      className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 uppercase tracking-wide"
                     >
                       <span>Escolher Econômico ({formatBRL(fare.totalPrice)})</span>
                     </button>
@@ -1570,20 +1560,20 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 return (
                   <div
                     onClick={() => handleSelectCategory('confort')}
-                    className="p-5 rounded-2xl border-2 border-purple-200 hover:border-purple-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group"
+                    className="p-4 sm:p-5 rounded-2xl border-2 border-purple-200 hover:border-purple-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group min-w-0"
                   >
-                    <div>
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-13 h-13 rounded-2xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0 border border-purple-300">
-                            <Sparkles className="w-7 h-7" />
+                    <div className="min-w-0">
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0 border border-purple-300">
+                            <Sparkles className="w-6 h-6 sm:w-7 sm:h-7" />
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg leading-tight">
                                 Motorista Confort
                               </span>
-                              <span className="bg-purple-100 text-purple-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-purple-300 font-mono">
+                              <span className="bg-purple-100 text-purple-900 font-bold text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full border border-purple-300 font-mono shrink-0">
                                 Mais Conforto
                               </span>
                             </div>
@@ -1593,15 +1583,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <span className="font-heading font-black text-purple-900 text-2xl sm:text-3xl">
+                        <div className="text-right shrink-0">
+                          <span className="font-heading font-black text-purple-900 text-xl sm:text-3xl whitespace-nowrap">
                             {formatBRL(fare.totalPrice)}
                           </span>
-                          <p className="text-xs text-purple-600 font-bold uppercase font-mono">Preço Final</p>
+                          <p className="text-[10px] sm:text-xs text-purple-600 font-bold uppercase font-mono">Preço Final</p>
                         </div>
                       </div>
 
-                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex items-center justify-between font-medium">
+                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
                         <span>{cat.tagline}</span>
                         <span className="text-purple-700 font-bold">Mais espaço interno</span>
                       </div>
@@ -1613,7 +1603,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         e.stopPropagation();
                         handleSelectCategory('confort');
                       }}
-                      className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-purple-700 hover:bg-purple-600 text-white border border-purple-600 uppercase tracking-wide"
+                      className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-purple-700 hover:bg-purple-600 text-white border border-purple-600 uppercase tracking-wide"
                     >
                       <span>Escolher Confort ({formatBRL(fare.totalPrice)})</span>
                     </button>
@@ -1628,20 +1618,20 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 return (
                   <div
                     onClick={() => handleSelectCategory('moto_passageiro')}
-                    className="p-5 rounded-2xl border-2 border-cyan-200 hover:border-cyan-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group"
+                    className="p-4 sm:p-5 rounded-2xl border-2 border-cyan-200 hover:border-cyan-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group min-w-0"
                   >
-                    <div>
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-13 h-13 rounded-2xl bg-cyan-100 text-cyan-800 flex items-center justify-center shrink-0 border border-cyan-300">
-                            <Bike className="w-7 h-7" />
+                    <div className="min-w-0">
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-cyan-100 text-cyan-800 flex items-center justify-center shrink-0 border border-cyan-300">
+                            <Bike className="w-6 h-6 sm:w-7 sm:h-7" />
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg leading-tight">
                                 Motoboy Passageiro
                               </span>
-                              <span className="bg-cyan-100 text-cyan-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-cyan-300 font-mono">
+                              <span className="bg-cyan-100 text-cyan-900 font-bold text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full border border-cyan-300 font-mono shrink-0">
                                 Mais Rápido
                               </span>
                             </div>
@@ -1651,15 +1641,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <span className="font-heading font-black text-cyan-900 text-2xl sm:text-3xl">
+                        <div className="text-right shrink-0">
+                          <span className="font-heading font-black text-cyan-900 text-xl sm:text-3xl whitespace-nowrap">
                             {formatBRL(fare.totalPrice)}
                           </span>
-                          <p className="text-xs text-cyan-600 font-bold uppercase font-mono">Preço Final</p>
+                          <p className="text-[10px] sm:text-xs text-cyan-600 font-bold uppercase font-mono">Preço Final</p>
                         </div>
                       </div>
 
-                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex items-center justify-between font-medium">
+                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
                         <span>{cat.tagline}</span>
                         <span className="text-cyan-700 font-bold">Capacete incluso</span>
                       </div>
@@ -1671,7 +1661,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         e.stopPropagation();
                         handleSelectCategory('moto_passageiro');
                       }}
-                      className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-cyan-600 hover:bg-cyan-500 text-white border border-cyan-500 uppercase tracking-wide"
+                      className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-cyan-600 hover:bg-cyan-500 text-white border border-cyan-500 uppercase tracking-wide"
                     >
                       <span>Escolher Motoboy Passageiro ({formatBRL(fare.totalPrice)})</span>
                     </button>
@@ -1686,20 +1676,20 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 return (
                   <div
                     onClick={() => handleSelectCategory('moto_entrega')}
-                    className="p-5 rounded-2xl border-2 border-amber-200 hover:border-amber-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group"
+                    className="p-4 sm:p-5 rounded-2xl border-2 border-amber-200 hover:border-amber-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group min-w-0"
                   >
-                    <div>
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-13 h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
-                            <PackageCheck className="w-7 h-7" />
+                    <div className="min-w-0">
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
+                            <PackageCheck className="w-6 h-6 sm:w-7 sm:h-7" />
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg leading-tight">
                                 Motoboy Entregas
                               </span>
-                              <span className="bg-amber-100 text-amber-900 font-bold text-[11px] px-2 py-0.5 rounded-full border border-amber-300 font-mono">
+                              <span className="bg-amber-100 text-amber-900 font-bold text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full border border-amber-300 font-mono shrink-0">
                                 Flash Delivery
                               </span>
                             </div>
@@ -1709,15 +1699,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <span className="font-heading font-black text-slate-950 text-2xl sm:text-3xl text-amber-600">
+                        <div className="text-right shrink-0">
+                          <span className="font-heading font-black text-xl sm:text-3xl text-amber-600 whitespace-nowrap">
                             {formatBRL(fare.totalPrice)}
                           </span>
-                          <p className="text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
+                          <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
                         </div>
                       </div>
 
-                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex items-center justify-between font-medium">
+                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
                         <span>{cat.tagline}</span>
                         <span className="text-amber-700 font-bold">Baú até 20kg</span>
                       </div>
@@ -1729,7 +1719,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         e.stopPropagation();
                         handleSelectCategory('moto_entrega');
                       }}
-                      className="w-full mt-4 py-3.5 px-4 rounded-xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-105 text-slate-950 border border-amber-400 uppercase tracking-wide"
+                      className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-105 text-slate-950 border border-amber-400 uppercase tracking-wide"
                     >
                       <span>Escolher Entregas ({formatBRL(fare.totalPrice)})</span>
                     </button>
@@ -1753,7 +1743,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         ).trim();
 
         return (
-          <div className="space-y-4 animate-fade-in">
+          <div className="space-y-4 animate-fade-in min-w-0 w-full">
             {/* Botão Voltar às Opções */}
             <button
               type="button"
@@ -1768,35 +1758,35 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </button>
 
             {/* Card Principal: "Você escolheu [Categoria] - R$ [Valor]" */}
-            <div className="bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/10 border-2 border-[#ff6a00] rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
-              <div className="flex items-start justify-between gap-3 border-b border-orange-200/80 pb-3">
-                <div>
+            <div className="bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/10 border-2 border-[#ff6a00] rounded-3xl p-4 sm:p-6 shadow-md space-y-4 min-w-0 w-full box-border">
+              <div className="flex items-start justify-between gap-3 border-b border-orange-200/80 pb-3 min-w-0">
+                <div className="min-w-0 flex-1">
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
                     Resumo do Pedido de Corrida
                   </span>
-                  <h3 className="text-xl sm:text-2xl font-heading font-black text-slate-950 mt-1">
+                  <h3 className="text-lg sm:text-2xl font-heading font-black text-slate-950 mt-1 break-words">
                     Você escolheu {getCategoryDisplayName(selectedCategory)} - {formatBRL(fare.totalPrice)}
                   </h3>
                 </div>
-                <div className="w-12 h-12 rounded-2xl bg-[#ff6a00] text-white flex items-center justify-center font-bold shrink-0 shadow-md">
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-[#ff6a00] text-white flex items-center justify-center font-bold shrink-0 shadow-md">
                   {isMoto ? <Bike className="w-6 h-6" /> : <Car className="w-6 h-6" />}
                 </div>
               </div>
 
               {/* Rota */}
-              <div className="space-y-2 text-xs sm:text-sm text-slate-800 bg-white/80 rounded-2xl p-4 border border-orange-200">
-                <div className="flex items-start gap-2.5">
+              <div className="space-y-2 text-xs sm:text-sm text-slate-800 bg-white/80 rounded-2xl p-3.5 sm:p-4 border border-orange-200 min-w-0">
+                <div className="flex items-start gap-2.5 min-w-0">
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <span className="text-[10px] font-bold text-emerald-700 uppercase block font-mono">Embarque</span>
-                    <span className="font-bold text-slate-950">{pickupInput}</span>
+                    <span className="font-bold text-slate-950 break-words">{pickupInput}</span>
                   </div>
                 </div>
-                <div className="flex items-start gap-2.5 pt-2 border-t border-slate-100">
+                <div className="flex items-start gap-2.5 pt-2 border-t border-slate-100 min-w-0">
                   <Navigation className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <span className="text-[10px] font-bold text-amber-700 uppercase block font-mono">Destino</span>
-                    <span className="font-bold text-slate-950">{destInput}</span>
+                    <span className="font-bold text-slate-950 break-words">{destInput}</span>
                   </div>
                 </div>
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 font-mono">
@@ -1807,35 +1797,35 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </div>
 
             {/* Formas de Pagamento no App (PIX no app / Cartão no app) */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div className="flex items-center gap-2">
-                  <Lock className="w-5 h-5 text-emerald-600" />
-                  <h4 className="font-heading font-black text-slate-950 text-base uppercase tracking-wider">
+            <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-md space-y-4 min-w-0 w-full box-border overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Lock className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <h4 className="font-heading font-black text-slate-950 text-sm sm:text-base uppercase tracking-wider">
                     Forma de Pagamento no App
                   </h4>
                 </div>
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 font-mono">
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 font-mono shrink-0">
                   100% SEGURO
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3 w-full min-w-0">
                 <button
                   type="button"
                   onClick={() => {
                     setPaymentMethod('pix');
                     initAsaasPayment('pix', selectedCategory);
                   }}
-                  className={`p-3 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  className={`min-w-0 p-2.5 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer text-center ${
                     paymentMethod === 'pix'
                       ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-black shadow-sm ring-2 ring-emerald-500/20'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
                   }`}
                 >
-                  <QrCode className="w-6 h-6 text-emerald-600" />
-                  <span className="text-xs sm:text-sm font-black">PIX no app</span>
-                  <span className="text-[10px] sm:text-xs text-emerald-700 font-bold">Asaas Instantâneo</span>
+                  <QrCode className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 shrink-0" />
+                  <span className="text-[11px] sm:text-sm font-black leading-tight">PIX no app</span>
+                  <span className="text-[9px] sm:text-xs text-emerald-700 font-bold leading-tight">Asaas Instantâneo</span>
                 </button>
 
                 <button
@@ -1844,15 +1834,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     setPaymentMethod('credit_card');
                     initAsaasPayment('credit_card', selectedCategory);
                   }}
-                  className={`p-3 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  className={`min-w-0 p-2.5 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer text-center ${
                     paymentMethod === 'credit_card'
                       ? 'bg-amber-50 border-amber-500 text-amber-950 font-black shadow-sm ring-2 ring-amber-500/20'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
                   }`}
                 >
-                  <CreditCard className="w-6 h-6 text-amber-600" />
-                  <span className="text-xs sm:text-sm font-black">Cartão no app</span>
-                  <span className="text-[10px] sm:text-xs text-amber-700 font-bold">Link Seguro Asaas</span>
+                  <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600 shrink-0" />
+                  <span className="text-[11px] sm:text-sm font-black leading-tight">Cartão no app</span>
+                  <span className="text-[9px] sm:text-xs text-amber-700 font-bold leading-tight">Link Seguro Asaas</span>
                 </button>
 
                 <button
@@ -1862,38 +1852,38 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     setIsPollingAsaas(false);
                     setPaymentMethod('dinheiro');
                   }}
-                  className={`p-3 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  className={`min-w-0 p-2.5 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer text-center ${
                     isCashMethod(paymentMethod)
                       ? 'bg-blue-50 border-blue-500 text-blue-950 font-black shadow-sm ring-2 ring-blue-500/20'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
                   }`}
                 >
-                  <Wallet className="w-6 h-6 text-blue-600" />
-                  <span className="text-xs sm:text-sm font-black">Dinheiro</span>
-                  <span className="text-[10px] sm:text-xs text-blue-700 font-bold">Ao condutor</span>
+                  <Wallet className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 shrink-0" />
+                  <span className="text-[11px] sm:text-sm font-black leading-tight">Dinheiro</span>
+                  <span className="text-[9px] sm:text-xs text-blue-700 font-bold leading-tight">Ao condutor</span>
                 </button>
               </div>
 
               {/* Alerta quando tentar pedir corrida sem pagar no Asaas */}
               {paymentBlockedError && !isCashMethod(paymentMethod) && (
-                <div className="bg-rose-50 border-2 border-rose-500 rounded-2xl p-4 flex items-center gap-3 text-rose-950 shadow-sm animate-fade-in">
+                <div className="bg-rose-50 border-2 border-rose-500 rounded-2xl p-3.5 sm:p-4 flex items-center gap-3 text-rose-950 shadow-sm animate-fade-in min-w-0">
                   <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-                  <span className="text-xs sm:text-sm font-black">{paymentBlockedError}</span>
+                  <span className="text-xs sm:text-sm font-black break-words">{paymentBlockedError}</span>
                 </div>
               )}
 
               {/* FLUXO PIX NO APP VIA ASAAS */}
               {paymentMethod === 'pix' && (
-                <div className="space-y-4 pt-2">
-                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 text-center space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                <div className="space-y-4 pt-2 min-w-0">
+                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-4 sm:p-5 text-center space-y-4 min-w-0 overflow-hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
                       <div className="text-left">
                         <span className="text-[10px] font-mono font-bold text-slate-500 uppercase block">Gateway de Pagamento</span>
                         <span className="font-heading font-black text-slate-900 text-sm flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" /> PIX Asaas Integrado
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> PIX Asaas Integrado
                         </span>
                       </div>
-                      <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-300">
+                      <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-300 shrink-0">
                         {formatBRL(fare.totalPrice)}
                       </span>
                     </div>
@@ -1913,11 +1903,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                             <img
                               src={asaasPayment.pixQrCode.encodedImage}
                               alt="QR Code PIX Asaas"
-                              className="w-56 h-56 sm:w-64 sm:h-64 mx-auto rounded-2xl border-2 border-emerald-500 shadow-md p-2 bg-white object-contain"
+                              className="w-52 h-52 sm:w-64 sm:h-64 mx-auto rounded-2xl border-2 border-emerald-500 shadow-md p-2 bg-white object-contain"
                             />
                           ) : (
-                            <div className="w-56 h-56 mx-auto bg-white p-3 border-2 border-emerald-500 rounded-2xl shadow-inner flex items-center justify-center">
-                              <QrCode className="w-36 h-36 text-slate-900" />
+                            <div className="w-52 h-52 sm:w-56 sm:h-56 mx-auto bg-white p-3 border-2 border-emerald-500 rounded-2xl shadow-inner flex items-center justify-center">
+                              <QrCode className="w-32 h-32 sm:w-36 sm:h-36 text-slate-900" />
                             </div>
                           )}
                           <p className="text-xs text-slate-500 mt-2 font-medium">
@@ -1926,13 +1916,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         </div>
 
                         {/* Código PIX Copia e Cola Completo do Asaas */}
-                        <div className="space-y-3 text-left bg-white p-4 sm:p-5 rounded-2xl border-2 border-emerald-500 shadow-sm">
-                          <div className="flex items-center justify-between">
+                        <div className="space-y-3 text-left bg-white p-3.5 sm:p-5 rounded-2xl border-2 border-emerald-500 shadow-sm min-w-0 max-w-full overflow-hidden">
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
                             <label className="text-xs font-heading font-black text-slate-900 uppercase flex items-center gap-1.5">
-                              <Copy className="w-4 h-4 text-emerald-600" />
+                              <Copy className="w-4 h-4 text-emerald-600 shrink-0" />
                               <span>PIX Copia e Cola Completo ({formatBRL(fare.totalPrice)})</span>
                             </label>
-                            <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                            <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
                               {pixPayloadCompleto.length} CARACTERES
                             </span>
                           </div>
@@ -1942,7 +1932,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </p>
 
                           {/* Caixa com scroll horizontal visível para o passageiro ver o código inteiro */}
-                          <div className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl p-3 overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-emerald-500">
+                          <div className="w-full max-w-full min-w-0 bg-slate-50 border-2 border-slate-300 rounded-xl p-3 overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-emerald-500 box-border">
                             <code className="text-xs font-mono font-bold text-slate-900 select-all tracking-tight inline-block cursor-text">
                               {pixPayloadCompleto}
                             </code>
@@ -2242,12 +2232,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       })()}
 
       {/* Safety & 100% Policy Guarantee Banner */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between text-xs sm:text-sm text-slate-700 shadow-sm font-medium">
-        <div className="flex items-center gap-2.5">
-          <ShieldCheck className="w-5 h-5 text-amber-600" />
-          <span>Motoristas verificados com CNH, antecedentes criminais e telemetria 24h</span>
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2.5 text-xs sm:text-sm text-slate-700 shadow-sm font-medium min-w-0 w-full box-border">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
+          <span className="leading-snug">Motoristas verificados com CNH, antecedentes criminais e telemetria 24h</span>
         </div>
-        <span className="font-mono text-amber-700 font-extrabold bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
+        <span className="font-mono text-amber-700 font-extrabold bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 shrink-0">
           RACE 24H
         </span>
       </div>

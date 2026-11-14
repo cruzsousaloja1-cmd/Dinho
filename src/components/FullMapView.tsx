@@ -738,7 +738,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-white text-slate-900 flex flex-col w-screen h-screen overflow-hidden select-none">
+    <div className="fixed inset-0 z-[200] bg-white text-slate-900 flex flex-col w-screen h-screen overflow-hidden select-none">
       {/* 1. HUD SUPERIOR: MODO PROCURANDO vs MODO A CAMINHO */}
       <div className="absolute top-3 left-3 right-14 z-[1000] flex items-start justify-between gap-2.5 pointer-events-none">
         {/* Botão VOLTAR */}

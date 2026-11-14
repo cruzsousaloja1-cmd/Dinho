@@ -74,8 +74,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     ];
 
     return (
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)]">
-        <div className="max-w-md mx-auto flex items-center justify-around gap-2">
+      <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
+        <div className="max-w-md mx-auto grid grid-cols-4 gap-1.5 items-stretch">
           {passengerTabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -85,21 +85,21 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => onChangeTab(tab.id)}
-                className={`relative flex flex-col items-center justify-center flex-1 py-2 px-1 rounded-2xl transition-all duration-200 cursor-pointer ${
+                className={`relative flex flex-col items-center justify-center w-full min-w-0 py-2 px-1 rounded-2xl transition-colors duration-200 cursor-pointer ${
                   isActive
-                    ? 'text-[#ff6a00] bg-orange-50 font-black border border-[#ff6a00]/30 shadow-xs scale-105'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    ? 'text-[#ff6a00] bg-orange-50 font-black border border-[#ff6a00]/30 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
                 }`}
               >
                 <div
-                  className={`p-1 rounded-xl transition-transform ${
+                  className={`flex items-center justify-center ${
                     isActive ? 'text-[#ff6a00]' : 'text-slate-600'
                   }`}
                 >
-                  <Icon className="w-6 h-6 stroke-[2.5]" />
+                  <Icon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.25]" />
                 </div>
 
-                <span className="text-[11px] sm:text-xs font-heading font-black mt-0.5 tracking-wider uppercase">
+                <span className="text-[10px] sm:text-xs font-heading font-black mt-1 tracking-wide uppercase truncate max-w-full leading-tight">
                   {tab.label}
                 </span>
               </button>
@@ -151,8 +151,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)]">
-      <div className="max-w-2xl mx-auto flex items-center justify-around gap-1.5">
+    <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 px-2 sm:px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
+      <div className={`max-w-2xl mx-auto grid ${driverTabs.length === 5 ? 'grid-cols-5' : 'grid-cols-4'} gap-1.5 items-stretch`}>
         {driverTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -162,10 +162,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               key={tab.id}
               type="button"
               onClick={() => onChangeTab(tab.id)}
-              className={`relative flex flex-col items-center justify-center flex-1 py-2 px-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
+              className={`relative flex flex-col items-center justify-center w-full min-w-0 py-2 px-1 rounded-xl transition-colors duration-200 cursor-pointer ${
                 isActive
-                  ? 'text-amber-700 bg-amber-50 font-black border border-amber-300 shadow-sm scale-105'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  ? 'text-amber-700 bg-amber-50 font-black border border-amber-300 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
               }`}
             >
               {/* Online Indicator if driver is active */}
@@ -186,10 +186,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                     : 'text-slate-600'
                 }`}
               >
-                <Icon className="w-6 h-6 transition-transform" />
+                <Icon className="w-5 h-5 sm:w-6 sm:h-6 transition-transform" />
               </div>
 
-              <span className="text-xs sm:text-sm font-heading font-bold mt-0.5 whitespace-nowrap leading-tight">
+              <span className="text-[10px] sm:text-sm font-heading font-bold mt-0.5 truncate max-w-full leading-tight">
                 {tab.label}
               </span>
               <span className="text-[10px] sm:text-xs text-slate-500 font-medium leading-none hidden sm:inline">

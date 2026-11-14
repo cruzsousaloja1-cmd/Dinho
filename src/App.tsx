@@ -1363,7 +1363,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans pb-28 selection:bg-slate-900 selection:text-white w-full max-w-full overflow-x-hidden box-border">
+    <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans pb-28 selection:bg-slate-900 selection:text-white w-full max-w-[100vw] overflow-x-hidden box-border">
       {/* Prominent RACE Brand Header */}
       <Header
         unreadNotifsCount={unreadNotifsCount}
@@ -1406,7 +1406,7 @@ export default function App() {
       />
 
       {/* Main Layout Container */}
-      <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5 overflow-x-hidden box-border">
+      <main className="flex-1 max-w-4xl w-full max-w-[100vw] mx-auto px-4 py-4 sm:p-5 overflow-x-hidden box-border">
         {/* 1. Corridas (Passageiro / Condutor) com MAPA ABAIXO DAS OPÇÕES DE CORRIDA */}
         {activeTab === 'rides' && (
           <PassengerRideView

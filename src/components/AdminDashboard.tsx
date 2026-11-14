@@ -2416,7 +2416,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Modal de Prévia do Comprovante Anexo */}
       {previewProofImage && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-300 animate-scale-up">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
@@ -2452,7 +2452,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Modal de Confirmação: Remover Todos os Cadastros */}
       {isConfirmRemoveAllModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border-2 border-rose-500 animate-scale-up">
             <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
               <Trash2 className="w-6 h-6 stroke-[2.5]" />
@@ -2504,7 +2504,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Modal de Confirmação: Remover Cadastro Individual */}
       {deleteConfirmTarget && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-300 animate-scale-up">
             <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
               <Trash2 className="w-6 h-6 stroke-[2.5]" />
@@ -2547,7 +2547,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Modal: Ver Avaliações do Condutor */}
       {selectedUserReviewModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-300 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2.5">

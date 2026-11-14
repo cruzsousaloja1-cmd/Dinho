@@ -39,14 +39,14 @@ export const RideHistoryView: React.FC<RideHistoryViewProps> = ({
     <div className="space-y-5">
       {/* Title & Filter Header in White */}
       <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-          <div className="flex items-center gap-2.5">
-            <History className="w-6 h-6 text-amber-600" />
-            <h2 className="font-heading font-black text-slate-950 text-xl">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <History className="w-6 h-6 text-amber-600 shrink-0" />
+            <h2 className="font-heading font-black text-slate-950 text-lg sm:text-xl leading-tight">
               Histórico de Viagens & Entregas RACE
             </h2>
           </div>
-          <span className="text-xs sm:text-sm text-slate-600 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+          <span className="text-xs sm:text-sm text-slate-600 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200 shrink-0">
             {filteredRides.length} viagens registradas
           </span>
         </div>
@@ -200,7 +200,7 @@ export const RideHistoryView: React.FC<RideHistoryViewProps> = ({
 
       {/* Detailed Receipt Modal in White */}
       {selectedRide && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white border border-slate-300 max-w-md w-full rounded-3xl p-6 shadow-2xl space-y-5">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2.5">

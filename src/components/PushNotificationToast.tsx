@@ -23,7 +23,7 @@ export const PushNotificationToast: React.FC<PushNotificationToastProps> = ({
     <>
       {/* Floating Push Toast in White */}
       {notification && (
-        <div className="fixed top-18 left-1/2 -translate-x-1/2 z-[100] max-w-md w-[92%] sm:w-full bg-white border-2 border-amber-500 rounded-3xl p-4 shadow-2xl flex items-start justify-between gap-3 animate-in fade-in slide-in-from-top duration-300">
+        <div className="fixed top-18 left-1/2 -translate-x-1/2 z-[1100] max-w-md w-[92%] sm:w-full bg-white border-2 border-amber-500 rounded-3xl p-4 shadow-2xl flex items-start justify-between gap-3 animate-in fade-in slide-in-from-top duration-300">
           <div className="flex items-start gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-amber-500 text-slate-950 font-black flex items-center justify-center shrink-0 mt-0.5 shadow-md">
               <Zap className="w-6 h-6" />
@@ -52,7 +52,7 @@ export const PushNotificationToast: React.FC<PushNotificationToastProps> = ({
 
       {/* Full Notifications Drawer in White */}
       {isOpenCenter && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white border border-slate-300 max-w-lg w-full rounded-3xl p-6 shadow-2xl space-y-5">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3.5">
               <div className="flex items-center gap-2.5">
