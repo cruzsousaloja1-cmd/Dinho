@@ -3,6 +3,7 @@ import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserT
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
 import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, reportPassengerCashNonPaymentSupabase } from '../supabase';
+import { compressImageToMax200KB } from '../utils/imageCompression';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverWorkSelectionView } from './DriverWorkSelectionView';
@@ -395,13 +396,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [cnhDocPreview, setCnhDocPreview] = useState<string | null>(null);
   const [vehicleDocPreview, setVehicleDocPreview] = useState<string | null>(null);
 
-  const handleDriverAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDriverAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
+    try {
+      const base64 = await compressImageToMax200KB(file);
       if (base64) {
         const updated: Driver = {
           ...currentDriver,
@@ -420,30 +420,31 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           }
         }
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.log('Erro ao comprimir foto do motorista:', err);
+    }
   };
 
-  const handleCnhDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCnhDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
+    try {
+      const base64 = await compressImageToMax200KB(file);
       if (base64) setCnhDocPreview(base64);
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.log('Erro ao comprimir CNH:', err);
+    }
   };
 
-  const handleVehicleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleVehicleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
+    try {
+      const base64 = await compressImageToMax200KB(file);
       if (base64) setVehicleDocPreview(base64);
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.log('Erro ao comprimir foto do veículo:', err);
+    }
   };
 
   // Driver's own PIX key where they receive 85% of ride earnings

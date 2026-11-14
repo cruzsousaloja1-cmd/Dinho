@@ -4,6 +4,7 @@ import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, S
 import confetti from 'canvas-confetti';
 import { saveSessionUser, verifyUserLogin, mapSupabaseRowToAppUser } from '../services/userService';
 import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase } from '../supabase';
+import { compressImageToMax200KB } from '../utils/imageCompression';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 interface DriverLoginScreenProps {
@@ -66,18 +67,19 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [regAvatar, setRegAvatar] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      const base64String = uploadEvent.target?.result as string;
-      if (base64String) {
-        setRegAvatar(base64String);
+    try {
+      const compressedBase64 = await compressImageToMax200KB(file);
+      if (compressedBase64) {
+        setRegAvatar(compressedBase64);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (error: any) {
+      console.log('Erro ao processar foto:', error);
+      setRegErrorMessage(`Erro ao processar foto: ${error?.message || String(error)}`);
+    }
   };
 
   // Iniciar fluxo de cadastro para a categoria escolhida
@@ -153,7 +155,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       });
 
       if (!supabaseRes.success) {
-        setAdminRegErrorMessage(`Erro ao salvar ADM no Supabase: ${supabaseRes.error || 'Falha no banco de dados'}`);
+        console.log('Erro Supabase ADM:', supabaseRes.error);
+        setAdminRegErrorMessage(`Erro Supabase: ${supabaseRes.error || 'Falha no banco de dados'}`);
         return;
       }
 
@@ -181,8 +184,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       setTimeout(() => {
         onLoginSuccess(adminUser);
       }, 600);
-    } catch (err: any) {
-      setAdminRegErrorMessage(`Erro ao criar conta ADM: ${err?.message || 'Verifique sua conexão e tente novamente.'}`);
+    } catch (error: any) {
+      console.log(error);
+      setAdminRegErrorMessage(`Erro Supabase: ${error?.message || String(error)}`);
     } finally {
       setIsCreatingAdmin(false);
     }
@@ -363,8 +367,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       setTimeout(() => {
         onLoginSuccess(userPayload, driverObj);
       }, 400);
-    } catch (err: any) {
-      setLoginErrorMessage(`Erro no Supabase: ${err?.message || 'Falha de comunicação'}`);
+    } catch (error: any) {
+      console.log(error);
+      setLoginErrorMessage(`Erro Supabase: ${error?.message || String(error)}`);
     } finally {
       setIsLoggingIn(false);
     }
@@ -414,7 +419,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const isPassengerRole = regRole === 'passenger';
       const isDriverRole = regRole === 'driver';
       const isMotoboyRole = regRole === 'motoboy';
-      const chosenAvatar = regAvatar;
+      const chosenAvatar = await compressImageToMax200KB(regAvatar);
 
       // Criação dos dados iniciais do condutor (sem categoria escolhida ainda: permanece OFFLINE até escolher categoria no app)
       let newDriverObj: Driver | undefined = undefined;
@@ -470,13 +475,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         ano: 2023,
         cnh: '',
         foto: chosenAvatar || undefined,
-        avatar: chosenAvatar || undefined,
         status: isPassengerRole ? 'online' : 'offline',
         plano_ativo: false,
       });
 
       if (!supabaseRes.success) {
-        setRegErrorMessage(`Erro ao salvar no Supabase: ${supabaseRes.error || 'Falha no banco de dados'}`);
+        console.log('Erro Supabase cadastro:', supabaseRes.error);
+        setRegErrorMessage(`Erro Supabase: ${supabaseRes.error || 'Falha desconhecida ao salvar usuário.'}`);
         return;
       }
 
@@ -531,8 +536,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           onLoginSuccess(newUser, newDriverObj);
         }
       }, 700);
-    } catch (err: any) {
-      setRegErrorMessage(`Erro ao salvar no Supabase: ${err?.message || 'Verifique sua conexão e tente novamente.'}`);
+    } catch (error: any) {
+      console.log(error);
+      setRegErrorMessage(`Erro Supabase: ${error?.message || String(error)}`);
     } finally {
       setIsRegistering(false);
     }

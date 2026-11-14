@@ -25,6 +25,7 @@ import {
   saveUsuarioSupabase,
   setDriverRequirementsConfirmedLocal,
 } from '../supabase';
+import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isBasicPopularOneLiterModel } from '../services/vehicleValidationService';
 
 export type WorkCategoryKey =
@@ -220,38 +221,13 @@ interface DriverWorkSelectionViewProps {
 }
 
 function compressUploadImage(file: File, callback: (dataUrl: string) => void) {
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    const raw = ev.target?.result as string;
-    if (!raw) return;
-    const img = new Image();
-    img.onload = () => {
-      const maxDim = 720;
-      let { width, height } = img;
-      if (width > maxDim || height > maxDim) {
-        if (width > height) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(img, 0, 0, width, height);
-        callback(canvas.toDataURL('image/jpeg', 0.72));
-      } else {
-        callback(raw);
-      }
-    };
-    img.onerror = () => callback(raw);
-    img.src = raw;
-  };
-  reader.readAsDataURL(file);
+  compressImageToMax200KB(file)
+    .then((dataUrl) => {
+      if (dataUrl) callback(dataUrl);
+    })
+    .catch((err) => {
+      console.log('Erro ao comprimir foto:', err);
+    });
 }
 
 export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = ({

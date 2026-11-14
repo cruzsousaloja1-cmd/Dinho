@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { reverseGeocodeCoords } from '../services/addressSearchService';
 import { saveUserAccount } from '../services/userService';
+import { compressImageToMax200KB } from '../utils/imageCompression';
 
 interface PassengerAccountViewProps {
   currentUser: AppUser | null;
@@ -48,13 +49,12 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   const [userAvatar, setUserAvatar] = useState<string>(currentUser?.avatar || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
+    try {
+      const base64 = await compressImageToMax200KB(file);
       if (base64) {
         setUserAvatar(base64);
 
@@ -78,8 +78,9 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           onUpdateAvatar(base64);
         }
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.log('Erro ao processar foto do passageiro:', err);
+    }
   };
 
   const [activeAddress, setActiveAddress] = useState(
