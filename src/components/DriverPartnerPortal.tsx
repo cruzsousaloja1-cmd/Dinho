@@ -5,6 +5,7 @@ import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount 
 import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory } from '../supabase';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { DriverWorkSelectionView } from './DriverWorkSelectionView';
 import { 
   WEEKLY_FEE, 
   WEEKLY_FEE_TEXT, 
@@ -305,14 +306,21 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [cloudSearchingRide, setCloudSearchingRide] = useState<Ride | null>(null);
   const [simulatedRideCode] = useState<string>(() => generateUniqueRideConfirmationCode());
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+  const [isEditingCategory, setIsEditingCategory] = useState(false);
+
+  const isCategoryConfigured = Boolean(
+    currentDriver.categoryConfigured !== false &&
+    currentDriver.vehiclePlate?.trim() &&
+    currentDriver.vehicleModel?.trim()
+  );
 
   const [dismissedTick, setDismissedTick] = useState(0);
   const dismissedRideIdsRef = useRef<Set<string>>(new Set());
   const announcedRideIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    setIsOnline(currentDriver.status === 'online');
-  }, [currentDriver.status]);
+    setIsOnline(isCategoryConfigured && currentDriver.status === 'online');
+  }, [currentDriver.status, isCategoryConfigured]);
 
   // Ouvindo em tempo real via Supabase Realtime ('corridas') + fallback polling 3s enquanto o condutor está ONLINE
   const isSearchingRideStatus = (st?: string) => {
@@ -324,13 +332,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     r.id ? String(r.id) : `${r.passengerName || ''}-${r.pickup?.address || ''}-${r.price || 0}`;
 
   const doesRideMatchDriverCategory = (r: Ride) => {
-    if (!currentDriver?.category) return true;
+    if (!isCategoryConfigured || !currentDriver?.category) return false;
     return normalizeRideCategory(r.category) === normalizeRideCategory(currentDriver.category);
   };
 
   useEffect(() => {
-    if (!isOnline || acceptedDriverRide) {
-      if (!isOnline) setCloudSearchingRide(null);
+    if (!isOnline || !isCategoryConfigured || acceptedDriverRide) {
+      if (!isOnline || !isCategoryConfigured) setCloudSearchingRide(null);
       return;
     }
     let mounted = true;
@@ -396,7 +404,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       unsubscribeRealtime();
       clearInterval(timer);
     };
-  }, [isOnline, acceptedDriverRide, currentDriver.category, dismissedTick]);
+  }, [isOnline, isCategoryConfigured, acceptedDriverRide, currentDriver.category, dismissedTick]);
 
   // Galeria de Fotos: Perfil, CNH e Foto do Veículo
   const driverAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -588,6 +596,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const driverSavingsVsUber99 = Math.max(0, uberCut - raceFee);
 
   const toggleOnline = () => {
+    if (!isCategoryConfigured) {
+      setIsOnline(false);
+      return;
+    }
     const nextStatus = !isOnline;
     const nextStatusStr: 'online' | 'offline' = nextStatus ? 'online' : 'offline';
     setIsOnline(nextStatus);
@@ -1033,31 +1045,41 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg">
                       {currentDriver.name}
                     </h3>
-                    {currentDriver.category === 'economica' && (
-                      <span className="bg-slate-100 text-slate-800 text-xs font-black px-2 py-0.5 rounded-md border border-slate-300 flex items-center gap-1">
-                        <Car className="w-3.5 h-3.5 text-slate-600" /> Motorista Econômico
+                    {!isCategoryConfigured ? (
+                      <span className="bg-amber-100 text-amber-900 text-xs font-black px-2.5 py-0.5 rounded-md border border-amber-300 flex items-center gap-1">
+                        <Lock className="w-3.5 h-3.5" /> Escolha sua categoria
                       </span>
-                    )}
-                    {currentDriver.category === 'confort' && (
-                      <span className="bg-[#ff6a00]/15 text-[#ff6a00] text-xs font-black px-2 py-0.5 rounded-md border border-[#ff6a00]/30 flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5" /> Motorista Confort
-                      </span>
-                    )}
-                    {currentDriver.category === 'moto_passageiro' && (
-                      <span className="bg-cyan-100 text-cyan-800 text-xs font-black px-2 py-0.5 rounded-md border border-cyan-200 flex items-center gap-1">
-                        <Bike className="w-3.5 h-3.5" /> Motoboy Passageiro
-                      </span>
-                    )}
-                    {currentDriver.category === 'moto_entrega' && (
-                      <span className="bg-amber-100 text-amber-900 text-xs font-black px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
-                        <Package className="w-3.5 h-3.5" /> Motoboy Entregas {currentDriver.trunkType ? `(${currentDriver.trunkType})` : ''}
-                      </span>
+                    ) : (
+                      <>
+                        {currentDriver.category === 'economica' && (
+                          <span className="bg-slate-100 text-slate-800 text-xs font-black px-2 py-0.5 rounded-md border border-slate-300 flex items-center gap-1">
+                            <Car className="w-3.5 h-3.5 text-slate-600" /> Motorista Econômico
+                          </span>
+                        )}
+                        {currentDriver.category === 'confort' && (
+                          <span className="bg-[#ff6a00]/15 text-[#ff6a00] text-xs font-black px-2 py-0.5 rounded-md border border-[#ff6a00]/30 flex items-center gap-1">
+                            <Sparkles className="w-3.5 h-3.5" /> Motorista Confort
+                          </span>
+                        )}
+                        {currentDriver.category === 'moto_passageiro' && (
+                          <span className="bg-cyan-100 text-cyan-800 text-xs font-black px-2 py-0.5 rounded-md border border-cyan-200 flex items-center gap-1">
+                            <Bike className="w-3.5 h-3.5" /> Motoboy Passageiro
+                          </span>
+                        )}
+                        {currentDriver.category === 'moto_entrega' && (
+                          <span className="bg-amber-100 text-amber-900 text-xs font-black px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                            <Package className="w-3.5 h-3.5" /> Motoboy Entregas {currentDriver.trunkType ? `(${currentDriver.trunkType})` : ''}
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
                   <p className="text-sm text-amber-700 font-mono font-bold">
-                    {currentDriver.vehicleModel} {currentDriver.vehicleYear ? `(${currentDriver.vehicleYear})` : ''} • {currentDriver.vehiclePlate}
+                    {isCategoryConfigured
+                      ? `${currentDriver.vehicleModel} ${currentDriver.vehicleYear ? `(${currentDriver.vehicleYear})` : ''} • ${currentDriver.vehiclePlate}`
+                      : 'Categoria e veículo ainda não cadastrados'}
                   </p>
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
                     <span className="text-sm text-slate-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                       {ratingStats.average.toFixed(1)} ★ ({ratingStats.totalReviews} avaliações)
                     </span>
@@ -1067,26 +1089,85 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <span className="text-xs text-slate-500 font-mono">
                       Login: {currentDriver.email}
                     </span>
+                    {isCategoryConfigured && !isOnline && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingCategory(true)}
+                        className="text-xs font-bold text-[#ff6a00] hover:underline cursor-pointer"
+                      >
+                        Trocar categoria
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Online Button */}
-              <button
-                onClick={toggleOnline}
-                className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 ${
-                  isOnline
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
-                }`}
-              >
-                <Power className="w-4 h-4" />
-                <span>{isOnline ? 'ONLINE' : 'FICAR ONLINE'}</span>
-              </button>
+              {/* Online Button (Bloqueado em cinza enquanto não escolher categoria; liberado em verde depois) */}
+              {!isCategoryConfigured ? (
+                <button
+                  type="button"
+                  disabled
+                  className="flex items-center gap-2 px-4 sm:px-5 py-3 rounded-2xl font-heading font-black text-xs sm:text-sm bg-slate-200 text-slate-500 border border-slate-300 cursor-not-allowed shrink-0"
+                >
+                  <Lock className="w-4 h-4 shrink-0" />
+                  <span>Escolha sua categoria para ficar ONLINE</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={toggleOnline}
+                  className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 shrink-0 ${
+                    isOnline
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-500 ring-2 ring-emerald-300'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-500'
+                  }`}
+                >
+                  <Power className="w-4 h-4" />
+                  <span>{isOnline ? 'ONLINE' : 'FICAR ONLINE'}</span>
+                </button>
+              )}
             </div>
           </div>
 
-          {/* 85% / 15% Earnings Model Banner */}
+          {/* TELA OBRIGATÓRIA DE ESCOLHA DE CATEGORIA ANTES DE FICAR ONLINE */}
+          {(!isCategoryConfigured || isEditingCategory) && (
+            <DriverWorkSelectionView
+              currentUser={
+                currentUser || {
+                  id: currentDriver.id,
+                  name: currentDriver.name,
+                  email: currentDriver.email,
+                  phone: currentDriver.phone,
+                  role:
+                    currentDriver.category === 'moto_passageiro' ||
+                    currentDriver.category === 'moto_entrega'
+                      ? 'motoboy'
+                      : 'driver',
+                  avatar: currentDriver.avatar,
+                  rating: currentDriver.rating,
+                  driverData: currentDriver,
+                }
+              }
+              isMandatorySetup={!isCategoryConfigured}
+              hideLockedOnlineButton={!isCategoryConfigured}
+              onBackToRides={isEditingCategory ? () => setIsEditingCategory(false) : undefined}
+              onCompleteDriverRegister={(updatedDriver) => {
+                onUpdateDriver(updatedDriver);
+                setIsEditingCategory(false);
+                if (onTriggerToast) {
+                  onTriggerToast(
+                    'Categoria configurada!',
+                    'Sua categoria foi salva no Supabase. Agora clique no botão verde FICAR ONLINE para receber corridas!',
+                    'system'
+                  );
+                }
+              }}
+            />
+          )}
+
+          {/* 85% / 15% Earnings Model Banner (exibido quando categoria já está configurada) */}
+          {isCategoryConfigured && !isEditingCategory && (
+            <>
           <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 border-2 border-amber-400 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
             <div className="flex items-center gap-3.5">
               <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 font-black flex items-center justify-center shrink-0 shadow-sm">
@@ -1980,6 +2061,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 </div>
               </div>
             </div>
+          )}
+            </>
           )}
 
           {/* Quick Support & Help Card */}

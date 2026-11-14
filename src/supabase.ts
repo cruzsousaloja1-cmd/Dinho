@@ -29,11 +29,14 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   login TEXT,
   senha TEXT NOT NULL,
   tipo TEXT NOT NULL DEFAULT 'passenger',
-  categoria TEXT DEFAULT 'economica',
+  categoria TEXT DEFAULT '',
   placa TEXT DEFAULT '',
   modelo TEXT DEFAULT '',
   ano INTEGER DEFAULT 2023,
+  cor TEXT DEFAULT '',
   cnh TEXT DEFAULT '',
+  cpf TEXT DEFAULT '',
+  bau TEXT DEFAULT '',
   foto TEXT,
   avatar TEXT,
   rating NUMERIC DEFAULT 0.0,
@@ -46,6 +49,9 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
 );
 
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS codigo_usuario TEXT;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS cor TEXT;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS cpf TEXT;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS bau TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
@@ -145,7 +151,10 @@ export interface SupabaseUsuarioRow {
   placa?: string;
   modelo?: string;
   ano?: number;
+  cor?: string;
   cnh?: string;
+  cpf?: string;
+  bau?: string;
   foto?: string;
   avatar?: string;
   rating?: number;
@@ -263,7 +272,10 @@ export async function insertUsuarioSupabase(params: {
   placa?: string;
   modelo?: string;
   ano?: number | string;
+  cor?: string;
   cnh?: string;
+  cpf?: string;
+  bau?: string;
   foto?: string;
   avatar?: string;
   status?: string;
@@ -281,11 +293,14 @@ export async function insertUsuarioSupabase(params: {
       login: (params.login || cleanEmail).trim().toLowerCase(),
       senha: params.senha,
       tipo: params.tipo || 'passenger',
-      categoria: params.categoria || null,
-      placa: params.placa || null,
-      modelo: params.modelo || null,
+      categoria: params.categoria !== undefined ? params.categoria : null,
+      placa: params.placa !== undefined ? params.placa : null,
+      modelo: params.modelo !== undefined ? params.modelo : null,
       ano: params.ano ? String(params.ano) : null,
-      cnh: params.cnh || null,
+      cor: params.cor || null,
+      cnh: params.cnh !== undefined ? params.cnh : null,
+      cpf: params.cpf || null,
+      bau: params.bau || null,
     };
     if (params.codigo_usuario) row.codigo_usuario = params.codigo_usuario;
     const photoValue = params.foto || params.avatar;
@@ -315,7 +330,10 @@ export async function insertUsuarioSupabase(params: {
       'placa',
       'modelo',
       'ano',
+      'cor',
       'cnh',
+      'cpf',
+      'bau',
       'celular',
     ];
 
@@ -421,8 +439,13 @@ export async function updateMotoristaSupabase(
     placa: string;
     modelo: string;
     ano?: number | string;
+    cor?: string;
     cnh: string;
+    cpf?: string;
+    bau?: string;
     tipo?: string;
+    status?: string;
+    plano_ativo?: boolean;
   }
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   const cleanEmail = emailInput.trim().toLowerCase();
@@ -435,28 +458,48 @@ export async function updateMotoristaSupabase(
       cnh: params.cnh,
       tipo: params.tipo || 'driver',
     };
+    if (params.cor !== undefined) updatePayload.cor = params.cor;
+    if (params.cpf !== undefined) updatePayload.cpf = params.cpf;
+    if (params.bau !== undefined) updatePayload.bau = params.bau;
+    if (params.status !== undefined) updatePayload.status = params.status;
+    if (typeof params.plano_ativo === 'boolean') updatePayload.plano_ativo = params.plano_ativo;
 
-    let { data, error } = await supabase
-      .from('usuarios')
-      .update(updatePayload)
-      .eq('e-mail', cleanEmail)
-      .select();
+    const optionalCols = ['cor', 'cpf', 'bau', 'status', 'plano_ativo', 'tipo', 'ano', 'cnh'];
 
-    if (error && error.message?.includes('e-mail')) {
-      const retry = await supabase
+    for (let attempt = 0; attempt < 8; attempt++) {
+      let { data, error } = await supabase
         .from('usuarios')
         .update(updatePayload)
-        .eq('email', cleanEmail)
+        .eq('e-mail', cleanEmail)
         .select();
-      data = retry.data;
-      error = retry.error;
+
+      if (error && error.message?.includes('e-mail')) {
+        const retry = await supabase
+          .from('usuarios')
+          .update(updatePayload)
+          .eq('email', cleanEmail)
+          .select();
+        data = retry.data;
+        error = retry.error;
+      }
+
+      if (!error) {
+        return { success: true, data: data?.[0] };
+      }
+
+      const msg = error.message || '';
+      let removedAny = false;
+      for (const col of optionalCols) {
+        if (col in updatePayload && msg.includes(col)) {
+          delete updatePayload[col];
+          removedAny = true;
+        }
+      }
+      if (removedAny) continue;
+      return { success: false, error: msg };
     }
 
-    if (error) {
-      return { success: false, error: error.message };
-    }
-
-    return { success: true, data: data?.[0] };
+    return { success: false, error: 'Não foi possível atualizar categoria e veículo no Supabase.' };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Falha ao atualizar dados de motorista no Supabase' };
   }
@@ -478,7 +521,10 @@ export async function saveUsuarioSupabase(user: {
   placa?: string;
   modelo?: string;
   ano?: number | string;
+  cor?: string;
   cnh?: string;
+  cpf?: string;
+  bau?: string;
   foto?: string;
   avatar?: string;
   rating?: number;
@@ -501,14 +547,20 @@ export async function saveUsuarioSupabase(user: {
         celular: user.celular || user.whatsapp || existing.celular || '',
         senha: user.senha || existing.senha,
         tipo: user.tipo || existing.tipo || 'passenger',
-        categoria: user.categoria || existing.categoria,
-        placa: user.placa || existing.placa,
-        modelo: user.modelo || existing.modelo,
+        categoria: user.categoria !== undefined ? user.categoria : existing.categoria,
+        placa: user.placa !== undefined ? user.placa : existing.placa,
+        modelo: user.modelo !== undefined ? user.modelo : existing.modelo,
         ano: user.ano ? String(user.ano) : existing.ano,
-        cnh: user.cnh || existing.cnh,
+        cnh: user.cnh !== undefined ? user.cnh : existing.cnh,
       };
+      if (user.cor !== undefined) updateData.cor = user.cor;
+      if (user.cpf !== undefined) updateData.cpf = user.cpf;
+      if (user.bau !== undefined) updateData.bau = user.bau;
       if (user.status) {
         updateData.status = user.status;
+      }
+      if (typeof user.plano_ativo === 'boolean') {
+        updateData.plano_ativo = user.plano_ativo;
       }
       if (typeof user.lat === 'number' && !Number.isNaN(user.lat)) {
         updateData.lat = user.lat;
@@ -521,7 +573,7 @@ export async function saveUsuarioSupabase(user: {
         updateData.foto = user.foto || user.avatar;
       }
 
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 8; attempt++) {
         const { data, error } = await supabase
           .from('usuarios')
           .update(updateData)
@@ -534,7 +586,7 @@ export async function saveUsuarioSupabase(user: {
 
         const msg = error.message || '';
         let removed = false;
-        for (const col of ['avatar', 'foto', 'lat', 'lng', 'status']) {
+        for (const col of ['avatar', 'foto', 'lat', 'lng', 'status', 'cor', 'cpf', 'bau', 'plano_ativo']) {
           if (col in updateData && msg.includes(col)) {
             delete updateData[col];
             removed = true;
@@ -560,10 +612,13 @@ export async function saveUsuarioSupabase(user: {
         placa: user.placa,
         modelo: user.modelo,
         ano: user.ano,
+        cor: user.cor,
         cnh: user.cnh,
+        cpf: user.cpf,
+        bau: user.bau,
         foto: user.foto || user.avatar,
         avatar: user.avatar || user.foto,
-        status: user.status || 'online',
+        status: user.status || 'offline',
         plano_ativo: user.plano_ativo,
         lat: user.lat,
         lng: user.lng,
@@ -754,19 +809,51 @@ export async function getAllUsuariosSupabase(): Promise<any[]> {
   }
 }
 
+export function isDriverCategoryConfiguredRow(u: any): boolean {
+  const rawCat = String(u?.categoria || '').trim().toLowerCase();
+  const hasValidCategory =
+    rawCat !== '' &&
+    rawCat !== 'pendente' &&
+    rawCat !== 'sem_categoria' &&
+    rawCat !== 'null' &&
+    rawCat !== 'undefined';
+  const hasPlate = String(u?.placa || '').trim().length > 0;
+  const hasModel = String(u?.modelo || '').trim().length > 0;
+  return hasValidCategory && hasPlate && hasModel;
+}
+
+export function getWorkCategoryFullTitle(rawCat?: string): string {
+  const norm = normalizeRideCategory(rawCat);
+  if (norm === 'confort') return 'Motorista Confort';
+  if (norm === 'moto_passageiro') return 'Motoboy Passageiro';
+  if (norm === 'moto_entrega') return 'Motoboy Entregas';
+  return 'Motorista Econômico';
+}
+
 export function mapSupabaseRowToDriver(u: any): Driver {
   const email = (u['e-mail'] || u.email || '').trim().toLowerCase();
   const tipoLower = String(u.tipo || '').toLowerCase().trim();
+  const rawCatLower = String(u.categoria || '').toLowerCase().trim();
   const isMoto =
     tipoLower === 'motoboy' ||
     tipoLower === 'motoboy_passageiro' ||
     tipoLower === 'motoboy_entregas' ||
-    String(u.categoria || '').includes('moto');
-  const category = (u.categoria as any) || (isMoto ? 'moto_passageiro' : 'economica');
+    rawCatLower.includes('moto');
+  const categoryConfigured = isDriverCategoryConfiguredRow(u);
+  const category = u.categoria
+    ? normalizeRideCategory(u.categoria)
+    : isMoto
+    ? 'moto_passageiro'
+    : 'economica';
 
   const rawStatus = String(u.status || '').toLowerCase().trim();
-  const driverStatus: Driver['status'] =
-    rawStatus === 'online' ? 'online' : rawStatus === 'in_ride' ? 'in_ride' : 'offline';
+  const driverStatus: Driver['status'] = !categoryConfigured
+    ? 'offline'
+    : rawStatus === 'online'
+    ? 'online'
+    : rawStatus === 'in_ride'
+    ? 'in_ride'
+    : 'offline';
 
   const parsedLat = Number(u.lat ?? u.latitude);
   const parsedLng = Number(u.lng ?? u.longitude);
@@ -783,11 +870,13 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     totalRides: 0,
     vehicleModel: u.modelo || '',
     vehiclePlate: u.placa || '',
-    vehicleColor: '',
+    vehicleColor: u.cor || '',
     vehicleYear: Number(u.ano) || 2023,
-    cpf: '',
+    cpf: u.cpf || '',
     cnh: u.cnh || '',
+    trunkType: u.bau || undefined,
     category,
+    categoryConfigured,
     weeklyPlanActive: Boolean(u.plano_ativo ?? true),
     weeklyPlanPrice: 0,
     status: driverStatus,
@@ -829,7 +918,10 @@ export async function getOnlineDriversFromSupabase(): Promise<Driver[]> {
       .eq('status', 'online');
 
     if (error || !data) return [];
-    return data.filter(isSupabaseDriverRow).map(mapSupabaseRowToDriver);
+    return data
+      .filter(isSupabaseDriverRow)
+      .map(mapSupabaseRowToDriver)
+      .filter((d) => d.status === 'online' && d.categoryConfigured !== false);
   } catch {
     return [];
   }

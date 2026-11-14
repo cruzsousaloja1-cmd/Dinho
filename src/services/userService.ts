@@ -7,6 +7,8 @@ import {
   zerarDadosTesteSupabase,
   supabase,
   mapSupabaseRowToDriver,
+  normalizeRideCategory,
+  getWorkCategoryFullTitle,
 } from '../supabase';
 
 export interface StoredUserAccount {
@@ -83,17 +85,19 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
     String(cloudUser.tipo || '').toUpperCase() === 'ADM' ||
     String(cloudUser.tipo || '').toLowerCase() === 'admin';
 
+  const rawCatNorm = cloudUser.categoria ? normalizeRideCategory(cloudUser.categoria) : null;
   const isMoto =
     !isCloudAdmin &&
     (cloudUser.tipo === 'motoboy' ||
       cloudUser.tipo === 'motoboy_passageiro' ||
       cloudUser.tipo === 'motoboy_entregas' ||
-      cloudUser.categoria === 'moto_passageiro' ||
-      cloudUser.categoria === 'moto_entrega');
+      rawCatNorm === 'moto_passageiro' ||
+      rawCatNorm === 'moto_entrega');
 
   const isDriver =
     !isCloudAdmin &&
     (cloudUser.tipo === 'driver' ||
+      cloudUser.tipo === 'motorista' ||
       cloudUser.tipo === 'motorista_economico' ||
       cloudUser.tipo === 'motorista_confort' ||
       isMoto);
@@ -151,6 +155,12 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     saveSessionUser(currentUserPayload);
   }
 
+  const isConfiguredDriver = Boolean(
+    account.driverData?.categoryConfigured !== false &&
+    account.driverData?.vehiclePlate?.trim() &&
+    account.driverData?.vehicleModel?.trim()
+  );
+
   saveUsuarioSupabase({
     nome: account.name,
     email: cleanEmail,
@@ -159,17 +169,24 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     login: account.login || cleanEmail,
     senha: account.password,
     tipo: account.tipo || (account.role === 'passenger' ? 'passenger' : 'driver'),
-    categoria: account.driverData?.category || 'economica',
+    categoria: account.role === 'passenger' || isAdminAccount
+      ? ''
+      : isConfiguredDriver && account.driverData?.category
+      ? getWorkCategoryFullTitle(account.driverData.category)
+      : '',
     placa: account.placa || account.driverData?.vehiclePlate || '',
     modelo: account.driverData?.vehicleModel || '',
     ano: account.driverData?.vehicleYear || 2023,
+    cor: account.driverData?.vehicleColor || '',
     cnh: account.driverData?.cnh || '',
+    cpf: account.driverData?.cpf || '',
+    bau: account.driverData?.trunkType || '',
     foto: account.avatar || '',
     avatar: account.avatar || '',
     rating: account.rating || 0,
     saldo: account.driverData?.walletBalance || 0,
     plano_ativo: account.driverData?.weeklyPlanActive ?? false,
-    status: account.driverData?.status,
+    status: isConfiguredDriver ? account.driverData?.status : 'offline',
     lat: account.driverData?.lat,
     lng: account.driverData?.lng,
   })

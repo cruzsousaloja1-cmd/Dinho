@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Driver, AppUser, VehicleCategory } from '../types';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { saveSessionUser, verifyUserLogin } from '../services/userService';
+import { saveSessionUser, verifyUserLogin, mapSupabaseRowToAppUser } from '../services/userService';
 import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase } from '../supabase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 
@@ -344,60 +344,17 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
       // Sucesso no Supabase
       const row = cloudRes.data;
-      const userEmail = (row['e-mail'] || row.email || cleanIdentifier).toLowerCase().trim();
-      const rowTipoUpper = String(row.tipo || '').toUpperCase();
-      const isCloudAdmin = rowTipoUpper === 'ADM' || rowTipoUpper === 'ADMIN';
-      const isMoto = !isCloudAdmin && (row.tipo === 'motoboy' || row.categoria?.includes('moto'));
-      const isDriver = !isCloudAdmin && (row.tipo === 'driver' || isMoto || Boolean(row.placa));
-
-      const rowId = row?.id !== undefined && row?.id !== null ? String(row.id) : '';
-      let driverObj: Driver | undefined = undefined;
-      if (isDriver) {
-        driverObj = {
-          id: rowId,
-          name: row.nome,
-          email: userEmail,
-          phone: row.celular || '',
-          avatar: regAvatar || row.foto || row.avatar || '',
-          rating: typeof row.rating === 'number' ? row.rating : 0,
-          totalRides: 0,
-          vehicleModel: row.modelo || '',
-          vehiclePlate: row.placa || '',
-          vehicleColor: '',
-          vehicleYear: parseInt(row.ano, 10) || 2023,
-          cpf: '',
-          cnh: row.cnh || '',
-          category: (row.categoria as any) || (isMoto ? 'moto_passageiro' : 'economica'),
-          weeklyPlanActive: true,
-          weeklyPlanPrice: 0,
-          status: 'online',
-          earningsToday: 0,
-          earningsWeek: 0,
-          walletBalance: Number(row.saldo || 0),
-          cnhVerified: Boolean(row.cnh),
-          vehicleVerified: Boolean(row.placa),
-          criminalRecordClear: true,
-          lat: -23.0842,
-          lng: -47.2118,
-          registrationDate: row.created_at || new Date().toISOString(),
-        };
-      }
-
+      const { user: mappedUser, driver: mappedDriver } = mapSupabaseRowToAppUser(row);
       const userPayload: AppUser = {
-        id: rowId,
-        name: row.nome,
-        email: userEmail,
-        phone: row.celular || '',
-        whatsapp: row.whatsapp || row.celular || '',
-        login: row.login || userEmail.split('@')[0],
-        role: isCloudAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger',
-        tipo: isCloudAdmin ? 'ADM' : isMoto ? 'motoboy_passageiro' : isDriver ? 'motorista_economico' : 'passenger',
-        isAdmin: isCloudAdmin || undefined,
-        placa: row.placa || '',
-        avatar: regAvatar || row.foto || row.avatar || undefined,
-        rating: typeof row.rating === 'number' ? row.rating : 0,
-        driverData: driverObj,
+        ...mappedUser,
+        avatar: regAvatar || mappedUser.avatar || undefined,
       };
+      const driverObj: Driver | undefined = mappedDriver
+        ? {
+            ...mappedDriver,
+            avatar: regAvatar || mappedDriver.avatar || '',
+          }
+        : undefined;
       saveSessionUser(userPayload);
 
       setLoginSuccessMessage('Acesso autorizado!');
@@ -459,10 +416,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const isMotoboyRole = regRole === 'motoboy';
       const chosenAvatar = regAvatar;
 
-      // Criação dos dados do condutor caso seja motorista/motoboy (id será preenchido com o id numérico retornado pelo Supabase)
+      // Criação dos dados iniciais do condutor (sem categoria escolhida ainda: permanece OFFLINE até escolher categoria no app)
       let newDriverObj: Driver | undefined = undefined;
       if (isDriverRole || isMotoboyRole) {
-        const category: VehicleCategory = isMotoboyRole ? 'moto_passageiro' : 'economica';
+        const defaultVisualCategory: VehicleCategory = isMotoboyRole ? 'moto_passageiro' : 'economica';
 
         newDriverObj = {
           id: '',
@@ -479,16 +436,17 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           vehiclePhoto: '',
           cpf: '',
           cnh: '',
-          category,
-          weeklyPlanActive: true,
+          category: defaultVisualCategory,
+          categoryConfigured: false,
+          weeklyPlanActive: false,
           weeklyPlanPrice: 0,
           weeklyPlanExpiresAt: null,
           weeklyFeeExpiresAt: null,
-          status: 'online',
+          status: 'offline',
           earningsToday: 0,
           earningsWeek: 0,
-          cnhVerified: true,
-          vehicleVerified: true,
+          cnhVerified: false,
+          vehicleVerified: false,
           criminalRecordClear: true,
           lat: -23.0842,
           lng: -47.2118,
@@ -497,6 +455,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       }
 
       // INSERT DIRETO NA TABELA "usuarios" NO SUPABASE SEM MANDAR `id` (auto-incremento bigint)
+      // Motorista/Motoboy inicia sem categoria escolhida e status = 'offline' até configurar dentro do app
       const supabaseRes = await insertUsuarioSupabase({
         nome: cleanName,
         email: cleanEmail,
@@ -505,15 +464,15 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         login: cleanLogin,
         senha: regPassword,
         tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
-        categoria: newDriverObj?.category,
-        placa: newDriverObj?.vehiclePlate,
-        modelo: newDriverObj?.vehicleModel,
-        ano: newDriverObj?.vehicleYear,
-        cnh: newDriverObj?.cnh,
+        categoria: '',
+        placa: '',
+        modelo: '',
+        ano: 2023,
+        cnh: '',
         foto: chosenAvatar || undefined,
         avatar: chosenAvatar || undefined,
-        status: 'online',
-        plano_ativo: true,
+        status: isPassengerRole ? 'online' : 'offline',
+        plano_ativo: false,
       });
 
       if (!supabaseRes.success) {
@@ -541,8 +500,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         whatsapp: cleanWhatsApp,
         login: cleanLogin,
         role: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
-        tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy_passageiro' : 'motorista_economico',
-        placa: newDriverObj?.vehiclePlate || '',
+        tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
+        placa: '',
         avatar: chosenAvatar,
         rating: 0,
         password: regPassword,

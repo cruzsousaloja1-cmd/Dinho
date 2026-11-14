@@ -70,7 +70,8 @@ import {
   updateDriverOnlineStatusSupabase,
   getAllPassengersFromSupabase,
   subscribeToCorridasRealtime,
-  purgeLegacyTestLocalStorage
+  purgeLegacyTestLocalStorage,
+  normalizeRideCategory
 } from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
 
@@ -165,16 +166,22 @@ export default function App() {
           hydratedUser.tipo === 'motoboy_entregas';
 
         if (isDriverOrMotoboy && hydratedDriver) {
+          const isConfigured =
+            hydratedDriver.categoryConfigured !== false &&
+            Boolean(hydratedDriver.vehiclePlate?.trim() && hydratedDriver.vehicleModel?.trim());
           const currentBalance = getDriverBalance(hydratedDriver.id, hydratedDriver.walletBalance || 0);
           const updatedMatched: Driver = {
             ...hydratedDriver,
+            categoryConfigured: isConfigured,
             walletBalance: currentBalance,
             weeklyPlanActive: true,
-            status: 'online',
+            status: isConfigured && hydratedDriver.status === 'online' ? 'online' : 'offline',
           };
           setCurrentDriver(updatedMatched);
           setActiveTab('driver_portal');
-          captureAndSyncDriverGps(updatedMatched, 'online');
+          if (isConfigured && updatedMatched.status === 'online') {
+            captureAndSyncDriverGps(updatedMatched, 'online');
+          }
         } else {
           setActiveTab('rides');
         }
@@ -744,54 +751,98 @@ export default function App() {
 
   // Driver register / updates (100% Supabase)
   const handleRegisterDriver = (newDriver: Driver) => {
-    setDrivers((prev) => [newDriver, ...prev.filter((d) => d.id !== newDriver.id)]);
-    setCurrentDriver(newDriver);
+    const isConfigured =
+      newDriver.categoryConfigured !== false &&
+      Boolean(newDriver.vehiclePlate?.trim() && newDriver.vehicleModel?.trim());
+    const normalizedDriver: Driver = {
+      ...newDriver,
+      categoryConfigured: isConfigured,
+      status: isConfigured ? newDriver.status : 'offline',
+    };
+    setDrivers((prev) => [normalizedDriver, ...prev.filter((d) => d.id !== normalizedDriver.id)]);
+    setCurrentDriver(normalizedDriver);
+
+    const isMoto =
+      normalizedDriver.category === 'moto_passageiro' ||
+      normalizedDriver.category === 'moto_entrega';
+    const userTipo = !isConfigured
+      ? isMoto
+        ? 'motoboy'
+        : 'driver'
+      : normalizedDriver.category === 'economica'
+      ? 'motorista_economico'
+      : normalizedDriver.category === 'confort'
+      ? 'motorista_confort'
+      : normalizedDriver.category === 'moto_passageiro'
+      ? 'motoboy_passageiro'
+      : 'motoboy_entregas';
 
     // Sincroniza a conta isolada no Supabase
     saveUserAccount({
-      id: newDriver.id,
-      name: newDriver.name,
-      email: newDriver.email,
-      phone: newDriver.phone,
-      password: newDriver.password,
-      role: (newDriver.category === 'moto_passageiro' || newDriver.category === 'moto_entrega') ? 'motoboy' : 'driver',
-      tipo: newDriver.category === 'economica' ? 'motorista_economico' :
-            newDriver.category === 'confort' ? 'motorista_confort' :
-            newDriver.category === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas',
-      placa: newDriver.vehiclePlate,
-      avatar: newDriver.avatar,
-      rating: newDriver.rating,
-      driverData: newDriver,
+      id: normalizedDriver.id,
+      name: normalizedDriver.name,
+      email: normalizedDriver.email,
+      phone: normalizedDriver.phone,
+      password: normalizedDriver.password,
+      role: isMoto ? 'motoboy' : 'driver',
+      tipo: userTipo,
+      placa: normalizedDriver.vehiclePlate,
+      avatar: normalizedDriver.avatar,
+      rating: normalizedDriver.rating,
+      driverData: normalizedDriver,
       createdAt: new Date().toISOString(),
     });
 
     triggerPush(
-      '🎉 Bem-vindo à RACE!',
-      `Cadastro de ${newDriver.name} concluído com sucesso! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.`,
-      'financial'
+      isConfigured ? '🎉 Bem-vindo à RACE!' : 'Escolha sua categoria no app',
+      isConfigured
+        ? `Cadastro de ${normalizedDriver.name} concluído com sucesso! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade.`
+        : `Olá ${normalizedDriver.name}! Escolha sua categoria e informe os dados do veículo para liberar o botão verde ONLINE.`,
+      isConfigured ? 'financial' : 'system'
     );
   };
 
   const handleUpdateDriver = (updated: Driver) => {
-    setCurrentDriver(updated);
-    setDrivers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+    const isConfigured =
+      updated.categoryConfigured !== false &&
+      Boolean(updated.vehiclePlate?.trim() && updated.vehicleModel?.trim());
+    const safeUpdated: Driver = {
+      ...updated,
+      categoryConfigured: isConfigured,
+      status: isConfigured ? updated.status : 'offline',
+    };
+    setCurrentDriver(safeUpdated);
+    setDrivers((prev) => [safeUpdated, ...prev.filter((d) => d.id !== safeUpdated.id)]);
 
-    if (updated.email) {
+    if (safeUpdated.email) {
+      const isMoto =
+        safeUpdated.category === 'moto_passageiro' ||
+        safeUpdated.category === 'moto_entrega';
+      const userTipo = !isConfigured
+        ? isMoto
+          ? 'motoboy'
+          : 'driver'
+        : safeUpdated.category === 'economica'
+        ? 'motorista_economico'
+        : safeUpdated.category === 'confort'
+        ? 'motorista_confort'
+        : safeUpdated.category === 'moto_passageiro'
+        ? 'motoboy_passageiro'
+        : 'motoboy_entregas';
+
       saveUserAccount({
-        id: updated.id,
-        name: updated.name,
-        email: updated.email,
-        phone: updated.phone,
-        password: updated.password,
-        role: (updated.category === 'moto_passageiro' || updated.category === 'moto_entrega') ? 'motoboy' : 'driver',
-        tipo: updated.category === 'economica' ? 'motorista_economico' :
-              updated.category === 'confort' ? 'motorista_confort' :
-              updated.category === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas',
-        placa: updated.vehiclePlate,
-        avatar: updated.avatar,
-        rating: updated.rating,
-        driverData: updated,
-        createdAt: updated.registrationDate || new Date().toISOString(),
+        id: safeUpdated.id,
+        name: safeUpdated.name,
+        email: safeUpdated.email,
+        phone: safeUpdated.phone,
+        password: safeUpdated.password,
+        role: isMoto ? 'motoboy' : 'driver',
+        tipo: userTipo,
+        placa: safeUpdated.vehiclePlate,
+        avatar: safeUpdated.avatar,
+        rating: safeUpdated.rating,
+        driverData: safeUpdated,
+        createdAt: safeUpdated.registrationDate || new Date().toISOString(),
       }, false);
     }
   };
@@ -976,10 +1027,19 @@ export default function App() {
     setCurrentUser(user);
     saveSessionUser(user);
     if (driver) {
-      const onlineDrv: Driver = { ...driver, status: 'online' };
-      setDrivers((prev) => [onlineDrv, ...prev.filter((d) => d.id !== onlineDrv.id)]);
-      setCurrentDriver(onlineDrv);
-      captureAndSyncDriverGps(onlineDrv, 'online');
+      const isConfigured =
+        driver.categoryConfigured !== false &&
+        Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim());
+      const nextDrv: Driver = {
+        ...driver,
+        categoryConfigured: isConfigured,
+        status: isConfigured ? 'online' : 'offline',
+      };
+      setDrivers((prev) => [nextDrv, ...prev.filter((d) => d.id !== nextDrv.id)]);
+      setCurrentDriver(nextDrv);
+      if (isConfigured) {
+        captureAndSyncDriverGps(nextDrv, 'online');
+      }
     }
     const isAdminUser = user.role === 'admin' || user.isAdmin || user.email?.toLowerCase() === ADMIN_EMAIL;
     const isDriverUser =
@@ -1021,10 +1081,10 @@ export default function App() {
 
   const unreadNotifsCount = notifications.filter((n) => !n.read).length;
 
-  // Reusable real-time GPS map component instance (SOMENTE motoristas ONLINE do Supabase)
+  // Reusable real-time GPS map component instance (SOMENTE motoristas ONLINE com categoria configurada)
   const mapElement = (
     <MapRealtime
-      drivers={drivers.filter((d) => d.status === 'online')}
+      drivers={drivers.filter((d) => d.status === 'online' && d.categoryConfigured !== false)}
       pickup={pickup}
       destination={destination}
       activeDriver={activeRide?.driver || null}
@@ -1071,19 +1131,27 @@ export default function App() {
             user.tipo === 'motoboy_entregas';
 
           if (isDriverOrMotoboy && driver) {
+            const isConfigured =
+              driver.categoryConfigured !== false &&
+              Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim());
             const currentBal = getDriverBalance(driver.id, driver.walletBalance || 0);
-            const driverWithBal: Driver = { 
-              ...driver, 
+            const driverWithBal: Driver = {
+              ...driver,
+              categoryConfigured: isConfigured,
               walletBalance: currentBal,
-              weeklyPlanActive: true,
-              status: 'online' 
+              weeklyPlanActive: isConfigured,
+              status: isConfigured && driver.status === 'online' ? 'online' : 'offline',
             };
             setCurrentDriver(driverWithBal);
-            handleUpdateDriver(driverWithBal);
-            captureAndSyncDriverGps(driverWithBal, 'online');
+            setDrivers((prev) => [driverWithBal, ...prev.filter((d) => d.id !== driverWithBal.id)]);
+            if (isConfigured && driverWithBal.status === 'online') {
+              captureAndSyncDriverGps(driverWithBal, 'online');
+            }
             setActiveTab('driver_portal');
             setLoginSuccessBanner(
-              `Bem-vindo(a), ${driver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
+              isConfigured
+                ? `Bem-vindo(a), ${driver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
+                : `Bem-vindo(a), ${driver.name}! Escolha sua categoria abaixo e preencha os dados do veículo para liberar o botão verde ONLINE.`
             );
           } else {
             // Passageiro: vai direto para tela de pedir corrida com mapa
@@ -1236,9 +1304,18 @@ export default function App() {
               onLoginDriverSuccess={(user, driver) => {
                 setCurrentUser(user);
                 if (driver) {
-                  const onlineDrv: Driver = { ...driver, status: 'online' };
-                  setCurrentDriver(onlineDrv);
-                  captureAndSyncDriverGps(onlineDrv, 'online');
+                  const isConfigured =
+                    driver.categoryConfigured !== false &&
+                    Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim());
+                  const nextDrv: Driver = {
+                    ...driver,
+                    categoryConfigured: isConfigured,
+                    status: isConfigured ? 'online' : 'offline',
+                  };
+                  setCurrentDriver(nextDrv);
+                  if (isConfigured) {
+                    captureAndSyncDriverGps(nextDrv, 'online');
+                  }
                 }
                 saveSessionUser(user);
                 setLoginSuccessBanner(
@@ -1445,16 +1522,10 @@ export default function App() {
         (activeRide.paymentStatus === 'paid' ||
           activeRide.paymentMethod === 'money' ||
           activeRide.paymentMethod === 'dinheiro') && (() => {
-          const isMotoRide =
-            activeRide.category === 'moto_passageiro' ||
-            activeRide.category === 'moto_entrega';
+          const targetRideCat = normalizeRideCategory(activeRide.category);
           const matchingOnlineDrivers = drivers.filter((d) => {
-            if (d.status !== 'online') return false;
-            const drvIsMoto =
-              d.category === 'moto_passageiro' ||
-              d.category === 'moto_entrega' ||
-              d.category.includes('moto');
-            return isMotoRide ? drvIsMoto : !drvIsMoto;
+            if (d.status !== 'online' || d.categoryConfigured === false) return false;
+            return normalizeRideCategory(d.category) === targetRideCat;
           });
           return (
             <FullMapView

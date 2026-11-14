@@ -20,12 +20,14 @@ import {
   CheckSquare,
   Square,
   Award,
-  Clock
+  Clock,
+  Lock,
+  Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { RACE_PIX_KEY, RACE_PIX_BANK, RACE_PIX_NAME, WEEKLY_FEE } from '../config/pricing';
 import { saveUserAccount } from '../services/userService';
-import { updateMotoristaSupabase } from '../supabase';
+import { updateMotoristaSupabase, saveUsuarioSupabase } from '../supabase';
 
 export type WorkCategoryKey = 
   | 'motorista_economico' 
@@ -235,15 +237,18 @@ const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
 interface DriverWorkSelectionViewProps {
   currentUser: AppUser;
   onCompleteDriverRegister: (driver: Driver) => void;
-  onBackToRides: () => void;
+  onBackToRides?: () => void;
   onRenewWeeklyPlan?: (driver?: Driver) => void;
+  isMandatorySetup?: boolean;
+  hideLockedOnlineButton?: boolean;
 }
 
 export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = ({
   currentUser,
   onCompleteDriverRegister,
   onBackToRides,
-  onRenewWeeklyPlan,
+  isMandatorySetup = false,
+  hideLockedOnlineButton = false,
 }) => {
   const [stage, setStage] = useState<'select_category' | 'fill_details'>('select_category');
   const [selectedKey, setSelectedKey] = useState<WorkCategoryKey>('motorista_economico');
@@ -251,233 +256,303 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   // Estado para expandir detalhes de exigências nos cards
   const [expandedCardKey, setExpandedCardKey] = useState<WorkCategoryKey | null>(null);
 
-  // Form de detalhes operacionais do motorista
-  const [plate, setPlate] = useState('');
-  const [model, setModel] = useState('');
-  const [year, setYear] = useState('');
-  const [cnh, setCnh] = useState('');
-  const [cpf, setCpf] = useState('');
-  const [pixKey, setPixKey] = useState('');
-  const [trunkType, setTrunkType] = useState('Baú 80 Litros');
-  const [color, setColor] = useState('');
+  // Form de detalhes operacionais do motorista / motoboy
+  const [plate, setPlate] = useState(currentUser.driverData?.vehiclePlate || '');
+  const [model, setModel] = useState(currentUser.driverData?.vehicleModel || '');
+  const [year, setYear] = useState(
+    currentUser.driverData?.vehicleYear ? String(currentUser.driverData.vehicleYear) : ''
+  );
+  const [cnh, setCnh] = useState(currentUser.driverData?.cnh || '');
+  const [cpf, setCpf] = useState(currentUser.driverData?.cpf || '');
+  const [pixKey, setPixKey] = useState(currentUser.driverData?.pixKey || '');
+  const [trunkType, setTrunkType] = useState(
+    currentUser.driverData?.trunkType || 'Baú 80 Litros'
+  );
+  const [color, setColor] = useState(currentUser.driverData?.vehicleColor || '');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Checklist de confirmação de exigências para autorizar o cadastro
-  const [checkCnhEar, setCheckCnhEar] = useState(false);
-  const [checkVehicleReq, setCheckVehicleReq] = useState(false);
-  const [checkSafetyEquipment, setCheckSafetyEquipment] = useState(false);
-  const [checkWeeklyFeeAwareness, setCheckWeeklyFeeAwareness] = useState(false);
-
-  // Estado da tela de pagamento PIX
-  const [copiedPix, setCopiedPix] = useState(false);
-  const [createdDriver, setCreatedDriver] = useState<Driver | null>(null);
+  // Checklist de conformidade (pré-marcado opcional ou fácil confirmação)
+  const [checkCompliance, setCheckCompliance] = useState(true);
 
   const selectedCategory = WORK_CATEGORIES[selectedKey];
 
   const handleSelectCategory = (key: WorkCategoryKey) => {
     setSelectedKey(key);
     const cat = WORK_CATEGORIES[key];
-    setModel(cat.defaultModel);
+    setModel('');
     setYear(cat.defaultYear);
+    if (key === 'motoboy_passageiro') {
+      setTrunkType('Sem baú (Transporte de Passageiro)');
+    } else if (key === 'motoboy_entregas') {
+      setTrunkType('Baú 80 Litros');
+    }
     setErrorMessage(null);
-    setCheckCnhEar(false);
-    setCheckVehicleReq(false);
-    setCheckSafetyEquipment(false);
-    setCheckWeeklyFeeAwareness(false);
+    setCheckCompliance(true);
     setStage('fill_details');
-  };
-
-  const handleCopyPixKey = () => {
-    try {
-      navigator.clipboard.writeText(RACE_PIX_KEY);
-      setCopiedPix(true);
-      setTimeout(() => setCopiedPix(false), 2500);
-    } catch {}
   };
 
   const handleSubmitDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
+    const isCarCategory = selectedCategory.role === 'driver';
     const cleanPlate = plate.trim().toUpperCase();
     const cleanModel = model.trim();
     const cleanCnh = cnh.trim();
-    const yearNum = parseInt(year, 10) || 2021;
+    const cleanColor = color.trim();
+    const cleanCpf = cpf.trim();
+    const cleanBau = isCarCategory ? '' : trunkType.trim();
+    const yearNum = parseInt(year, 10) || 2022;
 
-    if (!cleanPlate || !cleanModel || !cleanCnh) {
-      setErrorMessage('Por favor, preencha todos os campos obrigatórios (*).');
+    if (isCarCategory) {
+      if (!cleanPlate || !cleanModel || !year.trim() || !cleanColor || !cleanCnh || !cleanCpf) {
+        setErrorMessage('Preencha todos os campos obrigatórios: Placa, Modelo, Ano, Cor, CNH e CPF.');
+        return;
+      }
+      if (selectedCategory.key === 'motorista_confort' && yearNum < 2020) {
+        setErrorMessage('A categoria Motorista Confort exige veículo ano 2020 ou superior.');
+        return;
+      }
+    } else {
+      if (!cleanPlate || !cleanModel || !year.trim() || !cleanCnh || !cleanBau) {
+        setErrorMessage('Preencha todos os campos obrigatórios: Placa moto, Modelo moto, Ano, CNH A e Baú.');
+        return;
+      }
+    }
+
+    if (!checkCompliance) {
+      setErrorMessage('Confirme a declaração de conformidade abaixo para liberar seu botão ONLINE.');
       return;
     }
 
-    // Validação especial de ano para Confort (2020+)
-    if (selectedCategory.key === 'motorista_confort' && yearNum < 2020) {
-      setErrorMessage('A categoria Motorista Confort exige exclusivamente veículos ano 2020 ou mais novos. Verifique o ano do veículo para autorizar.');
-      return;
-    }
-
-    // Validação obrigatória dos 4 checkboxes de conformidade e autorização
-    if (!checkCnhEar || !checkVehicleReq || !checkSafetyEquipment || !checkWeeklyFeeAwareness) {
-      setErrorMessage('Para autorizar o cadastro, é obrigatório ler e confirmar todos os 4 requisitos e declarações de conformidade abaixo.');
-      return;
-    }
-
-    const newDriver: Driver = {
-      id: '',
-      name: currentUser.name,
-      avatar: currentUser.avatar || '',
-      phone: currentUser.phone,
-      email: currentUser.email,
-      password: currentUser.password || '',
-      cpf: cpf.trim(),
-      cnh: `${cleanCnh} (EAR Ativo)`,
-      category: selectedCategory.vehicleCategory,
-      vehicleModel: cleanModel,
-      vehiclePlate: cleanPlate,
-      vehicleColor: color,
-      vehicleYear: yearNum,
-      rating: 0,
-      totalRides: 0,
-      status: 'online', // Ativado diretamente
-      lat: -23.0903,
-      lng: -47.2180,
-      weeklyPlanActive: true,
-      weeklyFeePaidAt: new Date().toISOString(),
-      weeklyFeeExpiresAt: null,
-      weeklyPlanExpiresAt: null,
-      weeklyPlanPrice: 0,
-      pixKey: pixKey.trim() || cpf.trim() || currentUser.phone,
-      trunkType: selectedCategory.hasTrunkType ? trunkType : undefined,
-      earningsToday: 0,
-      earningsWeek: 0,
-      cnhVerified: true,
-      vehicleVerified: true,
-      criminalRecordClear: true,
-      registrationDate: new Date().toISOString().split('T')[0],
-      comfortEligible: selectedCategory.key === 'motorista_confort',
-      comfortEligibilityReason: selectedCategory.key === 'motorista_confort' ? 'Aprovado para Confort (2020+)' : undefined,
-    };
-
-    // Salvar que aquele usuário agora também é motorista daquela categoria
-    const updatedAccount = {
-      id: currentUser.id,
-      name: currentUser.name,
-      email: currentUser.email,
-      phone: currentUser.phone,
-      password: currentUser.password,
-      role: selectedCategory.role,
-      tipo: selectedCategory.userTipo,
-      placa: cleanPlate,
-      avatar: newDriver.avatar,
-      rating: 0,
-      driverData: newDriver,
-      createdAt: new Date().toISOString(),
-    };
-
-    saveUserAccount(updatedAccount, true);
-    setCreatedDriver(newDriver);
-
-    // Atualiza diretamente no Supabase na tabela usuarios
+    setIsSaving(true);
     try {
-      await updateMotoristaSupabase(currentUser.email, {
-        categoria: selectedCategory.vehicleCategory,
+      const existingDriver = currentUser.driverData;
+      const newDriver: Driver = {
+        ...(existingDriver || {}),
+        id: existingDriver?.id || currentUser.id || '',
+        name: currentUser.name,
+        avatar: currentUser.avatar || existingDriver?.avatar || '',
+        phone: currentUser.phone,
+        email: currentUser.email,
+        password: currentUser.password || '',
+        cpf: cleanCpf,
+        cnh: cleanCnh,
+        category: selectedCategory.vehicleCategory,
+        categoryConfigured: true,
+        vehicleModel: cleanModel,
+        vehiclePlate: cleanPlate,
+        vehicleColor: cleanColor,
+        vehicleYear: yearNum,
+        rating: existingDriver?.rating || currentUser.rating || 0,
+        totalRides: existingDriver?.totalRides || 0,
+        status: 'offline', // Categoria escolhida -> libera o botão ONLINE verde no painel do motorista
+        lat: existingDriver?.lat || -23.0903,
+        lng: existingDriver?.lng || -47.2180,
+        weeklyPlanActive: true,
+        weeklyFeePaidAt: existingDriver?.weeklyFeePaidAt || new Date().toISOString(),
+        weeklyFeeExpiresAt: null,
+        weeklyPlanExpiresAt: null,
+        weeklyPlanPrice: 0,
+        pixKey: pixKey.trim() || cleanCpf || currentUser.phone,
+        trunkType: isCarCategory ? undefined : cleanBau,
+        earningsToday: existingDriver?.earningsToday || 0,
+        earningsWeek: existingDriver?.earningsWeek || 0,
+        walletBalance: existingDriver?.walletBalance || 0,
+        cnhVerified: true,
+        vehicleVerified: true,
+        criminalRecordClear: true,
+        registrationDate: existingDriver?.registrationDate || new Date().toISOString().split('T')[0],
+        comfortEligible: selectedCategory.key === 'motorista_confort',
+        comfortEligibilityReason: selectedCategory.key === 'motorista_confort' ? 'Aprovado para Confort (2020+)' : undefined,
+      };
+
+      const updatedAccount = {
+        id: currentUser.id,
+        name: currentUser.name,
+        email: currentUser.email,
+        phone: currentUser.phone,
+        whatsapp: currentUser.whatsapp || currentUser.phone,
+        login: currentUser.login || currentUser.email,
+        password: currentUser.password,
+        role: selectedCategory.role,
+        tipo: selectedCategory.userTipo,
+        placa: cleanPlate,
+        avatar: newDriver.avatar,
+        rating: newDriver.rating,
+        driverData: newDriver,
+        createdAt: new Date().toISOString(),
+      };
+
+      saveUserAccount(updatedAccount, true);
+
+      // Salva categoria exata no Supabase na tabela public.usuarios (ex: categoria = 'Motorista Confort')
+      const updRes = await updateMotoristaSupabase(currentUser.email, {
+        categoria: selectedCategory.title,
         placa: cleanPlate,
         modelo: cleanModel,
         ano: yearNum,
-        cnh: `${cleanCnh} (EAR Ativo)`,
-        tipo: selectedCategory.role,
-      });
-    } catch (supaErr) {
-      console.warn('Aviso ao sincronizar no Supabase:', supaErr);
+        cor: cleanColor,
+        cnh: cleanCnh,
+        cpf: cleanCpf,
+        bau: cleanBau,
+        tipo: selectedCategory.userTipo,
+        status: 'offline',
+        plano_ativo: true,
+      }).catch(() => ({ success: false, data: null }));
+
+      if (!updRes.success || !updRes.data) {
+        await saveUsuarioSupabase({
+          nome: currentUser.name,
+          email: currentUser.email,
+          celular: currentUser.phone,
+          whatsapp: currentUser.whatsapp || currentUser.phone,
+          login: currentUser.login || currentUser.email,
+          senha: currentUser.password || '123456',
+          tipo: selectedCategory.userTipo,
+          categoria: selectedCategory.title,
+          placa: cleanPlate,
+          modelo: cleanModel,
+          ano: yearNum,
+          cor: cleanColor,
+          cnh: cleanCnh,
+          cpf: cleanCpf,
+          bau: cleanBau,
+          foto: newDriver.avatar,
+          avatar: newDriver.avatar,
+          plano_ativo: true,
+          status: 'offline',
+        }).catch(() => {});
+      }
+
+      try {
+        confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+      } catch {}
+
+      onCompleteDriverRegister(newDriver);
+    } finally {
+      setIsSaving(false);
     }
-
-    try {
-      confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-    } catch {}
-
-    // Conclui cadastro e libera acesso imediato como motorista online (85% para você, 15% Race)
-    onCompleteDriverRegister(newDriver);
   };
 
-  // ESTÁGIO 1: SELECIONAR COMO QUER TRABALHAR NO RACE COM TODAS AS EXIGÊNCIAS VISÍVEIS
+  // ESTÁGIO 1: ESCOLHA OBRIGATÓRIA DE CATEGORIA DENTRO DO APP ANTES DE FICAR ONLINE
   if (stage === 'select_category') {
     return (
-      <div className="space-y-6 max-w-2xl mx-auto py-2 animate-fade-in">
-        {/* Topo com navegação */}
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-          <button
-            type="button"
-            onClick={onBackToRides}
-            className="text-slate-600 hover:text-slate-900 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Voltar para Corridas (Passageiro)</span>
-          </button>
+      <div className="space-y-5 max-w-2xl mx-auto py-2 animate-fade-in">
+        {/* Topo com navegação (se não for bloqueio obrigatório, permite voltar) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+          {!isMandatorySetup && onBackToRides ? (
+            <button
+              type="button"
+              onClick={onBackToRides}
+              className="text-slate-600 hover:text-slate-900 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar</span>
+            </button>
+          ) : (
+            <span className="text-xs font-mono font-black text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-300">
+              PASSO OBRIGATÓRIO ANTES DE FICAR ONLINE
+            </span>
+          )}
           <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-            Você fica com 85% • Race 15% • Sem mensalidade
+            85% para Você • 15% Race • Sem mensalidade
           </span>
         </div>
 
-        {/* Título e orientações */}
-        <div className="text-center space-y-1.5">
-          <h2 className="text-2xl sm:text-3xl font-heading font-black text-slate-950 tracking-tight">
-            Quero trabalhar no Race
+        {/* Título obrigatório solicitado */}
+        <div className="text-center space-y-2 bg-zinc-950 text-white rounded-3xl p-5 sm:p-6 border-2 border-[#ff6a00] shadow-xl">
+          <h2 className="text-xl sm:text-2xl font-heading font-black text-white tracking-tight">
+            Escolha como quer trabalhar para receber corridas
           </h2>
-          <p className="text-xs sm:text-sm text-slate-600 font-medium max-w-lg mx-auto">
-            Escolha uma das 4 opções abaixo. Confira as exigências de condutor e veículo para autorizar o seu credenciamento oficial em Indaiatuba:
+          <p className="text-xs sm:text-sm text-zinc-300 font-medium max-w-lg mx-auto">
+            Selecione uma das 4 categorias abaixo e informe os dados do seu veículo para liberar o botão verde ONLINE e começar a receber chamados da sua categoria.
           </p>
+
+          {!hideLockedOnlineButton && (
+            <div className="pt-2">
+              <button
+                type="button"
+                disabled
+                className="w-full py-3.5 px-5 rounded-2xl bg-slate-600 text-slate-200 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed border border-slate-500 opacity-90"
+              >
+                <Lock className="w-4 h-4 shrink-0" />
+                <span>Escolha sua categoria para ficar ONLINE</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Lista com os 4 Cards com Exigências Completas */}
-        <div className="grid grid-cols-1 gap-4">
+        {/* 4 Botões Obrigatórios de Categoria */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {(Object.keys(WORK_CATEGORIES) as WorkCategoryKey[]).map((catKey) => {
+            const cat = WORK_CATEGORIES[catKey];
+            return (
+              <button
+                key={cat.key}
+                type="button"
+                onClick={() => handleSelectCategory(catKey)}
+                className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-center justify-between gap-3 shadow-sm hover:shadow-md active:scale-[0.99] ${
+                  catKey === 'motorista_confort'
+                    ? 'border-[#ff6a00]/60 hover:border-[#ff6a00] bg-[#fffaf5]'
+                    : catKey === 'motoboy_passageiro'
+                    ? 'border-cyan-400 hover:border-cyan-600 bg-[#f7fdff]'
+                    : catKey === 'motoboy_entregas'
+                    ? 'border-amber-400 hover:border-amber-600 bg-[#fffdf7]'
+                    : 'border-slate-300 hover:border-slate-900 bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-xs">
+                    {cat.icon}
+                  </div>
+                  <div>
+                    <span className="font-heading font-black text-slate-950 text-base block">
+                      {cat.title}
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-600 block">
+                      {cat.pricePerKm} • {cat.role === 'driver' ? 'Carro' : 'Moto'}
+                    </span>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-slate-700 shrink-0" />
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Lista detalhada com Exigências de cada categoria */}
+        <div className="grid grid-cols-1 gap-3">
           {(Object.keys(WORK_CATEGORIES) as WorkCategoryKey[]).map((catKey) => {
             const cat = WORK_CATEGORIES[catKey];
             const isExpanded = expandedCardKey === catKey;
 
             return (
               <div
-                key={cat.key}
-                className={`bg-white border-2 rounded-3xl p-5 transition-all shadow-sm ${
-                  catKey === 'motorista_confort'
-                    ? 'border-[#ff6a00]/40 hover:border-[#ff6a00] bg-[#fffaf5]'
-                    : catKey === 'motoboy_passageiro'
-                    ? 'border-cyan-300 hover:border-cyan-500 bg-[#f7fdff]'
-                    : catKey === 'motoboy_entregas'
-                    ? 'border-amber-300 hover:border-amber-500 bg-[#fffdf7]'
-                    : 'border-slate-300 hover:border-slate-800'
-                }`}
+                key={`info-${cat.key}`}
+                className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs"
               >
-                {/* Cabeçalho do Card */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-xs">
-                      {cat.icon}
-                    </div>
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                          {cat.title}
-                        </h3>
-                        <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-slate-900 text-white">
-                          {cat.pricePerKm}
-                        </span>
-                      </div>
-                      <p className="text-xs sm:text-sm text-slate-700 font-medium mt-0.5">
-                        {cat.subtitle}
-                      </p>
-                    </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-heading font-black text-slate-900 text-sm">
+                      {cat.title} — {cat.subtitle}
+                    </h3>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectCategory(catKey)}
+                    className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-[#ff6a00] text-white font-heading font-black text-xs transition-all cursor-pointer shrink-0"
+                  >
+                    Escolher
+                  </button>
                 </div>
 
                 {/* Destaques das Exigências Obrigatórias */}
-                <div className="mt-4 pt-3 border-t border-slate-200/80">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 uppercase tracking-wider mb-2">
-                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Exigências Principais para Autorização:</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div className="mt-3 pt-2 border-t border-slate-100">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
                     {cat.keyHighlights.map((highlight, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-slate-700 font-medium">
+                      <div key={idx} className="flex items-center gap-1.5 text-slate-600 font-medium">
                         <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                         <span>{highlight}</span>
                       </div>
@@ -485,73 +560,37 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   </div>
                 </div>
 
-                {/* Acordeão: Ver Exigências Completas */}
-                <div className="mt-3.5">
+                <div className="mt-2.5">
                   <button
                     type="button"
                     onClick={() => setExpandedCardKey(isExpanded ? null : catKey)}
                     className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 cursor-pointer transition-colors"
                   >
                     <Info className="w-3.5 h-3.5" />
-                    <span>{isExpanded ? 'Ocultar exigências completas' : 'Ver todas as exigências detalhadas desta categoria'}</span>
+                    <span>{isExpanded ? 'Ocultar exigências detalhadas' : 'Ver exigências detalhadas'}</span>
                     {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   </button>
 
                   {isExpanded && (
-                    <div className="mt-3 p-4 bg-white/90 rounded-2xl border border-slate-200 space-y-3 text-xs animate-fade-in">
-                      {/* 1. Condutor */}
+                    <div className="mt-2.5 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5 text-xs animate-fade-in">
                       <div>
-                        <span className="font-bold text-slate-900 block mb-1">
-                          1. Requisitos Obrigatórios do Condutor:
-                        </span>
+                        <span className="font-bold text-slate-900 block mb-1">1. Requisitos do Condutor:</span>
                         <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
                           {cat.driverRequirements.map((req, rIdx) => (
                             <li key={rIdx}>{req}</li>
                           ))}
                         </ul>
                       </div>
-
-                      {/* 2. Veículo */}
                       <div>
-                        <span className="font-bold text-slate-900 block mb-1">
-                          2. Requisitos Técnicos do Veículo:
-                        </span>
+                        <span className="font-bold text-slate-900 block mb-1">2. Requisitos do Veículo:</span>
                         <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
                           {cat.vehicleRequirements.map((req, rIdx) => (
                             <li key={rIdx}>{req}</li>
                           ))}
                         </ul>
                       </div>
-
-                      {/* 3. Equipamentos */}
-                      <div>
-                        <span className="font-bold text-slate-900 block mb-1">
-                          3. Equipamentos e Itens de Segurança:
-                        </span>
-                        <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
-                          {cat.safetyRequirements.map((req, rIdx) => (
-                            <li key={rIdx}>{req}</li>
-                          ))}
-                        </ul>
-                      </div>
                     </div>
                   )}
-                </div>
-
-                {/* Botão de Ação: Selecionar e Abrir Cadastro */}
-                <div className="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-between">
-                  <span className="text-[11px] text-emerald-700 font-bold font-mono">
-                    Sem mensalidade: 85% para você, 15% Race
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectCategory(catKey)}
-                    className="px-5 py-2.5 rounded-xl bg-slate-950 hover:bg-[#ff6a00] text-white font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center gap-2 shadow-sm group active:scale-95"
-                  >
-                    <span>CADASTRAR NESTA OPÇÃO</span>
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </button>
                 </div>
               </div>
             );
@@ -561,10 +600,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     );
   }
 
-  // ESTÁGIO 2: NOVO CADASTRO DE MOTORISTA COM TODAS AS EXIGÊNCIAS PARA AUTORIZAR O CADASTRO
+  // ESTÁGIO 2: FORMULÁRIO ESPECÍFICO DA CATEGORIA ESCOLHIDA
   if (stage === 'fill_details') {
+    const isCarCategory = selectedCategory.role === 'driver';
     return (
-      <div className="space-y-6 max-w-2xl mx-auto py-2 animate-fade-in">
+      <div className="space-y-5 max-w-2xl mx-auto py-2 animate-fade-in">
         {/* Navegação e Categoria Ativa */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <button
@@ -575,24 +615,22 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             <ArrowLeft className="w-4 h-4" />
             <span>Trocar categoria</span>
           </button>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold text-slate-900 bg-amber-100 border border-amber-300 px-3 py-1 rounded-full">
-              {selectedCategory.title}
-            </span>
-          </div>
+          <span className="text-xs font-mono font-black text-slate-900 bg-amber-100 border border-amber-300 px-3 py-1 rounded-full">
+            {selectedCategory.title}
+          </span>
         </div>
 
         {/* Título Principal */}
         <div className="space-y-1">
-          <h2 className="text-2xl font-heading font-black text-slate-950 tracking-tight">
-            Novo Cadastro de Motorista
+          <h2 className="text-xl sm:text-2xl font-heading font-black text-slate-950 tracking-tight">
+            Dados para {selectedCategory.title}
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 font-medium">
-            Modalidade: <strong>{selectedCategory.title}</strong> &bull; {selectedCategory.subtitle}
+            Preencha os dados abaixo para salvar sua categoria e liberar o botão verde <strong>ONLINE</strong>.
           </p>
         </div>
 
-        {/* Mensagem de Erro / Alerta */}
+        {/* Mensagem de Erro */}
         {errorMessage && (
           <div className="bg-rose-50 border-2 border-rose-300 text-rose-900 text-xs sm:text-sm p-4 rounded-2xl font-bold flex items-center gap-2.5 shadow-sm">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
@@ -600,264 +638,234 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           </div>
         )}
 
-        {/* PAINEL DE EXIGÊNCIAS NECESSÁRIAS PARA AUTORIZAR O CADASTRO (CONFORME SOLICITADO PELO USUÁRIO) */}
-        <div className="bg-slate-950 text-white rounded-3xl p-5 sm:p-6 border-2 border-[#ff6a00] shadow-xl space-y-4">
-          <div className="flex items-center gap-3 border-b border-zinc-800 pb-3">
-            <div className="w-10 h-10 rounded-xl bg-[#ff6a00]/20 border border-[#ff6a00]/50 text-[#ff6a00] flex items-center justify-center shrink-0">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="font-heading font-black text-white text-base sm:text-lg">
-                Exigências Obrigatórias para Autorizar o Cadastro
-              </h3>
-              <p className="text-xs text-zinc-400 font-medium">
-                Critérios oficiais de homologação da categoria {selectedCategory.title} no município de Indaiatuba:
-              </p>
-            </div>
+        <form onSubmit={handleSubmitDetails} className="space-y-4 bg-white border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-sm">
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-700 flex flex-wrap gap-x-4 gap-y-1">
+            <span><strong>Condutor:</strong> {currentUser.name}</span>
+            <span><strong>E-mail:</strong> {currentUser.email}</span>
+            <span><strong>Categoria:</strong> {selectedCategory.title}</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
-            {/* Bloco 1: Condutor */}
-            <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-3.5 space-y-2">
-              <span className="font-heading font-black text-[#ff6a00] uppercase tracking-wider block text-[11px] flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5" />
-                <span>Condutor</span>
-              </span>
-              <ul className="space-y-1.5 text-zinc-300 leading-relaxed">
-                {selectedCategory.driverRequirements.map((req, idx) => (
-                  <li key={idx} className="flex items-start gap-1.5">
-                    <span className="text-[#ff6a00] font-bold shrink-0">&bull;</span>
-                    <span>{req}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {isCarCategory ? (
+            /* FORMULÁRIO MOTORISTA ECONÔMICO / CONFORT: Placa, Modelo, Ano, Cor, CNH, CPF */
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Placa *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={plate}
+                  onChange={(e) => setPlate(e.target.value.toUpperCase())}
+                  placeholder="Ex: ABC1D23"
+                  maxLength={8}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 uppercase"
+                />
+              </div>
 
-            {/* Bloco 2: Veículo */}
-            <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-3.5 space-y-2">
-              <span className="font-heading font-black text-[#ff6a00] uppercase tracking-wider block text-[11px] flex items-center gap-1.5">
-                <Car className="w-3.5 h-3.5" />
-                <span>Veículo</span>
-              </span>
-              <ul className="space-y-1.5 text-zinc-300 leading-relaxed">
-                {selectedCategory.vehicleRequirements.map((req, idx) => (
-                  <li key={idx} className="flex items-start gap-1.5">
-                    <span className="text-[#ff6a00] font-bold shrink-0">&bull;</span>
-                    <span>{req}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Modelo *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={selectedCategory.modelPlaceholder}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                />
+              </div>
 
-            {/* Bloco 3: Equipamentos e Segurança */}
-            <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-3.5 space-y-2">
-              <span className="font-heading font-black text-[#ff6a00] uppercase tracking-wider block text-[11px] flex items-center gap-1.5">
-                <Shield className="w-3.5 h-3.5" />
-                <span>Segurança</span>
-              </span>
-              <ul className="space-y-1.5 text-zinc-300 leading-relaxed">
-                {selectedCategory.safetyRequirements.map((req, idx) => (
-                  <li key={idx} className="flex items-start gap-1.5">
-                    <span className="text-[#ff6a00] font-bold shrink-0">&bull;</span>
-                    <span>{req}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Ano *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={selectedCategory.minYear || 2005}
+                  max={2026}
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  placeholder={selectedCategory.key === 'motorista_confort' ? 'Ex: 2022' : 'Ex: 2019'}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                />
+                {selectedCategory.key === 'motorista_confort' && (
+                  <span className="text-[11px] font-bold text-[#ff6a00] block">
+                    Exigência Confort: ano 2020 ou superior.
+                  </span>
+                )}
+              </div>
 
-        {/* FORMULÁRIO DE CADASTRO COM DADOS OPERACIONAIS E CHECKLIST DE AUTORIZAÇÃO */}
-        <form onSubmit={handleSubmitDetails} className="space-y-5 bg-white border border-slate-200 p-5 sm:p-7 rounded-3xl shadow-sm">
-          {/* Dados do Condutor Vinculados */}
-          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1 text-slate-700">
-            <span className="font-bold text-slate-900 block">Profissional Titular da Conta:</span>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-600">
-              <span><strong>Nome:</strong> {currentUser.name}</span>
-              <span><strong>E-mail:</strong> {currentUser.email}</span>
-              <span><strong>Celular:</strong> {currentUser.phone}</span>
-            </div>
-          </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Cor *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder="Ex: Prata, Preto, Branco"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                />
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Placa do Veículo */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                Placa do Veículo *
-              </label>
-              <input
-                type="text"
-                required
-                value={plate}
-                onChange={(e) => setPlate(e.target.value.toUpperCase())}
-                placeholder="Ex: RCE9C40"
-                maxLength={8}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm sm:text-base font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 uppercase"
-              />
-            </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  CNH *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cnh}
+                  onChange={(e) => setCnh(e.target.value)}
+                  placeholder="Número da CNH (com EAR)"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                />
+              </div>
 
-            {/* Modelo do Veículo */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                {selectedCategory.modelLabel} *
-              </label>
-              <input
-                type="text"
-                required
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={selectedCategory.modelPlaceholder}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm sm:text-base font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-              />
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  CPF *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cpf}
+                  onChange={(e) => setCpf(e.target.value)}
+                  placeholder="000.000.000-00"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                />
+              </div>
             </div>
+          ) : (
+            /* FORMULÁRIO MOTOBOY PASSAGEIRO / ENTREGAS: Placa moto, Modelo moto, Ano, CNH A, Baú */
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Placa moto *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={plate}
+                  onChange={(e) => setPlate(e.target.value.toUpperCase())}
+                  placeholder="Ex: RCE9M22"
+                  maxLength={8}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 uppercase"
+                />
+              </div>
 
-            {/* Ano de Fabricação */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                Ano de Fabricação *
-              </label>
-              <input
-                type="number"
-                required
-                min={selectedCategory.minYear || 2000}
-                max={2026}
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-                placeholder="Ex: 2021"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm sm:text-base font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-              />
-              {selectedCategory.key === 'motorista_confort' && (
-                <span className="text-[11px] font-bold text-[#ff6a00] block mt-0.5">
-                  ★ Exigência Confort: Apenas veículos ano 2020 ou superior são autorizados.
-                </span>
-              )}
-            </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Modelo moto *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={selectedCategory.modelPlaceholder}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                />
+              </div>
 
-            {/* CNH com EAR */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                Número do Registro da CNH *
-              </label>
-              <input
-                type="text"
-                required
-                value={cnh}
-                onChange={(e) => setCnh(e.target.value)}
-                placeholder="Ex: 09283719280"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm sm:text-base font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-              />
-            </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Ano *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={2005}
+                  max={2026}
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  placeholder="Ex: 2022"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                />
+              </div>
 
-            {/* Chave PIX Pessoal para Receber Corridas */}
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                Sua Chave PIX (para receber seus 85% das corridas toda sexta-feira) *
-              </label>
-              <input
-                type="text"
-                required
-                value={pixKey}
-                onChange={(e) => setPixKey(e.target.value)}
-                placeholder="Ex: seu CPF, e-mail, celular ou chave aleatória"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm sm:text-base font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-              />
-            </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  CNH A *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cnh}
+                  onChange={(e) => setCnh(e.target.value)}
+                  placeholder="Número da CNH A (com EAR)"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+                />
+              </div>
 
-            {/* Campo Específico para Motoboy Entregas: Tipo de Baú */}
-            {selectedCategory.hasTrunkType && (
               <div className="space-y-1.5 sm:col-span-2">
                 <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Compartimento de Carga Homologado CONTRAN *
+                  Baú *
                 </label>
                 <select
                   value={trunkType}
                   onChange={(e) => setTrunkType(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm sm:text-base font-medium text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
                 >
-                  <option value="Baú 80 Litros">Baú Rígido Fixado 80 Litros com Faixas Refletivas</option>
-                  <option value="Baú 90 Litros">Baú Rígido Fixado 90 Litros com Faixas Refletivas</option>
-                  <option value="Baú 120 Litros">Baú Rígido Fixado 120 Litros com Faixas Refletivas</option>
-                  <option value="Mochila / Bag Térmica (até 20kg)">Mochila / Bag Térmica Impermeável (até 20kg)</option>
+                  {selectedCategory.key === 'motoboy_passageiro' && (
+                    <option value="Sem baú (Transporte de Passageiro)">Sem baú (Transporte de Passageiro com 2 capacetes)</option>
+                  )}
+                  <option value="Baú 80 Litros">Baú 80 Litros</option>
+                  <option value="Baú 90 Litros">Baú 90 Litros</option>
+                  <option value="Baú 120 Litros">Baú 120 Litros</option>
+                  <option value="Mochila / Bag Térmica (até 20kg)">Mochila / Bag Térmica (até 20kg)</option>
                 </select>
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Chave PIX Opcional para Saques */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+              Chave PIX (para receber seus 85% das corridas)
+            </label>
+            <input
+              type="text"
+              value={pixKey}
+              onChange={(e) => setPixKey(e.target.value)}
+              placeholder="Opcional: CPF, e-mail, celular ou chave aleatória"
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+            />
           </div>
 
-          {/* CHECKLIST OBRIGATÓRIO DE CONFORMIDADE PARA AUTORIZAR O CADASTRO */}
-          <div className="pt-4 border-t border-slate-200 space-y-3">
-            <span className="text-xs font-heading font-black text-slate-950 uppercase tracking-wider block flex items-center gap-1.5">
-              <CheckSquare className="w-4 h-4 text-emerald-600" />
-              <span>Termos de Conformidade e Autorização Obrigatória (Marque todos para autorizar):</span>
+          {/* Confirmação de Conformidade */}
+          <label className="flex items-start gap-3 p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl cursor-pointer transition-colors">
+            <input
+              type="checkbox"
+              checked={checkCompliance}
+              onChange={(e) => setCheckCompliance(e.target.checked)}
+              className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+            />
+            <span className="text-xs text-slate-800 font-medium leading-relaxed">
+              Confirmo que possuo CNH válida com EAR e que meu veículo atende aos requisitos da categoria <strong>{selectedCategory.title}</strong>. Modelo RACE: <strong>85% para você e 15% Race, sem mensalidade</strong>.
             </span>
+          </label>
 
-            {/* Checkbox 1: CNH e EAR */}
-            <label className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-300 hover:border-slate-400 rounded-2xl cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                checked={checkCnhEar}
-                onChange={(e) => setCheckCnhEar(e.target.checked)}
-                className="mt-0.5 w-4 h-4 text-[#ff6a00] rounded border-slate-300 focus:ring-[#ff6a00] cursor-pointer"
-              />
-              <span className="text-xs text-slate-800 font-medium leading-relaxed">
-                <strong>1. Habilitação & Antecedentes:</strong> Declaro sob as penas da lei que possuo CNH definitiva com anotação <strong>EAR (Exerce Atividade Remunerada)</strong> ativa e certidão de antecedentes criminais sem restrições impeditivas.
-              </span>
-            </label>
-
-            {/* Checkbox 2: Veículo */}
-            <label className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-300 hover:border-slate-400 rounded-2xl cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                checked={checkVehicleReq}
-                onChange={(e) => setCheckVehicleReq(e.target.checked)}
-                className="mt-0.5 w-4 h-4 text-[#ff6a00] rounded border-slate-300 focus:ring-[#ff6a00] cursor-pointer"
-              />
-              <span className="text-xs text-slate-800 font-medium leading-relaxed">
-                <strong>2. Condição do Veículo & CRLV:</strong> Atesto que o veículo ({plate}) atende a todas as exigências técnicas da categoria {selectedCategory.title} (incluindo ar-condicionado, ano e estado mecânico) com CRLV devidamente licenciado e vigente.
-              </span>
-            </label>
-
-            {/* Checkbox 3: Equipamentos de Segurança Específicos */}
-            <label className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-300 hover:border-slate-400 rounded-2xl cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                checked={checkSafetyEquipment}
-                onChange={(e) => setCheckSafetyEquipment(e.target.checked)}
-                className="mt-0.5 w-4 h-4 text-[#ff6a00] rounded border-slate-300 focus:ring-[#ff6a00] cursor-pointer"
-              />
-              <span className="text-xs text-slate-800 font-medium leading-relaxed">
-                <strong>3. Equipamentos de Segurança:</strong>
-                {selectedCategory.role === 'motoboy' && selectedCategory.key === 'motoboy_passageiro' && (
-                  <> Confirmo que possuo <strong>2 capacetes com selo INMETRO</strong> e viseira transparente sem riscos, e fornecerei <strong>toucas higiênicas descartáveis</strong> para todos os passageiros transportados.</>
-                )}
-                {selectedCategory.role === 'motoboy' && selectedCategory.key === 'motoboy_entregas' && (
-                  <> Confirmo que possuo <strong>compartimento de carga homologado pelo CONTRAN</strong> (baú ou bag térmica) com faixas refletivas e capacete regulamentado com selo INMETRO.</>
-                )}
-                {selectedCategory.role === 'driver' && (
-                  <> Confirmo que o veículo possui <strong>ar-condicionado em pleno funcionamento</strong>, 4 portas, cintos para todos e suporte veicular seguro para celular.</>
-                )}
-              </span>
-            </label>
-
-            {/* Checkbox 4: Modelo 85% / 15% */}
-            <label className="flex items-start gap-3 p-3 bg-emerald-50 border border-emerald-300 hover:border-emerald-400 rounded-2xl cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                checked={checkWeeklyFeeAwareness}
-                onChange={(e) => setCheckWeeklyFeeAwareness(e.target.checked)}
-                className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
-              />
-              <span className="text-xs text-slate-800 font-medium leading-relaxed">
-                <strong>4. Modelo de Repasse:</strong> Você fica com <strong>85% de cada corrida</strong>, a Race fica com <strong>15%</strong> - <strong>sem mensalidade, sem taxa para trabalhar</strong>.
-              </span>
-            </label>
-          </div>
-
-          {/* Botão de Envio e Autorização */}
           <button
             type="submit"
-            className="w-full py-4 px-6 rounded-2xl bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-base sm:text-lg transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/25 uppercase tracking-wider block mt-4 active:scale-[0.99]"
+            disabled={isSaving}
+            className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-heading font-black text-base transition-all cursor-pointer shadow-lg uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.99]"
           >
-            CONCLUIR CADASTRO E COMEÇAR A TRABALHAR
+            {isSaving ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>SALVANDO CATEGORIA NO SUPABASE...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-5 h-5" />
+                <span>SALVAR CATEGORIA E LIBERAR BOTÃO ONLINE</span>
+              </>
+            )}
           </button>
         </form>
       </div>

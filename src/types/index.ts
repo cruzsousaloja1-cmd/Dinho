@@ -90,6 +90,7 @@ export interface Driver {
   comfortEligible?: boolean;
   comfortEligibilityReason?: string;
   trunkType?: string; // Tipo de baú para motoboy de entregas
+  categoryConfigured?: boolean; // Indica se o motorista já escolheu sua categoria e preencheu os dados do veículo dentro do app
 }
 
 export interface WithdrawalRequest {
