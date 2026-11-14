@@ -80,10 +80,11 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const routePolylineRef = useRef<L.Polyline | null>(null);
   const fullPolylineRef = useRef<L.Polyline | null>(null);
 
-  const rideStatus = activeRide?.status || 'procurando_motorista';
+  const rideStatus = activeRide?.status || 'procurando';
   const isAccepted =
     rideStatus === 'accepted' ||
     (rideStatus as string) === 'aceita' ||
+    (rideStatus as string) === 'em_andamento' ||
     rideStatus === 'driver_assigned' ||
     rideStatus === 'driver_arriving' ||
     rideStatus === 'in_progress' ||
@@ -208,15 +209,15 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     setTimeout(() => setAudioToast(null), 3000);
   };
 
-  // 1. Áudio: SOMENTE depois que motorista/motoboy aceitar de verdade (status = accepted/aceita/in_progress)
+  // 1. Áudio: SOMENTE depois que motorista/motoboy aceitar de verdade (status = aceita/accepted/em_andamento)
   useEffect(() => {
     if (isAccepted && !hasAnnouncedAcceptedRef.current) {
       hasAnnouncedAcceptedRef.current = true;
       hasInitialFitBoundsRef.current = false;
       stepRef.current = 0;
-      notifyDriverAccepted(isMotoboy);
+      notifyDriverAccepted(isMotoboy, effectiveDriver.name);
     }
-  }, [isAccepted, isMotoboy]);
+  }, [isAccepted, isMotoboy, effectiveDriver.name]);
 
   // 2. Áudio Automático: Quando chegar no ponto de embarque (somente se já aceito)
   useEffect(() => {
@@ -316,7 +317,28 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       }
       if (!hasInitialFitBoundsRef.current) {
         hasInitialFitBoundsRef.current = true;
-        map.setView([pLat, pLng], 15, { animate: true });
+        const activeOnline = onlineDrivers.filter((d) => d.status === 'online');
+        if (activeOnline.length > 0) {
+          const searchPoints: [number, number][] = [[pLat, pLng]];
+          activeOnline.forEach((d) => {
+            if (typeof d.lat === 'number' && typeof d.lng === 'number' && d.lat !== 0 && d.lng !== 0) {
+              searchPoints.push([d.lat, d.lng]);
+            }
+          });
+          if (searchPoints.length > 1) {
+            const bounds = L.latLngBounds(searchPoints);
+            map.fitBounds(bounds, {
+              paddingTopLeft: [45, 90],
+              paddingBottomRight: [45, 220],
+              maxZoom: 15,
+              animate: true,
+            });
+          } else {
+            map.setView([pLat, pLng], 15, { animate: true });
+          }
+        } else {
+          map.setView([pLat, pLng], 15, { animate: true });
+        }
       }
       return;
     }
@@ -352,7 +374,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         animate: true,
       });
     }
-  }, [isAccepted, routeData, pLat, pLng, destination]);
+  }, [isAccepted, routeData, pLat, pLng, destination, onlineDrivers]);
 
   // 4. Marcador de Embarque (Pino de Localização estilo GPS, sem bolinhas)
   useEffect(() => {
@@ -423,18 +445,26 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
     const activeOnline = onlineDrivers.filter((d) => d.status === 'online');
     const keepKeys = new Set<string>();
+    const placedPositions: [number, number][] = [];
 
     activeOnline.forEach((drv, idx) => {
       const key = drv.id || drv.email || `online-${idx}`;
       keepKeys.add(key);
 
       const isMoto = drv.category.includes('moto');
-      const offsetLat = ((idx % 5) - 2) * 0.0022;
-      const offsetLng = (Math.floor(idx / 5) - 1) * 0.0025 + (idx % 2 ? 0.0014 : -0.0014);
-      const pos: [number, number] = [
-        (drv.lat || -23.0842) + offsetLat,
-        (drv.lng || -47.2118) + offsetLng,
-      ];
+      let lat = typeof drv.lat === 'number' && drv.lat !== 0 ? drv.lat : -23.0842;
+      let lng = typeof drv.lng === 'number' && drv.lng !== 0 ? drv.lng : -47.2118;
+
+      // Só aplica micro-separação visual se outro motorista online estiver exatamente na mesma coordenada GPS
+      const collisionCount = placedPositions.filter(
+        ([pLat0, pLng0]) => Math.abs(pLat0 - lat) < 0.00005 && Math.abs(pLng0 - lng) < 0.00005
+      ).length;
+      if (collisionCount > 0) {
+        lat += ((collisionCount % 3) - 1) * 0.00045;
+        lng += (Math.floor(collisionCount / 3) + 1) * 0.00045;
+      }
+      placedPositions.push([lat, lng]);
+      const pos: [number, number] = [lat, lng];
 
       const staticHtml = isMoto
         ? `
@@ -952,6 +982,8 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                   <span className="font-heading font-black text-[11px] sm:text-xs text-emerald-950 truncate">
                     {distanceRemainingMeters <= 200
                       ? (isMotoboy ? 'Motoboy chegando - 200m' : 'Motorista chegando - 200m')
+                      : effectiveDriver.name && effectiveDriver.name !== 'Condutor RACE'
+                      ? `${effectiveDriver.name} aceitou sua corrida!`
                       : (isMotoboy ? 'Motoboy a caminho!' : 'Motorista a caminho!')}
                   </span>
                 </div>

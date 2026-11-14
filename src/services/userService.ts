@@ -169,6 +169,9 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     rating: account.rating || 0,
     saldo: account.driverData?.walletBalance || 0,
     plano_ativo: account.driverData?.weeklyPlanActive ?? false,
+    status: account.driverData?.status,
+    lat: account.driverData?.lat,
+    lng: account.driverData?.lng,
   })
     .then((res) => {
       if (setActiveSession && res.success && res.data?.id !== undefined && res.data?.id !== null) {

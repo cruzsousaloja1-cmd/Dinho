@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase } from '../supabase';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory } from '../supabase';
+import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { 
   WEEKLY_FEE, 
@@ -305,10 +306,26 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [simulatedRideCode] = useState<string>(() => generateUniqueRideConfirmationCode());
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
-  // Polling real no Supabase por corridas em status 'searching' / 'procurando_motorista' enquanto o condutor está ONLINE
+  const [dismissedTick, setDismissedTick] = useState(0);
+  const dismissedRideIdsRef = useRef<Set<string>>(new Set());
+  const announcedRideIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setIsOnline(currentDriver.status === 'online');
+  }, [currentDriver.status]);
+
+  // Ouvindo em tempo real via Supabase Realtime ('corridas') + fallback polling 3s enquanto o condutor está ONLINE
   const isSearchingRideStatus = (st?: string) => {
     const s = String(st || '').toLowerCase();
-    return s === 'searching' || s === 'procurando' || s === 'procurando_motorista';
+    return s === 'procurando' || s === 'searching' || s === 'procurando_motorista';
+  };
+
+  const getRideUniqueKey = (r: Ride) =>
+    r.id ? String(r.id) : `${r.passengerName || ''}-${r.pickup?.address || ''}-${r.price || 0}`;
+
+  const doesRideMatchDriverCategory = (r: Ride) => {
+    if (!currentDriver?.category) return true;
+    return normalizeRideCategory(r.category) === normalizeRideCategory(currentDriver.category);
   };
 
   useEffect(() => {
@@ -317,21 +334,69 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       return;
     }
     let mounted = true;
+
+    const handleNewOrFoundRide = (candidate: Ride | null) => {
+      if (!mounted || !candidate) return;
+      if (!isSearchingRideStatus(candidate.status)) return;
+      if (!doesRideMatchDriverCategory(candidate)) return;
+      const key = getRideUniqueKey(candidate);
+      if (dismissedRideIdsRef.current.has(key)) return;
+
+      setCloudSearchingRide(candidate);
+
+      if (!announcedRideIdsRef.current.has(key)) {
+        announcedRideIdsRef.current.add(key);
+        notifyNewIncomingRide();
+      }
+    };
+
+    const unsubscribeRealtime = subscribeToCorridasRealtime({
+      onInsert: (newRide) => {
+        handleNewOrFoundRide(newRide);
+      },
+      onUpdate: (updRide) => {
+        if (!mounted) return;
+        if (isSearchingRideStatus(updRide.status)) {
+          handleNewOrFoundRide(updRide);
+          return;
+        }
+        setCloudSearchingRide((curr) => {
+          if (!curr) return null;
+          if (curr.id && updRide.id && String(curr.id) === String(updRide.id)) {
+            return null;
+          }
+          return curr;
+        });
+      },
+    });
+
     const fetchSearching = async () => {
       try {
         const list = await getSearchingCorridasSupabase();
         if (!mounted) return;
-        const firstOpen = list.find((r) => isSearchingRideStatus(r.status)) || null;
-        setCloudSearchingRide(firstOpen);
+        const firstOpen =
+          list.find(
+            (r) =>
+              isSearchingRideStatus(r.status) &&
+              doesRideMatchDriverCategory(r) &&
+              !dismissedRideIdsRef.current.has(getRideUniqueKey(r))
+          ) || null;
+        if (firstOpen) {
+          handleNewOrFoundRide(firstOpen);
+        } else {
+          setCloudSearchingRide(null);
+        }
       } catch {}
     };
+
     fetchSearching();
-    const timer = setInterval(fetchSearching, 2500);
+    const timer = setInterval(fetchSearching, 3000);
     return () => {
       mounted = false;
+      unsubscribeRealtime();
       clearInterval(timer);
     };
-  }, [isOnline, acceptedDriverRide]);
+  }, [isOnline, acceptedDriverRide, currentDriver.category, dismissedTick]);
 
   // Galeria de Fotos: Perfil, CNH e Foto do Veículo
   const driverAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -524,11 +589,43 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
 
   const toggleOnline = () => {
     const nextStatus = !isOnline;
+    const nextStatusStr: 'online' | 'offline' = nextStatus ? 'online' : 'offline';
     setIsOnline(nextStatus);
     onUpdateDriver({
       ...currentDriver,
-      status: nextStatus ? 'online' : 'offline',
+      status: nextStatusStr,
     });
+    updateDriverOnlineStatusSupabase({
+      id: currentDriver.id,
+      email: currentDriver.email,
+      status: nextStatusStr,
+      lat: currentDriver.lat,
+      lng: currentDriver.lng,
+    }).catch(() => {});
+
+    if (nextStatus && typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          onUpdateDriver({
+            ...currentDriver,
+            status: 'online',
+            lat,
+            lng,
+          });
+          updateDriverOnlineStatusSupabase({
+            id: currentDriver.id,
+            email: currentDriver.email,
+            status: 'online',
+            lat,
+            lng,
+          }).catch(() => {});
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    }
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -744,8 +841,126 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
   };
 
+  const activePropSearchingRide =
+    activeRide &&
+    isSearchingRideStatus(activeRide.status) &&
+    doesRideMatchDriverCategory(activeRide) &&
+    !dismissedRideIdsRef.current.has(getRideUniqueKey(activeRide))
+      ? activeRide
+      : null;
+
+  const openIncomingRide: Ride | null =
+    isOnline && !acceptedDriverRide
+      ? (activePropSearchingRide || cloudSearchingRide)
+      : null;
+
+  const acceptIncomingRideHandler = (rideToAccept: Ride) => {
+    const price = rideToAccept.price || 0;
+    const driverEarns = rideToAccept.driverEarnings || Number((price * 0.85).toFixed(2));
+    const raceCommission = rideToAccept.platformFee || Number((price * 0.15).toFixed(2));
+    const isCash =
+      rideToAccept.paymentMethod === 'money' ||
+      rideToAccept.paymentMethod === 'dinheiro';
+    const acceptedRideObj: Ride = {
+      ...rideToAccept,
+      driver: currentDriver,
+      status: 'aceita',
+    };
+    setAcceptedDriverRide(acceptedRideObj);
+    setCloudSearchingRide(null);
+    if (rideToAccept.id) {
+      acceptCorridaSupabase(rideToAccept.id, currentDriver).catch(() => {});
+    }
+    if (onAcceptIncomingRide) {
+      onAcceptIncomingRide(acceptedRideObj);
+    }
+    setAcceptedRideNotice(
+      isCash
+        ? `Corrida em dinheiro aceita! Receber ${formatBRL(price)} em dinheiro no final da corrida (85% seu: ${formatBRL(driverEarns)} • Race 15%: ${formatBRL(raceCommission)})`
+        : `Corrida aceita! Você receberá ${formatBRL(driverEarns)} (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`
+    );
+    setIsDriverGpsOpen(true);
+    try {
+      confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
+    } catch {}
+  };
+
+  const rejectIncomingRideHandler = (rideToReject: Ride) => {
+    const key = getRideUniqueKey(rideToReject);
+    dismissedRideIdsRef.current.add(key);
+    setCloudSearchingRide(null);
+    setDismissedTick((t) => t + 1);
+  };
+
   return (
     <div className="space-y-5">
+      {/* ALERTA GRANDE GLOBAL EM TEMPO REAL NA TELA DO MOTORISTA ONLINE */}
+      {openIncomingRide && (() => {
+        const alertPrice = openIncomingRide.price || 0;
+        const driverNetAlert = openIncomingRide.driverEarnings || Number((alertPrice * 0.85).toFixed(2));
+        const isCashAlert =
+          openIncomingRide.paymentMethod === 'money' ||
+          openIncomingRide.paymentMethod === 'dinheiro';
+        const paymentLabel = isCashAlert
+          ? 'DINHEIRO'
+          : openIncomingRide.paymentMethod === 'credit_card'
+          ? 'CARTÃO'
+          : 'PIX';
+        return (
+          <div className="bg-zinc-950 text-white border-4 border-emerald-500 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 animate-fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="w-4 h-4 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                <span className="text-lg sm:text-2xl font-heading font-black text-emerald-400 tracking-wide">
+                  Nova corrida! {formatBRL(driverNetAlert)} para você
+                </span>
+              </div>
+              <span className="text-xs font-mono font-black bg-amber-500/20 text-amber-300 border border-amber-500/50 px-3 py-1 rounded-full self-start sm:self-center">
+                Pagamento: {paymentLabel} • Total: {formatBRL(alertPrice)}
+              </span>
+            </div>
+
+            {isCashAlert && (
+              <div className="bg-emerald-600 text-white rounded-2xl px-4 py-3 text-center font-heading font-black text-base sm:text-lg shadow-md">
+                Receber {formatBRL(alertPrice)} em dinheiro no final da corrida
+              </div>
+            )}
+
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-3.5 text-sm space-y-1.5">
+              <p className="font-bold text-white flex items-center gap-2">
+                <span>Passageiro:</span>
+                <span className="text-amber-400">{openIncomingRide.passengerName || 'Passageiro'}</span>
+              </p>
+              <p className="text-zinc-200 font-semibold">
+                <strong className="text-emerald-400">Origem:</strong> {openIncomingRide.pickup?.address}
+              </p>
+              <p className="text-zinc-200 font-semibold">
+                <strong className="text-[#ff6a00]">Destino:</strong> {openIncomingRide.destination?.address}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => acceptIncomingRideHandler(openIncomingRide)}
+                className="sm:col-span-2 min-h-[64px] bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xl sm:text-2xl rounded-2xl shadow-xl border-2 border-emerald-400 flex items-center justify-center gap-3 cursor-pointer transition-all uppercase tracking-wider"
+              >
+                <CheckCircle2 className="w-7 h-7 shrink-0" />
+                <span>Aceitar</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => rejectIncomingRideHandler(openIncomingRide)}
+                className="min-h-[64px] bg-rose-700 hover:bg-rose-600 active:scale-95 text-white font-heading font-black text-lg rounded-2xl shadow-lg border-2 border-rose-500 flex items-center justify-center gap-2 cursor-pointer transition-all uppercase"
+              >
+                <XCircle className="w-6 h-6 shrink-0" />
+                <span>Recusar</span>
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Driver Portal Submenu Navigation in White */}
       <div className="bg-white border border-slate-200 p-2 rounded-2xl flex items-center gap-2 shadow-sm overflow-x-auto">
         <button
@@ -962,17 +1177,16 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 </div>
 
                 {isOnline ? (
-                  (acceptedDriverRide || (activeRide && isSearchingRideStatus(activeRide.status)) || cloudSearchingRide) ? (
+                  (acceptedDriverRide || openIncomingRide) ? (
                     (() => {
-                      const incomingRideSnapshot: Ride =
-                        acceptedDriverRide ||
-                        (activeRide && isSearchingRideStatus(activeRide.status) ? activeRide : cloudSearchingRide)!;
+                      const incomingRideSnapshot: Ride = (acceptedDriverRide || openIncomingRide)!;
                       const incomingPassengerAvatar = incomingRideSnapshot.passengerAvatar || '';
                       const incomingPassengerName = incomingRideSnapshot.passengerName || 'Passageiro';
                       const incomingPassengerPhone = incomingRideSnapshot.passengerPhone || '';
                       const incomingPickupAddress = incomingRideSnapshot.pickup?.address || '';
                       const incomingDestAddress = incomingRideSnapshot.destination?.address || '';
                       const incomingPrice = incomingRideSnapshot.price || 0;
+                      const incomingDriverEarns = incomingRideSnapshot.driverEarnings || Number((incomingPrice * 0.85).toFixed(2));
                       const isCashCall =
                         incomingRideSnapshot.paymentMethod === 'money' ||
                         incomingRideSnapshot.paymentMethod === 'dinheiro';
@@ -996,8 +1210,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                             <div className="flex items-center gap-2.5">
                               <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 radar-pulse" />
                               <div>
-                                <span className="bg-[#ff6a00] text-white font-heading font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
-                                  Nova corrida - Aceitar
+                                <span className="bg-emerald-600 text-white font-heading font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                                  Nova corrida! {formatBRL(incomingDriverEarns)} para você
                                 </span>
                                 <p className="text-xs text-slate-500 font-mono font-bold mt-0.5">
                                   {isCashCall ? 'PAGAMENTO: DINHEIRO • Chamado em tempo real' : 'Chamado em tempo real'}
@@ -1006,10 +1220,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                             </div>
                             <div className="text-right self-end sm:self-auto space-y-0.5">
                               <span className="text-2xl sm:text-3xl font-heading font-black text-[#ff6a00] block">
-                                {formatBRL(incomingPrice)}
+                                {formatBRL(incomingDriverEarns)}
                               </span>
                               <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full inline-block">
-                                Você ganha {formatBRL(Number((incomingPrice * 0.85).toFixed(2)))} (85%)
+                                Total: {formatBRL(incomingPrice)} • 85% seu
                               </span>
                               <span className="text-[11px] font-mono text-slate-500 block">
                                 Comissão Race 15%: {formatBRL(Number((incomingPrice * 0.15).toFixed(2)))}
@@ -1122,64 +1336,31 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
 
                           <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
                             <button
-                              onClick={() => {
-                                const driverEarns = Number((incomingPrice * 0.85).toFixed(2));
-                                const raceCommission = Number((incomingPrice * 0.15).toFixed(2));
-                                const acceptedRideObj: Ride = {
-                                  ...incomingRideSnapshot,
-                                  driver: currentDriver,
-                                  status: 'accepted',
-                                };
-                                setAcceptedDriverRide(acceptedRideObj);
-                                setCloudSearchingRide(null);
-                                if (incomingRideSnapshot.id) {
-                                  acceptCorridaSupabase(incomingRideSnapshot.id, currentDriver).catch(() => {});
-                                }
-                                if (onAcceptIncomingRide) {
-                                  onAcceptIncomingRide(acceptedRideObj);
-                                }
-                                 setAcceptedRideNotice(
-                                  isCashCall
-                                    ? `Corrida em dinheiro aceita! Receber ${formatBRL(incomingPrice)} em dinheiro no final da corrida (85% seu: ${formatBRL(driverEarns)} • Race 15%: ${formatBRL(raceCommission)})`
-                                    : `Corrida aceita! Você receberá ${formatBRL(driverEarns)} (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`
-                                );
-                                setIsDriverGpsOpen(true);
-                                try {
-                                  confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
-                                } catch {}
-                              }}
-                              className={`w-full sm:flex-1 text-white font-heading font-black py-4 rounded-2xl text-sm sm:text-base transition-all cursor-pointer shadow-lg active:scale-95 text-center border flex items-center justify-center gap-2 ${
-                                isCashCall
-                                  ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-500'
-                                  : 'bg-gradient-to-r from-[#ff6a00] to-[#e05e00] hover:from-[#ff7b1a] hover:to-[#eb6800] border-[#ff8533]'
-                              }`}
+                              onClick={() => acceptIncomingRideHandler(incomingRideSnapshot)}
+                              className="w-full sm:flex-1 min-h-[60px] bg-emerald-600 hover:bg-emerald-500 border-2 border-emerald-400 text-white font-heading font-black py-4 rounded-2xl text-base sm:text-lg transition-all cursor-pointer shadow-xl active:scale-95 text-center flex items-center justify-center gap-2 uppercase tracking-wider"
                             >
-                              <Navigation className="w-4 h-4 shrink-0" />
+                              <CheckCircle2 className="w-6 h-6 shrink-0" />
                               <span>
                                 {isCashCall
-                                  ? `ACEITAR CORRIDA EM DINHEIRO (${formatBRL(incomingPrice)})`
-                                  : `ACEITAR CORRIDA (${formatBRL(incomingPrice)})`}
+                                  ? `Aceitar (${formatBRL(incomingDriverEarns)} • DINHEIRO)`
+                                  : `Aceitar (${formatBRL(incomingDriverEarns)})`}
                               </span>
                             </button>
 
+                            {!acceptedDriverRide && (
+                              <button
+                                type="button"
+                                onClick={() => rejectIncomingRideHandler(incomingRideSnapshot)}
+                                className="w-full sm:w-auto min-h-[60px] px-5 py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl text-sm font-heading font-black cursor-pointer border-2 border-rose-400 flex items-center justify-center gap-2 shadow-md uppercase"
+                              >
+                                <XCircle className="w-5 h-5" />
+                                <span>Recusar</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
-                              onClick={() => {
-                                const acceptedRideObj: Ride = {
-                                  ...incomingRideSnapshot,
-                                  driver: currentDriver,
-                                  status: 'accepted',
-                                };
-                                setAcceptedDriverRide(acceptedRideObj);
-                                setCloudSearchingRide(null);
-                                if (incomingRideSnapshot.id) {
-                                  acceptCorridaSupabase(incomingRideSnapshot.id, currentDriver).catch(() => {});
-                                }
-                                if (onAcceptIncomingRide) {
-                                  onAcceptIncomingRide(acceptedRideObj);
-                                }
-                                setIsDriverGpsOpen(true);
-                              }}
+                              onClick={() => acceptIncomingRideHandler(incomingRideSnapshot)}
                               className="w-full sm:w-auto px-4 py-4 bg-slate-950 hover:bg-zinc-800 text-white rounded-2xl text-xs sm:text-sm font-heading font-bold cursor-pointer border border-zinc-800 flex items-center justify-center gap-2 shadow-xs"
                             >
                               <Navigation className="w-4 h-4 text-emerald-400" />

@@ -145,6 +145,12 @@ export function cancelVoiceSpeech(): void {
   } catch {}
 }
 
+// Notificação 0: Nova corrida recebida em tempo real pelo motorista (vibrar 500ms + áudio "Nova corrida!")
+export function notifyNewIncomingRide(): void {
+  vibrateDevice(500);
+  speakText('Nova corrida!', 500);
+}
+
 // Notificação 1: Quando o motorista/motoboy chega ao ponto de embarque
 export function notifyDriverArrived(isMotoboy: boolean = false): void {
   const phrase = isMotoboy ? 'Seu motoboy chegou' : 'Seu motorista chegou';
@@ -152,8 +158,14 @@ export function notifyDriverArrived(isMotoboy: boolean = false): void {
 }
 
 // Notificação 2: Quando o motorista/motoboy aceita a corrida e está a caminho
-export function notifyDriverAccepted(isMotoboy: boolean = false): void {
-  const phrase = isMotoboy ? 'Motoboy a caminho!' : 'Motorista a caminho!';
+export function notifyDriverAccepted(isMotoboy: boolean = false, driverName?: string): void {
+  const cleanName = (driverName || '').trim();
+  const phrase =
+    cleanName && cleanName !== 'Condutor RACE'
+      ? `${cleanName} aceitou sua corrida! ${isMotoboy ? 'Motoboy a caminho!' : 'Motorista a caminho!'}`
+      : isMotoboy
+      ? 'Motoboy a caminho!'
+      : 'Motorista a caminho!';
   speakText(phrase, [200, 100, 200]);
 }
 

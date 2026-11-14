@@ -129,15 +129,29 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
       }
     });
 
+    const placedPositions: [number, number][] = [];
+
     driversToShow.forEach((drv, idx) => {
       const markerKey = drv.id || drv.email || `drv-${idx}`;
       const isBike = drv.category.includes('moto');
-      const offsetLat = !isAccepted ? (((idx % 5) - 2) * 0.0022) : 0;
-      const offsetLng = !isAccepted ? ((Math.floor(idx / 5) - 1) * 0.0025 + ((idx % 2) ? 0.0014 : -0.0014)) : 0;
+      let lat = typeof drv.lat === 'number' && drv.lat !== 0 ? drv.lat : -23.0842;
+      let lng = typeof drv.lng === 'number' && drv.lng !== 0 ? drv.lng : -47.2118;
+
+      if (!isAccepted) {
+        const collisionCount = placedPositions.filter(
+          ([pLat0, pLng0]) => Math.abs(pLat0 - lat) < 0.00005 && Math.abs(pLng0 - lng) < 0.00005
+        ).length;
+        if (collisionCount > 0) {
+          lat += ((collisionCount % 3) - 1) * 0.00045;
+          lng += (Math.floor(collisionCount / 3) + 1) * 0.00045;
+        }
+        placedPositions.push([lat, lng]);
+      }
+
       const pos: [number, number] =
         isAccepted && activeDriver && (activeDriver.id === drv.id || activeDriver.email === drv.email) && driverPosition
           ? [driverPosition.lat, driverPosition.lng]
-          : [drv.lat + offsetLat, drv.lng + offsetLng];
+          : [lat, lng];
 
       const vehicleSvg = isBike
         ? `

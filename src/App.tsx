@@ -66,7 +66,10 @@ import {
   savePagamentoSupabase,
   getUsuarioSupabase,
   getAllDriversFromSupabase,
+  getOnlineDriversFromSupabase,
+  updateDriverOnlineStatusSupabase,
   getAllPassengersFromSupabase,
+  subscribeToCorridasRealtime,
   purgeLegacyTestLocalStorage
 } from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
@@ -171,6 +174,7 @@ export default function App() {
           };
           setCurrentDriver(updatedMatched);
           setActiveTab('driver_portal');
+          captureAndSyncDriverGps(updatedMatched, 'online');
         } else {
           setActiveTab('rides');
         }
@@ -184,6 +188,57 @@ export default function App() {
       active = false;
     };
   }, []);
+
+  // Helper para capturar GPS real do condutor e gravar status ONLINE/OFFLINE no Supabase
+  const captureAndSyncDriverGps = (driverTarget: Driver, status: 'online' | 'offline') => {
+    if (!driverTarget?.email && !driverTarget?.id) return;
+    if (status === 'offline') {
+      updateDriverOnlineStatusSupabase({
+        id: driverTarget.id,
+        email: driverTarget.email,
+        status: 'offline',
+      }).catch(() => {});
+      return;
+    }
+
+    updateDriverOnlineStatusSupabase({
+      id: driverTarget.id,
+      email: driverTarget.email,
+      status: 'online',
+      lat: driverTarget.lat,
+      lng: driverTarget.lng,
+    }).catch(() => {});
+
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setCurrentDriver((prev) =>
+            prev && (prev.id === driverTarget.id || prev.email === driverTarget.email)
+              ? { ...prev, status: 'online', lat, lng }
+              : prev
+          );
+          setDrivers((prev) =>
+            prev.map((d) =>
+              d.id === driverTarget.id || d.email === driverTarget.email
+                ? { ...d, status: 'online', lat, lng }
+                : d
+            )
+          );
+          updateDriverOnlineStatusSupabase({
+            id: driverTarget.id,
+            email: driverTarget.email,
+            status: 'online',
+            lat,
+            lng,
+          }).catch(() => {});
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    }
+  };
 
   // Sincronizar corridas isoladas da nuvem Supabase para o usuário logado
   useEffect(() => {
@@ -199,6 +254,43 @@ export default function App() {
         console.warn('Aviso ao sincronizar corridas do Supabase:', err);
       });
   }, [currentUser]);
+
+  // Polling em tempo real dos motoristas/motoboys ONLINE no Supabase (para o mapa do passageiro)
+  useEffect(() => {
+    if (!currentUser) return;
+    let active = true;
+
+    const syncOnlineDrivers = async () => {
+      try {
+        const onlineList = await getOnlineDriversFromSupabase();
+        if (!active) return;
+
+        setDrivers((prev) => {
+          const onlineByKey = new Map<string, Driver>();
+          onlineList.forEach((d) => {
+            const k = (d.email || d.id || '').toLowerCase();
+            if (k) onlineByKey.set(k, d);
+          });
+
+          const merged: Driver[] = [...onlineList];
+          prev.forEach((existing) => {
+            const k = (existing.email || existing.id || '').toLowerCase();
+            if (k && !onlineByKey.has(k)) {
+              merged.push({ ...existing, status: 'offline' });
+            }
+          });
+          return merged;
+        });
+      } catch {}
+    };
+
+    syncOnlineDrivers();
+    const timer = setInterval(syncOnlineDrivers, 3500);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [currentUser, isFullMapOpen, activeTab]);
 
   // 3. Rota Secreta /admin: abre o AdminDashboard se o usuário for admin, senão volta para tela preta de login
   useEffect(() => {
@@ -240,7 +332,7 @@ export default function App() {
 
   // Motoristas trabalham livres sem bloqueio de taxa semanal (modelo 15% Race / 85% motorista)
 
-  // Polling em tempo real no Supabase enquanto a corrida do passageiro estiver em MODO PROCURANDO
+  // Realtime Supabase ('corridas') + Polling em tempo real enquanto a corrida do passageiro estiver em MODO PROCURANDO
   useEffect(() => {
     const curSt = String(activeRide?.status || '').toLowerCase();
     const isSearching =
@@ -248,6 +340,85 @@ export default function App() {
     if (!activeRide || !isSearching) return;
 
     let isMounted = true;
+    let handledAccept = false;
+
+    const applyLatestRideUpdate = async (latestRide: Ride) => {
+      if (!isMounted || !latestRide) return;
+      const st = String(latestRide.status || '').toLowerCase();
+
+      if (st === 'cancelled' || st === 'cancelada') {
+        cancelVoiceSpeech();
+        setActiveRide(null);
+        setIsFullMapOpen(false);
+        return;
+      }
+
+      if (
+        !handledAccept &&
+        (st === 'accepted' ||
+          st === 'aceita' ||
+          st === 'em_andamento' ||
+          st === 'driver_assigned' ||
+          st === 'driver_arriving' ||
+          st === 'in_progress')
+      ) {
+        handledAccept = true;
+        let fullDriver = latestRide.driver;
+        if (fullDriver) {
+          let matched = drivers.find(
+            (d) =>
+              (fullDriver?.id && d.id === fullDriver.id) ||
+              (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
+          );
+          if (!matched) {
+            const refreshedDrivers = await getAllDriversFromSupabase().catch(() => []);
+            if (!isMounted) return;
+            if (refreshedDrivers.length > 0) setDrivers(refreshedDrivers);
+            matched = refreshedDrivers.find(
+              (d) =>
+                (fullDriver?.id && d.id === fullDriver.id) ||
+                (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
+            );
+          }
+          if (matched) {
+            fullDriver = matched;
+          }
+        }
+        const acceptedDriverName = (fullDriver?.name || '').trim() || 'Motorista';
+        setActiveRide((curr) =>
+          curr
+            ? {
+                ...curr,
+                id: latestRide.id || curr.id,
+                status: 'aceita',
+                driver: fullDriver || curr.driver,
+              }
+            : curr
+        );
+        triggerPush(
+          '🚗 Corrida Aceita!',
+          `${acceptedDriverName} aceitou sua corrida`,
+          'ride'
+        );
+      }
+    };
+
+    const unsubscribeRealtime = subscribeToCorridasRealtime({
+      onUpdate: (updRide) => {
+        if (!isMounted) return;
+        const matchesId =
+          !activeRide.id ||
+          !updRide.id ||
+          String(updRide.id) === String(activeRide.id);
+        const matchesCode =
+          Boolean(activeRide.confirmationCode && updRide.confirmationCode) &&
+          updRide.confirmationCode === activeRide.confirmationCode;
+        if (matchesId || matchesCode) {
+          applyLatestRideUpdate(updRide);
+        }
+      },
+    });
+
     const checkAccepted = async () => {
       try {
         let latestRide: Ride | null = null;
@@ -257,54 +428,8 @@ export default function App() {
           const allUserRides = await getCorridasSupabase(currentUser);
           latestRide = allUserRides[0] || null;
         }
-        if (!isMounted || !latestRide) return;
-
-        const st = String(latestRide.status || '').toLowerCase();
-        if (st === 'cancelled' || st === 'cancelada') {
-          cancelVoiceSpeech();
-          setActiveRide(null);
-          setIsFullMapOpen(false);
-          return;
-        }
-
-        if (
-          st === 'accepted' ||
-          st === 'aceita' ||
-          st === 'driver_assigned' ||
-          st === 'driver_arriving' ||
-          st === 'in_progress'
-        ) {
-          let fullDriver = latestRide.driver;
-          if (fullDriver) {
-            let matched = drivers.find(
-              (d) =>
-                (fullDriver?.id && d.id === fullDriver.id) ||
-                (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
-            );
-            if (!matched) {
-              const refreshedDrivers = await getAllDriversFromSupabase().catch(() => []);
-              if (!isMounted) return;
-              if (refreshedDrivers.length > 0) setDrivers(refreshedDrivers);
-              matched = refreshedDrivers.find(
-                (d) =>
-                  (fullDriver?.id && d.id === fullDriver.id) ||
-                  (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
-              );
-            }
-            if (matched) {
-              fullDriver = matched;
-            }
-          }
-          setActiveRide((curr) =>
-            curr
-              ? {
-                  ...curr,
-                  id: latestRide!.id || curr.id,
-                  status: 'accepted',
-                  driver: fullDriver || curr.driver,
-                }
-              : curr
-          );
+        if (latestRide) {
+          await applyLatestRideUpdate(latestRide);
         }
       } catch {}
     };
@@ -312,9 +437,10 @@ export default function App() {
     const interval = setInterval(checkAccepted, 2500);
     return () => {
       isMounted = false;
+      unsubscribeRealtime();
       clearInterval(interval);
     };
-  }, [activeRide?.id, activeRide?.status, currentUser, drivers]);
+  }, [activeRide?.id, activeRide?.status, activeRide?.confirmationCode, currentUser, drivers]);
 
   // Simulated GPS movement ONLY after ride is accepted by a driver
   useEffect(() => {
@@ -382,7 +508,7 @@ export default function App() {
       passengerEmail: ride.passengerEmail || currentUser?.email,
       paymentMethod: isCash ? 'dinheiro' : ride.paymentMethod,
       paymentStatus: isCash ? 'pending' : (ride.paymentStatus || 'paid'),
-      status: ride.status || (isCash ? 'procurando_motorista' : 'searching'),
+      status: 'procurando',
       confirmationCode,
     };
     setActiveRide(startedRide);
@@ -672,11 +798,18 @@ export default function App() {
 
   const handleToggleDriverStatus = (driverId: string) => {
     setDrivers((prev) =>
-      prev.map((d) =>
-        d.id === driverId
-          ? { ...d, status: d.status === 'online' ? 'offline' : 'online' }
-          : d
-      )
+      prev.map((d) => {
+        if (d.id !== driverId) return d;
+        const nextStatus: 'online' | 'offline' = d.status === 'online' ? 'offline' : 'online';
+        updateDriverOnlineStatusSupabase({
+          id: d.id,
+          email: d.email,
+          status: nextStatus,
+          lat: d.lat,
+          lng: d.lng,
+        }).catch(() => {});
+        return { ...d, status: nextStatus };
+      })
     );
   };
 
@@ -843,8 +976,10 @@ export default function App() {
     setCurrentUser(user);
     saveSessionUser(user);
     if (driver) {
-      setDrivers((prev) => [driver, ...prev.filter((d) => d.id !== driver.id)]);
-      setCurrentDriver(driver);
+      const onlineDrv: Driver = { ...driver, status: 'online' };
+      setDrivers((prev) => [onlineDrv, ...prev.filter((d) => d.id !== onlineDrv.id)]);
+      setCurrentDriver(onlineDrv);
+      captureAndSyncDriverGps(onlineDrv, 'online');
     }
     const isAdminUser = user.role === 'admin' || user.isAdmin || user.email?.toLowerCase() === ADMIN_EMAIL;
     const isDriverUser =
@@ -865,6 +1000,13 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (currentDriver?.email) {
+      updateDriverOnlineStatusSupabase({
+        id: currentDriver.id,
+        email: currentDriver.email,
+        status: 'offline',
+      }).catch(() => {});
+    }
     saveSessionUser(null);
     purgeLegacyTestLocalStorage(false);
     clearWalletMemoryCache();
@@ -879,10 +1021,10 @@ export default function App() {
 
   const unreadNotifsCount = notifications.filter((n) => !n.read).length;
 
-  // Reusable real-time GPS map component instance
+  // Reusable real-time GPS map component instance (SOMENTE motoristas ONLINE do Supabase)
   const mapElement = (
     <MapRealtime
-      drivers={drivers}
+      drivers={drivers.filter((d) => d.status === 'online')}
       pickup={pickup}
       destination={destination}
       activeDriver={activeRide?.driver || null}
@@ -938,6 +1080,7 @@ export default function App() {
             };
             setCurrentDriver(driverWithBal);
             handleUpdateDriver(driverWithBal);
+            captureAndSyncDriverGps(driverWithBal, 'online');
             setActiveTab('driver_portal');
             setLoginSuccessBanner(
               `Bem-vindo(a), ${driver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
@@ -1092,7 +1235,11 @@ export default function App() {
               }}
               onLoginDriverSuccess={(user, driver) => {
                 setCurrentUser(user);
-                if (driver) setCurrentDriver(driver);
+                if (driver) {
+                  const onlineDrv: Driver = { ...driver, status: 'online' };
+                  setCurrentDriver(onlineDrv);
+                  captureAndSyncDriverGps(onlineDrv, 'online');
+                }
                 saveSessionUser(user);
                 setLoginSuccessBanner(
                   `Bem-vindo(a), ${user.name}! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.`
@@ -1297,24 +1444,37 @@ export default function App() {
         activeRide &&
         (activeRide.paymentStatus === 'paid' ||
           activeRide.paymentMethod === 'money' ||
-          activeRide.paymentMethod === 'dinheiro') && (
-        <FullMapView
-          onClose={() => setIsFullMapOpen(false)}
-          pickup={pickup}
-          destination={destination}
-          activeDriver={activeRide.driver ?? null}
-          activeRide={activeRide}
-          onlineDrivers={drivers.filter((d) => d.status === 'online')}
-          onCompleteRide={handleCompleteRide}
-          onCancelRide={handleCancelRide}
-          onUpdateDriverPosition={(pos) => {
-            setDriverPosition((prev) => {
-              if (prev && prev.lat === pos.lat && prev.lng === pos.lng) return prev;
-              return pos;
-            });
-          }}
-        />
-      )}
+          activeRide.paymentMethod === 'dinheiro') && (() => {
+          const isMotoRide =
+            activeRide.category === 'moto_passageiro' ||
+            activeRide.category === 'moto_entrega';
+          const matchingOnlineDrivers = drivers.filter((d) => {
+            if (d.status !== 'online') return false;
+            const drvIsMoto =
+              d.category === 'moto_passageiro' ||
+              d.category === 'moto_entrega' ||
+              d.category.includes('moto');
+            return isMotoRide ? drvIsMoto : !drvIsMoto;
+          });
+          return (
+            <FullMapView
+              onClose={() => setIsFullMapOpen(false)}
+              pickup={pickup}
+              destination={destination}
+              activeDriver={activeRide.driver ?? null}
+              activeRide={activeRide}
+              onlineDrivers={matchingOnlineDrivers}
+              onCompleteRide={handleCompleteRide}
+              onCancelRide={handleCancelRide}
+              onUpdateDriverPosition={(pos) => {
+                setDriverPosition((prev) => {
+                  if (prev && prev.lat === pos.lat && prev.lng === pos.lng) return prev;
+                  return pos;
+                });
+              }}
+            />
+          );
+        })()}
 
       {/* Modal de Avaliação do Motorista / Motoboy ao Concluir Corrida */}
       <RatingModal

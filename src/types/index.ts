@@ -119,8 +119,11 @@ export interface LocationPoint {
 export type RideStatus = 
   | 'idle' 
   | 'searching' 
+  | 'procurando'
   | 'procurando_motorista'
   | 'accepted'
+  | 'aceita'
+  | 'em_andamento'
   | 'driver_assigned' 
   | 'driver_arriving' 
   | 'in_progress' 

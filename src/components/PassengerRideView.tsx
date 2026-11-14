@@ -342,7 +342,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       platformFee: calculated.platformFee,       // 15% comissão Race
       paymentMethod: isCash ? 'dinheiro' : effectiveMethod,
       paymentStatus: isCash ? 'pending' : 'paid',
-      status: isCash ? 'procurando_motorista' : 'searching',
+      status: 'procurando',
       confirmationCode: generateUniqueRideConfirmationCode(),
       createdAt: new Date().toISOString(),
     };
