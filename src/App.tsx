@@ -110,6 +110,7 @@ export default function App() {
   // Map and Route States
   const [pickup, setPickup] = useState<LocationPoint | null>(null);
   const [destination, setDestination] = useState<LocationPoint | null>(null);
+  const [hasSearchedRoute, setHasSearchedRoute] = useState(false);
   const [mapSelectionMode, setMapSelectionMode] = useState<'pickup' | 'destination' | null>(null);
 
   // Driver live position during active ride
@@ -1125,6 +1126,7 @@ export default function App() {
   const handleAuthSuccess = (user: AppUser, driver?: Driver) => {
     setCurrentUser(user);
     saveSessionUser(user);
+    setHasSearchedRoute(false);
     setShowPostAuthSplash(true);
     if (driver) {
       const isConfigured =
@@ -1173,6 +1175,9 @@ export default function App() {
     clearReviewsCache();
     setCurrentUser(null);
     setShowPostAuthSplash(false);
+    setHasSearchedRoute(false);
+    setPickup(null);
+    setDestination(null);
     setCurrentDriver(DEFAULT_NEW_DRIVER);
     setRidesHistory([]);
     setActiveRide(null);
@@ -1216,6 +1221,7 @@ export default function App() {
         onLoginSuccess={(user, driver) => {
           setCurrentUser(user);
           saveSessionUser(user);
+          setHasSearchedRoute(false);
           setShowPostAuthSplash(true);
 
           // Se for Administrador (tipo = ADM ou admin@race.com.br)
@@ -1446,6 +1452,8 @@ export default function App() {
             paymentMethodProp={selectedPaymentMethod}
             onPaymentMethodChange={setSelectedPaymentMethod}
             optionsLaunchNonce={optionsLaunchNonce}
+            hasSearchedRoute={hasSearchedRoute}
+            onRouteSearched={setHasSearchedRoute}
             onOpenFullMap={() => {
               const isRideAuthorized = Boolean(
                 activeRide &&
@@ -1577,6 +1585,7 @@ export default function App() {
             onSelectPaymentMethod={(method) => setSelectedPaymentMethod(method)}
             pickup={pickup}
             destination={destination}
+            hasSearchedRoute={hasSearchedRoute}
             onNavigateToRides={(chosenCategory) => {
               if (chosenCategory) {
                 setSelectedCategory(chosenCategory);

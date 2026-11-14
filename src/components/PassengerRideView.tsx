@@ -98,6 +98,8 @@ interface PassengerRideViewProps {
   paymentMethodProp?: 'pix' | 'credit_card' | 'dinheiro';
   onPaymentMethodChange?: (method: 'pix' | 'credit_card' | 'dinheiro') => void;
   optionsLaunchNonce?: number;
+  hasSearchedRoute?: boolean;
+  onRouteSearched?: (searched: boolean) => void;
 }
 
 export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
@@ -125,6 +127,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   paymentMethodProp,
   onPaymentMethodChange,
   optionsLaunchNonce = 0,
+  hasSearchedRoute = false,
+  onRouteSearched,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>(
     selectedCategoryProp || 'economica'
@@ -232,6 +236,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     if (optionsLaunchNonce > 0 && optionsLaunchNonce !== lastLaunchNonceRef.current) {
       lastLaunchNonceRef.current = optionsLaunchNonce;
       if (
+        hasSearchedRoute &&
         !hasOpenDebt &&
         !activeRide &&
         hasAddressNumber(pickupInput) &&
@@ -248,11 +253,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         initAsaasPayment(method, cat);
       }
     }
-  }, [optionsLaunchNonce]);
+  }, [optionsLaunchNonce, hasSearchedRoute]);
 
   // Handle Automatic Search for Pickup
   const handlePickupChange = (value: string) => {
     setPickupInput(value);
+    onRouteSearched?.(false);
     if (addressValidationError) setAddressValidationError(null);
     setActiveDropdown('pickup');
 
@@ -274,6 +280,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   // Handle Automatic Search for Destination
   const handleDestChange = (value: string) => {
     setDestInput(value);
+    onRouteSearched?.(false);
     if (addressValidationError) setAddressValidationError(null);
     setActiveDropdown('destination');
 
@@ -456,7 +463,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     }
   };
 
-  const handleSearchRides = () => {
+  const handleSearchRides = async () => {
     if (hasOpenDebt) {
       setAddressValidationError(
         `Novas corridas bloqueadas até o pagamento da dívida de ${formatBRL(passengerDebt?.debtAmount || 0)} via PIX Asaas.`
@@ -477,7 +484,34 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       return;
     }
 
+    if (!pickup || pickup.address !== pickupInput) {
+      let pLat = pickup?.lat ?? -23.0842;
+      let pLng = pickup?.lng ?? -47.2118;
+      try {
+        const matches = await searchAddressAutocomplete(pickupInput);
+        if (matches.length > 0) {
+          pLat = matches[0].lat;
+          pLng = matches[0].lng;
+        }
+      } catch {}
+      setPickup({ address: pickupInput, lat: pLat, lng: pLng });
+    }
+
+    if (!destination || destination.address !== destInput) {
+      let dLat = destination?.lat ?? -23.0805;
+      let dLng = destination?.lng ?? -47.2050;
+      try {
+        const matches = await searchAddressAutocomplete(destInput);
+        if (matches.length > 0) {
+          dLat = matches[0].lat;
+          dLng = matches[0].lng;
+        }
+      } catch {}
+      setDestination({ address: destInput, lat: dLat, lng: dLng });
+    }
+
     setAddressValidationError(null);
+    onRouteSearched?.(true);
     setPassengerStep('options');
   };
 
@@ -1201,6 +1235,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   setPickupInput('');
                   setPickup(null);
                   setGpsDetectedNotice(null);
+                  onRouteSearched?.(false);
                 }}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 cursor-pointer p-0.5"
                 title="Limpar endereço de saída"
@@ -1336,6 +1371,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 onClick={() => {
                   setDestInput('');
                   setDestination(null);
+                  onRouteSearched?.(false);
                 }}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 cursor-pointer p-0.5"
                 title="Limpar destino"
@@ -1490,7 +1526,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setPassengerStep('search')}
+              onClick={() => {
+                onRouteSearched?.(false);
+                setPassengerStep('search');
+              }}
               className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-heading font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-300 self-start sm:self-center shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />

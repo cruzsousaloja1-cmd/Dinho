@@ -1,7 +1,7 @@
 import React from 'react';
 import { LocationPoint, VehicleCategory } from '../types';
 import { calculateFare, formatBRL } from '../services/pricingService';
-import { calculateDistanceKm } from '../services/addressSearchService';
+import { calculateDistanceKm, hasAddressNumber } from '../services/addressSearchService';
 import {
   Car,
   Sparkles,
@@ -14,6 +14,7 @@ import {
   CreditCard,
   Wallet,
   MapPin,
+  Search,
 } from 'lucide-react';
 
 export type PassengerPaymentOption = 'pix' | 'credit_card' | 'dinheiro';
@@ -25,6 +26,7 @@ interface PassengerOptionsViewProps {
   onSelectPaymentMethod?: (method: PassengerPaymentOption) => void;
   pickup?: LocationPoint | null;
   destination?: LocationPoint | null;
+  hasSearchedRoute?: boolean;
   onNavigateToRides: (chosenCategory?: VehicleCategory) => void;
 }
 
@@ -35,12 +37,22 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
   onSelectPaymentMethod,
   pickup,
   destination,
+  hasSearchedRoute = false,
   onNavigateToRides,
 }) => {
-  const distanceKm =
-    pickup && destination
-      ? Number(calculateDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng).toFixed(1)) || 1.2
-      : 1.2;
+  const canShowPrices = Boolean(
+    hasSearchedRoute &&
+      pickup?.address &&
+      destination?.address &&
+      hasAddressNumber(pickup.address) &&
+      hasAddressNumber(destination.address)
+  );
+
+  const distanceKm = canShowPrices
+    ? Number(
+        calculateDistanceKm(pickup!.lat, pickup!.lng, destination!.lat, destination!.lng).toFixed(1)
+      ) || 1.2
+    : 0;
 
   const options = [
     {
@@ -160,11 +172,11 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
           </div>
 
           <span className="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1.5 rounded-full border border-slate-200 self-start sm:self-auto shrink-0">
-            Estimativa base: {distanceKm} km
+            {canShowPrices ? `Distância calculada: ${distanceKm} km` : 'Rota ainda não buscada'}
           </span>
         </div>
 
-        {pickup?.address && destination?.address && (
+        {canShowPrices && pickup?.address && destination?.address ? (
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs text-slate-700 space-y-1">
             <div className="flex items-center gap-2 font-bold text-slate-900 truncate">
               <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -174,6 +186,13 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
               <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
               <span className="truncate">{destination.address}</span>
             </div>
+          </div>
+        ) : (
+          <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs sm:text-sm text-amber-950 font-bold">
+            <Search className="w-4 h-4 text-[#ff6a00] shrink-0 mt-0.5" />
+            <span>
+              Coloque endereço de saída e chegada e clique em BUSCAR CORRIDA para ver os valores
+            </span>
           </div>
         )}
       </div>
@@ -221,7 +240,7 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
         </div>
       </div>
 
-      {/* Grid com as 4 Categorias e Valores */}
+      {/* Grid com as 4 Categorias e Valores (zerados até buscar corrida) */}
       <div className="space-y-3 min-w-0">
         <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg px-1">
           2. Escolha sua modalidade e valor
@@ -231,7 +250,9 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
           {options.map((item) => {
             const Icon = item.icon;
             const isSelected = selectedCategory === item.id;
-            const fare = calculateFare(item.id, distanceKm);
+            const displayPrice = canShowPrices
+              ? formatBRL(calculateFare(item.id, distanceKm).totalPrice)
+              : formatBRL(0);
 
             return (
               <div
@@ -265,11 +286,17 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
                     </div>
 
                     <div className="text-left sm:text-right shrink-0 bg-slate-50 sm:bg-transparent px-3 py-2 sm:p-0 rounded-xl border border-slate-100 sm:border-0">
-                      <span className={`font-heading font-black text-2xl sm:text-3xl whitespace-nowrap ${item.priceColor}`}>
-                        {formatBRL(fare.totalPrice)}
+                      <span
+                        className={`font-heading font-black text-2xl sm:text-3xl whitespace-nowrap ${
+                          canShowPrices ? item.priceColor : 'text-slate-400'
+                        }`}
+                      >
+                        {displayPrice}
                       </span>
                       <span className="block text-[11px] font-mono font-bold text-slate-500 uppercase">
-                        Valor estimado ({distanceKm} km)
+                        {canShowPrices
+                          ? `Valor calculado (${distanceKm} km)`
+                          : 'Aguardando busca'}
                       </span>
                     </div>
                   </div>
@@ -300,7 +327,9 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
                     className="w-full py-3.5 px-4 bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-xs sm:text-sm rounded-2xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 border border-[#ff8533] uppercase tracking-wider"
                   >
                     <span>
-                      Escolher {item.name} ({formatBRL(fare.totalPrice)})
+                      {canShowPrices
+                        ? `Escolher ${item.name} (${displayPrice})`
+                        : 'Buscar corrida para ver valor'}
                     </span>
                     <ArrowRight className="w-4 h-4 shrink-0" />
                   </button>
@@ -309,6 +338,12 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
             );
           })}
         </div>
+
+        {!canShowPrices && (
+          <p className="text-center text-xs sm:text-sm font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded-2xl p-3">
+            Coloque endereço de saída e chegada e clique em BUSCAR CORRIDA para ver os valores
+          </p>
+        )}
       </div>
 
       {/* Banner de Garantia e Segurança do Passageiro */}
