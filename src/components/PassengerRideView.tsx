@@ -726,7 +726,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     <div className="w-full max-w-full min-w-0 overflow-x-hidden box-border space-y-5">
       {/* 1. Login / Cadastro Success Direct Entry Notification */}
       {loginSuccessBanner && (
-        <div className="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-4 sm:p-5 flex items-start sm:items-center justify-between gap-3 shadow-sm animate-fade-in min-w-0">
+        <div className="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm animate-fade-in min-w-0">
           <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
             <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-xs">
               <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -1080,35 +1080,35 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200 min-w-0">
-          <div className="min-w-0 flex-1">
-            <h2 className="font-heading font-black text-slate-950 text-lg sm:text-2xl flex items-center gap-2">
-              <Navigation className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600 shrink-0" />
-              <span>Para onde vamos hoje?</span>
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-600 font-medium mt-0.5 leading-snug">
-              Informe o ponto de embarque e destino com o número exato para o trajeto em Indaiatuba
-            </p>
+        <div className="flex flex-col items-start gap-2.5 pb-3 border-b border-slate-200 w-full min-w-0">
+          <h2 className="w-full font-heading font-black text-slate-950 text-[clamp(21px,6.2vw,28px)] leading-tight tracking-tight whitespace-nowrap flex items-center gap-2">
+            <Navigation className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600 shrink-0" />
+            <span>Para onde vamos hoje?</span>
+          </h2>
+          <p className="w-full text-xs sm:text-sm text-slate-600 font-medium leading-snug">
+            Informe o ponto de embarque e destino com o número exato para o trajeto em Indaiatuba
+          </p>
+          <div className="w-full">
+            <span className="inline-flex items-center text-xs font-mono text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 font-extrabold">
+              {availableDrivers.filter((d) => d.status === 'online').length} condutores online
+            </span>
           </div>
-          <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 font-extrabold shrink-0">
-            {availableDrivers.filter((d) => d.status === 'online').length} condutores online
-          </span>
         </div>
 
         {/* Pickup Input com Busca Automática & Geolocalização */}
         <div className="relative w-full min-w-0">
-          {/* Barra Superior de Embarque com Botão 'Meu GPS' Acima do Endereço de Saída */}
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-2 min-w-0">
-            <label className="flex items-center gap-1.5 text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wide min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-xs"></span>
-              <span className="leading-snug">Endereço de Saída / Embarque (Com Número)</span>
+          {/* Título em 1 linha + Botão 'Meu GPS' embaixo do título */}
+          <div className="flex flex-col items-start gap-2 mb-2.5 w-full min-w-0">
+            <label className="w-full flex items-center gap-1.5 text-[11px] min-[390px]:text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-tight whitespace-nowrap">
+              <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Endereço de Saída / Embarque (Com Número)</span>
             </label>
             <button
               type="button"
               onClick={handleUseCurrentLocation}
               title="Detectar Minha Localização GPS Atual"
               disabled={isLocatingUser}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-60 shrink-0"
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer shadow-xs inline-flex items-center gap-1.5 transition-all disabled:opacity-60"
             >
               {isLocatingUser ? (
                 <>
@@ -1125,7 +1125,6 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           </div>
 
           <div className="relative w-full min-w-0">
-            <MapPin className="w-5 h-5 text-emerald-600 shrink-0 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={pickupInput}
@@ -1139,7 +1138,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 !hasAddressNumber(pickupInput) && pickupInput.trim().length > 3
                   ? 'border-amber-400 focus:border-amber-500'
                   : 'border-slate-300 hover:border-emerald-400 focus:border-emerald-600'
-              } rounded-2xl pl-10 pr-10 py-3.5 text-[16px] leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 font-bold shadow-xs transition-all`}
+              } rounded-2xl p-4 ${pickupInput || isSearchingPickup ? 'pr-10' : ''} text-[14px] sm:text-base leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 font-bold shadow-xs transition-all overflow-hidden text-ellipsis`}
             />
             {isSearchingPickup && (
               <Loader2 className="w-5 h-5 text-emerald-600 animate-spin absolute right-3.5 top-1/2 -translate-y-1/2" />
@@ -1254,15 +1253,14 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         {/* Destination Input com Busca Automática */}
         <div className="relative w-full min-w-0">
           {/* Barra Superior do Destino */}
-          <div className="flex items-center justify-between mb-2">
-            <label className="flex items-center gap-1.5 text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wide min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0 shadow-xs"></span>
-              <span className="leading-snug">Endereço de Chegada / Destino (Com Número)</span>
+          <div className="flex flex-col items-start mb-2.5 w-full min-w-0">
+            <label className="w-full flex items-center gap-1.5 text-[11px] min-[390px]:text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-tight whitespace-nowrap">
+              <Navigation className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Endereço de Chegada / Destino (Com Número)</span>
             </label>
           </div>
 
           <div className="relative w-full min-w-0">
-            <Navigation className="w-5 h-5 text-amber-600 shrink-0 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={destInput}
@@ -1276,7 +1274,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 !hasAddressNumber(destInput) && destInput.trim().length > 3
                   ? 'border-amber-400 focus:border-amber-500'
                   : 'border-slate-300 hover:border-amber-400 focus:border-amber-500'
-              } rounded-2xl pl-10 pr-10 py-3.5 text-[16px] leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-amber-500/10 font-bold shadow-xs transition-all`}
+              } rounded-2xl p-4 ${destInput || isSearchingDest ? 'pr-10' : ''} text-[14px] sm:text-base leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-amber-500/10 font-bold shadow-xs transition-all overflow-hidden text-ellipsis`}
             />
             {isSearchingDest && (
               <Loader2 className="w-5 h-5 text-amber-600 animate-spin absolute right-3.5 top-1/2 -translate-y-1/2" />
@@ -1485,11 +1483,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
           {/* Opções de Corrida para Passageiro (4 Opções com VALOR FINAL) */}
           <div className="space-y-3 min-w-0">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <label className="text-sm font-heading font-black text-slate-950 uppercase tracking-wider">
                 Escolha sua Categoria de Viagem
               </label>
-              <span className="text-xs text-slate-600 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200 shrink-0">
+              <span className="text-xs text-slate-600 font-mono font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200 self-start sm:self-auto shrink-0">
                 Distância da rota: {dynamicDistanceKm} km
               </span>
             </div>
@@ -1505,7 +1503,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     className="p-4 sm:p-5 rounded-2xl border-2 border-slate-200 hover:border-amber-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group min-w-0"
                   >
                     <div className="min-w-0">
-                      <div className="flex items-start justify-between gap-2 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 min-w-0">
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
                             <Car className="w-6 h-6 sm:w-7 sm:h-7" />
@@ -1525,8 +1523,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <span className="font-heading font-black text-xl sm:text-3xl text-amber-600 whitespace-nowrap">
+                        <div className="text-left sm:text-right shrink-0">
+                          <span className="font-heading font-black text-2xl sm:text-3xl text-amber-600 whitespace-nowrap">
                             {formatBRL(fare.totalPrice)}
                           </span>
                           <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
@@ -1563,7 +1561,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     className="p-4 sm:p-5 rounded-2xl border-2 border-purple-200 hover:border-purple-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group min-w-0"
                   >
                     <div className="min-w-0">
-                      <div className="flex items-start justify-between gap-2 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 min-w-0">
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0 border border-purple-300">
                             <Sparkles className="w-6 h-6 sm:w-7 sm:h-7" />
@@ -1583,8 +1581,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <span className="font-heading font-black text-purple-900 text-xl sm:text-3xl whitespace-nowrap">
+                        <div className="text-left sm:text-right shrink-0">
+                          <span className="font-heading font-black text-purple-900 text-2xl sm:text-3xl whitespace-nowrap">
                             {formatBRL(fare.totalPrice)}
                           </span>
                           <p className="text-[10px] sm:text-xs text-purple-600 font-bold uppercase font-mono">Preço Final</p>
@@ -1621,7 +1619,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     className="p-4 sm:p-5 rounded-2xl border-2 border-cyan-200 hover:border-cyan-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group min-w-0"
                   >
                     <div className="min-w-0">
-                      <div className="flex items-start justify-between gap-2 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 min-w-0">
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-cyan-100 text-cyan-800 flex items-center justify-center shrink-0 border border-cyan-300">
                             <Bike className="w-6 h-6 sm:w-7 sm:h-7" />
@@ -1641,8 +1639,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <span className="font-heading font-black text-cyan-900 text-xl sm:text-3xl whitespace-nowrap">
+                        <div className="text-left sm:text-right shrink-0">
+                          <span className="font-heading font-black text-cyan-900 text-2xl sm:text-3xl whitespace-nowrap">
                             {formatBRL(fare.totalPrice)}
                           </span>
                           <p className="text-[10px] sm:text-xs text-cyan-600 font-bold uppercase font-mono">Preço Final</p>
@@ -1679,7 +1677,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     className="p-4 sm:p-5 rounded-2xl border-2 border-amber-200 hover:border-amber-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group min-w-0"
                   >
                     <div className="min-w-0">
-                      <div className="flex items-start justify-between gap-2 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 min-w-0">
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
                             <PackageCheck className="w-6 h-6 sm:w-7 sm:h-7" />
@@ -1699,8 +1697,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <span className="font-heading font-black text-xl sm:text-3xl text-amber-600 whitespace-nowrap">
+                        <div className="text-left sm:text-right shrink-0">
+                          <span className="font-heading font-black text-2xl sm:text-3xl text-amber-600 whitespace-nowrap">
                             {formatBRL(fare.totalPrice)}
                           </span>
                           <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
@@ -1798,34 +1796,36 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
             {/* Formas de Pagamento no App (PIX no app / Cartão no app) */}
             <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-md space-y-4 min-w-0 w-full box-border overflow-hidden">
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200">
                 <div className="flex items-center gap-2 min-w-0">
                   <Lock className="w-5 h-5 text-emerald-600 shrink-0" />
                   <h4 className="font-heading font-black text-slate-950 text-sm sm:text-base uppercase tracking-wider">
                     Forma de Pagamento no App
                   </h4>
                 </div>
-                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 font-mono shrink-0">
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 font-mono self-start sm:self-auto shrink-0">
                   100% SEGURO
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 sm:gap-3 w-full min-w-0">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 w-full min-w-0">
                 <button
                   type="button"
                   onClick={() => {
                     setPaymentMethod('pix');
                     initAsaasPayment('pix', selectedCategory);
                   }}
-                  className={`min-w-0 p-2.5 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer text-center ${
+                  className={`min-w-0 p-3.5 sm:p-4 rounded-2xl border-2 flex flex-row sm:flex-col items-center justify-between sm:justify-center gap-2 sm:gap-1 transition-all cursor-pointer text-left sm:text-center ${
                     paymentMethod === 'pix'
                       ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-black shadow-sm ring-2 ring-emerald-500/20'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
                   }`}
                 >
-                  <QrCode className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 shrink-0" />
-                  <span className="text-[11px] sm:text-sm font-black leading-tight">PIX no app</span>
-                  <span className="text-[9px] sm:text-xs text-emerald-700 font-bold leading-tight">Asaas Instantâneo</span>
+                  <div className="flex items-center sm:flex-col gap-2.5 sm:gap-1">
+                    <QrCode className="w-6 h-6 text-emerald-600 shrink-0" />
+                    <span className="text-sm font-black leading-tight">PIX no app</span>
+                  </div>
+                  <span className="text-xs text-emerald-700 font-bold leading-tight">Asaas Instantâneo</span>
                 </button>
 
                 <button
@@ -1834,15 +1834,17 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     setPaymentMethod('credit_card');
                     initAsaasPayment('credit_card', selectedCategory);
                   }}
-                  className={`min-w-0 p-2.5 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer text-center ${
+                  className={`min-w-0 p-3.5 sm:p-4 rounded-2xl border-2 flex flex-row sm:flex-col items-center justify-between sm:justify-center gap-2 sm:gap-1 transition-all cursor-pointer text-left sm:text-center ${
                     paymentMethod === 'credit_card'
                       ? 'bg-amber-50 border-amber-500 text-amber-950 font-black shadow-sm ring-2 ring-amber-500/20'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
                   }`}
                 >
-                  <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600 shrink-0" />
-                  <span className="text-[11px] sm:text-sm font-black leading-tight">Cartão no app</span>
-                  <span className="text-[9px] sm:text-xs text-amber-700 font-bold leading-tight">Link Seguro Asaas</span>
+                  <div className="flex items-center sm:flex-col gap-2.5 sm:gap-1">
+                    <CreditCard className="w-6 h-6 text-amber-600 shrink-0" />
+                    <span className="text-sm font-black leading-tight">Cartão no app</span>
+                  </div>
+                  <span className="text-xs text-amber-700 font-bold leading-tight">Link Seguro Asaas</span>
                 </button>
 
                 <button
@@ -1852,15 +1854,17 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     setIsPollingAsaas(false);
                     setPaymentMethod('dinheiro');
                   }}
-                  className={`min-w-0 p-2.5 sm:p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer text-center ${
+                  className={`min-w-0 p-3.5 sm:p-4 rounded-2xl border-2 flex flex-row sm:flex-col items-center justify-between sm:justify-center gap-2 sm:gap-1 transition-all cursor-pointer text-left sm:text-center ${
                     isCashMethod(paymentMethod)
                       ? 'bg-blue-50 border-blue-500 text-blue-950 font-black shadow-sm ring-2 ring-blue-500/20'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
                   }`}
                 >
-                  <Wallet className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 shrink-0" />
-                  <span className="text-[11px] sm:text-sm font-black leading-tight">Dinheiro</span>
-                  <span className="text-[9px] sm:text-xs text-blue-700 font-bold leading-tight">Ao condutor</span>
+                  <div className="flex items-center sm:flex-col gap-2.5 sm:gap-1">
+                    <Wallet className="w-6 h-6 text-blue-600 shrink-0" />
+                    <span className="text-sm font-black leading-tight">Dinheiro</span>
+                  </div>
+                  <span className="text-xs text-blue-700 font-bold leading-tight">Ao condutor</span>
                 </button>
               </div>
 
@@ -2232,12 +2236,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       })()}
 
       {/* Safety & 100% Policy Guarantee Banner */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2.5 text-xs sm:text-sm text-slate-700 shadow-sm font-medium min-w-0 w-full box-border">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs sm:text-sm text-slate-700 shadow-sm font-medium min-w-0 w-full box-border">
+        <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+          <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
           <span className="leading-snug">Motoristas verificados com CNH, antecedentes criminais e telemetria 24h</span>
         </div>
-        <span className="font-mono text-amber-700 font-extrabold bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 shrink-0">
+        <span className="font-mono text-amber-700 font-extrabold bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 self-start sm:self-auto shrink-0">
           RACE 24H
         </span>
       </div>
