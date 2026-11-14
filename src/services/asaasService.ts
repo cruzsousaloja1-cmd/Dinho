@@ -367,10 +367,98 @@ export async function createAsaasCardPayment(params: {
   };
 }
 
-const inMemoryAsaasStatuses = new Map<string, string>();
+/**
+ * Processa pagamento com Cartão de Crédito diretamente na API do Asaas.
+ * Só retorna isPaid = true se o Asaas retornar status RECEIVED ou CONFIRMED.
+ */
+export async function payAsaasPaymentWithCreditCard(params: {
+  paymentId: string;
+  cardHolder: string;
+  cardNumber: string;
+  expiryMonth: string;
+  expiryYear: string;
+  ccv: string;
+  holderName: string;
+  holderEmail: string;
+  holderCpfCnpj: string;
+  holderPostalCode: string;
+  holderAddressNumber: string;
+  holderPhone: string;
+}): Promise<{
+  id: string;
+  status: 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED';
+  isPaid: boolean;
+  errorMessage?: string;
+}> {
+  const apiKey = getAsaasApiKey();
+  if (!apiKey || params.paymentId.startsWith('pay_card_') || params.paymentId.startsWith('pay_asaas_')) {
+    return {
+      id: params.paymentId,
+      status: 'PENDING',
+      isPaid: false,
+      errorMessage: 'Chave Asaas não configurada ou cobrança ainda não registrada no gateway Asaas.',
+    };
+  }
+
+  try {
+    const baseUrl = getAsaasBaseUrl(apiKey);
+    const res = await fetch(`${baseUrl}/payments/${params.paymentId}/payWithCreditCard`, {
+      method: 'POST',
+      headers: {
+        access_token: apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        creditCard: {
+          holderName: params.cardHolder,
+          number: params.cardNumber.replace(/\D/g, ''),
+          expiryMonth: params.expiryMonth,
+          expiryYear: params.expiryYear,
+          ccv: params.ccv,
+        },
+        creditCardHolderInfo: {
+          name: params.holderName,
+          email: params.holderEmail,
+          cpfCnpj: params.holderCpfCnpj.replace(/\D/g, ''),
+          postalCode: params.holderPostalCode.replace(/\D/g, ''),
+          addressNumber: params.holderAddressNumber || 'S/N',
+          phone: params.holderPhone.replace(/\D/g, ''),
+        },
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const apiErr = data?.errors?.[0]?.description || 'Cartão não autorizado pelo Asaas.';
+      return {
+        id: params.paymentId,
+        status: 'PENDING',
+        isPaid: false,
+        errorMessage: apiErr,
+      };
+    }
+
+    const status = (data.status || 'PENDING') as 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED';
+    const isPaid = status === 'RECEIVED' || status === 'CONFIRMED';
+    return {
+      id: params.paymentId,
+      status,
+      isPaid,
+      errorMessage: isPaid ? undefined : `Status atual no Asaas: ${status}. Aguardando confirmação.`,
+    };
+  } catch {
+    return {
+      id: params.paymentId,
+      status: 'PENDING',
+      isPaid: false,
+      errorMessage: 'Não foi possível comunicar com o Asaas no navegador. Use o Link de Pagamento Asaas acima.',
+    };
+  }
+}
 
 /**
- * Verifica o status de uma cobrança no Asaas
+ * Verifica o status REAL de uma cobrança no Asaas.
+ * Só retorna isPaid = true quando o Asaas confirmar status = 'RECEIVED' ou 'CONFIRMED'.
  */
 export async function checkAsaasPaymentStatus(paymentId: string): Promise<{
   id: string;
@@ -378,7 +466,7 @@ export async function checkAsaasPaymentStatus(paymentId: string): Promise<{
   isPaid: boolean;
 }> {
   const apiKey = getAsaasApiKey();
-  if (apiKey && !paymentId.startsWith('pay_asaas_') && !paymentId.startsWith('pay_card_')) {
+  if (apiKey && paymentId && !paymentId.startsWith('pay_asaas_') && !paymentId.startsWith('pay_card_')) {
     try {
       const baseUrl = getAsaasBaseUrl(apiKey);
       const res = await fetch(`${baseUrl}/payments/${paymentId}`, {
@@ -388,10 +476,11 @@ export async function checkAsaasPaymentStatus(paymentId: string): Promise<{
       });
       if (res.ok) {
         const data = await res.json();
-        const isPaid = data.status === 'RECEIVED' || data.status === 'CONFIRMED';
+        const status = (data.status || 'PENDING') as 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED';
+        const isPaid = status === 'RECEIVED' || status === 'CONFIRMED';
         return {
           id: paymentId,
-          status: data.status,
+          status,
           isPaid,
         };
       }
@@ -400,19 +489,7 @@ export async function checkAsaasPaymentStatus(paymentId: string): Promise<{
     }
   }
 
-  const localStatus = inMemoryAsaasStatuses.get(paymentId);
-  if (localStatus === 'RECEIVED' || localStatus === 'CONFIRMED') {
-    return { id: paymentId, status: 'RECEIVED', isPaid: true };
-  }
-
   return { id: paymentId, status: 'PENDING', isPaid: false };
-}
-
-/**
- * Marca pagamento como confirmado na sessão atual (sem salvar dados de teste em localStorage)
- */
-export function markAsaasPaymentPaidLocally(paymentId: string): void {
-  inMemoryAsaasStatuses.set(paymentId, 'CONFIRMED');
 }
 
 /**

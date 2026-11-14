@@ -198,7 +198,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
 
     const deliveryRide: Ride = {
       id: '',
-      passengerName: `Envio Flash (${packageType})`,
+      passengerName: `Envio Flash (${packageType || 'Entrega'})`,
       passengerPhone: '',
       passengerRating: 0,
       driver: motoboy,
@@ -208,11 +208,11 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
       distanceKm,
       durationMinutes: Math.round(distanceKm * 2),
       price: fare.totalPrice,
-      driverEarnings: fare.driverEarnings, // 100% para o motoboy!
-      platformFee: 0.00,
+      driverEarnings: fare.driverEarnings, // 85% para o motoboy
+      platformFee: fare.platformFee,       // 15% comissão Race
       paymentMethod: 'pix',
-      paymentStatus: 'paid',
-      status: 'in_progress',
+      paymentStatus: 'pending',
+      status: 'procurando',
       createdAt: new Date().toISOString(),
       deliveryDetails: {
         packageType,
@@ -223,15 +223,6 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
     };
 
     onStartDelivery(deliveryRide);
-    try {
-      confetti({
-        particleCount: 45,
-        spread: 60,
-        origin: { y: 0.7 },
-      });
-    } catch {
-      // safe fallback
-    }
   };
 
   return (
@@ -260,9 +251,9 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
 
           <div className="hidden sm:block text-right">
             <span className="text-sm text-emerald-700 font-black bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 block">
-              100% Repasse
+              85% Motoboy • 15% Race
             </span>
-            <span className="text-xs text-slate-500 font-medium mt-1 block">Zero taxas para o motoboy</span>
+            <span className="text-xs text-slate-500 font-medium mt-1 block">Sem mensalidade • Repasse sexta</span>
           </div>
         </div>
       </div>
@@ -567,7 +558,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
               {formatBRL(fare.totalPrice)}
             </span>
             <span className="block text-xs text-emerald-700 font-bold">
-              100% Repassado ao Motoboy
+              85% ao Motoboy • 15% Race
             </span>
           </div>
         </div>

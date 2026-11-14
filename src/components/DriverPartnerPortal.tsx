@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory } from '../supabase';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash } from '../supabase';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverWorkSelectionView } from './DriverWorkSelectionView';
@@ -346,6 +346,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     const handleNewOrFoundRide = (candidate: Ride | null) => {
       if (!mounted || !candidate) return;
       if (!isSearchingRideStatus(candidate.status)) return;
+      if (!isRidePaidOrConfirmedCash(candidate)) return;
       if (!doesRideMatchDriverCategory(candidate)) return;
       const key = getRideUniqueKey(candidate);
       if (dismissedRideIdsRef.current.has(key)) return;
@@ -386,6 +387,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           list.find(
             (r) =>
               isSearchingRideStatus(r.status) &&
+              isRidePaidOrConfirmedCash(r) &&
               doesRideMatchDriverCategory(r) &&
               !dismissedRideIdsRef.current.has(getRideUniqueKey(r))
           ) || null;
@@ -856,6 +858,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const activePropSearchingRide =
     activeRide &&
     isSearchingRideStatus(activeRide.status) &&
+    isRidePaidOrConfirmedCash(activeRide) &&
     doesRideMatchDriverCategory(activeRide) &&
     !dismissedRideIdsRef.current.has(getRideUniqueKey(activeRide))
       ? activeRide
@@ -1279,10 +1282,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                           {isCashCall && (
                             <div className="bg-emerald-600 text-white border-2 border-emerald-400 rounded-2xl p-4 text-center shadow-lg space-y-1">
                               <div className="text-lg sm:text-2xl font-heading font-black uppercase tracking-wider">
-                                PAGAMENTO: DINHEIRO
+                                Pagamento em DINHEIRO - Receba {formatBRL(incomingPrice)} do passageiro
                               </div>
                               <p className="text-sm sm:text-base font-extrabold text-emerald-50">
-                                Receber {formatBRL(incomingPrice)} em dinheiro no final da corrida
+                                Confirme o recebimento de {formatBRL(incomingPrice)} em espécie no final da corrida
                               </p>
                             </div>
                           )}

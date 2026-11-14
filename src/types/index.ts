@@ -153,6 +153,8 @@ export interface Ride {
   platformFee: number;    // 15% comissão Race
   paymentMethod: 'pix' | 'credit_card' | 'race_pay' | 'money' | 'dinheiro';
   paymentStatus: 'pending' | 'paid';
+  asaasPaymentId?: string;
+  asaasStatus?: 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED';
   status: RideStatus;
   confirmationCode?: string;
   createdAt: string;

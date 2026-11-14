@@ -509,16 +509,28 @@ export default function App() {
     }, 6000);
   };
 
-  // Passenger confirma corrida -> gera código único de 4 números, salva corrida em MODO PROCURANDO no Supabase (SEM voz ainda!)
+  // Passenger confirma corrida -> só cria se for Dinheiro ou Asaas RECEIVED/CONFIRMED
   const handleStartRide = (ride: Ride) => {
     const isCash = ride.paymentMethod === 'money' || ride.paymentMethod === 'dinheiro';
+    const isAsaasConfirmed =
+      ride.asaasStatus === 'RECEIVED' || ride.asaasStatus === 'CONFIRMED';
+
+    if (!isCash && (!isAsaasConfirmed || ride.paymentStatus !== 'paid')) {
+      triggerPush(
+        'Pague primeiro para chamar o motorista',
+        'Aguarde a confirmação real do pagamento no Asaas (PIX ou Cartão) ou escolha Dinheiro.',
+        'ride'
+      );
+      return;
+    }
+
     const confirmationCode = ride.confirmationCode || generateUniqueRideConfirmationCode();
     const startedRide: Ride = {
       ...ride,
       passengerId: ride.passengerId || currentUser?.id,
       passengerEmail: ride.passengerEmail || currentUser?.email,
       paymentMethod: isCash ? 'dinheiro' : ride.paymentMethod,
-      paymentStatus: isCash ? 'pending' : (ride.paymentStatus || 'paid'),
+      paymentStatus: isCash ? 'pending' : 'paid',
       status: 'procurando',
       confirmationCode,
     };
@@ -562,7 +574,9 @@ export default function App() {
     // Notificação silenciosa para o radar (sem voz enquanto aguarda motorista aceitar)
     const driverAlert: PushNotification = {
       id: `driver-call-${Date.now()}`,
-      title: isCash ? '💵 Nova corrida em DINHEIRO - Aceitar' : '🔔 Nova corrida - Aceitar',
+      title: isCash
+        ? `💵 Pagamento em DINHEIRO - Receba ${`R$ ${ride.price.toFixed(2).replace('.', ',')}`} do passageiro`
+        : '🔔 Nova corrida - Aceitar',
       message: `${ride.passengerName || 'Passageiro'} • ${ride.pickup.address} → ${ride.destination.address} (R$ ${ride.price.toFixed(2).replace('.', ',')})`,
       time: 'Agora',
       type: 'ride',
@@ -730,14 +744,24 @@ export default function App() {
     );
   };
 
-  // Delivery Flash order
+  // Delivery Flash order -> direciona para pagamento obrigatório antes de chamar motoboy
   const handleStartDelivery = (ride: Ride) => {
-    setActiveRide({ ...ride, status: 'searching' });
-    triggerPush(
-      '📦 RACE Flash Solicitado!',
-      `Buscando motoboy disponível para coleta. Código de entrega: ${ride.deliveryDetails?.deliveryCode}.`,
-      'ride'
-    );
+    const isCash = ride.paymentMethod === 'money' || ride.paymentMethod === 'dinheiro';
+    const isAsaasConfirmed =
+      ride.asaasStatus === 'RECEIVED' || ride.asaasStatus === 'CONFIRMED';
+    if (!isCash && (!isAsaasConfirmed || ride.paymentStatus !== 'paid')) {
+      setPickup(ride.pickup);
+      setDestination(ride.destination);
+      setSelectedCategory('moto_entrega');
+      setActiveTab('rides');
+      triggerPush(
+        'Pague primeiro para chamar o motorista',
+        'Conclua o pagamento no Asaas (PIX/Cartão) ou escolha Dinheiro na aba CORRIDA antes de chamar o motoboy.',
+        'ride'
+      );
+      return;
+    }
+    handleStartRide(ride);
   };
 
   // Map interaction
@@ -1334,8 +1358,8 @@ export default function App() {
               );
               if (!isRideAuthorized) {
                 triggerPush(
-                  'Complete o fluxo primeiro',
-                  'Preencha seu endereço de início e chegada com número, escolha a categoria e confirme a forma de pagamento para liberar o mapa.',
+                  'Pague primeiro para chamar o motorista',
+                  'Preencha seu endereço de início e chegada com número, escolha a categoria e conclua o pagamento no Asaas (ou Dinheiro) para liberar o mapa.',
                   'ride'
                 );
                 return;
@@ -1576,8 +1600,8 @@ export default function App() {
           if (isPassenger && (tab === 'passenger_options' || tab === 'history')) {
             if (!hasAuthorizedRide) {
               triggerPush(
-                'Faça sua corrida primeiro',
-                'Preencha endereço de início e chegada com número, escolha a categoria e conclua o pagamento no app antes de acessar.',
+                'Pague primeiro para chamar o motorista',
+                'Preencha endereço de início e chegada com número, escolha a categoria e conclua o pagamento no Asaas (ou Dinheiro) antes de acessar.',
                 'ride'
               );
               setActiveTab('rides');

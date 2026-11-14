@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS public.corridas (
   comentario TEXT,
   detalhe_problema TEXT,
   codigo_confirmacao TEXT,
+  asaas_payment_id TEXT,
+  asaas_status TEXT,
+  pagamento_confirmado BOOLEAN DEFAULT false,
   data TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -103,6 +106,9 @@ ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS valor_total NUMERIC DEFAULT
 ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS valor_motorista NUMERIC DEFAULT 0.00;
 ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS valor_race NUMERIC DEFAULT 0.00;
 ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS codigo_confirmacao TEXT;
+ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS asaas_payment_id TEXT;
+ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS asaas_status TEXT;
+ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS pagamento_confirmado BOOLEAN DEFAULT false;
 
 -- Habilitar Realtime para a tabela corridas
 DO $$
@@ -203,6 +209,9 @@ export interface SupabaseCorridaRow {
   comentario?: string;
   detalhe_problema?: string;
   codigo_confirmacao?: string;
+  asaas_payment_id?: string;
+  asaas_status?: string;
+  pagamento_confirmado?: boolean;
   data?: string;
 }
 
@@ -1115,6 +1124,15 @@ export function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
       : Number((totalValue * 0.15).toFixed(2));
   const createdTime = row.created_at || row.data || new Date().toISOString();
 
+  const rawAsaasSt = String(row.asaas_status || '').toUpperCase().trim();
+  const hasExplicitAsaasStatus = rawAsaasSt.length > 0 && rawAsaasSt !== 'DINHEIRO';
+  const isAsaasApproved = rawAsaasSt === 'RECEIVED' || rawAsaasSt === 'CONFIRMED';
+  const isPaidDigital = !isCash && (
+    hasExplicitAsaasStatus
+      ? isAsaasApproved
+      : row.pagamento_confirmado !== false
+  );
+
   return {
     id: String(row.id ?? ''),
     passengerId: passengerIdRaw !== undefined && passengerIdRaw !== null ? String(passengerIdRaw) : '',
@@ -1161,7 +1179,11 @@ export function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
     driverEarnings: driverValue,
     platformFee: raceValue,
     paymentMethod: isCash ? 'dinheiro' : isCard ? 'credit_card' : 'pix',
-    paymentStatus: isCash && rawStatus !== 'finalizada' && rawStatus !== 'completed' ? 'pending' : 'paid',
+    paymentStatus: isCash
+      ? (rawStatus !== 'finalizada' && rawStatus !== 'completed' ? 'pending' : 'paid')
+      : (isPaidDigital ? 'paid' : 'pending'),
+    asaasPaymentId: row.asaas_payment_id || undefined,
+    asaasStatus: (hasExplicitAsaasStatus ? rawAsaasSt : undefined) as any,
     status: (row.status as any) || 'procurando',
     confirmationCode: row.codigo_confirmacao || undefined,
     createdAt: createdTime,
@@ -1169,6 +1191,23 @@ export function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
     ratingComment: row.comentario,
     issueComment: row.detalhe_problema,
   };
+}
+
+/**
+ * Garante que o Radar do Motorista só exiba corridas pagas de verdade no Asaas
+ * (RECEIVED ou CONFIRMED) OU corridas confirmadas em Dinheiro.
+ */
+export function isRidePaidOrConfirmedCash(ride?: Ride | null): boolean {
+  if (!ride) return false;
+  const method = String(ride.paymentMethod || '').toLowerCase().trim();
+  if (method === 'dinheiro' || method === 'money') {
+    return true;
+  }
+  if (ride.asaasStatus) {
+    const st = String(ride.asaasStatus).toUpperCase().trim();
+    return st === 'RECEIVED' || st === 'CONFIRMED';
+  }
+  return ride.paymentStatus === 'paid';
 }
 
 // Canal Realtime compartilhado 'corridas' (postgres_changes + broadcast instantâneo)
@@ -1287,6 +1326,15 @@ export async function saveCorridaSupabase(
     const normalizedStatus =
       rawSt === 'searching' || rawSt === 'procurando_motorista' ? 'procurando' : rawSt;
 
+    const isCash = normalizedPaymentMethod === 'dinheiro';
+    const isAsaasConfirmed =
+      ride.asaasStatus === 'RECEIVED' || ride.asaasStatus === 'CONFIRMED';
+
+    // Bloqueia gravação de corrida procurando sem pagamento real no Asaas (exceto dinheiro)
+    if (!isCash && normalizedStatus === 'procurando' && !isAsaasConfirmed) {
+      return { success: false, error: 'Pague primeiro no Asaas para chamar o motorista.' };
+    }
+
     const totalPrice = Number((ride.price || 0).toFixed(2));
     const driverEarnings = Number((ride.driverEarnings ?? totalPrice * 0.85).toFixed(2));
     const raceFee = Number((ride.platformFee ?? totalPrice * 0.15).toFixed(2));
@@ -1316,6 +1364,9 @@ export async function saveCorridaSupabase(
       comentario: ride.ratingComment ?? null,
       detalhe_problema: (ride as any).issueComment ?? null,
       codigo_confirmacao: ride.confirmationCode || '',
+      asaas_payment_id: ride.asaasPaymentId || '',
+      asaas_status: isCash ? 'DINHEIRO' : (ride.asaasStatus || 'PENDING'),
+      pagamento_confirmado: isCash || isAsaasConfirmed,
     };
 
     if (/^\d+$/.test(String(rawPassengerId))) {
@@ -1351,6 +1402,9 @@ export async function saveCorridaSupabase(
       'valor_race',
       'valor',
       'codigo_confirmacao',
+      'asaas_payment_id',
+      'asaas_status',
+      'pagamento_confirmado',
       'id_passageiro',
       'id_motorista',
       'detalhe_problema',
@@ -1472,10 +1526,14 @@ export async function getSearchingCorridasSupabase(): Promise<Ride[]> {
         .in('status', ['procurando', 'searching', 'procurando_motorista'])
         .limit(20);
       if (retry.error || !retry.data) return [];
-      return (retry.data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
+      return (retry.data as SupabaseCorridaRow[])
+        .map(mapSupabaseCorridaToRide)
+        .filter((r) => isRidePaidOrConfirmedCash(r));
     }
     if (!data) return [];
-    return (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
+    return (data as SupabaseCorridaRow[])
+      .map(mapSupabaseCorridaToRide)
+      .filter((r) => isRidePaidOrConfirmedCash(r));
   } catch {
     return [];
   }

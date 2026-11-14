@@ -60,11 +60,10 @@ import {
 import {
   createAsaasPixPayment,
   createAsaasCardPayment,
+  payAsaasPaymentWithCreditCard,
   checkAsaasPaymentStatus,
-  markAsaasPaymentPaidLocally,
   generateFallbackPixCopiaECola,
   AsaasPaymentResult,
-  getAsaasApiKey,
 } from '../services/asaasService';
 
 interface PassengerRideViewProps {
@@ -126,14 +125,21 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [pixCopied, setPixCopied] = useState(false);
   const [rideCodeCopied, setRideCodeCopied] = useState(false);
 
-  // Estados Asaas
+  // Estados Asaas (somente libera após RECEIVED ou CONFIRMED real)
   const [asaasPayment, setAsaasPayment] = useState<AsaasPaymentResult | null>(null);
+  const [asaasConfirmedStatus, setAsaasConfirmedStatus] = useState<
+    'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED'
+  >('PENDING');
+  const [paymentBlockedError, setPaymentBlockedError] = useState<string | null>(null);
+  const [isCheckingAsaasNow, setIsCheckingAsaasNow] = useState(false);
   const [isLoadingAsaas, setIsLoadingAsaas] = useState(false);
   const [isPollingAsaas, setIsPollingAsaas] = useState(false);
   const [cardHolder, setCardHolder] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
+  const [cardHolderCpf, setCardHolderCpf] = useState('');
+  const [cardHolderCep, setCardHolderCep] = useState('');
   const pollingTimerRef = useRef<any>(null);
 
   // Address validation banner state
@@ -306,6 +312,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
     const effectiveMethod = methodOverride || paymentMethod;
     const isCash = isCashMethod(effectiveMethod);
+    const isAsaasConfirmed =
+      asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED';
+
+    if (!isCash && (!isPaidInApp || !isAsaasConfirmed || !asaasPayment?.id)) {
+      setPaymentBlockedError('Pague primeiro para chamar o motorista');
+      return;
+    }
 
     const calculated = calculateFare(finalCategory, dynamicDistanceKm);
 
@@ -321,8 +334,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       lng: -47.2050,
     };
 
-    // Dinheiro: cria imediatamente com status 'procurando_motorista' e forma_pagamento 'dinheiro' (SEM Asaas)
-    // PIX / Cartão: criado apenas após confirmação no Asaas
+    // Dinheiro: cria imediatamente com status 'procurando' e forma_pagamento 'dinheiro' (SEM Asaas)
+    // PIX / Cartão: criado apenas após confirmação real no Asaas (RECEIVED ou CONFIRMED)
     const newRide: Ride = {
       id: '',
       passengerId: currentUser?.id,
@@ -342,6 +355,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       platformFee: calculated.platformFee,       // 15% comissão Race
       paymentMethod: isCash ? 'dinheiro' : effectiveMethod,
       paymentStatus: isCash ? 'pending' : 'paid',
+      asaasPaymentId: isCash ? undefined : asaasPayment?.id,
+      asaasStatus: isCash ? undefined : asaasConfirmedStatus,
       status: 'procurando',
       confirmationCode: generateUniqueRideConfirmationCode(),
       createdAt: new Date().toISOString(),
@@ -387,6 +402,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     method: 'pix' | 'credit_card' | 'money' | 'dinheiro' | 'race_pay',
     cat: VehicleCategory = selectedCategory
   ) => {
+    setIsPaidInApp(false);
+    setAsaasConfirmedStatus('PENDING');
+    setPaymentBlockedError(null);
+    setAsaasPayment(null);
     if (isCashMethod(method)) {
       setIsLoadingAsaas(false);
       return;
@@ -420,10 +439,16 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     }
   };
 
-  // Monitora e pesquisa aprovação no Asaas a cada 3 segundos
+  // Monitora e pesquisa aprovação REAL no Asaas a cada 3 segundos (RECEIVED ou CONFIRMED)
   useEffect(() => {
-    if (passengerStep !== 'payment' || !asaasPayment?.id || isPaidInApp) {
+    if (
+      passengerStep !== 'payment' ||
+      isCashMethod(paymentMethod) ||
+      !asaasPayment?.id ||
+      isPaidInApp
+    ) {
       if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+      setIsPollingAsaas(false);
       return;
     }
 
@@ -431,17 +456,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     pollingTimerRef.current = setInterval(async () => {
       try {
         const check = await checkAsaasPaymentStatus(asaasPayment.id);
-        if (check.isPaid) {
+        if (check.isPaid && (check.status === 'RECEIVED' || check.status === 'CONFIRMED')) {
           clearInterval(pollingTimerRef.current);
           setIsPollingAsaas(false);
+          setAsaasConfirmedStatus(check.status);
           setIsPaidInApp(true);
+          setPaymentBlockedError(null);
           try {
             confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
           } catch {}
-          // Quando Asaas confirmar pagamento, ir direto para VER MAPA NA TELA CHEIA
-          setTimeout(() => {
-            handleConfirmRideAfterPayment();
-          }, 600);
         }
       } catch {}
     }, 3000);
@@ -449,16 +472,18 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     return () => {
       if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
     };
-  }, [passengerStep, asaasPayment?.id, isPaidInApp]);
+  }, [passengerStep, paymentMethod, asaasPayment?.id, isPaidInApp]);
 
   const handleSelectCategory = (cat: VehicleCategory) => {
     setSelectedCategory(cat);
     setIsPaidInApp(false);
+    setAsaasConfirmedStatus('PENDING');
+    setPaymentBlockedError(null);
     setPassengerStep('payment');
     initAsaasPayment(paymentMethod, cat);
   };
 
-  // Fluxo DINHEIRO: cria corrida NA HORA no Supabase sem esperar confirmação do Asaas
+  // Fluxo DINHEIRO: cria corrida NA HORA no Supabase sem passar pelo Asaas
   const handleConfirmMoneyRide = () => {
     if (!hasAddressNumber(pickupInput)) {
       setAddressValidationError('Coloque o número do endereço de saída (embarque) para o motorista te achar.');
@@ -476,6 +501,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
     setIsProcessingPayment(false);
     setIsPaidInApp(false);
+    setPaymentBlockedError(null);
     handleRequestRideWithCategory(selectedCategory, 'dinheiro');
     setPassengerStep('search');
     if (onOpenFullMap) {
@@ -483,34 +509,108 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     }
   };
 
-  // Fluxo PIX / CARTÃO: mantém confirmação pelo Asaas antes de criar a corrida
-  const handlePayInAppAction = () => {
-    if (isCashMethod(paymentMethod)) {
-      handleConfirmMoneyRide();
+  // Verificação manual em tempo real na API do Asaas (sem nunca liberar sem RECEIVED ou CONFIRMED)
+  const handleVerifyAsaasPaymentNow = async () => {
+    if (!asaasPayment?.id) {
+      setPaymentBlockedError('Pague primeiro para chamar o motorista');
       return;
     }
-    setIsProcessingPayment(true);
-    if (asaasPayment?.id) {
-      markAsaasPaymentPaidLocally(asaasPayment.id);
+    setIsCheckingAsaasNow(true);
+    setPaymentBlockedError(null);
+    try {
+      const check = await checkAsaasPaymentStatus(asaasPayment.id);
+      if (check.isPaid && (check.status === 'RECEIVED' || check.status === 'CONFIRMED')) {
+        setAsaasConfirmedStatus(check.status);
+        setIsPaidInApp(true);
+        setPaymentBlockedError(null);
+        try {
+          confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+        } catch {}
+      } else {
+        setPaymentBlockedError(
+          `Pague primeiro para chamar o motorista (Status no Asaas: ${check.status || 'PENDING'}).`
+        );
+      }
+    } catch {
+      setPaymentBlockedError('Pague primeiro para chamar o motorista');
+    } finally {
+      setIsCheckingAsaasNow(false);
     }
-    setTimeout(() => {
-      setIsProcessingPayment(false);
-      setIsPaidInApp(true);
-      try {
-        confetti({
-          particleCount: 60,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      } catch {}
-      // Quando Asaas confirmar pagamento, ir direto para VER MAPA NA TELA CHEIA
-      setTimeout(() => {
-        handleConfirmRideAfterPayment();
-      }, 700);
-    }, 600);
   };
 
+  // Pagamento real com Cartão na API Asaas (só libera se retornar RECEIVED ou CONFIRMED)
+  const handlePayCardWithAsaas = async () => {
+    if (!asaasPayment?.id) {
+      setPaymentBlockedError('Pague primeiro para chamar o motorista');
+      return;
+    }
+    const cleanNum = cardNumber.replace(/\D/g, '');
+    const cleanExpiry = cardExpiry.replace(/\D/g, '');
+    const cleanCpf = cardHolderCpf.replace(/\D/g, '');
+    const cleanCep = cardHolderCep.replace(/\D/g, '');
+
+    if (
+      cleanNum.length < 13 ||
+      !cardHolder.trim() ||
+      cleanExpiry.length < 4 ||
+      cardCvv.trim().length < 3 ||
+      cleanCpf.length < 11 ||
+      cleanCep.length < 8
+    ) {
+      setPaymentBlockedError(
+        'Preencha todos os dados do cartão, CPF e CEP para cobrar no Asaas ou pague pelo Link de Pagamento Asaas acima.'
+      );
+      return;
+    }
+
+    const expiryMonth = cleanExpiry.slice(0, 2);
+    const rawYear = cleanExpiry.slice(2);
+    const expiryYear = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+
+    setIsProcessingPayment(true);
+    setPaymentBlockedError(null);
+    try {
+      const result = await payAsaasPaymentWithCreditCard({
+        paymentId: asaasPayment.id,
+        cardHolder: cardHolder.trim().toUpperCase(),
+        cardNumber: cleanNum,
+        expiryMonth,
+        expiryYear,
+        ccv: cardCvv.trim(),
+        holderName: cardHolder.trim() || currentUser?.name || 'Passageiro RACE',
+        holderEmail: currentUser?.email || 'passageiro@race.com.br',
+        holderCpfCnpj: cleanCpf,
+        holderPostalCode: cleanCep,
+        holderAddressNumber: extractAddressNumber(pickupInput) || '100',
+        holderPhone: currentUser?.whatsapp || currentUser?.phone || '19999999999',
+      });
+
+      if (result.isPaid && (result.status === 'RECEIVED' || result.status === 'CONFIRMED')) {
+        setAsaasConfirmedStatus(result.status);
+        setIsPaidInApp(true);
+        setPaymentBlockedError(null);
+        try {
+          confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+        } catch {}
+      } else {
+        setPaymentBlockedError(
+          result.errorMessage || 'Pague primeiro para chamar o motorista'
+        );
+      }
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  // Só executa após pagamento confirmado de verdade pelo Asaas (RECEIVED ou CONFIRMED)
   const handleConfirmRideAfterPayment = () => {
+    const isAsaasConfirmed =
+      asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED';
+    if (!isCashMethod(paymentMethod) && (!isPaidInApp || !isAsaasConfirmed)) {
+      setPaymentBlockedError('Pague primeiro para chamar o motorista');
+      return;
+    }
+    setPaymentBlockedError(null);
     handleRequestRideWithCategory(selectedCategory);
     setPassengerStep('search');
     if (onOpenFullMap) {
@@ -1588,6 +1688,14 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 </button>
               </div>
 
+              {/* Alerta quando tentar pedir corrida sem pagar no Asaas */}
+              {paymentBlockedError && !isCashMethod(paymentMethod) && (
+                <div className="bg-rose-50 border-2 border-rose-500 rounded-2xl p-4 flex items-center gap-3 text-rose-950 shadow-sm animate-fade-in">
+                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                  <span className="text-xs sm:text-sm font-black">{paymentBlockedError}</span>
+                </div>
+              )}
+
               {/* FLUXO PIX NO APP VIA ASAAS */}
               {paymentMethod === 'pix' && (
                 <div className="space-y-4 pt-2">
@@ -1694,7 +1802,6 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                             )}
                           </button>
 
-                          {/* Mensagem de sucesso quando copiado */}
                           {pixCopied && (
                             <div className="p-2.5 bg-emerald-50 border border-emerald-400 rounded-xl text-center text-xs font-bold text-emerald-950 animate-fade-in flex items-center justify-center gap-2">
                               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -1703,28 +1810,56 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           )}
                         </div>
 
-                        {/* Status de aguardo em tempo real */}
-                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-emerald-900">
-                          <Loader2 className="w-4 h-4 animate-spin text-emerald-600 shrink-0" />
-                          <span>Aguardando confirmação do Asaas em tempo real...</span>
-                        </div>
+                        {/* Status de verificação em tempo real no Asaas (SEM botão de burlar) */}
+                        {isPaidInApp && (asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED') ? (
+                          <div className="p-3.5 bg-emerald-100 border-2 border-emerald-500 rounded-2xl flex items-center justify-center gap-2 text-xs sm:text-sm font-black text-emerald-950">
+                            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                            <span>Asaas confirmou o pagamento ({asaasConfirmedStatus})! Agora chame seu motorista abaixo.</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="p-3 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-amber-950">
+                              <Loader2 className={`w-4 h-4 text-amber-600 shrink-0 ${isPollingAsaas ? 'animate-spin' : ''}`} />
+                              <span>Aguardando o Asaas confirmar o pagamento do PIX ({asaasConfirmedStatus})...</span>
+                            </div>
 
-                        {/* Botão de confirmação manual ou direto para o mapa */}
+                            <button
+                              type="button"
+                              onClick={handleVerifyAsaasPaymentNow}
+                              disabled={isCheckingAsaasNow}
+                              className="w-full py-2.5 px-4 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-xl text-xs font-heading font-bold flex items-center justify-center gap-2 cursor-pointer transition-all"
+                            >
+                              {isCheckingAsaasNow ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                                  <span>Consultando status real no Asaas...</span>
+                                </>
+                              ) : (
+                                <span>Verificar confirmação no Asaas agora</span>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Botão bloqueado até o Asaas retornar RECEIVED ou CONFIRMED */}
                         <button
                           type="button"
-                          onClick={handlePayInAppAction}
-                          disabled={isProcessingPayment}
-                          className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider disabled:opacity-75"
+                          onClick={handleConfirmRideAfterPayment}
+                          className={`w-full font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 transition-all uppercase tracking-wider ${
+                            isPaidInApp && (asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED')
+                              ? 'bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white border-emerald-400 cursor-pointer'
+                              : 'bg-slate-200 text-slate-500 border-slate-300 cursor-not-allowed'
+                          }`}
                         >
-                          {isProcessingPayment ? (
+                          {isPaidInApp && (asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED') ? (
                             <>
-                              <Loader2 className="w-6 h-6 animate-spin text-white" />
-                              <span>Confirmando com Asaas...</span>
+                              <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
+                              <span>Pagamento confirmado - Chamar motorista</span>
                             </>
                           ) : (
                             <>
-                              <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
-                              <span>Já fiz o PIX no banco (Ver Mapa)</span>
+                              <Lock className="w-5 h-5 text-slate-500 shrink-0" />
+                              <span>Pagar (Aguardando confirmação do Asaas)</span>
                             </>
                           )}
                         </button>
@@ -1742,7 +1877,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <div>
                         <span className="text-[10px] font-mono font-bold text-slate-500 uppercase block">Cartão no App</span>
                         <span className="font-heading font-black text-slate-900 text-sm flex items-center gap-1.5">
-                          <CreditCard className="w-4 h-4 text-amber-600" /> Link de Pagamento Asaas
+                          <CreditCard className="w-4 h-4 text-amber-600" /> Pagamento Seguro Asaas
                         </span>
                       </div>
                       <span className="text-xs font-mono font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-300">
@@ -1763,7 +1898,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       </a>
                     )}
 
-                    {/* Formulário de Cartão no próprio App */}
+                    {/* Formulário de Cartão conectado ao Asaas */}
                     <div className="space-y-3 bg-white p-4 rounded-2xl border border-slate-200">
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 block mb-1">
@@ -1820,23 +1955,104 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           />
                         </div>
                       </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            CPF do Titular
+                          </label>
+                          <input
+                            type="text"
+                            value={cardHolderCpf}
+                            onChange={(e) => setCardHolderCpf(e.target.value)}
+                            placeholder="000.000.000-00"
+                            maxLength={14}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-amber-500 font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            CEP da Fatura
+                          </label>
+                          <input
+                            type="text"
+                            value={cardHolderCep}
+                            onChange={(e) => setCardHolderCep(e.target.value)}
+                            placeholder="13330-000"
+                            maxLength={9}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-amber-500 font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handlePayCardWithAsaas}
+                        disabled={isProcessingPayment || isPaidInApp}
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs sm:text-sm py-3 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wider disabled:opacity-60"
+                      >
+                        {isProcessingPayment ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-white" />
+                            <span>Validando Cartão no Asaas...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CreditCard className="w-4 h-4 text-amber-400" />
+                            <span>Autorizar Cartão no Asaas ({formatBRL(fare.totalPrice)})</span>
+                          </>
+                        )}
+                      </button>
                     </div>
 
+                    {isPaidInApp && (asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED') ? (
+                      <div className="p-3.5 bg-emerald-100 border-2 border-emerald-500 rounded-2xl flex items-center justify-center gap-2 text-xs sm:text-sm font-black text-emerald-950">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>Asaas confirmou o pagamento ({asaasConfirmedStatus})! Agora chame seu motorista abaixo.</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="p-3 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-amber-950">
+                          <Loader2 className={`w-4 h-4 text-amber-600 shrink-0 ${isPollingAsaas ? 'animate-spin' : ''}`} />
+                          <span>Aguardando confirmação do cartão no Asaas ({asaasConfirmedStatus})...</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleVerifyAsaasPaymentNow}
+                          disabled={isCheckingAsaasNow}
+                          className="w-full py-2.5 px-4 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-xl text-xs font-heading font-bold flex items-center justify-center gap-2 cursor-pointer transition-all"
+                        >
+                          {isCheckingAsaasNow ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                              <span>Consultando status real no Asaas...</span>
+                            </>
+                          ) : (
+                            <span>Verificar confirmação no Asaas agora</span>
+                          )}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Botão bloqueado até o Asaas retornar RECEIVED ou CONFIRMED */}
                     <button
                       type="button"
-                      onClick={handlePayInAppAction}
-                      disabled={isProcessingPayment}
-                      className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider disabled:opacity-75"
+                      onClick={handleConfirmRideAfterPayment}
+                      className={`w-full font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 transition-all uppercase tracking-wider ${
+                        isPaidInApp && (asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED')
+                          ? 'bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white border-emerald-400 cursor-pointer'
+                          : 'bg-slate-200 text-slate-500 border-slate-300 cursor-not-allowed'
+                      }`}
                     >
-                      {isProcessingPayment ? (
+                      {isPaidInApp && (asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED') ? (
                         <>
-                          <Loader2 className="w-6 h-6 animate-spin text-white" />
-                          <span>Processando Cartão com Asaas...</span>
+                          <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
+                          <span>Pagamento confirmado - Chamar motorista</span>
                         </>
                       ) : (
                         <>
-                          <Lock className="w-5 h-5 text-white" />
-                          <span>Pagar {formatBRL(fare.totalPrice)} com Cartão</span>
+                          <Lock className="w-5 h-5 text-slate-500 shrink-0" />
+                          <span>Pagar (Aguardando confirmação do Asaas)</span>
                         </>
                       )}
                     </button>
@@ -1860,9 +2076,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       </span>
                     </div>
 
-                    <p className="text-xs sm:text-sm text-slate-700 font-medium">
-                      Pague <strong className="text-slate-950">{formatBRL(fare.totalPrice)}</strong> diretamente ao motorista/motoboy no final da corrida. Ao confirmar abaixo, sua corrida é criada na hora sem passar pelo Asaas e abre o mapa procurando motorista.
-                    </p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5 text-xs sm:text-sm text-blue-950 font-bold">
+                      Você vai pagar em dinheiro para o motorista - Motorista vai confirmar recebimento no final ({formatBRL(fare.totalPrice)}).
+                    </div>
 
                     <button
                       type="button"
@@ -1870,7 +2086,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
                     >
                       <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
-                      <span>Confirmar Dinheiro {formatBRL(fare.totalPrice)} (Ver Mapa)</span>
+                      <span>Confirmar Dinheiro - Chamar motorista ({formatBRL(fare.totalPrice)})</span>
                     </button>
                   </div>
                 </div>

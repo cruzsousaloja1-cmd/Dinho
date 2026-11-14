@@ -1203,10 +1203,10 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
             {isCashPayment && (
               <div className="bg-emerald-600 text-white border-2 border-emerald-400 rounded-2xl p-3.5 text-center shadow-md space-y-0.5">
                 <div className="font-heading font-black text-base sm:text-lg uppercase tracking-wider">
-                  PAGAMENTO: DINHEIRO
+                  Pagamento em DINHEIRO - Receba {formatBRL(totalValue)} do passageiro
                 </div>
                 <div className="text-xs sm:text-sm font-bold text-emerald-50">
-                  Receber {formatBRL(totalValue)} em dinheiro no final da corrida
+                  Confirme o recebimento em dinheiro no final da corrida
                 </div>
               </div>
             )}
@@ -1640,13 +1640,13 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
             <div className="space-y-1.5">
               <span className="inline-block bg-emerald-600 text-white font-heading font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider">
-                PAGAMENTO: DINHEIRO
+                PAGAMENTO EM DINHEIRO
               </span>
               <h3 className="font-heading font-black text-2xl sm:text-3xl text-slate-950">
-                Receber {formatBRL(totalValue)} em dinheiro do passageiro
+                Pagamento em DINHEIRO - Receba {formatBRL(totalValue)} do passageiro
               </h3>
               <p className="text-sm text-slate-600 font-semibold">
-                Corrida finalizada em dinheiro (sem cobrança no Asaas).
+                Confirme o recebimento em dinheiro ao concluir a corrida (sem cobrança no Asaas).
               </p>
             </div>
 
