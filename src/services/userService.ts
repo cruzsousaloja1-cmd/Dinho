@@ -120,6 +120,9 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
     avatar: cloudUser.avatar || '',
     rating: Number(cloudUser.rating || 0),
     driverData: driverObj,
+    debtAmount: Number(cloudUser.divida || 0),
+    isBlockedDebt: Boolean(cloudUser.bloqueado_divida || Number(cloudUser.divida || 0) > 0),
+    debtRideId: cloudUser.corrida_divida_id ? String(cloudUser.corrida_divida_id) : undefined,
   };
 
   return { user: userPayload, driver: driverObj };

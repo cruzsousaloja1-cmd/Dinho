@@ -71,7 +71,9 @@ import {
   getAllPassengersFromSupabase,
   subscribeToCorridasRealtime,
   purgeLegacyTestLocalStorage,
-  normalizeRideCategory
+  normalizeRideCategory,
+  getPassengerDebtSupabase,
+  clearPassengerDebtSupabase
 } from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
 
@@ -92,6 +94,11 @@ export default function App() {
 
   // 1. Authentication & Session (validado online no Supabase)
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [passengerDebt, setPassengerDebt] = useState<{
+    debtAmount: number;
+    isBlocked: boolean;
+    unpaidRideIds: string[];
+  }>({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [loginSuccessBanner, setLoginSuccessBanner] = useState<string | null>(null);
 
@@ -255,6 +262,7 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) {
       setRidesHistory([]);
+      setPassengerDebt({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
       return;
     }
     getCorridasSupabase(currentUser)
@@ -264,7 +272,43 @@ export default function App() {
       .catch((err) => {
         console.warn('Aviso ao sincronizar corridas do Supabase:', err);
       });
-  }, [currentUser]);
+
+    getPassengerDebtSupabase(currentUser)
+      .then((debt) => {
+        setPassengerDebt(debt);
+      })
+      .catch(() => {});
+  }, [currentUser, activeTab]);
+
+  const handleClearPassengerDebt = async (
+    asaasPaymentId: string,
+    asaasStatus: 'RECEIVED' | 'CONFIRMED'
+  ) => {
+    if (!currentUser) return;
+    const ok = await clearPassengerDebtSupabase({
+      user: currentUser,
+      debtAmount: passengerDebt.debtAmount,
+      asaasPaymentId,
+      asaasStatus,
+      unpaidRideIds: passengerDebt.unpaidRideIds,
+    });
+    if (ok) {
+      const updatedUser: AppUser = {
+        ...currentUser,
+        debtAmount: 0,
+        isBlockedDebt: false,
+        debtRideId: undefined,
+      };
+      setCurrentUser(updatedUser);
+      saveSessionUser(updatedUser);
+      setPassengerDebt({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
+      triggerPush(
+        'Dívida quitada via PIX Asaas!',
+        'Seu acesso para novas corridas na RACE foi liberado.',
+        'financial'
+      );
+    }
+  };
 
   // Polling em tempo real dos motoristas/motoboys ONLINE no Supabase (para o mapa do passageiro)
   useEffect(() => {
@@ -509,8 +553,16 @@ export default function App() {
     }, 6000);
   };
 
-  // Passenger confirma corrida -> só cria se for Dinheiro ou Asaas RECEIVED/CONFIRMED
+  // Passenger confirma corrida -> só cria se for Dinheiro ou Asaas RECEIVED/CONFIRMED (e sem dívida bloqueada)
   const handleStartRide = (ride: Ride) => {
+    if (passengerDebt.isBlocked && passengerDebt.debtAmount > 0) {
+      triggerPush(
+        'Conta bloqueada por dívida em aberto',
+        `Quite o valor de R$ ${passengerDebt.debtAmount.toFixed(2).replace('.', ',')} via PIX Asaas antes de solicitar nova corrida.`,
+        'financial'
+      );
+      return;
+    }
     const isCash = ride.paymentMethod === 'money' || ride.paymentMethod === 'dinheiro';
     const isAsaasConfirmed =
       ride.asaasStatus === 'RECEIVED' || ride.asaasStatus === 'CONFIRMED';
@@ -1349,6 +1401,8 @@ export default function App() {
             currentDriver={currentDriver}
             loginSuccessBanner={loginSuccessBanner}
             onClearLoginBanner={() => setLoginSuccessBanner(null)}
+            passengerDebt={passengerDebt}
+            onClearPassengerDebt={handleClearPassengerDebt}
             onOpenFullMap={() => {
               const isRideAuthorized = Boolean(
                 activeRide &&

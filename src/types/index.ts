@@ -27,6 +27,9 @@ export interface AppUser {
   password?: string;
   driverData?: Driver;
   isAdmin?: boolean;
+  debtAmount?: number;
+  isBlockedDebt?: boolean;
+  debtRideId?: string;
 }
 
 export interface CategoryInfo {
@@ -155,6 +158,8 @@ export interface Ride {
   paymentStatus: 'pending' | 'paid';
   asaasPaymentId?: string;
   asaasStatus?: 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED';
+  cashPaidByPassenger?: boolean;
+  nonPaymentReported?: boolean;
   status: RideStatus;
   confirmationCode?: string;
   createdAt: string;

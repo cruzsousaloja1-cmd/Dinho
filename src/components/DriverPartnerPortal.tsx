@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash } from '../supabase';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, reportPassengerCashNonPaymentSupabase } from '../supabase';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverWorkSelectionView } from './DriverWorkSelectionView';
@@ -255,6 +255,7 @@ import confetti from 'canvas-confetti';
 import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
 import { 
   getDriverBalance, 
+  addDriverEarnings,
   calculateWalletSummary, 
   requestWithdrawal, 
   getWithdrawals, 
@@ -3070,15 +3071,31 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             const rid = targetRide?.id;
             const isCash =
               targetRide?.paymentMethod === 'money' || targetRide?.paymentMethod === 'dinheiro';
-            if (rid) {
+            const totalRideVal = targetRide?.price || 0;
+            const driverEarns = Number((totalRideVal * 0.85).toFixed(2));
+            const didPassengerNotPay = Boolean(finishedRide?.nonPaymentReported);
+
+            if (isCash && didPassengerNotPay && targetRide) {
+              reportPassengerCashNonPaymentSupabase({
+                ride: targetRide,
+                driver: currentDriver,
+              }).catch(() => {});
+              addDriverEarnings(currentDriver.id, driverEarns);
+              if (onTriggerToast) {
+                onTriggerToast(
+                  'Calote registrado • 85% garantido!',
+                  `Dívida de ${formatBRL(totalRideVal)} registrada no passageiro. A Race garante seu repasse de 85% (${formatBRL(driverEarns)}) na sexta-feira mesmo assim!`,
+                  'financial'
+                );
+              }
+            } else if (rid) {
               updateCorridaStatusSupabase(
                 rid,
                 isCash ? 'finalizada' : 'completed',
                 isCash ? 'dinheiro' : undefined
               ).catch(() => {});
             }
-            const totalRideVal = targetRide?.price || 0;
-            const driverEarns = Number((totalRideVal * 0.85).toFixed(2));
+
             onUpdateDriver({
               ...currentDriver,
               earningsToday: currentDriver.earningsToday + driverEarns,
@@ -3087,7 +3104,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             });
             setAcceptedRideNotice(
               isCash
-                ? `Corrida finalizada! Receber ${formatBRL(totalRideVal)} em dinheiro do passageiro (Comissão Race 15%: ${formatBRL(Number((totalRideVal * 0.15).toFixed(2)))}).`
+                ? didPassengerNotPay
+                  ? `Passageiro NÃO pagou (${formatBRL(totalRideVal)}). Dívida bloqueou o passageiro no app e a Race paga seus 85% (${formatBRL(driverEarns)}) na sexta-feira mesmo assim!`
+                  : `Corrida finalizada! Recebido ${formatBRL(totalRideVal)} em dinheiro do passageiro (Comissão Race 15%: ${formatBRL(Number((totalRideVal * 0.15).toFixed(2)))}).`
                 : `Corrida finalizada! Você recebeu ${formatBRL(driverEarns)} (85% líquido).`
             );
             setAcceptedDriverRide(null);

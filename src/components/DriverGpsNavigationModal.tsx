@@ -673,12 +673,15 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     onClose();
   };
 
-  const handleConfirmCashFinish = () => {
+  const handleConfirmCashFinish = (didPay: boolean = true) => {
     setShowCashCollectionModal(false);
     if (onCompleteRide) {
       onCompleteRide({
         ...effectiveRide,
         paymentMethod: 'dinheiro',
+        paymentStatus: didPay ? 'paid' : 'pending',
+        cashPaidByPassenger: didPay,
+        nonPaymentReported: !didPay,
         status: 'finalizada',
       });
     }
@@ -1651,21 +1654,37 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between text-sm">
-              <span className="text-slate-600 font-bold">Seu ganho líquido (85%):</span>
+              <span className="text-slate-600 font-bold">Seu ganho garantido (85%):</span>
               <span className="font-heading font-black text-emerald-700 text-lg">
                 {formatBRL(driverNetValue)}
               </span>
             </div>
 
-            <button
-              type="button"
-              onClick={handleConfirmCashFinish}
-              style={{ width: '100%', minHeight: '58px' }}
-              className="w-full min-h-[58px] py-4 px-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white rounded-2xl font-heading font-black text-base sm:text-lg uppercase flex items-center justify-center gap-2 shadow-lg cursor-pointer border border-emerald-500"
-            >
-              <CheckCircle2 className="w-6 h-6 shrink-0" />
-              <span>CONFIRMAR RECEBIMENTO E FINALIZAR</span>
-            </button>
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => handleConfirmCashFinish(true)}
+                style={{ width: '100%', minHeight: '56px' }}
+                className="w-full min-h-[56px] py-3.5 px-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white rounded-2xl font-heading font-black text-base sm:text-lg uppercase flex items-center justify-center gap-2 shadow-lg cursor-pointer border border-emerald-500"
+              >
+                <CheckCircle2 className="w-6 h-6 shrink-0" />
+                <span>Passageiro pagou</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleConfirmCashFinish(false)}
+                style={{ width: '100%', minHeight: '52px' }}
+                className="w-full min-h-[52px] py-3 px-5 bg-rose-600 hover:bg-rose-500 active:scale-[0.99] text-white rounded-2xl font-heading font-black text-sm sm:text-base uppercase flex items-center justify-center gap-2 shadow-md cursor-pointer border border-rose-500"
+              >
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <span>Passageiro NÃO pagou</span>
+              </button>
+
+              <p className="text-[11px] text-slate-600 font-semibold leading-snug pt-1">
+                Se o passageiro NÃO pagar, a Race bloqueia novas corridas para ele até quitar via PIX Asaas e paga seus 85% ({formatBRL(driverNetValue)}) na sexta-feira mesmo assim!
+              </p>
+            </div>
           </div>
         </div>
       )}

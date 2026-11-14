@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   foto_cnh TEXT,
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
+  divida NUMERIC DEFAULT 0.00,
+  bloqueado_divida BOOLEAN DEFAULT false,
+  corrida_divida_id TEXT,
   data_cadastro TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -61,6 +64,9 @@ ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto_cnh TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS foto TEXT;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS divida NUMERIC DEFAULT 0.00;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS bloqueado_divida BOOLEAN DEFAULT false;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS corrida_divida_id TEXT;
 
 -- 2. TABELA DE CORRIDAS (Tempo Real via Supabase Realtime)
 CREATE TABLE IF NOT EXISTS public.corridas (
@@ -94,6 +100,7 @@ CREATE TABLE IF NOT EXISTS public.corridas (
   asaas_payment_id TEXT,
   asaas_status TEXT,
   pagamento_confirmado BOOLEAN DEFAULT false,
+  dinheiro_pago BOOLEAN DEFAULT true,
   data TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -109,6 +116,7 @@ ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS codigo_confirmacao TEXT;
 ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS asaas_payment_id TEXT;
 ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS asaas_status TEXT;
 ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS pagamento_confirmado BOOLEAN DEFAULT false;
+ALTER TABLE public.corridas ADD COLUMN IF NOT EXISTS dinheiro_pago BOOLEAN DEFAULT true;
 
 -- Habilitar Realtime para a tabela corridas
 DO $$
@@ -178,6 +186,9 @@ export interface SupabaseUsuarioRow {
   status?: string;
   lat?: number;
   lng?: number;
+  divida?: number;
+  bloqueado_divida?: boolean;
+  corrida_divida_id?: string;
   data_cadastro?: string;
 }
 
@@ -212,6 +223,7 @@ export interface SupabaseCorridaRow {
   asaas_payment_id?: string;
   asaas_status?: string;
   pagamento_confirmado?: boolean;
+  dinheiro_pago?: boolean;
   data?: string;
 }
 
@@ -1830,6 +1842,250 @@ export async function getPagamentosSupabase(currentUser: AppUser | null): Promis
     return (data || []) as SupabasePagamentoRow[];
   } catch {
     return [];
+  }
+}
+
+export const NON_PAYMENT_NOTE = 'PASSAGEIRO NÃO PAGOU CORRIDA EM DINHEIRO';
+
+/**
+ * Registra calote de corrida em dinheiro:
+ * 1) Marca a corrida como finalizada com dinheiro_pago = false e detalhe_problema
+ * 2) Registra dívida + bloqueio no passageiro em public.usuarios
+ * 3) Garante o repasse de 85% do motorista em public.pagamentos (Race paga na sexta mesmo assim)
+ */
+export async function reportPassengerCashNonPaymentSupabase(params: {
+  ride: Ride;
+  driver: Driver;
+}): Promise<{ success: boolean; driverGuaranteed85: number; debtAmount: number }> {
+  const totalValue = Number((params.ride.price || 0).toFixed(2));
+  const driverGuaranteed85 = Number((totalValue * 0.85).toFixed(2));
+
+  try {
+    // 1. Atualiza corrida em public.corridas
+    if (params.ride.id && /^\d+$/.test(String(params.ride.id))) {
+      const rideUpdate: any = {
+        status: 'finalizada',
+        forma_pagamento: 'dinheiro',
+        detalhe_problema: NON_PAYMENT_NOTE,
+        dinheiro_pago: false,
+      };
+      const { error } = await supabase
+        .from('corridas')
+        .update(rideUpdate)
+        .eq('id', Number(params.ride.id));
+      if (error && error.message?.includes('dinheiro_pago')) {
+        delete rideUpdate.dinheiro_pago;
+        await supabase.from('corridas').update(rideUpdate).eq('id', Number(params.ride.id));
+      }
+    }
+
+    // 2. Registra dívida e bloqueia passageiro em public.usuarios
+    const cleanPassengerEmail = String(params.ride.passengerEmail || '').toLowerCase().trim();
+    const passengerIdRaw = params.ride.passengerId;
+    let existingUser: any = null;
+
+    if (passengerIdRaw && /^\d+$/.test(String(passengerIdRaw))) {
+      const { data } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('id', Number(passengerIdRaw))
+        .limit(1);
+      if (data && data.length > 0) existingUser = data[0];
+    }
+    if (!existingUser && cleanPassengerEmail) {
+      existingUser = await getUsuarioSupabase(cleanPassengerEmail);
+    }
+
+    if (existingUser) {
+      const currentDebt = Number(existingUser.divida || 0);
+      const nextDebt = Number((currentDebt + totalValue).toFixed(2));
+      const userPatch: any = {
+        divida: nextDebt,
+        bloqueado_divida: true,
+        corrida_divida_id: String(params.ride.id || ''),
+      };
+      const optionalDebtCols = ['divida', 'bloqueado_divida', 'corrida_divida_id'];
+      for (let i = 0; i < 4; i++) {
+        const { error: uErr } = await supabase
+          .from('usuarios')
+          .update(userPatch)
+          .eq('id', existingUser.id);
+        if (!uErr) break;
+        const msg = uErr.message || '';
+        let removed = false;
+        for (const col of optionalDebtCols) {
+          if (col in userPatch && msg.includes(col)) {
+            delete userPatch[col];
+            removed = true;
+          }
+        }
+        if (!removed) break;
+      }
+    }
+
+    // 3. Garante os 85% do motorista na sexta-feira em public.pagamentos (Race cobre o valor)
+    await savePagamentoSupabase({
+      id_motorista: params.driver.id,
+      nome_motorista: params.driver.name,
+      email_motorista: params.driver.email,
+      valor: driverGuaranteed85,
+      tipo: 'repasse_garantido',
+      status: 'pago',
+      chave_pix: params.driver.pixKey || params.driver.cpf || '',
+      comprovante_url: `GARANTIA RACE 85% (Corrida #${params.ride.id || '-'} não paga em dinheiro pelo passageiro)`,
+    });
+
+    return { success: true, driverGuaranteed85, debtAmount: totalValue };
+  } catch {
+    return { success: false, driverGuaranteed85, debtAmount: totalValue };
+  }
+}
+
+/**
+ * Consulta dívida em aberto do passageiro no Supabase (usuarios + corridas não pagas)
+ */
+export async function getPassengerDebtSupabase(user: AppUser | null): Promise<{
+  debtAmount: number;
+  isBlocked: boolean;
+  unpaidRideIds: string[];
+}> {
+  if (!user) return { debtAmount: 0, isBlocked: false, unpaidRideIds: [] };
+
+  const cleanEmail = String(user.email || '').toLowerCase().trim();
+  const hasNumericId = /^\d+$/.test(String(user.id || ''));
+
+  try {
+    let userDebt = Number(user.debtAmount || 0);
+    let userBlocked = Boolean(user.isBlockedDebt);
+
+    const cloudUser = cleanEmail ? await getUsuarioSupabase(cleanEmail) : null;
+    if (cloudUser) {
+      userDebt = Number(cloudUser.divida || 0);
+      userBlocked = Boolean(cloudUser.bloqueado_divida || userDebt > 0);
+    }
+
+    // Também confere na tabela corridas por corridas em dinheiro marcadas como NÃO pagas
+    let query = supabase.from('corridas').select('*');
+    if (hasNumericId && cleanEmail) {
+      query = query.or(`id_passageiro.eq.${user.id},email_passageiro.eq.${cleanEmail}`);
+    } else if (hasNumericId) {
+      query = query.eq('id_passageiro', Number(user.id));
+    } else if (cleanEmail) {
+      query = query.eq('email_passageiro', cleanEmail);
+    }
+
+    const { data: ridesData } = await query;
+    const unpaidRows = (ridesData || []).filter((r: any) => {
+      const note = String(r.detalhe_problema || '').toUpperCase();
+      return r.dinheiro_pago === false || note.includes('NÃO PAGOU');
+    });
+
+    const unpaidSum = unpaidRows.reduce(
+      (sum: number, r: any) => sum + Number(r.valor_total ?? r.valor ?? 0),
+      0
+    );
+    const unpaidRideIds = unpaidRows
+      .map((r: any) => String(r.id || ''))
+      .filter(Boolean);
+
+    const totalDebt = Number(Math.max(userDebt, unpaidSum).toFixed(2));
+    return {
+      debtAmount: totalDebt,
+      isBlocked: userBlocked || totalDebt > 0 || unpaidRideIds.length > 0,
+      unpaidRideIds,
+    };
+  } catch {
+    return {
+      debtAmount: Number(user.debtAmount || 0),
+      isBlocked: Boolean(user.isBlockedDebt),
+      unpaidRideIds: user.debtRideId ? [user.debtRideId] : [],
+    };
+  }
+}
+
+/**
+ * Quita dívida do passageiro após confirmação REAL (RECEIVED/CONFIRMED) do PIX Asaas
+ */
+export async function clearPassengerDebtSupabase(params: {
+  user: AppUser;
+  debtAmount: number;
+  asaasPaymentId: string;
+  asaasStatus: 'RECEIVED' | 'CONFIRMED';
+  unpaidRideIds?: string[];
+}): Promise<boolean> {
+  try {
+    const cleanEmail = String(params.user.email || '').toLowerCase().trim();
+    const cloudUser = cleanEmail ? await getUsuarioSupabase(cleanEmail) : null;
+    const targetUserId = cloudUser?.id ?? (
+      /^\d+$/.test(String(params.user.id)) ? Number(params.user.id) : null
+    );
+
+    if (targetUserId) {
+      const clearPatch: any = {
+        divida: 0,
+        bloqueado_divida: false,
+        corrida_divida_id: '',
+      };
+      const optionalDebtCols = ['divida', 'bloqueado_divida', 'corrida_divida_id'];
+      for (let i = 0; i < 4; i++) {
+        const { error } = await supabase
+          .from('usuarios')
+          .update(clearPatch)
+          .eq('id', targetUserId);
+        if (!error) break;
+        const msg = error.message || '';
+        let removed = false;
+        for (const col of optionalDebtCols) {
+          if (col in clearPatch && msg.includes(col)) {
+            delete clearPatch[col];
+            removed = true;
+          }
+        }
+        if (!removed) break;
+      }
+    }
+
+    // Atualiza as corridas em dívida para quitadas via PIX Asaas
+    const rideIds = params.unpaidRideIds || [];
+    for (const rid of rideIds) {
+      if (!/^\d+$/.test(rid)) continue;
+      const upd: any = {
+        forma_pagamento: 'pix',
+        dinheiro_pago: true,
+        asaas_payment_id: params.asaasPaymentId,
+        asaas_status: params.asaasStatus,
+        pagamento_confirmado: true,
+        detalhe_problema: 'Dívida quitada via PIX Asaas',
+      };
+      const optCols = ['dinheiro_pago', 'asaas_payment_id', 'asaas_status', 'pagamento_confirmado'];
+      for (let i = 0; i < 5; i++) {
+        const { error } = await supabase.from('corridas').update(upd).eq('id', Number(rid));
+        if (!error) break;
+        const msg = error.message || '';
+        let removed = false;
+        for (const col of optCols) {
+          if (col in upd && msg.includes(col)) {
+            delete upd[col];
+            removed = true;
+          }
+        }
+        if (!removed) break;
+      }
+    }
+
+    await savePagamentoSupabase({
+      nome_motorista: 'Quitação Dívida Passageiro (PIX Asaas)',
+      email_motorista: cleanEmail,
+      valor: params.debtAmount,
+      tipo: 'quitacao_divida',
+      status: 'pago',
+      chave_pix: params.asaasPaymentId,
+      comprovante_url: `PIX Asaas ${params.asaasStatus} (${params.asaasPaymentId})`,
+    });
+
+    return true;
+  } catch {
+    return false;
   }
 }
 
