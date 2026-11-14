@@ -1631,6 +1631,7 @@ export default function App() {
             pickup={pickup}
             destination={destination}
             hasSearchedRoute={hasSearchedRoute}
+            availableDrivers={drivers}
             onNavigateToRides={(chosenCategory) => {
               if (chosenCategory) {
                 setSelectedCategory(chosenCategory);

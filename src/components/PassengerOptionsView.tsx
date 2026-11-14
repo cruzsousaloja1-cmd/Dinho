@@ -1,7 +1,8 @@
 import React from 'react';
-import { LocationPoint, VehicleCategory } from '../types';
+import { Driver, LocationPoint, VehicleCategory } from '../types';
 import { calculateFare, formatBRL } from '../services/pricingService';
 import { calculateDistanceKm, hasAddressNumber } from '../services/addressSearchService';
+import { normalizeRideCategory } from '../supabase';
 import {
   Car,
   Sparkles,
@@ -15,6 +16,7 @@ import {
   Wallet,
   MapPin,
   Search,
+  AlertTriangle,
 } from 'lucide-react';
 
 export type PassengerPaymentOption = 'pix' | 'credit_card' | 'dinheiro';
@@ -27,6 +29,7 @@ interface PassengerOptionsViewProps {
   pickup?: LocationPoint | null;
   destination?: LocationPoint | null;
   hasSearchedRoute?: boolean;
+  availableDrivers?: Driver[];
   onNavigateToRides: (chosenCategory?: VehicleCategory) => void;
 }
 
@@ -38,8 +41,16 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
   pickup,
   destination,
   hasSearchedRoute = false,
+  availableDrivers = [],
   onNavigateToRides,
 }) => {
+  const onlineConfortDriversCount = availableDrivers.filter(
+    (d) =>
+      d.status === 'online' &&
+      d.categoryConfigured !== false &&
+      normalizeRideCategory(d.category) === 'confort'
+  ).length;
+
   const canShowPrices = Boolean(
     hasSearchedRoute &&
       pickup?.address &&
@@ -249,7 +260,8 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
           {options.map((item) => {
             const Icon = item.icon;
-            const isSelected = selectedCategory === item.id;
+            const isConfortBlocked = item.id === 'confort' && onlineConfortDriversCount === 0;
+            const isSelected = selectedCategory === item.id && !isConfortBlocked;
             const displayPrice = canShowPrices
               ? formatBRL(calculateFare(item.id, distanceKm).totalPrice)
               : formatBRL(0);
@@ -257,11 +269,15 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
             return (
               <div
                 key={item.id}
-                onClick={() => onSelectCategory(item.id)}
-                className={`bg-white border-2 rounded-3xl p-5 shadow-md transition-all flex flex-col justify-between cursor-pointer min-w-0 w-full box-border ${
-                  isSelected
-                    ? 'border-[#ff6a00] ring-4 ring-[#ff6a00]/15'
-                    : 'border-slate-200 hover:border-slate-300'
+                onClick={() => {
+                  if (!isConfortBlocked) onSelectCategory(item.id);
+                }}
+                className={`border-2 rounded-3xl p-5 shadow-md transition-all flex flex-col justify-between min-w-0 w-full box-border ${
+                  isConfortBlocked
+                    ? 'bg-slate-100 border-slate-300 opacity-90 cursor-not-allowed'
+                    : isSelected
+                    ? 'bg-white border-[#ff6a00] ring-4 ring-[#ff6a00]/15 cursor-pointer'
+                    : 'bg-white border-slate-200 hover:border-slate-300 cursor-pointer'
                 }`}
               >
                 <div className="space-y-3.5 min-w-0">
@@ -288,7 +304,7 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
                     <div className="text-left sm:text-right shrink-0 bg-slate-50 sm:bg-transparent px-3 py-2 sm:p-0 rounded-xl border border-slate-100 sm:border-0">
                       <span
                         className={`font-heading font-black text-2xl sm:text-3xl whitespace-nowrap ${
-                          canShowPrices ? item.priceColor : 'text-slate-400'
+                          canShowPrices && !isConfortBlocked ? item.priceColor : 'text-slate-400'
                         }`}
                       >
                         {displayPrice}
@@ -314,25 +330,55 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
                       </div>
                     ))}
                   </div>
+
+                  {isConfortBlocked && (
+                    <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-3 text-xs text-amber-950 font-bold space-y-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Sem motorista Confort agora, quer ir de Econômico?</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectCategory('economica');
+                          onNavigateToRides('economica');
+                        }}
+                        className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black text-xs rounded-xl cursor-pointer transition-all uppercase"
+                      >
+                        Trocar para Econômico
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Botão de Ação */}
                 <div className="pt-4 mt-4 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleChooseCategoryAndContinue(item.id);
-                    }}
-                    className="w-full py-3.5 px-4 bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-xs sm:text-sm rounded-2xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 border border-[#ff8533] uppercase tracking-wider"
-                  >
-                    <span>
-                      {canShowPrices
-                        ? `Escolher ${item.name} (${displayPrice})`
-                        : 'Buscar corrida para ver valor'}
-                    </span>
-                    <ArrowRight className="w-4 h-4 shrink-0" />
-                  </button>
+                  {isConfortBlocked ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="w-full py-3.5 px-4 bg-slate-300 text-slate-600 font-heading font-black text-xs sm:text-sm rounded-2xl border border-slate-400 cursor-not-allowed uppercase tracking-wider"
+                    >
+                      Sem motorista Confort online
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleChooseCategoryAndContinue(item.id);
+                      }}
+                      className="w-full py-3.5 px-4 bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-xs sm:text-sm rounded-2xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 border border-[#ff8533] uppercase tracking-wider"
+                    >
+                      <span>
+                        {canShowPrices
+                          ? `Escolher ${item.name} (${displayPrice})`
+                          : 'Buscar corrida para ver valor'}
+                      </span>
+                      <ArrowRight className="w-4 h-4 shrink-0" />
+                    </button>
+                  )}
                 </div>
               </div>
             );

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, reportPassengerCashNonPaymentSupabase } from '../supabase';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
@@ -328,6 +328,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       if (!isSearchingRideStatus(candidate.status)) return;
       if (!isRidePaidOrConfirmedCash(candidate)) return;
       if (!doesRideMatchDriverCategory(candidate)) return;
+      if (!isDeliveryRideCompleteForDriver(candidate)) return;
       const key = getRideUniqueKey(candidate);
       if (dismissedRideIdsRef.current.has(key)) return;
 
@@ -369,6 +370,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               isSearchingRideStatus(r.status) &&
               isRidePaidOrConfirmedCash(r) &&
               doesRideMatchDriverCategory(r) &&
+              isDeliveryRideCompleteForDriver(r) &&
               !dismissedRideIdsRef.current.has(getRideUniqueKey(r))
           ) || null;
         if (firstOpen) {
@@ -852,6 +854,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     isSearchingRideStatus(activeRide.status) &&
     isRidePaidOrConfirmedCash(activeRide) &&
     doesRideMatchDriverCategory(activeRide) &&
+    isDeliveryRideCompleteForDriver(activeRide) &&
     !dismissedRideIdsRef.current.has(getRideUniqueKey(activeRide))
       ? activeRide
       : null;
@@ -944,6 +947,36 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               <p className="text-zinc-200 font-semibold">
                 <strong className="text-[#ff6a00]">Destino:</strong> {openIncomingRide.destination?.address}
               </p>
+
+              {openIncomingRide.modalityDetails && (
+                <div className="mt-2 pt-2 border-t border-zinc-800 text-xs text-zinc-200 space-y-1">
+                  {normalizeRideCategory(openIncomingRide.category) === 'moto_entrega' ? (
+                    <>
+                      <p>
+                        <strong className="text-amber-400">Entrega:</strong>{' '}
+                        {openIncomingRide.modalityDetails.deliveryDescription} ({openIncomingRide.modalityDetails.deliveryWeight})
+                      </p>
+                      <p>
+                        <strong className="text-amber-400">Destinatário:</strong>{' '}
+                        {openIncomingRide.modalityDetails.recipientName} • {openIncomingRide.modalityDetails.recipientPhone}
+                      </p>
+                      <p>
+                        <strong className="text-amber-400">Quem paga:</strong>{' '}
+                        {openIncomingRide.modalityDetails.whoPays === 'destinatario' ? 'Quem recebe (Destinatário)' : 'Quem envia (Remetente)'}
+                      </p>
+                    </>
+                  ) : normalizeRideCategory(openIncomingRide.category) === 'moto_passageiro' ? (
+                    <p className="text-cyan-300 font-bold">
+                      1 passageiro • Capacete e sem bagagem grande confirmados
+                    </p>
+                  ) : openIncomingRide.modalityDetails.passengerCount ? (
+                    <p className="text-emerald-300 font-bold">
+                      Passageiros: {openIncomingRide.modalityDetails.passengerCount}{' '}
+                      {openIncomingRide.modalityDetails.passengerCount === 1 ? 'pessoa' : 'pessoas'}
+                    </p>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1386,6 +1419,41 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                               </div>
                             </div>
                           </div>
+
+                          {/* Detalhes obrigatórios da modalidade */}
+                          {incomingRideSnapshot.modalityDetails && (
+                            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-xs sm:text-sm text-slate-900 space-y-1.5 shadow-xs">
+                              <span className="text-[11px] font-mono font-black uppercase text-amber-900 block">
+                                Requisitos Confirmados pelo Passageiro
+                              </span>
+                              {normalizeRideCategory(incomingRideSnapshot.category) === 'moto_entrega' ? (
+                                <div className="space-y-1 font-medium">
+                                  <p>
+                                    <strong>O que vai entregar:</strong> {incomingRideSnapshot.modalityDetails.deliveryDescription}
+                                  </p>
+                                  <p>
+                                    <strong>Peso aproximado:</strong> {incomingRideSnapshot.modalityDetails.deliveryWeight}
+                                  </p>
+                                  <p>
+                                    <strong>Quem recebe:</strong> {incomingRideSnapshot.modalityDetails.recipientName} ({incomingRideSnapshot.modalityDetails.recipientPhone})
+                                  </p>
+                                  <p>
+                                    <strong>Quem paga:</strong>{' '}
+                                    {incomingRideSnapshot.modalityDetails.whoPays === 'destinatario' ? 'Quem recebe' : 'Quem envia'}
+                                  </p>
+                                </div>
+                              ) : normalizeRideCategory(incomingRideSnapshot.category) === 'moto_passageiro' ? (
+                                <p className="font-bold text-cyan-900">
+                                  • 1 passageiro • Capacete confirmado • Sem bagagem grande/mala
+                                </p>
+                              ) : incomingRideSnapshot.modalityDetails.passengerCount ? (
+                                <p className="font-bold text-slate-900">
+                                  • Quantidade de passageiros: {incomingRideSnapshot.modalityDetails.passengerCount}{' '}
+                                  {incomingRideSnapshot.modalityDetails.passengerCount === 1 ? 'passageiro' : 'passageiros'}
+                                </p>
+                              ) : null}
+                            </div>
+                          )}
 
                           {acceptedRideNotice && (
                             <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-3.5 rounded-xl font-bold text-sm flex items-center justify-between animate-fade-in flex-wrap gap-2">

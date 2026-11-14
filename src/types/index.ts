@@ -140,6 +140,17 @@ export type RideStatus =
   | 'finalizada'
   | 'cancelled';
 
+export interface RideModalityDetails {
+  passengerCount?: number;
+  helmetConfirmed?: boolean;
+  noLargeLuggageConfirmed?: boolean;
+  deliveryDescription?: string;
+  deliveryWeight?: string;
+  recipientName?: string;
+  recipientPhone?: string;
+  whoPays?: 'remetente' | 'destinatario';
+}
+
 export interface Ride {
   id: string;
   passengerId?: string;
@@ -170,6 +181,7 @@ export interface Ride {
   ratingGivenToDriver?: number;
   ratingComment?: string;
   issueComment?: string;
+  modalityDetails?: RideModalityDetails;
   deliveryDetails?: {
     packageType: string;
     instructions: string;

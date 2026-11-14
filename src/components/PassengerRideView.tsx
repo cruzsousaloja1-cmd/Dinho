@@ -4,10 +4,12 @@ import {
   Driver, 
   LocationPoint, 
   Ride, 
+  RideModalityDetails,
   VehicleCategory 
 } from '../types';
 import { VEHICLE_CATEGORIES, calculateFare, formatBRL, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { FINAL_RIDE_MESSAGE, WEEKLY_FEE_TEXT } from '../config/pricing';
+import { normalizeRideCategory } from '../supabase';
 import { 
   searchAddressAutocomplete, 
   calculateDistanceKm, 
@@ -48,7 +50,12 @@ import {
   ArrowLeft,
   Copy,
   Check,
-  ExternalLink
+  ExternalLink,
+  Users,
+  Package,
+  Scale,
+  User,
+  Banknote
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -146,9 +153,22 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
   // Estados do Fluxo do Passageiro:
   // 1. 'search': Entrada dos endereços de embarque e destino com número + botão "Buscar corrida"
-  // 2. 'options': Mostra as 4 opções com VALOR FINAL (Econômico R$ 8,00, Confort R$ 11,20, Motoboy R$ 6,16, Entregas R$ 6,90)
-  // 3. 'payment': Página de Pagamento ("Você escolheu [Categoria] - R$ [Valor]") com PIX/Cartão e botão "Pagar", depois "Confirmar corrida"
-  const [passengerStep, setPassengerStep] = useState<'search' | 'options' | 'payment'>('search');
+  // 2. 'options': Mostra as 4 modalidades com VALOR FINAL (Confort bloqueia se 0 motoristas Confort online)
+  // 3. 'details': Campos obrigatórios EXCLUSIVOS da modalidade escolhida (botão cinza desabilitado se faltar algo)
+  // 4. 'payment': Página de Pagamento ("Você escolheu [Categoria] - R$ [Valor]") -> aprovado vai DIRETO para FullMapView
+  const [passengerStep, setPassengerStep] = useState<'search' | 'options' | 'details' | 'payment'>('search');
+
+  // Campos obrigatórios por modalidade
+  const [passengerCount, setPassengerCount] = useState<number | null>(null);
+  const [attemptedMultiPassengerMoto, setAttemptedMultiPassengerMoto] = useState(false);
+  const [helmetConfirmed, setHelmetConfirmed] = useState(false);
+  const [noLargeLuggageConfirmed, setNoLargeLuggageConfirmed] = useState(false);
+  const [deliveryDescription, setDeliveryDescription] = useState('');
+  const [deliveryWeight, setDeliveryWeight] = useState<'' | 'Até 1 kg' | '1 a 5 kg' | '5 a 10 kg'>('');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
+  const [whoPays, setWhoPays] = useState<'' | 'remetente' | 'destinatario'>('');
+
   const [isPaidInApp, setIsPaidInApp] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [pixCopied, setPixCopied] = useState(false);
@@ -169,6 +189,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [cardHolderCpf, setCardHolderCpf] = useState('');
   const [cardHolderCep, setCardHolderCep] = useState('');
   const pollingTimerRef = useRef<any>(null);
+  const autoConfirmedPaymentIdRef = useRef<string | null>(null);
 
   // Estados de quitação de dívida de corrida em dinheiro não paga (PIX Asaas obrigatório)
   const [asaasDebtPayment, setAsaasDebtPayment] = useState<AsaasPaymentResult | null>(null);
@@ -231,6 +252,119 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     }
   }, [paymentMethodProp]);
 
+  const onlineConfortDriversCount = availableDrivers.filter(
+    (d) =>
+      d.status === 'online' &&
+      d.categoryConfigured !== false &&
+      normalizeRideCategory(d.category) === 'confort'
+  ).length;
+
+  const getModalityValidation = (cat: VehicleCategory = selectedCategory) => {
+    const hasPickupNum = hasAddressNumber(pickupInput);
+    const hasDestNum = hasAddressNumber(destInput);
+    const missing: string[] = [];
+
+    if (!hasPickupNum) missing.push('endereço de saída com número');
+    if (!hasDestNum) missing.push('endereço de chegada com número');
+
+    if (cat === 'economica') {
+      if (!passengerCount || passengerCount < 1 || passengerCount > 4) {
+        missing.push('quantidade de passageiros (1 a 4)');
+      }
+      if (missing.length > 0) {
+        return {
+          isValid: false,
+          missingLabel: missing.join(', '),
+          errorMessage: 'Complete endereço com número e quantidade de passageiros para continuar',
+        };
+      }
+      return { isValid: true, missingLabel: '', errorMessage: '' };
+    }
+
+    if (cat === 'confort') {
+      if (onlineConfortDriversCount === 0) {
+        return {
+          isValid: false,
+          missingLabel: 'motorista Confort online',
+          errorMessage: 'Sem motorista Confort agora, quer ir de Econômico?',
+        };
+      }
+      if (!passengerCount || passengerCount < 1 || passengerCount > 4) {
+        missing.push('quantidade de passageiros (1 a 4)');
+      }
+      if (missing.length > 0) {
+        return {
+          isValid: false,
+          missingLabel: missing.join(', '),
+          errorMessage: 'Complete endereço com número e quantidade de passageiros para continuar',
+        };
+      }
+      return { isValid: true, missingLabel: '', errorMessage: '' };
+    }
+
+    if (cat === 'moto_passageiro') {
+      if (attemptedMultiPassengerMoto) {
+        return {
+          isValid: false,
+          missingLabel: 'somente 1 passageiro',
+          errorMessage: 'Motoboy leva só 1 passageiro',
+        };
+      }
+      if (!helmetConfirmed) missing.push('confirmação de capacete');
+      if (!noLargeLuggageConfirmed) missing.push('confirmação sem bagagem grande');
+      if (missing.length > 0) {
+        return {
+          isValid: false,
+          missingLabel: missing.join(', '),
+          errorMessage: !hasPickupNum || !hasDestNum
+            ? 'Complete endereço com número e confirme capacete e bagagem para continuar'
+            : 'Confirme capacete e bagagem para continuar',
+        };
+      }
+      return { isValid: true, missingLabel: '', errorMessage: '' };
+    }
+
+    // moto_entrega
+    if (!deliveryDescription.trim()) missing.push('descrição do que vai entregar');
+    if (!deliveryWeight) missing.push('peso aproximado');
+    if (!recipientName.trim()) missing.push('nome de quem recebe');
+    if (recipientPhone.replace(/\D/g, '').length < 8) missing.push('telefone de quem recebe');
+    if (!whoPays) missing.push('quem vai pagar');
+
+    if (missing.length > 0) {
+      return {
+        isValid: false,
+        missingLabel: missing.join(', '),
+        errorMessage: 'Falta preencher para entrega: descrição, peso, nome e telefone de quem recebe',
+      };
+    }
+    return { isValid: true, missingLabel: '', errorMessage: '' };
+  };
+
+  const modalityValidation = getModalityValidation(selectedCategory);
+
+  const buildModalityDetailsPayload = (cat: VehicleCategory): RideModalityDetails => {
+    if (cat === 'moto_passageiro') {
+      return {
+        passengerCount: 1,
+        helmetConfirmed: true,
+        noLargeLuggageConfirmed: true,
+      };
+    }
+    if (cat === 'moto_entrega') {
+      return {
+        deliveryDescription: deliveryDescription.trim(),
+        deliveryWeight,
+        recipientName: recipientName.trim(),
+        recipientPhone: recipientPhone.trim(),
+        whoPays: whoPays === 'destinatario' ? 'destinatario' : 'remetente',
+      };
+    }
+    return {
+      passengerCount: passengerCount || 1,
+    };
+  };
+
   const lastLaunchNonceRef = useRef<number>(optionsLaunchNonce);
   useEffect(() => {
     if (optionsLaunchNonce > 0 && optionsLaunchNonce !== lastLaunchNonceRef.current) {
@@ -249,8 +383,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         setIsPaidInApp(false);
         setAsaasConfirmedStatus('PENDING');
         setPaymentBlockedError(null);
-        setPassengerStep('payment');
-        initAsaasPayment(method, cat);
+        setAttemptedMultiPassengerMoto(false);
+        if (cat === 'confort' && onlineConfortDriversCount === 0) {
+          setPassengerStep('options');
+        } else {
+          setPassengerStep('details');
+        }
       }
     }
   }, [optionsLaunchNonce, hasSearchedRoute]);
@@ -366,45 +504,53 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
   const handleRequestRideWithCategory = (
     catId?: VehicleCategory,
-    methodOverride?: 'pix' | 'credit_card' | 'money' | 'dinheiro' | 'race_pay'
+    methodOverride?: 'pix' | 'credit_card' | 'money' | 'dinheiro' | 'race_pay',
+    confirmedAsaasStatusOverride?: 'RECEIVED' | 'CONFIRMED'
   ) => {
     if (hasOpenDebt) {
       setPaymentBlockedError(
         `Você possui uma corrida em aberto de ${formatBRL(passengerDebt?.debtAmount || 0)}. Pague via PIX Asaas abaixo para liberar novas corridas.`
       );
-      return;
+      return false;
     }
     // 3. Validação estrita: se endereço não tiver número, mostrar alerta e bloquear pedido
     if (!hasAddressNumber(pickupInput)) {
       setAddressValidationError('Coloque o número do endereço de saída (embarque) para o motorista te achar.');
       const el = document.getElementById('route-details');
       if (el) el.scrollIntoView({ behavior: 'smooth' });
-      return;
+      return false;
     }
 
     if (!hasAddressNumber(destInput)) {
       setAddressValidationError('Coloque o número do endereço de chegada (destino) para o motorista te achar.');
       const el = document.getElementById('route-details');
       if (el) el.scrollIntoView({ behavior: 'smooth' });
-      return;
+      return false;
+    }
+
+    const finalCategory = catId || selectedCategory;
+    const validation = getModalityValidation(finalCategory);
+    if (!validation.isValid) {
+      setPaymentBlockedError(`Falta preencher: ${validation.missingLabel}`);
+      return false;
     }
 
     setAddressValidationError(null);
-
-    const finalCategory = catId || selectedCategory;
     setSelectedCategory(finalCategory);
 
     const effectiveMethod = methodOverride || paymentMethod;
     const isCash = isCashMethod(effectiveMethod);
+    const effectiveAsaasStatus = confirmedAsaasStatusOverride || asaasConfirmedStatus;
     const isAsaasConfirmed =
-      asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED';
+      effectiveAsaasStatus === 'RECEIVED' || effectiveAsaasStatus === 'CONFIRMED';
 
-    if (!isCash && (!isPaidInApp || !isAsaasConfirmed || !asaasPayment?.id)) {
+    if (!isCash && (!isAsaasConfirmed || !asaasPayment?.id || (!confirmedAsaasStatusOverride && !isPaidInApp))) {
       setPaymentBlockedError('Pague o PIX primeiro, estamos aguardando confirmação do Asaas');
-      return;
+      return false;
     }
 
     const calculated = calculateFare(finalCategory, dynamicDistanceKm);
+    const modalityDetailsPayload = buildModalityDetailsPayload(finalCategory);
 
     const finalPickup: LocationPoint = pickup || {
       address: pickupInput || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP',
@@ -420,6 +566,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
     // Dinheiro: cria imediatamente com status 'procurando' e forma_pagamento 'dinheiro' (SEM Asaas)
     // PIX / Cartão: criado apenas após confirmação real no Asaas (RECEIVED ou CONFIRMED)
+    const confirmationCodeVal = generateUniqueRideConfirmationCode();
     const newRide: Ride = {
       id: '',
       passengerId: currentUser?.id,
@@ -440,13 +587,24 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       paymentMethod: isCash ? 'dinheiro' : effectiveMethod,
       paymentStatus: isCash ? 'pending' : 'paid',
       asaasPaymentId: isCash ? undefined : asaasPayment?.id,
-      asaasStatus: isCash ? undefined : asaasConfirmedStatus,
+      asaasStatus: isCash ? undefined : (effectiveAsaasStatus as 'RECEIVED' | 'CONFIRMED'),
       status: 'procurando',
-      confirmationCode: generateUniqueRideConfirmationCode(),
+      confirmationCode: confirmationCodeVal,
+      modalityDetails: modalityDetailsPayload,
+      deliveryDetails:
+        finalCategory === 'moto_entrega'
+          ? {
+              packageType: `${modalityDetailsPayload.deliveryDescription || 'Encomenda'} (${modalityDetailsPayload.deliveryWeight || ''})`,
+              instructions: `Tel: ${modalityDetailsPayload.recipientPhone || ''} • Quem paga: ${modalityDetailsPayload.whoPays === 'destinatario' ? 'Quem recebe' : 'Quem envia'}`,
+              deliveryCode: confirmationCodeVal,
+              recipientName: modalityDetailsPayload.recipientName || '',
+            }
+          : undefined,
       createdAt: new Date().toISOString(),
     };
 
     onStartRide(newRide);
+    return true;
   };
 
   const getCategoryDisplayName = (cat: VehicleCategory) => {
@@ -557,6 +715,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   };
 
   // Monitora e pesquisa aprovação REAL no Asaas a cada 3 segundos (RECEIVED ou CONFIRMED)
+  // Ao confirmar pagamento + requisitos da modalidade preenchidos, cria a corrida e vai DIRETO para FullMapView
   useEffect(() => {
     if (
       passengerStep !== 'payment' ||
@@ -582,6 +741,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           try {
             confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
           } catch {}
+          if (autoConfirmedPaymentIdRef.current !== asaasPayment.id) {
+            const created = handleRequestRideWithCategory(selectedCategory, paymentMethod, check.status);
+            if (created) {
+              autoConfirmedPaymentIdRef.current = asaasPayment.id;
+              setPassengerStep('search');
+            }
+          }
         }
       } catch {}
     }, 3000);
@@ -651,27 +817,37 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   }, [hasOpenDebt, asaasDebtPayment?.id, isDebtPaid]);
 
   const handleSelectCategory = (cat: VehicleCategory) => {
+    if (cat === 'confort' && onlineConfortDriversCount === 0) {
+      return;
+    }
     setSelectedCategory(cat);
     onCategoryChange?.(cat);
+    setAttemptedMultiPassengerMoto(false);
+    setIsPaidInApp(false);
+    setAsaasConfirmedStatus('PENDING');
+    setPaymentBlockedError(null);
+    setPassengerStep('details');
+  };
+
+  const handleProceedFromDetailsToPayment = () => {
+    const validation = getModalityValidation(selectedCategory);
+    if (!validation.isValid) {
+      setPaymentBlockedError(`Falta preencher: ${validation.missingLabel}`);
+      return;
+    }
+    autoConfirmedPaymentIdRef.current = null;
     setIsPaidInApp(false);
     setAsaasConfirmedStatus('PENDING');
     setPaymentBlockedError(null);
     setPassengerStep('payment');
-    initAsaasPayment(paymentMethod, cat);
+    initAsaasPayment(paymentMethod, selectedCategory);
   };
 
-  // Fluxo DINHEIRO: cria corrida NA HORA no Supabase sem passar pelo Asaas
+  // Fluxo DINHEIRO: cria corrida NA HORA no Supabase sem passar pelo Asaas e abre FullMapView
   const handleConfirmMoneyRide = () => {
-    if (!hasAddressNumber(pickupInput)) {
-      setAddressValidationError('Coloque o número do endereço de saída (embarque) para o motorista te achar.');
-      const el = document.getElementById('route-details');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-      return;
-    }
-    if (!hasAddressNumber(destInput)) {
-      setAddressValidationError('Coloque o número do endereço de chegada (destino) para o motorista te achar.');
-      const el = document.getElementById('route-details');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    const validation = getModalityValidation(selectedCategory);
+    if (!validation.isValid) {
+      setPaymentBlockedError(`Falta preencher: ${validation.missingLabel}`);
       return;
     }
 
@@ -679,15 +855,19 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setIsProcessingPayment(false);
     setIsPaidInApp(false);
     setPaymentBlockedError(null);
-    handleRequestRideWithCategory(selectedCategory, 'dinheiro');
-    setPassengerStep('search');
-    if (onOpenFullMap) {
-      onOpenFullMap();
+    const created = handleRequestRideWithCategory(selectedCategory, 'dinheiro');
+    if (created) {
+      setPassengerStep('search');
     }
   };
 
   // Pagamento real com Cartão na API Asaas (só libera se retornar RECEIVED ou CONFIRMED)
   const handlePayCardWithAsaas = async () => {
+    const validation = getModalityValidation(selectedCategory);
+    if (!validation.isValid) {
+      setPaymentBlockedError(`Falta preencher: ${validation.missingLabel}`);
+      return;
+    }
     if (!asaasPayment?.id) {
       setPaymentBlockedError('Pague o PIX primeiro, estamos aguardando confirmação do Asaas');
       return;
@@ -740,6 +920,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         try {
           confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
         } catch {}
+        if (autoConfirmedPaymentIdRef.current !== asaasPayment.id) {
+          const created = handleRequestRideWithCategory(selectedCategory, 'credit_card', result.status);
+          if (created) {
+            autoConfirmedPaymentIdRef.current = asaasPayment.id;
+            setPassengerStep('search');
+          }
+        }
       } else {
         setPaymentBlockedError(
           result.errorMessage || 'Pague o PIX primeiro, estamos aguardando confirmação do Asaas'
@@ -752,6 +939,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
   // Só executa após pagamento confirmado de verdade pelo Asaas (RECEIVED ou CONFIRMED)
   const handleConfirmRideAfterPayment = () => {
+    const validation = getModalityValidation(selectedCategory);
+    if (!validation.isValid) {
+      setPaymentBlockedError(`Falta preencher: ${validation.missingLabel}`);
+      return;
+    }
     const isAsaasConfirmed =
       asaasConfirmedStatus === 'RECEIVED' || asaasConfirmedStatus === 'CONFIRMED';
     if (!isCashMethod(paymentMethod) && (!isPaidInApp || !isAsaasConfirmed)) {
@@ -759,10 +951,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       return;
     }
     setPaymentBlockedError(null);
-    handleRequestRideWithCategory(selectedCategory);
-    setPassengerStep('search');
-    if (onOpenFullMap) {
-      onOpenFullMap();
+    const created = handleRequestRideWithCategory(selectedCategory);
+    if (created) {
+      setPassengerStep('search');
     }
   };
 
@@ -1563,9 +1754,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 font-mono text-center flex-wrap">
                   <span className="text-emerald-700 font-bold">✓ 1. Endereço com número</span>
                   <span>&bull;</span>
-                  <span className="text-[#ff6a00] font-black">2. Escolha sua opção abaixo</span>
+                  <span className="text-[#ff6a00] font-black">2. Escolha a modalidade</span>
                   <span>&bull;</span>
-                  <span className="text-slate-400 font-bold">3. Pagamento no app</span>
+                  <span className="text-slate-400 font-bold">3. Requisitos & Pagamento</span>
                 </div>
               </div>
             )}
@@ -1641,28 +1832,43 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 );
               })()}
 
-              {/* 2. Motorista Confort */}
+              {/* 2. Motorista Confort (Bloqueia se 0 motoristas Confort ONLINE) */}
               {(() => {
                 const cat = VEHICLE_CATEGORIES.confort;
                 const fare = calculateFare('confort', dynamicDistanceKm);
+                const hasConfortOnline = onlineConfortDriversCount > 0;
                 return (
                   <div
-                    onClick={() => handleSelectCategory('confort')}
-                    className="p-4 sm:p-5 rounded-2xl border-2 border-purple-200 hover:border-purple-500 bg-white transition-all cursor-pointer flex flex-col justify-between shadow-md hover:shadow-lg group min-w-0"
+                    onClick={() => hasConfortOnline && handleSelectCategory('confort')}
+                    className={`p-4 sm:p-5 rounded-2xl border-2 transition-all flex flex-col justify-between min-w-0 ${
+                      hasConfortOnline
+                        ? 'border-purple-200 hover:border-purple-500 bg-white cursor-pointer shadow-md hover:shadow-lg group'
+                        : 'border-slate-300 bg-slate-100 cursor-not-allowed shadow-none'
+                    }`}
                   >
                     <div className="min-w-0">
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 min-w-0">
                         <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0 border border-purple-300">
+                          <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-2xl flex items-center justify-center shrink-0 border ${
+                            hasConfortOnline
+                              ? 'bg-purple-100 text-purple-800 border-purple-300'
+                              : 'bg-slate-200 text-slate-500 border-slate-300'
+                          }`}>
                             <Sparkles className="w-6 h-6 sm:w-7 sm:h-7" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-heading font-black text-slate-950 text-base sm:text-lg leading-tight">
+                              <span className={`font-heading font-black text-base sm:text-lg leading-tight ${
+                                hasConfortOnline ? 'text-slate-950' : 'text-slate-600'
+                              }`}>
                                 Motorista Confort
                               </span>
-                              <span className="bg-purple-100 text-purple-900 font-bold text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full border border-purple-300 font-mono shrink-0">
-                                Mais Conforto
+                              <span className={`font-bold text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full border font-mono shrink-0 ${
+                                hasConfortOnline
+                                  ? 'bg-purple-100 text-purple-900 border-purple-300'
+                                  : 'bg-rose-100 text-rose-800 border-rose-300'
+                              }`}>
+                                {hasConfortOnline ? `${onlineConfortDriversCount} Online` : '0 Online'}
                               </span>
                             </div>
                             <p className="text-xs sm:text-sm text-slate-600 font-medium leading-tight mt-1">
@@ -1672,29 +1878,53 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         </div>
 
                         <div className="text-left sm:text-right shrink-0">
-                          <span className="font-heading font-black text-purple-900 text-2xl sm:text-3xl whitespace-nowrap">
+                          <span className={`font-heading font-black text-2xl sm:text-3xl whitespace-nowrap ${
+                            hasConfortOnline ? 'text-purple-900' : 'text-slate-400'
+                          }`}>
                             {formatBRL(fare.totalPrice)}
                           </span>
-                          <p className="text-[10px] sm:text-xs text-purple-600 font-bold uppercase font-mono">Preço Final</p>
+                          <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
                         </div>
                       </div>
 
-                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
+                      <div className="mt-3 text-xs text-slate-600 border-t border-slate-200/80 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
                         <span>{cat.tagline}</span>
-                        <span className="text-purple-700 font-bold">Mais espaço interno</span>
+                        <span className={hasConfortOnline ? 'text-purple-700 font-bold' : 'text-slate-500 font-bold'}>
+                          Ar-condicionado • Mais espaço
+                        </span>
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectCategory('confort');
-                      }}
-                      className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-purple-700 hover:bg-purple-600 text-white border border-purple-600 uppercase tracking-wide"
-                    >
-                      <span>Escolher Confort ({formatBRL(fare.totalPrice)})</span>
-                    </button>
+                    {hasConfortOnline ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectCategory('confort');
+                        }}
+                        className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-purple-700 hover:bg-purple-600 text-white border border-purple-600 uppercase tracking-wide"
+                      >
+                        <span>Escolher Confort ({formatBRL(fare.totalPrice)})</span>
+                      </button>
+                    ) : (
+                      <div className="mt-4 space-y-2.5 bg-amber-50 border border-amber-300 rounded-2xl p-3">
+                        <div className="flex items-start gap-2 text-xs font-black text-amber-950">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <span>Sem motorista Confort agora, quer ir de Econômico?</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectCategory('economica');
+                          }}
+                          className="w-full py-2.5 px-3 rounded-xl font-heading font-black text-xs sm:text-sm bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer transition-all uppercase tracking-wide flex items-center justify-center gap-1.5"
+                        >
+                          <span>Trocar para Econômico</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1819,7 +2049,352 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         </div>
       )}
 
-      {/* ETAPA 3: PÁGINA DE PAGAMENTO NO APP COM DESCONTO/RETENÇÃO */}
+      {/* ETAPA 3 (PASSO 2 e 3): CAMPOS OBRIGATÓRIOS EXCLUSIVOS DA MODALIDADE ESCOLHIDA */}
+      {!hasOpenDebt && passengerStep === 'details' && (() => {
+        const fare = calculateFare(selectedCategory, dynamicDistanceKm);
+        const isMoto = selectedCategory === 'moto_passageiro' || selectedCategory === 'moto_entrega';
+        const isValid = modalityValidation.isValid;
+
+        return (
+          <div className="space-y-4 animate-fade-in min-w-0 w-full">
+            <button
+              type="button"
+              onClick={() => {
+                setPaymentBlockedError(null);
+                setPassengerStep('options');
+              }}
+              className="inline-flex items-center gap-2 text-slate-700 hover:text-slate-950 font-heading font-bold text-sm bg-slate-100 hover:bg-slate-200 px-4 py-2.5 rounded-xl border border-slate-300 transition-all cursor-pointer shadow-2xs"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar às modalidades</span>
+            </button>
+
+            {/* Botão VER O MAPA TELA INTEIRA bloqueado até preencher modalidade e pagar */}
+            <div className="w-full min-w-0">
+              <button
+                type="button"
+                disabled
+                className="w-full min-w-0 box-border bg-slate-100 border-2 border-slate-300 text-slate-400 font-heading font-black text-xs sm:text-sm py-3.5 px-3 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed shadow-none select-none uppercase tracking-wider text-center leading-snug"
+              >
+                <Lock className="w-4 h-4 text-slate-400 shrink-0" />
+                <span>Complete os dados da modalidade e pagamento para ver o mapa</span>
+              </button>
+            </div>
+
+            {/* Card Principal da Modalidade */}
+            <div className="bg-white border-2 border-[#ff6a00] rounded-3xl p-4 sm:p-6 shadow-md space-y-5 min-w-0 w-full box-border">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-4 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <span className="text-[11px] font-bold text-[#ff6a00] uppercase tracking-wider block font-mono">
+                    Passo 2 • Requisitos da Modalidade
+                  </span>
+                  <h3 className="text-lg sm:text-2xl font-heading font-black text-slate-950 mt-1 break-words">
+                    {getCategoryDisplayName(selectedCategory)} • {formatBRL(fare.totalPrice)}
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-1 font-medium">
+                    Preencha todos os dados abaixo para liberar o pagamento e o mapa.
+                  </p>
+                </div>
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-[#ff6a00] text-white flex items-center justify-center font-bold shrink-0 shadow-md">
+                  {isMoto ? <Bike className="w-6 h-6" /> : <Car className="w-6 h-6" />}
+                </div>
+              </div>
+
+              {/* Resumo dos Endereços (Coleta / Saída e Entrega / Chegada) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2 text-xs sm:text-sm">
+                <div className="flex items-start gap-2 min-w-0">
+                  <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-mono font-black text-emerald-700 uppercase block">
+                      {selectedCategory === 'moto_entrega' ? 'Endereço de Coleta (com número)' : 'Endereço de Saída / Meu GPS'}
+                    </span>
+                    <span className="font-bold text-slate-900 break-words">{pickupInput}</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 pt-2 border-t border-slate-200 min-w-0">
+                  <Navigation className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-mono font-black text-amber-700 uppercase block">
+                      {selectedCategory === 'moto_entrega' ? 'Endereço de Entrega (com número)' : 'Endereço de Chegada (com número)'}
+                    </span>
+                    <span className="font-bold text-slate-900 break-words">{destInput}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 1. MOTORISTA ECONÔMICO ou 2. MOTORISTA CONFORT */}
+              {(selectedCategory === 'economica' || selectedCategory === 'confort') && (
+                <div className="space-y-4">
+                  <div className={`p-3.5 rounded-2xl border text-xs sm:text-sm font-bold flex items-center gap-2.5 ${
+                    selectedCategory === 'confort'
+                      ? 'bg-purple-50 border-purple-200 text-purple-950'
+                      : 'bg-amber-50 border-amber-200 text-amber-950'
+                  }`}>
+                    <Sparkles className="w-5 h-5 shrink-0" />
+                    <span>
+                      {selectedCategory === 'confort'
+                        ? `Carro confortável com ar-condicionado (${onlineConfortDriversCount} motorista Confort online agora)`
+                        : 'Carro econômico com 4 portas e ar-condicionado'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 mb-2.5">
+                      <Users className="w-4 h-4 text-[#ff6a00]" />
+                      <span>Quantidade de Passageiros (Obrigatório: 1 a 4)</span>
+                    </label>
+                    <div className="grid grid-cols-4 gap-2.5">
+                      {[1, 2, 3, 4].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => {
+                            setPassengerCount(num);
+                            setPaymentBlockedError(null);
+                          }}
+                          className={`py-3.5 px-2 rounded-2xl border-2 font-heading font-black text-sm sm:text-base transition-all cursor-pointer flex flex-col items-center justify-center ${
+                            passengerCount === num
+                              ? 'bg-[#ff6a00] border-[#ff6a00] text-white shadow-md ring-2 ring-orange-500/20'
+                              : 'bg-slate-50 border-slate-300 text-slate-800 hover:border-amber-500'
+                          }`}
+                        >
+                          <span>{num}</span>
+                          <span className="text-[10px] font-mono uppercase opacity-90">
+                            {num === 1 ? 'pessoa' : 'pessoas'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. MOTOBOY PASSAGEIRO */}
+              {selectedCategory === 'moto_passageiro' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 mb-2.5">
+                      <Users className="w-4 h-4 text-cyan-600" />
+                      <span>Passageiros na Moto (Obrigatório: SOMENTE 1)</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttemptedMultiPassengerMoto(false);
+                          setPassengerCount(1);
+                          setPaymentBlockedError(null);
+                        }}
+                        className={`py-3 px-3 rounded-2xl border-2 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          !attemptedMultiPassengerMoto
+                            ? 'bg-cyan-600 border-cyan-600 text-white shadow-md'
+                            : 'bg-slate-50 border-slate-300 text-slate-800'
+                        }`}
+                      >
+                        <User className="w-4 h-4" />
+                        <span>1 Passageiro</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAttemptedMultiPassengerMoto(true)}
+                        className={`py-3 px-3 rounded-2xl border-2 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          attemptedMultiPassengerMoto
+                            ? 'bg-rose-600 border-rose-600 text-white shadow-md'
+                            : 'bg-slate-50 border-slate-300 text-slate-600 hover:border-rose-400'
+                        }`}
+                      >
+                        <Users className="w-4 h-4" />
+                        <span>2+ Passageiros</span>
+                      </button>
+                    </div>
+                    {attemptedMultiPassengerMoto && (
+                      <div className="mt-2.5 p-3 bg-rose-50 border-2 border-rose-500 rounded-xl flex items-center gap-2 text-xs sm:text-sm font-black text-rose-900">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Motoboy leva só 1 passageiro. Selecione "1 Passageiro" para continuar.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <span className="text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-wider block">
+                      Confirmações Obrigatórias de Segurança
+                    </span>
+
+                    <label
+                      className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
+                        helmetConfirmed
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
+                          : 'bg-slate-50 border-slate-300 text-slate-800 hover:border-cyan-400'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={helmetConfirmed}
+                        onChange={(e) => setHelmetConfirmed(e.target.checked)}
+                        className="w-5 h-5 accent-emerald-600 rounded shrink-0 cursor-pointer"
+                      />
+                      <span className="text-xs sm:text-sm font-black">
+                        Vou de moto, vou usar capacete
+                      </span>
+                    </label>
+
+                    <label
+                      className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
+                        noLargeLuggageConfirmed
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
+                          : 'bg-slate-50 border-slate-300 text-slate-800 hover:border-cyan-400'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={noLargeLuggageConfirmed}
+                        onChange={(e) => setNoLargeLuggageConfirmed(e.target.checked)}
+                        className="w-5 h-5 accent-emerald-600 rounded shrink-0 cursor-pointer"
+                      />
+                      <span className="text-xs sm:text-sm font-black">
+                        Estou sem bagagem grande / mala
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. MOTOBOY ENTREGAS */}
+              {selectedCategory === 'moto_entrega' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-heading font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                      <Package className="w-4 h-4 text-amber-600" />
+                      <span>O que vai entregar (Obrigatório)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={deliveryDescription}
+                      onChange={(e) => setDeliveryDescription(e.target.value)}
+                      placeholder="Ex: Documento, comida, caixa pequena, chaves..."
+                      className="w-full box-border bg-slate-50 border-2 border-slate-300 focus:border-[#ff6a00] rounded-2xl px-4 py-3 text-sm font-bold text-slate-950 placeholder-slate-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-heading font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                      <Scale className="w-4 h-4 text-amber-600" />
+                      <span>Peso Aproximado (Obrigatório)</span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['Até 1 kg', '1 a 5 kg', '5 a 10 kg'] as const).map((w) => (
+                        <button
+                          key={w}
+                          type="button"
+                          onClick={() => setDeliveryWeight(w)}
+                          className={`py-3 px-2 rounded-2xl border-2 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer ${
+                            deliveryWeight === w
+                              ? 'bg-[#ff6a00] border-[#ff6a00] text-white shadow-md'
+                              : 'bg-slate-50 border-slate-300 text-slate-800 hover:border-amber-500'
+                          }`}
+                        >
+                          {w}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-heading font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                        <User className="w-4 h-4 text-amber-600" />
+                        <span>Nome de quem vai receber</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={recipientName}
+                        onChange={(e) => setRecipientName(e.target.value)}
+                        placeholder="Nome completo do destinatário"
+                        className="w-full box-border bg-slate-50 border-2 border-slate-300 focus:border-[#ff6a00] rounded-2xl px-4 py-3 text-sm font-bold text-slate-950 placeholder-slate-400 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-heading font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                        <Phone className="w-4 h-4 text-amber-600" />
+                        <span>WhatsApp / Telefone de quem recebe</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={recipientPhone}
+                        onChange={(e) => setRecipientPhone(e.target.value)}
+                        placeholder="(19) 99999-9999"
+                        className="w-full box-border bg-slate-50 border-2 border-slate-300 focus:border-[#ff6a00] rounded-2xl px-4 py-3 text-sm font-bold text-slate-950 placeholder-slate-400 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-heading font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                      <Banknote className="w-4 h-4 text-amber-600" />
+                      <span>Quem vai pagar</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setWhoPays('remetente')}
+                        className={`py-3 px-3 rounded-2xl border-2 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer ${
+                          whoPays === 'remetente'
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-md'
+                            : 'bg-slate-50 border-slate-300 text-slate-800 hover:border-amber-500'
+                        }`}
+                      >
+                        Quem envia
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWhoPays('destinatario')}
+                        className={`py-3 px-3 rounded-2xl border-2 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer ${
+                          whoPays === 'destinatario'
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-md'
+                            : 'bg-slate-50 border-slate-300 text-slate-800 hover:border-amber-500'
+                        }`}
+                      >
+                        Quem recebe
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Alerta de bloqueio claro quando faltar qualquer item obrigatório */}
+              {!isValid && (
+                <div className="p-3.5 bg-amber-50 border-2 border-amber-400 rounded-2xl flex items-start gap-2.5 text-xs sm:text-sm text-amber-950 font-black">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <span>{modalityValidation.errorMessage}</span>
+                </div>
+              )}
+
+              {/* Botão Confirmar / Pagar - CINZA E DESABILITADO SE FALTAR QUALQUER CAMPO */}
+              {isValid ? (
+                <button
+                  type="button"
+                  onClick={handleProceedFromDetailsToPayment}
+                  className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-5 rounded-2xl shadow-xl flex items-center justify-center gap-2.5 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
+                >
+                  <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5] shrink-0" />
+                  <span>CONFIRMAR E PAGAR ({formatBRL(fare.totalPrice)})</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full bg-slate-300 border-2 border-slate-400 text-slate-600 font-heading font-black text-xs sm:text-sm py-4 px-4 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed shadow-none select-none opacity-90 text-center leading-snug"
+                >
+                  <Lock className="w-4 h-4 text-slate-500 shrink-0" />
+                  <span>Falta preencher: {modalityValidation.missingLabel}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ETAPA 4: PÁGINA DE PAGAMENTO NO APP */}
       {!hasOpenDebt && passengerStep === 'payment' && (() => {
         const fare = calculateFare(selectedCategory, dynamicDistanceKm);
         const isMoto = selectedCategory === 'moto_passageiro' || selectedCategory === 'moto_entrega';
@@ -1832,17 +2407,17 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
         return (
           <div className="space-y-4 animate-fade-in min-w-0 w-full">
-            {/* Botão Voltar às Opções */}
+            {/* Botão Voltar aos Requisitos da Modalidade */}
             <button
               type="button"
               onClick={() => {
-                setPassengerStep('options');
+                setPassengerStep('details');
                 setIsPaidInApp(false);
               }}
               className="inline-flex items-center gap-2 text-slate-700 hover:text-slate-950 font-heading font-bold text-sm bg-slate-100 hover:bg-slate-200 px-4 py-2.5 rounded-xl border border-slate-300 transition-all cursor-pointer shadow-2xs"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Voltar às opções de viagem</span>
+              <span>Alterar dados da modalidade</span>
             </button>
 
             {/* Card Principal: "Você escolheu [Categoria] - R$ [Valor]" */}
@@ -1861,7 +2436,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 </div>
               </div>
 
-              {/* Rota */}
+              {/* Rota e Detalhes da Modalidade */}
               <div className="space-y-2 text-xs sm:text-sm text-slate-800 bg-white/80 rounded-2xl p-3.5 sm:p-4 border border-orange-200 min-w-0">
                 <div className="flex items-start gap-2.5 min-w-0">
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -1877,9 +2452,21 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     <span className="font-bold text-slate-950 break-words">{destInput}</span>
                   </div>
                 </div>
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 font-mono">
-                  <span>Distância da Rota:</span>
-                  <span className="font-black text-[#ff6a00]">{dynamicDistanceKm} km</span>
+                <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 font-mono">
+                  <span>Distância: <strong className="text-[#ff6a00]">{dynamicDistanceKm} km</strong></span>
+                  {selectedCategory === 'moto_entrega' ? (
+                    <span className="text-amber-800 font-bold">
+                      {deliveryDescription} ({deliveryWeight}) &bull; Rec: {recipientName} ({whoPays === 'destinatario' ? 'Quem recebe paga' : 'Quem envia paga'})
+                    </span>
+                  ) : selectedCategory === 'moto_passageiro' ? (
+                    <span className="text-cyan-800 font-bold">
+                      1 passageiro &bull; Capacete ✓ &bull; Sem bagagem grande ✓
+                    </span>
+                  ) : (
+                    <span className="text-slate-800 font-bold">
+                      {passengerCount || 1} {(passengerCount || 1) === 1 ? 'passageiro' : 'passageiros'}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -2312,14 +2899,25 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       Você vai pagar em dinheiro para o motorista - Motorista vai confirmar recebimento no final ({formatBRL(fare.totalPrice)}).
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleConfirmMoneyRide}
-                      className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
-                    >
-                      <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
-                      <span>Confirmar e chamar motorista (Dinheiro)</span>
-                    </button>
+                    {modalityValidation.isValid ? (
+                      <button
+                        type="button"
+                        onClick={handleConfirmMoneyRide}
+                        className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
+                      >
+                        <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
+                        <span>Confirmar e chamar motorista (Dinheiro)</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full bg-slate-300 border-2 border-slate-400 text-slate-600 font-heading font-black text-xs sm:text-sm py-4 px-4 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed shadow-none select-none opacity-90"
+                      >
+                        <Lock className="w-4 h-4 text-slate-500 shrink-0" />
+                        <span>Falta preencher: {modalityValidation.missingLabel}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

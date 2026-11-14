@@ -1400,7 +1400,45 @@ export function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
     ratingGivenToDriver: row.rating_dado,
     ratingComment: row.comentario,
     issueComment: row.detalhe_problema,
+    ...(() => {
+      const parseJson = (v: any) => {
+        if (!v) return null;
+        if (typeof v === 'object') return v;
+        if (typeof v === 'string' && v.trim().startsWith('{')) {
+          try {
+            return JSON.parse(v.trim());
+          } catch {
+            return null;
+          }
+        }
+        return null;
+      };
+      const origObj = parseJson(row.origem);
+      const destObj = parseJson(row.destino);
+      const modalObj = parseJson((row as any).detalhes_modalidade);
+      const md = modalObj || origObj?.modalityDetails || destObj?.modalityDetails || undefined;
+      const dd = origObj?.deliveryDetails || destObj?.deliveryDetails || undefined;
+      return {
+        modalityDetails: md,
+        deliveryDetails: dd,
+      };
+    })(),
   };
+}
+
+/**
+ * Garante que o motoboy só receba entregas completas (descrição, peso, nome e telefone de quem recebe)
+ */
+export function isDeliveryRideCompleteForDriver(ride?: Ride | null): boolean {
+  if (!ride) return false;
+  if (normalizeRideCategory(ride.category) !== 'moto_entrega') return true;
+  const md = ride.modalityDetails;
+  const dd = ride.deliveryDetails;
+  const desc = (md?.deliveryDescription || dd?.packageType || '').trim();
+  const weight = (md?.deliveryWeight || '').trim();
+  const recName = (md?.recipientName || dd?.recipientName || ride.destination?.contactName || '').trim();
+  const recPhone = (md?.recipientPhone || ride.destination?.contactPhone || '').replace(/\D/g, '');
+  return Boolean(desc && weight && recName && recPhone.length >= 8);
 }
 
 /**
@@ -1545,10 +1583,34 @@ export async function saveCorridaSupabase(
       return { success: false, error: 'Pague primeiro no Asaas para chamar o motorista.' };
     }
 
+    // Bloqueia gravação de Motoboy Entregas incompleta antes do motoboy ver a entrega
+    if (
+      normalizedStatus === 'procurando' &&
+      normalizeRideCategory(ride.category) === 'moto_entrega' &&
+      !isDeliveryRideCompleteForDriver(ride)
+    ) {
+      return {
+        success: false,
+        error: 'Falta preencher para entrega: descrição, peso, nome e telefone de quem recebe.',
+      };
+    }
+
     const totalPrice = Number((ride.price || 0).toFixed(2));
     const driverEarnings = Number((ride.driverEarnings ?? totalPrice * 0.85).toFixed(2));
     const raceFee = Number((ride.platformFee ?? totalPrice * 0.15).toFixed(2));
     const nowIso = ride.createdAt || new Date().toISOString();
+
+    const origemWithMeta = ride.modalityDetails
+      ? { ...ride.pickup, modalityDetails: ride.modalityDetails, deliveryDetails: ride.deliveryDetails }
+      : ride.pickup;
+    const destinoWithMeta = ride.modalityDetails
+      ? {
+          ...ride.destination,
+          contactName: ride.modalityDetails.recipientName || ride.destination?.contactName,
+          contactPhone: ride.modalityDetails.recipientPhone || ride.destination?.contactPhone,
+          modalityDetails: ride.modalityDetails,
+        }
+      : ride.destination;
 
     const payload: any = {
       created_at: nowIso,
@@ -1559,8 +1621,8 @@ export async function saveCorridaSupabase(
       passageiro_foto: ride.passengerAvatar || currentUser?.avatar || '',
       email_motorista: (ride.driver?.email || '').toLowerCase().trim(),
       nome_motorista: ride.driver?.name || '',
-      origem: ride.pickup,
-      destino: ride.destination,
+      origem: origemWithMeta,
+      destino: destinoWithMeta,
       origem_texto: ride.pickup?.address || '',
       destino_texto: ride.destination?.address || '',
       valor: totalPrice,
@@ -1573,6 +1635,7 @@ export async function saveCorridaSupabase(
       rating_dado: ride.ratingGivenToDriver ?? null,
       comentario: ride.ratingComment ?? null,
       detalhe_problema: (ride as any).issueComment ?? null,
+      detalhes_modalidade: ride.modalityDetails ? JSON.stringify(ride.modalityDetails) : '',
       codigo_confirmacao: ride.confirmationCode || '',
       asaas_payment_id: ride.asaasPaymentId || '',
       asaas_status: isCash ? 'DINHEIRO' : (ride.asaasStatus || 'PENDING'),
@@ -1618,6 +1681,7 @@ export async function saveCorridaSupabase(
       'id_passageiro',
       'id_motorista',
       'detalhe_problema',
+      'detalhes_modalidade',
       'comentario',
       'rating_dado',
       'forma_pagamento',
