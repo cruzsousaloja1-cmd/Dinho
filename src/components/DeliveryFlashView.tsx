@@ -330,7 +330,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
                     {isLocatingUser ? (
                       <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Buscando GPS...</span>
+                        <span>Buscando GPS preciso...</span>
                       </>
                     ) : (
                       <>

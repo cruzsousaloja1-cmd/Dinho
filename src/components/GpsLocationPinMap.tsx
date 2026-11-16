@@ -7,12 +7,25 @@ interface GpsLocationPinMapProps {
   lat: number;
   lng: number;
   address: string;
+  onPinDragged?: (newLat: number, newLng: number) => void;
+  isUpdatingAddress?: boolean;
 }
 
-export const GpsLocationPinMap: React.FC<GpsLocationPinMapProps> = ({ lat, lng, address }) => {
+export const GpsLocationPinMap: React.FC<GpsLocationPinMapProps> = ({
+  lat,
+  lng,
+  address,
+  onPinDragged,
+  isUpdatingAddress = false,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const onPinDraggedRef = useRef(onPinDragged);
+
+  useEffect(() => {
+    onPinDraggedRef.current = onPinDragged;
+  }, [onPinDragged]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -55,7 +68,7 @@ export const GpsLocationPinMap: React.FC<GpsLocationPinMapProps> = ({ lat, lng, 
     const pinIcon = L.divIcon({
       className: 'gps-user-pin',
       html: `
-        <div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-85%);">
+        <div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-85%);cursor:grab;">
           <div style="background:#059669;color:#ffffff;font-family:sans-serif;font-size:11px;font-weight:800;padding:3px 8px;border-radius:9999px;border:2px solid #ffffff;box-shadow:0 4px 10px rgba(0,0,0,0.35);white-space:nowrap;margin-bottom:3px;">
             Você está aqui
           </div>
@@ -70,7 +83,20 @@ export const GpsLocationPinMap: React.FC<GpsLocationPinMapProps> = ({ lat, lng, 
     if (markerRef.current) {
       markerRef.current.setLatLng([lat, lng]);
     } else {
-      markerRef.current = L.marker([lat, lng], { icon: pinIcon }).addTo(map);
+      const marker = L.marker([lat, lng], {
+        icon: pinIcon,
+        draggable: true,
+        autoPan: true,
+      }).addTo(map);
+
+      marker.on('dragend', () => {
+        const next = marker.getLatLng();
+        if (onPinDraggedRef.current) {
+          onPinDraggedRef.current(next.lat, next.lng);
+        }
+      });
+
+      markerRef.current = marker;
     }
 
     if (address) {
@@ -84,8 +110,15 @@ export const GpsLocationPinMap: React.FC<GpsLocationPinMapProps> = ({ lat, lng, 
   }, [lat, lng, address]);
 
   return (
-    <div className="w-full h-44 sm:h-48 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-sm bg-slate-100 relative">
+    <div className="w-full h-48 sm:h-52 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-sm bg-slate-100 relative">
       <div ref={containerRef} className="w-full h-full z-0" />
+      <div className="pointer-events-none absolute bottom-2 left-2 right-2 z-[400] flex justify-center">
+        <span className="bg-slate-900/85 text-white text-[11px] font-bold px-3 py-1 rounded-full shadow-md">
+          {isUpdatingAddress
+            ? 'Buscando endereço da nova posição...'
+            : 'Arraste o pino "Você está aqui" para ajustar o local exato'}
+        </span>
+      </div>
     </div>
   );
 };

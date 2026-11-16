@@ -257,8 +257,9 @@ export async function searchAddressAutocomplete(query: string): Promise<AddressS
         data.forEach((item: any, idx: number) => {
           const addr = item.address || {};
           const road = addr.road || addr.pedestrian || addr.suburb || item.name || 'Rua';
-          const neighborhood =
-            addr.neighbourhood || addr.suburb || addr.city_district || 'Centro';
+          const rawNeighborhood =
+            addr.suburb || addr.neighbourhood || addr.quarter || addr.city_district || 'Centro';
+          const neighborhood = correctNeighborhoodForIndaiatubaStreet(road, rawNeighborhood);
           
           // Se a API não tiver o número exato, usa o número que o usuário digitou ou números práticos da via
           const houseNumber =
@@ -385,6 +386,144 @@ export const GPS_FALLBACK_SAVED_NOTICE =
   'Usando última localização, ligue o GPS para mais precisão';
 
 const LAST_GPS_LOCATION_STORAGE_KEY = 'race_last_gps_location';
+const STREET_OVERRIDES_STORAGE_KEY = 'race_saved_street_overrides_v1';
+
+export interface SavedStreetOverride {
+  road: string;
+  number: string;
+  neighborhood: string;
+  updatedAt: number;
+}
+
+export function normalizeTextKey(value: string): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function correctNeighborhoodForIndaiatubaStreet(road: string, rawNeighborhood: string): string {
+  const cleanRoad = normalizeTextKey(road);
+  const cleanNeighborhood = normalizeTextKey(rawNeighborhood);
+  const isAdeliaPhilomena =
+    cleanRoad.includes('adelia philomena mattioni') ||
+    cleanRoad.includes('philomena mattioni');
+
+  if (
+    isAdeliaPhilomena &&
+    (!cleanNeighborhood ||
+      cleanNeighborhood === 'centro' ||
+      cleanNeighborhood.includes('uniao'))
+  ) {
+    return 'Jardim do Sol';
+  }
+
+  return (rawNeighborhood || '').trim() || 'Centro';
+}
+
+export function parseStructuredIndaiatubaAddress(address: string): {
+  road: string;
+  number: string;
+  neighborhood: string;
+} {
+  const trimmed = String(address || '').trim();
+  if (!trimmed) {
+    return { road: '', number: '', neighborhood: '' };
+  }
+
+  const withoutCity = trimmed.replace(/,\s*Indaiatuba\s*-?\s*SP\s*$/i, '').trim();
+  const dashIdx = withoutCity.lastIndexOf(' - ');
+  let leftPart = withoutCity;
+  let neighborhoodPart = '';
+
+  if (dashIdx > 0) {
+    leftPart = withoutCity.slice(0, dashIdx).trim();
+    neighborhoodPart = withoutCity.slice(dashIdx + 3).trim();
+  }
+
+  let road = leftPart;
+  let number = '';
+  const trailingNumMatch = leftPart.match(/^(.*?)[,\s]+(\d{1,5}[a-zA-Z]?)\s*$/);
+  if (trailingNumMatch && trailingNumMatch[1].trim().length >= 3) {
+    road = trailingNumMatch[1].replace(/,\s*$/, '').trim();
+    number = trailingNumMatch[2].trim();
+  }
+
+  return {
+    road: road.trim(),
+    number: number.trim(),
+    neighborhood: neighborhoodPart.trim(),
+  };
+}
+
+function readStreetOverridesMap(): Record<string, SavedStreetOverride> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(STREET_OVERRIDES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, SavedStreetOverride>;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return {};
+}
+
+export function getStreetAddressOverride(road: string): SavedStreetOverride | null {
+  const key = normalizeTextKey(road);
+  if (!key || key.length < 3) return null;
+  const map = readStreetOverridesMap();
+  const entry = map[key];
+  if (entry && typeof entry === 'object') {
+    return {
+      road: String(entry.road || road).trim(),
+      number: String(entry.number || '').trim(),
+      neighborhood: String(entry.neighborhood || '').trim(),
+      updatedAt: Number(entry.updatedAt || Date.now()),
+    };
+  }
+  return null;
+}
+
+export function saveStreetAddressOverride(
+  road: string,
+  number?: string,
+  neighborhood?: string
+): void {
+  if (typeof window === 'undefined') return;
+  const cleanRoad = String(road || '').trim();
+  const key = normalizeTextKey(cleanRoad);
+  if (!key || key.length < 3) return;
+
+  try {
+    const map = readStreetOverridesMap();
+    const existing = map[key];
+    const nextNumber =
+      typeof number === 'string' && number.trim().length > 0
+        ? number.trim()
+        : String(existing?.number || '').trim();
+    const nextNeighborhood =
+      typeof neighborhood === 'string' && neighborhood.trim().length > 0
+        ? correctNeighborhoodForIndaiatubaStreet(cleanRoad, neighborhood.trim())
+        : String(existing?.neighborhood || '').trim();
+
+    if (!nextNumber && !nextNeighborhood) return;
+
+    map[key] = {
+      road: cleanRoad,
+      number: nextNumber,
+      neighborhood: nextNeighborhood,
+      updatedAt: Date.now(),
+    };
+    localStorage.setItem(STREET_OVERRIDES_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // ignore storage quota errors
+  }
+}
 
 export interface SavedGpsLocation {
   lat: number;
@@ -441,8 +580,8 @@ export function getLastKnownGpsLocation(): SavedGpsLocation | null {
 
 /**
  * Converte latitude e longitude reais em endereço de saída SOMENTE de Indaiatuba-SP
- * Executa Nominatim (zoom=18, addressdetails=1) e Photon em paralelo com timeout curto (~2.8s)
- * Exemplo de retorno: "Rua Maria Philomena Mattioni, 420 - Jardim Europa, Indaiatuba-SP"
+ * Usa Nominatim (zoom=18, addressdetails=1) priorizando suburb/neighbourhood/quarter
+ * + aplica correção de bairro e preferências salvas por rua no localStorage.
  */
 export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
   success: boolean;
@@ -472,7 +611,7 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
 
   const nominatimPromise = (async () => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2800);
+    const timeoutId = setTimeout(() => controller.abort(), 3200);
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
         String(lat)
@@ -493,7 +632,7 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
 
   const photonPromise = (async () => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const timeoutId = setTimeout(() => controller.abort(), 2800);
     try {
       const photonUrl = `https://photon.komoot.io/reverse?lat=${encodeURIComponent(
         String(lat)
@@ -533,9 +672,10 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
           ''
       ).trim();
       houseNumber = String(addr.house_number || '').trim();
+      // Prioriza estritamente suburb / neighbourhood / quarter vindos do Nominatim
       neighborhood = String(
-        addr.neighbourhood ||
-          addr.suburb ||
+        addr.suburb ||
+          addr.neighbourhood ||
           addr.quarter ||
           addr.city_district ||
           addr.residential ||
@@ -600,9 +740,24 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
     };
   }
 
-  const finalNeighborhood = neighborhood || 'Centro';
-  const fullAddress = houseNumber
-    ? `${road}, ${houseNumber} - ${finalNeighborhood}, Indaiatuba-SP`
+  let finalNeighborhood = correctNeighborhoodForIndaiatubaStreet(road, neighborhood);
+  let finalNumber = houseNumber;
+
+  const streetOverride = getStreetAddressOverride(road);
+  if (streetOverride) {
+    if (!finalNumber && streetOverride.number) {
+      finalNumber = streetOverride.number;
+    }
+    if (streetOverride.neighborhood) {
+      finalNeighborhood = correctNeighborhoodForIndaiatubaStreet(
+        road,
+        streetOverride.neighborhood
+      );
+    }
+  }
+
+  const fullAddress = finalNumber
+    ? `${road}, ${finalNumber} - ${finalNeighborhood}, Indaiatuba-SP`
     : `${road} - ${finalNeighborhood}, Indaiatuba-SP`;
 
   saveLastKnownGpsLocation({
@@ -610,7 +765,7 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
     lng,
     fullAddress,
     road,
-    number: houseNumber,
+    number: finalNumber,
     neighborhood: finalNeighborhood,
   });
 
@@ -619,7 +774,7 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
     inIndaiatuba: true,
     fullAddress,
     road,
-    number: houseNumber,
+    number: finalNumber,
     neighborhood: finalNeighborhood,
   };
 }
@@ -628,6 +783,7 @@ export interface FastGpsLookupResult {
   status: 'ok' | 'fallback_saved' | 'outside_indaiatuba' | 'error';
   lat?: number;
   lng?: number;
+  accuracy?: number;
   fullAddress?: string;
   road?: string;
   number?: string;
@@ -636,11 +792,23 @@ export interface FastGpsLookupResult {
   errorMessage?: string;
 }
 
+export interface FastGpsLookupOptions {
+  onStatusMessage?: (msg: string) => void;
+  targetAccuracyMeters?: number;
+  maxWaitMs?: number;
+}
+
 /**
- * Busca única (sem loop) da localização atual com timeout máximo de 5 segundos.
- * Se demorar mais de 5s ou falhar por sinal, usa a última localização salva em Indaiatuba se disponível.
+ * Busca localização precisa via watchPosition (enableHighAccuracy: true)
+ * Aguarda accuracy < 30m antes de converter (exibindo "Buscando GPS preciso..." enquanto > 30m).
+ * Caso passe o tempo limite sem < 30m, usa a melhor leitura ao vivo obtida ou a última localização salva em Indaiatuba.
  */
-export function requestCurrentLocationFast(): Promise<FastGpsLookupResult> {
+export function requestCurrentLocationFast(
+  options?: FastGpsLookupOptions
+): Promise<FastGpsLookupResult> {
+  const targetAccuracy = options?.targetAccuracyMeters ?? 30;
+  const maxWaitMs = options?.maxWaitMs ?? 7000;
+
   return new Promise((resolve) => {
     const finishWithSavedFallbackOrError = (allowFallback: boolean): void => {
       if (allowFallback) {
@@ -671,57 +839,111 @@ export function requestCurrentLocationFast(): Promise<FastGpsLookupResult> {
     }
 
     let settled = false;
+    let watchId: number | null = null;
+    let bestPosition: GeolocationPosition | null = null;
+
+    const cleanupWatch = () => {
+      if (watchId !== null) {
+        try {
+          navigator.geolocation.clearWatch(watchId);
+        } catch {
+          // ignore
+        }
+        watchId = null;
+      }
+    };
+
+    const resolveFromPosition = async (pos: GeolocationPosition, isImpreciseFallback = false) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const accuracy = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined;
+
+      try {
+        const geoResult = await reverseGeocodeCoords(lat, lng);
+        if (!geoResult.inIndaiatuba) {
+          resolve({
+            status: 'outside_indaiatuba',
+            errorMessage:
+              'Sua localização atual está fora de Indaiatuba-SP. Ative o GPS em Indaiatuba ou digite seu endereço com número.',
+          });
+          return;
+        }
+        if (!geoResult.success || !geoResult.fullAddress) {
+          finishWithSavedFallbackOrError(true);
+          return;
+        }
+        resolve({
+          status: 'ok',
+          lat,
+          lng,
+          accuracy,
+          fullAddress: geoResult.fullAddress,
+          road: geoResult.road,
+          number: geoResult.number,
+          neighborhood: geoResult.neighborhood,
+          notice: isImpreciseFallback
+            ? 'GPS aproximado capturado — se precisar, arraste o pino "Você está aqui" no mapa.'
+            : undefined,
+        });
+      } catch {
+        finishWithSavedFallbackOrError(true);
+      }
+    };
+
+    options?.onStatusMessage?.('Buscando GPS preciso...');
 
     const watchdogTimer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      cleanupWatch();
+
+      if (bestPosition && isCoordsWithinIndaiatuba(bestPosition.coords.latitude, bestPosition.coords.longitude)) {
+        void resolveFromPosition(bestPosition, true);
+        return;
+      }
+
       finishWithSavedFallbackOrError(true);
-    }, 5000);
+    }, maxWaitMs);
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
         if (settled) return;
-        settled = true;
-        clearTimeout(watchdogTimer);
+        const acc = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : 999;
 
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
+        if (!bestPosition || acc < (bestPosition.coords.accuracy ?? 999)) {
+          bestPosition = pos;
+        }
 
-        try {
-          const geoResult = await reverseGeocodeCoords(lat, lng);
-          if (!geoResult.inIndaiatuba) {
-            resolve({
-              status: 'outside_indaiatuba',
-              errorMessage:
-                'Sua localização atual está fora de Indaiatuba-SP. Ative o GPS em Indaiatuba ou digite seu endereço com número.',
-            });
-            return;
-          }
-          if (!geoResult.success || !geoResult.fullAddress) {
-            finishWithSavedFallbackOrError(true);
-            return;
-          }
-          resolve({
-            status: 'ok',
-            lat,
-            lng,
-            fullAddress: geoResult.fullAddress,
-            road: geoResult.road,
-            number: geoResult.number,
-            neighborhood: geoResult.neighborhood,
-          });
-        } catch {
-          finishWithSavedFallbackOrError(true);
+        if (acc < targetAccuracy) {
+          settled = true;
+          clearTimeout(watchdogTimer);
+          cleanupWatch();
+          void resolveFromPosition(pos, false);
+        } else {
+          options?.onStatusMessage?.('Buscando GPS preciso...');
         }
       },
       (err) => {
         if (settled) return;
+        const isPermissionDenied = err && err.code === 1;
+        if (isPermissionDenied) {
+          settled = true;
+          clearTimeout(watchdogTimer);
+          cleanupWatch();
+          finishWithSavedFallbackOrError(false);
+          return;
+        }
+        // Para timeout/unavailable, só encerra se estourar watchdog ou falhar sem melhor leitura
         settled = true;
         clearTimeout(watchdogTimer);
-        const isPermissionDenied = err && err.code === 1;
-        finishWithSavedFallbackOrError(!isPermissionDenied);
+        cleanupWatch();
+        if (bestPosition && isCoordsWithinIndaiatuba(bestPosition.coords.latitude, bestPosition.coords.longitude)) {
+          void resolveFromPosition(bestPosition, true);
+          return;
+        }
+        finishWithSavedFallbackOrError(true);
       },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: maxWaitMs, maximumAge: 0 }
     );
   });
 }

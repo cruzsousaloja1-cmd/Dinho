@@ -220,10 +220,14 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
 
     setIsLocating(true);
-    setGpsStatus('Buscando GPS...');
+    setGpsStatus('Buscando GPS preciso...');
 
     try {
-      const result = await requestCurrentLocationFast();
+      const result = await requestCurrentLocationFast({
+        targetAccuracyMeters: 30,
+        maxWaitMs: 7000,
+        onStatusMessage: (msg) => setGpsStatus(msg),
+      });
       if (
         (result.status === 'ok' || result.status === 'fallback_saved') &&
         result.fullAddress &&
@@ -587,7 +591,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
           >
             <Crosshair className={`w-3.5 h-3.5 ${isLocating ? 'animate-spin' : ''}`} />
-            <span>{isLocating ? 'Buscando GPS...' : 'Atualizar com Meu GPS'}</span>
+            <span>{isLocating ? 'Buscando GPS preciso...' : 'Atualizar com Meu GPS'}</span>
           </button>
         </div>
 

@@ -14,6 +14,11 @@ import {
   searchAddressAutocomplete, 
   calculateDistanceKm, 
   requestCurrentLocationFast,
+  reverseGeocodeCoords,
+  parseStructuredIndaiatubaAddress,
+  correctNeighborhoodForIndaiatubaStreet,
+  saveStreetAddressOverride,
+  saveLastKnownGpsLocation,
   hasAddressNumber,
   extractAddressNumber,
   AddressSuggestion, 
@@ -273,10 +278,14 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [isSearchingPickup, setIsSearchingPickup] = useState(false);
   const [isSearchingDest, setIsSearchingDest] = useState(false);
   const [isLocatingUser, setIsLocatingUser] = useState(false);
+  const [gpsButtonText, setGpsButtonText] = useState('Buscando GPS preciso...');
+  const [isResolvingPinDrag, setIsResolvingPinDrag] = useState(false);
   const [gpsDetectedNotice, setGpsDetectedNotice] = useState<string | null>(null);
   const [gpsErrorNotice, setGpsErrorNotice] = useState<string | null>(null);
   const [gpsFallbackNotice, setGpsFallbackNotice] = useState<string | null>(null);
   const [gpsPinCoords, setGpsPinCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [manualPickupNumber, setManualPickupNumber] = useState('');
+  const pickupNumberInputRef = useRef<HTMLInputElement | null>(null);
   const [fullscreenAddressField, setFullscreenAddressField] = useState<'pickup' | 'destination' | null>(null);
 
   // Rating modal state
@@ -458,9 +467,100 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     }
   }, [optionsLaunchNonce, hasSearchedRoute]);
 
-  // Handle Automatic Search for Pickup
+  // Salva edições manuais de rua, número e bairro por nome da rua no localStorage
+  const persistPickupStreetEdits = (
+    rawAddress: string,
+    coordsOverride?: { lat: number; lng: number }
+  ) => {
+    const parsed = parseStructuredIndaiatubaAddress(rawAddress);
+    if (parsed.road.length >= 4 && (parsed.number || parsed.neighborhood.length >= 3)) {
+      const cleanNeighborhood = parsed.neighborhood
+        ? correctNeighborhoodForIndaiatubaStreet(parsed.road, parsed.neighborhood)
+        : '';
+      saveStreetAddressOverride(parsed.road, parsed.number, cleanNeighborhood);
+      const lat = coordsOverride?.lat ?? gpsPinCoords?.lat ?? pickup?.lat ?? -23.0842;
+      const lng = coordsOverride?.lng ?? gpsPinCoords?.lng ?? pickup?.lng ?? -47.2118;
+      saveLastKnownGpsLocation({
+        lat,
+        lng,
+        fullAddress: rawAddress.trim(),
+        road: parsed.road,
+        number: parsed.number,
+        neighborhood: cleanNeighborhood || 'Centro',
+      });
+    }
+  };
+
+  // Foca automaticamente o campo Nº quando o endereço ainda não possui número (ex: retorno de GPS sem número)
+  const focusManualNumberField = () => {
+    setTimeout(() => {
+      const el = pickupNumberInputRef.current || (document.getElementById('pickup-number-input') as HTMLInputElement | null);
+      if (el) {
+        el.focus();
+        el.select?.();
+      }
+    }, 90);
+  };
+
+  // Aplica número digitado no campo Nº e salva número + bairro para a rua atual no localStorage
+  const applyManualPickupNumber = () => {
+    const rawNum =
+      manualPickupNumber.trim() ||
+      pickupNumberInputRef.current?.value?.trim() ||
+      ((document.getElementById('pickup-number-input') as HTMLInputElement | null)?.value?.trim() ?? '');
+    if (!rawNum) {
+      focusManualNumberField();
+      return;
+    }
+
+    const parsed = parseStructuredIndaiatubaAddress(pickupInput);
+    const roadPart = parsed.road || pickupInput.replace(/,\s*Indaiatuba\s*-?\s*SP\s*$/i, '').trim();
+    const rawNeighborhood = parsed.neighborhood || '';
+    const finalNeighborhood = rawNeighborhood
+      ? correctNeighborhoodForIndaiatubaStreet(roadPart, rawNeighborhood)
+      : correctNeighborhoodForIndaiatubaStreet(roadPart, 'Centro');
+
+    const updated = `${roadPart}, ${rawNum} - ${finalNeighborhood}, Indaiatuba-SP`;
+    const nextLat = gpsPinCoords?.lat ?? pickup?.lat ?? -23.0842;
+    const nextLng = gpsPinCoords?.lng ?? pickup?.lng ?? -47.2118;
+
+    setPickupInput(updated);
+    setPickup({
+      address: updated,
+      lat: nextLat,
+      lng: nextLng,
+    });
+    setManualPickupNumber('');
+    if (gpsDetectedNotice) setGpsDetectedNotice(updated);
+    if (addressValidationError) setAddressValidationError(null);
+
+    saveStreetAddressOverride(roadPart, rawNum, finalNeighborhood);
+    saveLastKnownGpsLocation({
+      lat: nextLat,
+      lng: nextLng,
+      fullAddress: updated,
+      road: roadPart,
+      number: rawNum,
+      neighborhood: finalNeighborhood,
+    });
+  };
+
+  // Handle Automatic Search for Pickup (100% editável, preservando bairro/número editados)
   const handlePickupChange = (value: string) => {
     setPickupInput(value);
+    const nextLat = gpsPinCoords?.lat ?? pickup?.lat ?? -23.0842;
+    const nextLng = gpsPinCoords?.lng ?? pickup?.lng ?? -47.2118;
+    setPickup({
+      address: value,
+      lat: nextLat,
+      lng: nextLng,
+    });
+    if (gpsDetectedNotice) {
+      setGpsDetectedNotice(value);
+    }
+    if (value.includes(' - ') && value.toLowerCase().includes('indaiatuba')) {
+      persistPickupStreetEdits(value, { lat: nextLat, lng: nextLng });
+    }
     onRouteSearched?.(false);
     if (addressValidationError) setAddressValidationError(null);
     if (gpsErrorNotice) setGpsErrorNotice(null);
@@ -513,6 +613,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         lng: suggestion.lng,
       });
       setPickupInput(suggestion.label);
+      persistPickupStreetEdits(suggestion.label, { lat: suggestion.lat, lng: suggestion.lng });
     } else {
       setDestination({
         address: suggestion.label,
@@ -524,13 +625,57 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setActiveDropdown(null);
   };
 
-  // Detecta a localização GPS REAL atual do celular na hora do clique (máx 5s, sem loop, fallback última localização salva)
+  // Ao arrastar o pino "Você está aqui" no mapa, busca endereço atualizado na nova coordenada
+  const handleGpsPinDragged = async (newLat: number, newLng: number) => {
+    setGpsPinCoords({ lat: newLat, lng: newLng });
+    setIsResolvingPinDrag(true);
+    setGpsErrorNotice(null);
+    setGpsFallbackNotice(null);
+
+    try {
+      const geo = await reverseGeocodeCoords(newLat, newLng);
+      if (!geo.inIndaiatuba) {
+        setGpsErrorNotice(
+          'Posição fora de Indaiatuba-SP. Arraste o pino de volta para Indaiatuba ou digite seu endereço.'
+        );
+        return;
+      }
+      if (geo.success && geo.fullAddress) {
+        setPickup({
+          address: geo.fullAddress,
+          lat: newLat,
+          lng: newLng,
+        });
+        setPickupInput(geo.fullAddress);
+        setGpsDetectedNotice(geo.fullAddress);
+        onRouteSearched?.(false);
+
+        if (!hasAddressNumber(geo.fullAddress)) {
+          setAddressValidationError(
+            'Endereço encontrado sem número. Digite o número da casa ou local abaixo para continuar.'
+          );
+          focusManualNumberField();
+        } else {
+          setAddressValidationError(null);
+        }
+      } else if (geo.errorMessage) {
+        setGpsErrorNotice(geo.errorMessage);
+      }
+    } catch {
+      setGpsErrorNotice('Não foi possível converter o novo ponto no mapa. Tente arrastar novamente ou edite o endereço.');
+    } finally {
+      setIsResolvingPinDrag(false);
+    }
+  };
+
+  // Detecta a localização GPS REAL precisa (watchPosition até accuracy < 30m)
   const handleUseCurrentLocation = async () => {
     if (isLocatingUser) return;
     const gpsErrorMsg =
       'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
 
     setIsLocatingUser(true);
+    setGpsButtonText('Buscando GPS preciso...');
     setGpsDetectedNotice(null);
     setGpsErrorNotice(null);
     setGpsFallbackNotice(null);
@@ -539,7 +684,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setActiveDropdown(null);
 
     try {
-      const result = await requestCurrentLocationFast();
+      const result = await requestCurrentLocationFast({
+        targetAccuracyMeters: 30,
+        maxWaitMs: 7000,
+        onStatusMessage: (msg) => setGpsButtonText(msg),
+      });
 
       if (result.status === 'outside_indaiatuba') {
         setGpsErrorNotice(
@@ -565,7 +714,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         setGpsPinCoords({ lat: result.lat, lng: result.lng });
         onRouteSearched?.(false);
 
-        if (result.status === 'fallback_saved' && result.notice) {
+        if (result.notice) {
           setGpsFallbackNotice(result.notice);
         }
 
@@ -573,10 +722,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           setAddressValidationError(
             'Endereço encontrado sem número. Digite o número da casa ou local abaixo para continuar.'
           );
-          setTimeout(() => {
-            const numInput = document.getElementById('pickup-number-input') as HTMLInputElement | null;
-            numInput?.focus();
-          }, 120);
+          focusManualNumberField();
         }
         return;
       }
@@ -728,6 +874,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       if (el) el.scrollIntoView({ behavior: 'smooth' });
       return;
     }
+
+    persistPickupStreetEdits(pickupInput);
 
     if (!pickup || pickup.address !== pickupInput) {
       const keepGpsCoords = Boolean(
@@ -1541,7 +1689,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               {isLocatingUser ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" />
-                  <span>Buscando GPS...</span>
+                  <span>{gpsButtonText || 'Buscando GPS preciso...'}</span>
                 </>
               ) : (
                 <>
@@ -1557,9 +1705,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               rows={2}
               value={pickupInput}
               onChange={(e) => handlePickupChange(e.target.value.replace(/\r?\n/g, ' '))}
+              onBlur={() => persistPickupStreetEdits(pickupInput)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
+                  persistPickupStreetEdits(pickupInput);
                   setActiveDropdown(null);
                 }
               }}
@@ -1567,7 +1717,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 setActiveDropdown('pickup');
                 if (!pickupSuggestions.length) setPickupSuggestions(POPULAR_DATABASE_LOCATIONS.slice(0, 4));
               }}
-              placeholder="Ex: Rua Maria Philomena Mattioni, 420 - Jardim Europa, Indaiatuba-SP"
+              placeholder="Ex: Rua Adélia Philomena Mattioni, 420 - Jardim do Sol, Indaiatuba-SP"
               style={{
                 width: '100%',
                 whiteSpace: 'normal',
@@ -1651,32 +1801,24 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               <div className="flex items-center gap-1.5 self-end sm:self-center">
                 <input
                   id="pickup-number-input"
+                  ref={pickupNumberInputRef}
                   type="text"
+                  inputMode="numeric"
+                  autoFocus
                   placeholder="Nº"
-                  defaultValue=""
-                  className="w-20 px-2.5 py-1.5 bg-white border-2 border-amber-400 rounded-xl text-xs font-black text-slate-900 focus:outline-none text-center"
+                  value={manualPickupNumber}
+                  onChange={(e) => setManualPickupNumber(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      applyManualPickupNumber();
+                    }
+                  }}
+                  className="w-24 px-2.5 py-1.5 bg-white border-2 border-amber-500 focus:border-emerald-600 rounded-xl text-xs sm:text-sm font-black text-slate-900 focus:outline-none text-center shadow-xs"
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    const inputEl = document.getElementById('pickup-number-input') as HTMLInputElement;
-                    const num = inputEl?.value?.trim();
-                    if (!num) return;
-                    const indaiatubaSuffixMatch = pickupInput.match(/^(.*?)(\s*-\s*[^,]+,\s*Indaiatuba-SP)$/i);
-                    const updated = indaiatubaSuffixMatch
-                      ? `${indaiatubaSuffixMatch[1].trim()}, ${num}${indaiatubaSuffixMatch[2]}`
-                      : `${pickupInput.trim()}, ${num} - Indaiatuba-SP`;
-                    setPickupInput(updated);
-                    const nextLat = gpsPinCoords?.lat ?? pickup?.lat ?? -23.0842;
-                    const nextLng = gpsPinCoords?.lng ?? pickup?.lng ?? -47.2118;
-                    setPickup({
-                      address: updated,
-                      lat: nextLat,
-                      lng: nextLng,
-                    });
-                    if (gpsDetectedNotice) setGpsDetectedNotice(updated);
-                    if (addressValidationError) setAddressValidationError(null);
-                  }}
+                  onClick={applyManualPickupNumber}
                   className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 rounded-xl font-black text-xs cursor-pointer shadow-xs transition-all uppercase"
                 >
                   Inserir Nº
@@ -1685,7 +1827,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </div>
           )}
 
-          {/* Endereço de Saída detectado pelo Meu GPS + Pino exato no mapa */}
+          {/* Endereço de Saída detectado pelo Meu GPS + Pino arrastável no mapa */}
           {gpsDetectedNotice && (
             <div className="mt-2.5 space-y-2.5 animate-fade-in">
               <div className="flex items-start justify-between gap-2 bg-emerald-50 border-2 border-emerald-300 px-3.5 py-3 rounded-2xl text-xs sm:text-sm text-emerald-950 font-bold shadow-xs min-w-0">
@@ -1712,6 +1854,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   lat={gpsPinCoords.lat}
                   lng={gpsPinCoords.lng}
                   address={pickupInput || gpsDetectedNotice}
+                  onPinDragged={handleGpsPinDragged}
+                  isUpdatingAddress={isResolvingPinDrag}
                 />
               )}
             </div>
@@ -3244,7 +3388,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   {isLocatingUser ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Buscando GPS...</span>
+                      <span>{gpsButtonText || 'Buscando GPS preciso...'}</span>
                     </>
                   ) : (
                     <>
@@ -3317,7 +3461,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setFullscreenAddressField(null)}
+              onClick={() => {
+                if (fullscreenAddressField === 'pickup') {
+                  persistPickupStreetEdits(pickupInput);
+                }
+                setFullscreenAddressField(null);
+              }}
               className="w-full py-3.5 rounded-2xl bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-base uppercase tracking-wider cursor-pointer shadow-lg mt-auto"
             >
               Confirmar Endereço
