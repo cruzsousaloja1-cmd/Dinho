@@ -50,16 +50,16 @@ import {
   SUPABASE_SETUP_SQL, 
   testSupabaseConnection, 
   saveUsuarioSupabase,
+  selectSafeUsuariosRows,
   getAllCorridasForAdminSupabase,
   getAllPagamentosSupabase,
   SupabasePagamentoRow
 } from '../supabase';
 import { 
   getAsaasFinancialSummary, 
-  AsaasBalanceInfo, 
-  getAsaasApiKey, 
-  setCustomAsaasApiKey 
+  AsaasBalanceInfo
 } from '../services/asaasService';
+import { maskLast4Digits } from '../utils/security';
 
 interface AdminDashboardProps {
   drivers: Driver[];
@@ -115,7 +115,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSupabaseUsersError(null);
     try {
       const [usersRes, corridasData, pagamentosData] = await Promise.all([
-        supabase.from('usuarios').select('*').order('created_at', { ascending: false }),
+        selectSafeUsuariosRows((q) => q.order('created_at', { ascending: false })),
         getAllCorridasForAdminSupabase(),
         getAllPagamentosSupabase(),
       ]);
@@ -351,8 +351,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       expiresAt: u.plano_ativo ? 'Ativo 7 dias' : undefined,
     };
 
+    const maskedCnh = maskLast4Digits(u.cnh || '');
+    const maskedCpf = maskLast4Digits(u.cpf || '');
+    const safeRaw = { ...u };
+    delete (safeRaw as any).senha;
+    if (safeRaw.cnh) safeRaw.cnh = maskedCnh;
+    if (safeRaw.cpf) safeRaw.cpf = maskedCpf;
+
     return {
-      raw: u,
+      raw: safeRaw,
       id: String(u.id),
       name: u.nome || 'Usuário Sem Nome',
       email,
@@ -367,8 +374,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       plate: u.placa || '',
       model: u.modelo || '',
       year: u.ano || '',
-      cnh: u.cnh || '',
-      avatar: u.avatar || null,
+      cnh: maskedCnh,
+      cpf: maskedCpf,
+      avatar: u.avatar || u.foto || null,
       rating: typeof u.rating === 'number' ? u.rating : 0,
       saldo: typeof u.saldo === 'number' ? u.saldo : 0.0,
       createdAt: u.created_at,
@@ -425,8 +433,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     isLive: false,
   });
   const [isLoadingAsaasData, setIsLoadingAsaasData] = useState(false);
-  const [asaasKeyInput, setAsaasKeyInput] = useState(() => getAsaasApiKey());
-  const [showAsaasKeyConfig, setShowAsaasKeyConfig] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -476,6 +482,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const exportSafeBackupJSON = () => {
+    const safeUsers = parsedUsers.map((u) => ({
+      id: u.id,
+      nome: u.name,
+      email: u.email,
+      whatsapp: u.phone,
+      login: u.login,
+      tipo: u.userType,
+      categoria: u.categoryLabel,
+      placa: u.plate,
+      modelo: u.model,
+      ano: u.year,
+      cnh_mascarada: u.cnh,
+      cpf_mascarado: u.cpf,
+      rating: u.rating,
+      created_at: u.createdAt,
+    }));
+
+    const backupPayload = {
+      app: 'RACE Indaiatuba',
+      exportedAt: new Date().toISOString(),
+      securityNote: 'Senhas omitidas (hash bcrypt no banco) e CPF/CNH mascarados (últimos 4 dígitos).',
+      usuarios: safeUsers,
+      corridas: supabaseCorridas,
+      pagamentos: supabasePagamentos,
+    };
+
+    const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `RACE_backup_seguro_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast('Backup JSON seguro baixado com sucesso (sem senhas e com CPF/CNH mascarados).');
   };
 
   return (
@@ -739,11 +784,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </h3>
                     <span className="text-[11px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      {asaasData.isLive ? 'Asaas API Conectada' : (getAsaasApiKey() ? 'VITE_ASAAS_API_KEY Ativa' : 'Gateway Asaas')}
+                      {asaasData.isLive ? 'Asaas API Conectada' : 'Asaas via Edge Function'}
                     </span>
                   </div>
                   <p className="text-xs text-zinc-400 mt-0.5">
-                    Controle de cobranças PIX, Cartão e repasse semanal de 85% aos motoristas
+                    Controle de cobranças PIX, Cartão e repasse semanal de 85% aos motoristas (chave protegida no servidor)
                   </p>
                 </div>
               </div>
@@ -765,61 +810,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAsaasData ? 'animate-spin text-emerald-400' : ''}`} />
                   <span>Atualizar Asaas</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowAsaasKeyConfig(!showAsaasKeyConfig)}
-                  className="px-3 py-2 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 text-xs font-mono rounded-xl border border-zinc-700 cursor-pointer"
-                  title="Configurar chave Asaas"
-                >
-                  Chave API
-                </button>
               </div>
             </div>
-
-            {/* Painel expansível para conferência da chave Asaas */}
-            {showAsaasKeyConfig && (
-              <div className="bg-zinc-900/90 border border-zinc-700 rounded-2xl p-4 space-y-3 text-xs animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-zinc-200">Chave Asaas (Injetada via GitHub Secrets `ASAAS_API_KEY`):</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowAsaasKeyConfig(false)}
-                    className="text-zinc-400 hover:text-white"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="password"
-                    value={asaasKeyInput}
-                    onChange={(e) => setAsaasKeyInput(e.target.value)}
-                    placeholder="Cole sua chave Asaas ($aact_...)"
-                    className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 font-mono text-zinc-200 focus:outline-none focus:border-emerald-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCustomAsaasApiKey(asaasKeyInput);
-                      showToast('Chave Asaas salva para este navegador!');
-                      setShowAsaasKeyConfig(false);
-                      setIsLoadingAsaasData(true);
-                      getAsaasFinancialSummary(totalArrecadadoAdmin).then((res) => {
-                        setAsaasData(res);
-                        setIsLoadingAsaasData(false);
-                      });
-                    }}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer shrink-0"
-                  >
-                    Salvar
-                  </button>
-                </div>
-                <p className="text-[11px] text-zinc-400">
-                  No GitHub Actions, o passo de build já inclui <code className="text-emerald-400 font-mono">VITE_ASAAS_API_KEY: ${'{{ secrets.ASAAS_API_KEY }}'}</code> conforme configurado no <code className="text-zinc-300 font-mono">pages.yml</code>.
-                </p>
-              </div>
-            )}
 
             {/* 4 Cards de Métricas Principais Solicitadas */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -1628,12 +1620,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </span>
                       </div>
 
-                      {/* Dados veiculares se existirem */}
-                      {(u.model || u.cnh) && (
+                      {/* Dados veiculares e documentos mascarados (apenas 4 últimos dígitos) */}
+                      {(u.model || u.cnh || u.cpf) && (
                         <p className="text-xs sm:text-sm text-slate-600 font-medium">
                           {u.model && <span>{u.model} {u.year ? `(${u.year})` : ''}</span>}
-                          {u.model && u.cnh && <span> &bull; </span>}
-                          {u.cnh && <span>CNH: {u.cnh}</span>}
+                          {u.model && (u.cnh || u.cpf) && <span> &bull; </span>}
+                          {u.cnh && <span className="font-mono">CNH: {u.cnh}</span>}
+                          {u.cnh && u.cpf && <span> &bull; </span>}
+                          {u.cpf && <span className="font-mono">CPF: {u.cpf}</span>}
                         </p>
                       )}
 
@@ -2213,7 +2207,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           celular: d.phone,
                           whatsapp: d.phone,
                           login: d.email.split('@')[0],
-                          senha: d.password || 'race123',
+                          senha: '',
                           tipo: d.category === 'economica' ? 'motorista_economico' : d.category === 'confort' ? 'motorista_confort' : 'motoboy_passageiro',
                           categoria: d.category,
                           placa: d.vehiclePlate,
@@ -2234,7 +2228,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           celular: p.phone,
                           whatsapp: p.whatsapp || p.phone,
                           login: p.login || p.email.split('@')[0],
-                          senha: p.password || '123456',
+                          senha: '',
                           tipo: 'passenger',
                           categoria: 'economica',
                           placa: '',
@@ -2301,9 +2295,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] font-mono text-slate-700 space-y-0.5">
                 <p>• id (chave primária)</p>
                 <p>• nome, email, celular, whatsapp</p>
-                <p>• login, senha</p>
+                <p>• login, senha (hash bcrypt — oculta no ADM)</p>
                 <p>• tipo, categoria</p>
-                <p>• placa, modelo, ano, cnh, avatar</p>
+                <p>• placa, modelo, ano, cnh/cpf (mascarados), avatar</p>
                 <p>• rating, saldo, plano_ativo</p>
               </div>
             </div>
@@ -2357,24 +2351,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* Regras de Isolamento de Dados */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm space-y-3">
-            <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-600" />
-              <span>Garantia de Isolamento de Dados por Usuário</span>
-            </h4>
+          {/* Regras de Isolamento de Dados, Segurança & Backup */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                <span>Segurança RLS, Proteção de Chaves & Backup Diário</span>
+              </h4>
+              <button
+                type="button"
+                onClick={exportSafeBackupJSON}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-heading font-black transition-all cursor-pointer flex items-center gap-2 shrink-0 active:scale-95"
+              >
+                <Download className="w-4 h-4 text-emerald-400" />
+                <span>Exportar Backup JSON (Seguro)</span>
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700">
               <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200">
-                <strong className="text-emerald-950 block mb-1">Passageiro:</strong>
+                <strong className="text-emerald-950 block mb-1">Passageiro (RLS Ativo):</strong>
                 Vê exclusivamente suas próprias corridas solicitadas e histórico de rotas.
               </div>
               <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200">
-                <strong className="text-amber-950 block mb-1">Motorista / Motoboy:</strong>
-                Vê exclusivamente suas próprias corridas atendidas, saldo de carteira e ganhos dele.
+                <strong className="text-amber-950 block mb-1">Motorista / Motoboy (RLS Ativo):</strong>
+                Vê corridas disponíveis da sua categoria e suas próprias corridas aceitas.
               </div>
               <div className="p-3.5 bg-purple-50 rounded-2xl border border-purple-200">
                 <strong className="text-purple-950 block mb-1">Admin Geral (admin@race.com.br):</strong>
-                Acesso irrestrito a toda a frota, relatórios, saques e conciliação bancária.
+                Acesso de auditoria com senhas ocultas (bcrypt) e CPF/CNH mascarados (últimos 4 dígitos).
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                <strong className="text-slate-900 block">Chave Asaas Protegida no Backend:</strong>
+                <p className="text-slate-600 leading-relaxed">
+                  Nenhuma chave secreta fica no código do navegador. Configure <code className="font-mono bg-slate-200 px-1 rounded">ASAAS_API_KEY</code> nos Secrets da Edge Function <code className="font-mono bg-slate-200 px-1 rounded">asaas-proxy</code> no Supabase.
+                </p>
+              </div>
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                <strong className="text-slate-900 block">Automated Daily Backups (Supabase):</strong>
+                <p className="text-slate-600 leading-relaxed">
+                  No painel do Supabase, acesse <strong className="text-slate-800">Settings &rarr; Database &rarr; Backups</strong> para confirmar os backups automáticos diários (Daily Backups) da sua base de produção.
+                </p>
               </div>
             </div>
           </div>

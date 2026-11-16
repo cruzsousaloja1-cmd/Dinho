@@ -3,8 +3,9 @@ import { Driver, AppUser, VehicleCategory } from '../types';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveSessionUser, verifyUserLogin, mapSupabaseRowToAppUser } from '../services/userService';
-import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase } from '../supabase';
+import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase, checkEmailExistsSupabase } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
+import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 interface DriverLoginScreenProps {
@@ -122,7 +123,17 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    if (adminRegPassword.length < 6) {
+    if (!isValidEmail(cleanEmail)) {
+      setAdminRegErrorMessage('E-mail inválido. Informe um e-mail válido (ex: nome@dominio.com).');
+      return;
+    }
+
+    if (!isValidWhatsApp11(cleanWhatsApp)) {
+      setAdminRegErrorMessage('WhatsApp inválido! Informe exatamente 11 dígitos com DDD e o 9 (ex: 19999999999).');
+      return;
+    }
+
+    if (!isValidPassword(adminRegPassword)) {
       setAdminRegErrorMessage('A senha do ADM deve conter no mínimo 6 caracteres.');
       return;
     }
@@ -135,8 +146,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setIsCreatingAdmin(true);
     try {
       // Verifica se já existe conta com este e-mail no Supabase
-      const existingCloud = await getUsuarioSupabase(cleanEmail).catch(() => null);
-      if (existingCloud) {
+      const alreadyExists = await checkEmailExistsSupabase(cleanEmail).catch(() => false);
+      if (alreadyExists) {
         setAdminRegErrorMessage(
           'Já existe um usuário cadastrado com este e-mail. Volte para ENTRAR NO ADM ou use Esqueci a senha.'
         );
@@ -228,7 +239,6 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             phone: row.celular || '',
             whatsapp: row.whatsapp || row.celular || '',
             login: row.login || rowEmail,
-            password: loginPassword,
             role: 'admin',
             tipo: 'ADM',
             isAdmin: true,
@@ -300,7 +310,6 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             email: 'admin@race.com.br',
             phone: row.celular || '',
             login: row.login || 'admin@race.com.br',
-            password: loginPassword,
             role: 'admin',
             tipo: 'ADM',
             isAdmin: true,
@@ -354,7 +363,6 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const { user: mappedUser, driver: mappedDriver } = mapSupabaseRowToAppUser(row);
       const userPayload: AppUser = {
         ...mappedUser,
-        password: loginPassword,
         avatar: regAvatar || mappedUser.avatar || undefined,
       };
       const driverObj: Driver | undefined = mappedDriver
@@ -401,7 +409,17 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    if (regPassword.length < 6) {
+    if (!isValidEmail(cleanEmail)) {
+      setRegErrorMessage('E-mail inválido. Digite um e-mail completo (ex: seu.nome@gmail.com).');
+      return;
+    }
+
+    if (!isValidWhatsApp11(cleanWhatsApp)) {
+      setRegErrorMessage('WhatsApp inválido! Digite exatamente 11 dígitos com DDD + 9 (ex: 19999999999).');
+      return;
+    }
+
+    if (!isValidPassword(regPassword)) {
       setRegErrorMessage('A senha deve conter no mínimo 6 dígitos para sua segurança.');
       return;
     }
@@ -414,8 +432,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setIsRegistering(true);
     try {
       // 1. Verifica duplicidade rápida no Supabase
-      const cloudEmail = await getUsuarioSupabase(cleanEmail).catch(() => null);
-      if (cloudEmail) {
+      const alreadyExists = await checkEmailExistsSupabase(cleanEmail).catch(() => false);
+      if (alreadyExists) {
         setRegErrorMessage('Já existe uma conta no sistema com este e-mail. Faça login para continuar.');
         return;
       }
@@ -513,7 +531,6 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         placa: '',
         avatar: chosenAvatar,
         rating: 0,
-        password: regPassword,
         driverData: newDriverObj,
       };
 

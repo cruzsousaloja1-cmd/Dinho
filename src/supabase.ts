@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { AppUser, Driver, Ride } from './types';
 import { RACE_PIX_KEY } from './config/pricing';
 import { compressImageToMax200KB } from './utils/imageCompression';
+import { hashPasswordBcrypt, verifyPasswordBcrypt, isBcryptHash } from './utils/security';
 
 export const SUPABASE_URL = 'https://catljaosibqsqexzkrrv.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_FLS7sl0xEJ2StmxWfsJQ3Q_y_GiYKoM';
@@ -13,6 +14,52 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     autoRefreshToken: true,
   },
 });
+
+const SAFE_USUARIO_COLS_LIST = [
+  'id',
+  'created_at',
+  'codigo_usuario',
+  'nome',
+  'email',
+  'e-mail',
+  'celular',
+  'whatsapp',
+  'login',
+  'tipo',
+  'categoria',
+  'placa',
+  'modelo',
+  'ano',
+  'cor',
+  'cnh',
+  'cpf',
+  'bau',
+  'foto',
+  'avatar',
+  'foto_veiculo',
+  'foto_cnh',
+  'foto_crlv',
+  'exigencias_confirmadas',
+  'rating',
+  'saldo',
+  'plano_ativo',
+  'online',
+  'status',
+  'lat',
+  'lng',
+  'divida',
+  'bloqueado_divida',
+  'corrida_divida_id',
+  'data_cadastro',
+];
+
+export function stripSensitiveUserFields<T extends Record<string, any> | null | undefined>(row: T): T {
+  if (!row || typeof row !== 'object') return row;
+  const clone: any = { ...row };
+  delete clone.senha;
+  delete clone.password;
+  return clone;
+}
 
 /**
  * SQL DDL para criar as tabelas no Supabase caso ainda não tenham sido criadas no SQL Editor
@@ -81,9 +128,6 @@ ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS bloqueado_divida BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS corrida_divida_id TEXT;
-
--- Garantir RLS desabilitado na tabela usuarios para permitir cadastro/login direto
-ALTER TABLE public.usuarios DISABLE ROW LEVEL SECURITY;
 
 -- 2. TABELA DE CORRIDAS (Tempo Real via Supabase Realtime)
 CREATE TABLE IF NOT EXISTS public.corridas (
@@ -158,14 +202,227 @@ CREATE TABLE IF NOT EXISTS public.pagamentos (
   data TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
+-- ============================================================================
+-- SEGURANÇA RLS (ROW LEVEL SECURITY) - LIGAR ANTES DE PUBLICAR
+-- ============================================================================
+
+-- 1A. RLS em public.usuarios:
+-- Qualquer um pode se cadastrar (INSERT), mas leitura/edição é restrita ao próprio usuário ou ADM (admin@race.com.br)
+ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "usuarios_insert_publico" ON public.usuarios;
+CREATE POLICY "usuarios_insert_publico" ON public.usuarios
+  FOR INSERT
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "usuarios_select_proprio_ou_adm" ON public.usuarios;
+CREATE POLICY "usuarios_select_proprio_ou_adm" ON public.usuarios
+  FOR SELECT
+  USING (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'admin@race.com.br'
+    OR (
+      coalesce(auth.jwt() ->> 'email', '') <> ''
+      AND (
+        lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
+        OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
+        OR lower(coalesce(login, '')) = lower(auth.jwt() ->> 'email')
+      )
+    )
+    OR lower(coalesce(login, '')) = lower(coalesce(current_setting('app.current_user_login', true), ''))
+  );
+
+DROP POLICY IF EXISTS "usuarios_update_proprio_ou_adm" ON public.usuarios;
+CREATE POLICY "usuarios_update_proprio_ou_adm" ON public.usuarios
+  FOR UPDATE
+  USING (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'admin@race.com.br'
+    OR (
+      coalesce(auth.jwt() ->> 'email', '') <> ''
+      AND (
+        lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
+        OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
+        OR lower(coalesce(login, '')) = lower(auth.jwt() ->> 'email')
+      )
+    )
+    OR lower(coalesce(login, '')) = lower(coalesce(current_setting('app.current_user_login', true), ''))
+  )
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "usuarios_delete_adm" ON public.usuarios;
+CREATE POLICY "usuarios_delete_adm" ON public.usuarios
+  FOR DELETE
+  USING (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'admin@race.com.br'
+    OR lower(coalesce(current_setting('app.current_user_login', true), '')) = 'admin@race.com.br'
+  );
+
+-- 2A. RLS em public.corridas:
+-- Passageiro só vê suas corridas; Motorista vê corridas da sua categoria buscando (procurando) ou suas aceitas; ADM vê todas
 ALTER TABLE public.corridas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.pagamentos ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Acesso total corridas" ON public.corridas;
-CREATE POLICY "Acesso total corridas" ON public.corridas FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "corridas_select_seguro" ON public.corridas;
+CREATE POLICY "corridas_select_seguro" ON public.corridas
+  FOR SELECT
+  USING (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'admin@race.com.br'
+    OR lower(coalesce(email_passageiro, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    OR lower(coalesce(email_motorista, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    OR (
+      lower(coalesce(status, '')) IN ('procurando', 'searching', 'procurando_motorista')
+      AND EXISTS (
+        SELECT 1 FROM public.usuarios u
+        WHERE (
+          lower(coalesce(u.email, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+          OR lower(coalesce(u."e-mail", '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+        )
+        AND lower(coalesce(u.tipo, '')) <> 'passenger'
+        AND lower(coalesce(u.categoria, '')) = lower(coalesce(corridas.categoria, ''))
+      )
+    )
+  );
+
+DROP POLICY IF EXISTS "corridas_insert_seguro" ON public.corridas;
+CREATE POLICY "corridas_insert_seguro" ON public.corridas
+  FOR INSERT
+  WITH CHECK (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'admin@race.com.br'
+    OR lower(coalesce(email_passageiro, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+
+DROP POLICY IF EXISTS "corridas_update_seguro" ON public.corridas;
+CREATE POLICY "corridas_update_seguro" ON public.corridas
+  FOR UPDATE
+  USING (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'admin@race.com.br'
+    OR lower(coalesce(email_passageiro, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    OR lower(coalesce(email_motorista, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    OR lower(coalesce(status, '')) IN ('procurando', 'searching', 'procurando_motorista')
+  );
+
+-- 3A. RLS em public.pagamentos:
+-- Somente ADM (admin@race.com.br) e o dono do pagamento/corrida têm acesso
+ALTER TABLE public.pagamentos ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Acesso total pagamentos" ON public.pagamentos;
-CREATE POLICY "Acesso total pagamentos" ON public.pagamentos FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "pagamentos_select_seguro" ON public.pagamentos;
+CREATE POLICY "pagamentos_select_seguro" ON public.pagamentos
+  FOR SELECT
+  USING (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'admin@race.com.br'
+    OR lower(coalesce(email_motorista, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+
+DROP POLICY IF EXISTS "pagamentos_insert_seguro" ON public.pagamentos;
+CREATE POLICY "pagamentos_insert_seguro" ON public.pagamentos
+  FOR INSERT
+  WITH CHECK (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = 'admin@race.com.br'
+    OR lower(coalesce(email_motorista, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+
+DROP POLICY IF EXISTS "pagamentos_update_adm" ON public.pagamentos;
+CREATE POLICY "pagamentos_update_adm" ON public.pagamentos
+  FOR UPDATE
+  USING (lower(coalesce(auth.jwt() ->> 'email', '')) = 'admin@race.com.br');
+
+-- ============================================================================
+-- FUNÇÕES RPC SEGURAS (SECURITY DEFINER) - NUNCA EXPOEM SENHAS EM LISTAGENS
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.rpc_login_usuario(p_identifier text)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_clean text := lower(trim(coalesce(p_identifier, '')));
+  v_row public.usuarios%ROWTYPE;
+BEGIN
+  IF v_clean = '' THEN
+    RETURN NULL;
+  END IF;
+  SELECT * INTO v_row
+  FROM public.usuarios
+  WHERE lower(coalesce("e-mail", '')) = v_clean
+     OR lower(coalesce(email, '')) = v_clean
+     OR lower(coalesce(login, '')) = v_clean
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+  RETURN to_jsonb(v_row);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.rpc_check_email_exists(p_email text)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.usuarios
+    WHERE lower(coalesce("e-mail", '')) = lower(trim(coalesce(p_email, '')))
+       OR lower(coalesce(email, '')) = lower(trim(coalesce(p_email, '')))
+       OR lower(coalesce(login, '')) = lower(trim(coalesce(p_email, '')))
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.rpc_redefinir_senha(p_identifier text, p_new_hash text)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_clean text := lower(trim(coalesce(p_identifier, '')));
+BEGIN
+  IF v_clean = '' OR coalesce(p_new_hash, '') = '' THEN
+    RETURN false;
+  END IF;
+  UPDATE public.usuarios
+  SET senha = p_new_hash
+  WHERE lower(coalesce("e-mail", '')) = v_clean
+     OR lower(coalesce(email, '')) = v_clean
+     OR lower(coalesce(login, '')) = v_clean;
+  RETURN FOUND;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.rpc_get_online_drivers()
+RETURNS TABLE (
+  id bigint,
+  nome text,
+  tipo text,
+  categoria text,
+  placa text,
+  modelo text,
+  ano integer,
+  cor text,
+  bau text,
+  foto text,
+  avatar text,
+  rating numeric,
+  online boolean,
+  status text,
+  lat double precision,
+  lng double precision,
+  exigencias_confirmadas boolean
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT id, nome, tipo, categoria, placa, modelo, ano, cor, bau, foto, avatar, rating, online, status, lat, lng, exigencias_confirmadas
+  FROM public.usuarios
+  WHERE status = 'online' AND lower(coalesce(tipo, '')) <> 'passenger' AND lower(coalesce(tipo, '')) NOT IN ('adm', 'admin');
+$$;
+
+-- BACKUP AUTOMÁTICO DIÁRIO NO SUPABASE:
+-- No Painel do Supabase -> Settings -> Database -> Backups -> Ative Daily Backups (ou Point-in-Time Recovery).
 `;
 
 export interface SupabaseUsuarioRow {
@@ -268,6 +525,7 @@ export function purgeLegacyTestLocalStorage(preserveCurrentSession: boolean = tr
       'race_driver_reviews',
       'race_last_confirmation_code',
       'race_admin_custom_password',
+      'race_asaas_api_key',
     ];
     if (!preserveCurrentSession) {
       exactKeysToRemove.push('race_current_user', 'race_usuario_logado');
@@ -343,12 +601,47 @@ function extractMissingColumnFromSupabaseError(msg: string): string | null {
 
 async function getUsuariosTableColumns(): Promise<Set<string> | null> {
   try {
-    const { data, error } = await supabase.from('usuarios').select('*').limit(1);
+    const { data, error } = await supabase.from('usuarios').select('id,nome,email,celular,whatsapp,login,tipo,categoria,placa,modelo,ano,cor,cnh,cpf,bau,foto,avatar,rating,saldo,plano_ativo,online,status,lat,lng,divida,bloqueado_divida,corrida_divida_id,created_at').limit(1);
     if (!error && Array.isArray(data) && data.length > 0 && data[0]) {
       return new Set(Object.keys(data[0]));
     }
   } catch {}
   return null;
+}
+
+/**
+ * Seleciona colunas seguras de public.usuarios sem nunca solicitar a coluna `senha`
+ */
+export async function selectSafeUsuariosRows(applyFilter?: (q: any) => any): Promise<{ data: any[] | null; error: any }> {
+  let cols = [...SAFE_USUARIO_COLS_LIST];
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const selectClause = cols.map((c) => (c.includes('-') ? `"${c}"` : c)).join(',');
+    let query: any = supabase.from('usuarios').select(selectClause);
+    if (applyFilter) {
+      query = applyFilter(query);
+    }
+    const { data, error } = await query;
+    if (!error) {
+      return { data: Array.isArray(data) ? data.map(stripSensitiveUserFields) : [], error: null };
+    }
+    const msg = error.message || '';
+    const missing = extractMissingColumnFromSupabaseError(msg);
+    if (missing && cols.includes(missing)) {
+      cols = cols.filter((c) => c !== missing);
+      continue;
+    }
+    let removed = false;
+    for (const c of cols) {
+      if (msg.includes(c)) {
+        cols = cols.filter((item) => item !== c);
+        removed = true;
+        break;
+      }
+    }
+    if (removed) continue;
+    return { data: null, error };
+  }
+  return { data: [], error: null };
 }
 
 /**
@@ -406,13 +699,16 @@ export async function insertUsuarioSupabase(params: {
     const knownCols = await getUsuariosTableColumns();
     const useEmailCol = knownCols && knownCols.has('email') && !knownCols.has('e-mail') ? 'email' : 'e-mail';
 
+    const rawSenha = params.senha && params.senha.trim() ? params.senha : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+    const hashedPassword = await hashPasswordBcrypt(rawSenha);
+
     const row: any = {
       nome: params.nome.trim(),
       [useEmailCol]: cleanEmail,
       celular: (params.celular || params.whatsapp || '').trim(),
       whatsapp: (params.whatsapp || params.celular || '').trim(),
       login: (params.login || cleanEmail).trim().toLowerCase(),
-      senha: params.senha,
+      senha: hashedPassword,
       tipo: params.tipo || 'passenger',
       categoria: params.categoria !== undefined ? params.categoria : null,
       placa: params.placa !== undefined ? params.placa : null,
@@ -487,14 +783,24 @@ export async function insertUsuarioSupabase(params: {
     let lastSupabaseError = 'Erro desconhecido ao inserir em public.usuarios.';
 
     for (let attempt = 0; attempt < 35; attempt++) {
-      const { data, error } = await supabase.from('usuarios').insert([row]).select();
+      const { data, error } = await supabase.from('usuarios').insert([row]).select(
+        'id,nome,tipo,categoria,placa,modelo,ano,cor,cnh,cpf,bau,foto,avatar,status,online,plano_ativo,lat,lng,created_at'
+      );
       if (!error) {
-        return { success: true, data: data?.[0] };
+        return { success: true, data: stripSensitiveUserFields(data?.[0]) };
+      }
+
+      // Se RLS permitir INSERT (WITH CHECK true) mas restringir RETURNING SELECT, tenta INSERT sem .select()
+      const msg = error.message || '';
+      if (error.code === '42501' || msg.toLowerCase().includes('row-level security')) {
+        const plainInsert = await supabase.from('usuarios').insert([row]);
+        if (!plainInsert.error) {
+          return { success: true, data: stripSensitiveUserFields(row) };
+        }
       }
 
       console.log('Erro Supabase insertUsuarioSupabase:', error);
       lastSupabaseError = formatSupabaseError(error);
-      const msg = error.message || '';
 
       if ((msg.includes("'e-mail'") || msg.includes('e-mail')) && 'e-mail' in row) {
         delete row['e-mail'];
@@ -531,60 +837,78 @@ export async function insertUsuarioSupabase(params: {
 }
 
 /**
- * 2. LOGIN DIRETO NO SUPABASE
- * Busca na tabela 'usuarios' pelo email + senha
+ * 2. LOGIN SEGURO NO SUPABASE (verifica hash bcrypt via RPC ou consulta mínima)
+ * Nunca retorna a coluna `senha` para a aplicação.
  */
 export async function loginUsuarioSupabase(
   emailInput: string,
   senhaInput: string
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   const cleanEmail = emailInput.trim().toLowerCase();
+  if (!cleanEmail || !senhaInput) {
+    return { success: false, error: 'Informe login/e-mail e senha.' };
+  }
+
   try {
-    // 1. Tenta buscar por 'e-mail' e 'senha'
-    let { data, error } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('e-mail', cleanEmail)
-      .eq('senha', senhaInput)
-      .maybeSingle();
+    let foundRow: any = null;
 
-    // Fallback se a coluna for 'email'
-    if (!data && (!error || error.message?.includes('e-mail'))) {
-      const retry = await supabase
+    // 1. Tenta via função RPC segura (compatível com RLS restritivo)
+    const rpcRes = await supabase.rpc('rpc_login_usuario', { p_identifier: cleanEmail });
+    if (!rpcRes.error && rpcRes.data) {
+      foundRow = rpcRes.data;
+    }
+
+    // 2. Fallback direto caso a função RPC ainda não tenha sido criada no SQL Editor
+    if (!foundRow) {
+      const authSelectCols = 'id,nome,email,"e-mail",celular,whatsapp,login,senha,tipo,categoria,placa,modelo,ano,cor,cnh,cpf,bau,foto,avatar,rating,saldo,plano_ativo,online,status,lat,lng,divida,bloqueado_divida,corrida_divida_id,created_at';
+      const byHyphen = await supabase
         .from('usuarios')
-        .select('*')
-        .eq('email', cleanEmail)
-        .eq('senha', senhaInput)
+        .select(authSelectCols)
+        .eq('e-mail', cleanEmail)
         .maybeSingle();
-      if (retry.data) {
-        data = retry.data;
-        error = retry.error;
+      if (byHyphen.data) {
+        foundRow = byHyphen.data;
+      } else {
+        const byEmail = await supabase
+          .from('usuarios')
+          .select(authSelectCols)
+          .eq('email', cleanEmail)
+          .maybeSingle();
+        if (byEmail.data) {
+          foundRow = byEmail.data;
+        } else {
+          const byLogin = await supabase
+            .from('usuarios')
+            .select(authSelectCols)
+            .eq('login', cleanEmail)
+            .maybeSingle();
+          if (byLogin.data) {
+            foundRow = byLogin.data;
+          }
+        }
       }
     }
 
-    // Fallback se o usuário digitou o campo 'login'
-    if (!data) {
-      const retryLogin = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('login', cleanEmail)
-        .eq('senha', senhaInput)
-        .maybeSingle();
-      if (retryLogin.data) {
-        data = retryLogin.data;
-        error = retryLogin.error;
-      }
-    }
-
-    if (error && !error.message?.includes('e-mail') && !error.message?.includes('login')) {
-      return { success: false, error: error.message };
-    }
-
-    if (!data) {
+    if (!foundRow) {
       return { success: false, error: 'Usuário não encontrado ou senha incorreta no Supabase.' };
     }
 
-    return { success: true, data };
+    if (String(foundRow.status || '').toLowerCase() === 'bloqueado') {
+      return { success: false, error: 'Esta conta está bloqueada pela administração.' };
+    }
+
+    const storedSenha = String(foundRow.senha || '');
+    const isPasswordValid = await verifyPasswordBcrypt(senhaInput, storedSenha);
+    if (!isPasswordValid) {
+      return { success: false, error: 'Usuário não encontrado ou senha incorreta no Supabase.' };
+    }
+
+    // Migração automática transparente: se a conta antiga tinha senha sem bcrypt, atualiza para hash bcrypt
+    if (storedSenha && !isBcryptHash(storedSenha)) {
+      updatePasswordSupabase(cleanEmail, senhaInput).catch(() => {});
+    }
+
+    return { success: true, data: stripSensitiveUserFields(foundRow) };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Falha de conexão com o Supabase' };
   }
@@ -751,11 +1075,10 @@ export async function saveUsuarioSupabase(user: {
     const existing = await getUsuarioSupabase(cleanEmail);
 
     if (existing) {
-      // Faz UPDATE sem alterar `id`
+      // Faz UPDATE sem alterar `id` (só atualiza `senha` com bcrypt caso tenha sido informada)
       const updateData: any = {
         nome: user.nome,
         celular: user.celular || user.whatsapp || existing.celular || '',
-        senha: user.senha || existing.senha,
         tipo: user.tipo || existing.tipo || 'passenger',
         categoria: user.categoria !== undefined ? user.categoria : existing.categoria,
         placa: user.placa !== undefined ? user.placa : existing.placa,
@@ -763,6 +1086,9 @@ export async function saveUsuarioSupabase(user: {
         ano: user.ano ? String(user.ano) : existing.ano,
         cnh: user.cnh !== undefined ? user.cnh : existing.cnh,
       };
+      if (user.senha && user.senha.trim()) {
+        updateData.senha = await hashPasswordBcrypt(user.senha);
+      }
       if (user.cor !== undefined) updateData.cor = user.cor;
       if (user.cpf !== undefined) updateData.cpf = user.cpf;
       if (user.bau !== undefined) updateData.bau = user.bau;
@@ -802,6 +1128,7 @@ export async function saveUsuarioSupabase(user: {
 
       const existingKeys = new Set(Object.keys(existing));
       for (const key of Object.keys(updateData)) {
+        if (key === 'senha') continue;
         if (!existingKeys.has(key)) {
           if (key === 'foto' && existingKeys.has('avatar') && compressedProfilePhoto) {
             updateData.avatar = compressedProfilePhoto;
@@ -816,10 +1143,10 @@ export async function saveUsuarioSupabase(user: {
           .from('usuarios')
           .update(updateData)
           .eq('id', existing.id)
-          .select();
+          .select('id,nome,tipo,categoria,placa,modelo,ano,cor,cnh,cpf,bau,foto,avatar,status,online,plano_ativo,lat,lng,created_at');
 
         if (!error) {
-          return { success: true, data: data?.[0] };
+          return { success: true, data: stripSensitiveUserFields(data?.[0]) };
         }
 
         console.log('Erro Supabase saveUsuarioSupabase update:', error);
@@ -852,7 +1179,7 @@ export async function saveUsuarioSupabase(user: {
         celular: user.celular || user.whatsapp || '',
         whatsapp: user.whatsapp || user.celular || '',
         login: user.login || cleanEmail,
-        senha: user.senha || '123456',
+        senha: user.senha || '',
         tipo: user.tipo || 'passenger',
         categoria: user.categoria,
         placa: user.placa,
@@ -937,39 +1264,37 @@ export async function updateDriverOnlineStatusSupabase(params: {
 }
 
 /**
- * Busca usuário por e-mail ou login no Supabase (suporta 'e-mail', 'email' e 'login')
+ * Verifica se e-mail ou login já está cadastrado no Supabase (via RPC segura ou consulta sem senha)
+ */
+export async function checkEmailExistsSupabase(emailOrLogin: string): Promise<boolean> {
+  const clean = emailOrLogin.trim().toLowerCase();
+  if (!clean) return false;
+  try {
+    const rpcRes = await supabase.rpc('rpc_check_email_exists', { p_email: clean });
+    if (!rpcRes.error && typeof rpcRes.data === 'boolean') {
+      return rpcRes.data;
+    }
+  } catch {}
+  const existing = await getUsuarioSupabase(clean);
+  return Boolean(existing);
+}
+
+/**
+ * Busca usuário por e-mail ou login no Supabase sem retornar `senha`
  */
 export async function getUsuarioSupabase(emailOrLogin: string): Promise<any | null> {
   const clean = emailOrLogin.trim().toLowerCase();
   if (!clean) return null;
 
   try {
-    // 1. Tenta por 'e-mail'
-    const { data: byHyphen } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('e-mail', clean)
-      .maybeSingle();
+    const byHyphen = await selectSafeUsuariosRows((q) => q.eq('e-mail', clean).limit(1));
+    if (byHyphen.data && byHyphen.data.length > 0) return byHyphen.data[0];
 
-    if (byHyphen) return byHyphen;
+    const byNoHyphen = await selectSafeUsuariosRows((q) => q.eq('email', clean).limit(1));
+    if (byNoHyphen.data && byNoHyphen.data.length > 0) return byNoHyphen.data[0];
 
-    // 2. Tenta por 'email'
-    const { data: byNoHyphen } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('email', clean)
-      .maybeSingle();
-
-    if (byNoHyphen) return byNoHyphen;
-
-    // 3. Tenta por 'login'
-    const { data: byLogin } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('login', clean)
-      .maybeSingle();
-
-    if (byLogin) return byLogin;
+    const byLogin = await selectSafeUsuariosRows((q) => q.eq('login', clean).limit(1));
+    if (byLogin.data && byLogin.data.length > 0) return byLogin.data[0];
   } catch (err) {
     console.warn('Aviso ao consultar Supabase:', err);
   }
@@ -978,8 +1303,7 @@ export async function getUsuarioSupabase(emailOrLogin: string): Promise<any | nu
 }
 
 /**
- * Atualiza a senha do usuário na tabela public.usuarios no Supabase
- * Se for o administrador (admin@race.com.br) e ainda não houver linha em public.usuarios, cria a linha para persistir a nova senha na nuvem.
+ * Atualiza a senha do usuário com hash bcrypt na tabela public.usuarios no Supabase
  */
 export async function updatePasswordSupabase(
   identifier: string,
@@ -992,12 +1316,23 @@ export async function updatePasswordSupabase(
   }
 
   try {
+    const hashedPassword = await hashPasswordBcrypt(newPassword);
+
+    // 0. Tenta via RPC segura primeiro
+    const rpcRes = await supabase.rpc('rpc_redefinir_senha', {
+      p_identifier: clean,
+      p_new_hash: hashedPassword,
+    });
+    if (!rpcRes.error && rpcRes.data === true) {
+      return { success: true };
+    }
+
     // 1. Tenta atualizar por 'e-mail'
     const resHyphen = await supabase
       .from('usuarios')
-      .update({ senha: newPassword })
+      .update({ senha: hashedPassword })
       .eq('e-mail', clean)
-      .select();
+      .select('id');
 
     if (!resHyphen.error && resHyphen.data && resHyphen.data.length > 0) {
       return { success: true };
@@ -1006,9 +1341,9 @@ export async function updatePasswordSupabase(
     // 2. Tenta atualizar por 'email'
     const resNoHyphen = await supabase
       .from('usuarios')
-      .update({ senha: newPassword })
+      .update({ senha: hashedPassword })
       .eq('email', clean)
-      .select();
+      .select('id');
 
     if (!resNoHyphen.error && resNoHyphen.data && resNoHyphen.data.length > 0) {
       return { success: true };
@@ -1017,15 +1352,15 @@ export async function updatePasswordSupabase(
     // 3. Tenta atualizar por 'login'
     const resLogin = await supabase
       .from('usuarios')
-      .update({ senha: newPassword })
+      .update({ senha: hashedPassword })
       .eq('login', clean)
-      .select();
+      .select('id');
 
     if (!resLogin.error && resLogin.data && resLogin.data.length > 0) {
       return { success: true };
     }
 
-    // 4. Se ainda não existir linha para o usuário (ex: admin@race.com.br master), insere na tabela public.usuarios
+    // 4. Se ainda não existir linha para o administrador master, insere com hash bcrypt
     if (clean === 'admin@race.com.br') {
       const inserted = await insertUsuarioSupabase({
         nome: fallbackNome || 'Administrador Geral',
@@ -1040,7 +1375,6 @@ export async function updatePasswordSupabase(
       return { success: false, error: inserted.error };
     }
 
-    // Caso tenha ocorrido erro de rede/schema mas não impediu o fluxo local
     const anyError = resHyphen.error || resNoHyphen.error || resLogin.error;
     if (anyError) {
       return { success: false, error: anyError.message };
@@ -1053,13 +1387,11 @@ export async function updatePasswordSupabase(
 }
 
 /**
- * Busca todos os usuários do Supabase
+ * Busca todos os usuários do Supabase SEM retornar a coluna `senha`
  */
 export async function getAllUsuariosSupabase(): Promise<any[]> {
   try {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select('*');
+    const { data, error } = await selectSafeUsuariosRows();
 
     if (error) {
       console.warn('Aviso ao listar usuarios do Supabase:', error.message);
@@ -1186,10 +1518,15 @@ export async function getAllDriversFromSupabase(): Promise<Driver[]> {
 
 export async function getOnlineDriversFromSupabase(): Promise<Driver[]> {
   try {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('status', 'online');
+    const rpcRes = await supabase.rpc('rpc_get_online_drivers');
+    if (!rpcRes.error && Array.isArray(rpcRes.data)) {
+      return rpcRes.data
+        .filter(isSupabaseDriverRow)
+        .map(mapSupabaseRowToDriver)
+        .filter((d) => d.status === 'online' && d.categoryConfigured !== false);
+    }
+
+    const { data, error } = await selectSafeUsuariosRows((q) => q.eq('status', 'online'));
 
     if (error || !data) return [];
     return data
@@ -2147,11 +2484,9 @@ export async function reportPassengerCashNonPaymentSupabase(params: {
     let existingUser: any = null;
 
     if (passengerIdRaw && /^\d+$/.test(String(passengerIdRaw))) {
-      const { data } = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('id', Number(passengerIdRaw))
-        .limit(1);
+      const { data } = await selectSafeUsuariosRows((q) =>
+        q.eq('id', Number(passengerIdRaw)).limit(1)
+      );
       if (data && data.length > 0) existingUser = data[0];
     }
     if (!existingUser && cleanPassengerEmail) {

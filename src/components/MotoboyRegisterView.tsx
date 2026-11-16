@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { AppUser, Driver } from '../types';
 import { WEEKLY_FEE } from '../config/pricing';
-import { Eye, EyeOff, AlertTriangle, ArrowLeft, Bike } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle, ArrowLeft, Bike, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveUserAccount } from '../services/userService';
+import { compressImageToMax200KB } from '../utils/imageCompression';
+import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 
 interface MotoboyRegisterViewProps {
   onRegisterSuccess: (user: AppUser, newMotoboy: Driver) => void;
@@ -24,11 +26,26 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
   const [motoPlate, setMotoPlate] = useState('');
   const [motoModel, setMotoModel] = useState('');
   const [cnh, setCnh] = useState('');
+  const [avatar, setAvatar] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageToMax200KB(file);
+      if (compressed) setAvatar(compressed);
+    } catch {}
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    if (!avatar) {
+      setErrorMessage('Adicione sua foto para continuar.');
+      return;
+    }
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
@@ -42,7 +59,17 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
       return;
     }
 
-    if (password.length < 6) {
+    if (!isValidEmail(cleanEmail)) {
+      setErrorMessage('E-mail inválido. Digite um e-mail completo (ex: seu.nome@gmail.com).');
+      return;
+    }
+
+    if (!isValidWhatsApp11(cleanPhone)) {
+      setErrorMessage('WhatsApp inválido! Digite exatamente 11 dígitos com DDD + 9 (ex: 19999999999).');
+      return;
+    }
+
+    if (!isValidPassword(password)) {
       setErrorMessage('A senha deve conter no mínimo 6 dígitos.');
       return;
     }
@@ -56,7 +83,7 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
     const newMotoboy: Driver = {
       id: '',
       name: cleanName,
-      avatar: '',
+      avatar: avatar,
       phone: cleanPhone,
       email: cleanEmail,
       cpf: '',
@@ -82,7 +109,6 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
       vehicleVerified: true,
       criminalRecordClear: true,
       registrationDate: new Date().toISOString().split('T')[0],
-      password: password,
     };
 
     const appUser: AppUser = {
@@ -92,9 +118,8 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
       phone: newMotoboy.phone,
       role: 'motoboy',
       tipo: 'motoboy',
-      avatar: newMotoboy.avatar,
+      avatar: avatar,
       rating: 0,
-      password: password,
       driverData: newMotoboy,
     };
 
@@ -107,7 +132,7 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
       tipo: 'motoboy',
       placa: cleanPlate,
       password,
-      avatar: '',
+      avatar: avatar,
       rating: 0,
       driverData: newMotoboy,
       createdAt: new Date().toISOString(),
@@ -149,6 +174,16 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
 
         {/* Formulário com campos: Nome, Email, Celular, Placa da moto, CNH, Senha */}
         <form onSubmit={handleSubmit} className="space-y-3.5 pt-1">
+          <div className="flex items-center gap-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-3">
+            <label className="w-12 h-12 rounded-full bg-zinc-900 border-2 border-[#ff6a00] flex items-center justify-center overflow-hidden cursor-pointer shrink-0">
+              {avatar ? <img src={avatar} alt="Foto" className="w-full h-full object-cover" /> : <Camera className="w-5 h-5 text-[#ff6a00]" />}
+              <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
+            </label>
+            <div className="text-xs">
+              <span className="font-bold text-white block">FOTO DE PERFIL * (OBRIGATÓRIA)</span>
+              <span className="text-zinc-400">{avatar ? 'Foto anexada' : 'Toque ao lado para enviar'}</span>
+            </div>
+          </div>
           {/* NOME COMPLETO */}
           <div className="space-y-1">
             <label className="text-white text-xs font-bold uppercase tracking-wider block">

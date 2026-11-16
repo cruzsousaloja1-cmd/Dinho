@@ -2,6 +2,7 @@ import { AppUser, Driver, Ride, UserRole, UserTipo } from '../types';
 import {
   saveUsuarioSupabase,
   getUsuarioSupabase,
+  loginUsuarioSupabase,
   saveCorridaSupabase,
   deleteUsuarioSupabase,
   zerarDadosTesteSupabase,
@@ -67,14 +68,19 @@ export function saveSessionUser(user: AppUser | null): void {
     const cleanEmail = normalizeEmail(user.email || existingSaved?.email || '');
     const resolvedLogin = (user.login || existingSaved?.login || cleanEmail).trim().toLowerCase();
     const resolvedFoto = user.avatar || existingSaved?.foto || existingSaved?.avatar || '';
-    const resolvedSenha = user.password || existingSaved?.senha || existingSaved?.password || '';
     const resolvedDriverData = user.driverData || existingSaved?.driverData;
+    const sanitizedDriverData = resolvedDriverData
+      ? (() => {
+          const clone = { ...resolvedDriverData };
+          delete (clone as any).password;
+          return clone;
+        })()
+      : undefined;
 
     const fullSavedSession = {
       id: user.id || existingSaved?.id || '',
       login: resolvedLogin,
       email: cleanEmail,
-      senha: resolvedSenha,
       tipo: user.tipo || user.role || existingSaved?.tipo || 'passenger',
       role: user.role,
       nome: user.name || existingSaved?.nome || '',
@@ -86,7 +92,7 @@ export function saveSessionUser(user: AppUser | null): void {
       placa: user.placa || existingSaved?.placa || '',
       rating: user.rating ?? existingSaved?.rating ?? 0,
       isAdmin: user.isAdmin,
-      driverData: resolvedDriverData,
+      driverData: sanitizedDriverData,
     };
 
     try {
@@ -171,7 +177,6 @@ export function getSessionUser(): AppUser | null {
       phone: parsed.phone || parsed.whatsapp || '',
       whatsapp: parsed.whatsapp || parsed.phone || '',
       login: parsed.login || cleanEmail,
-      password: parsed.senha || parsed.password || '',
       role,
       tipo: tipoStr as UserTipo,
       isAdmin: isAdmin || undefined,
@@ -356,26 +361,15 @@ export async function verifyUserLoginAsync(
   }
 
   try {
-    const cloudUser = await getUsuarioSupabase(cleanIdentifier);
-    if (!cloudUser) {
+    const authRes = await loginUsuarioSupabase(cleanIdentifier, passwordInput);
+    if (!authRes.success || !authRes.data) {
       return {
         success: false,
-        error: 'Usuário não encontrado no Supabase. Verifique seu e-mail ou crie uma conta.',
+        error: authRes.error || 'Usuário não encontrado ou senha incorreta no Supabase.',
       };
     }
 
-    if (cloudUser.status === 'bloqueado') {
-      return {
-        success: false,
-        error: 'Esta conta está bloqueada pela administração.',
-      };
-    }
-
-    if (cloudUser.senha && cloudUser.senha !== passwordInput) {
-      return { success: false, error: 'Senha incorreta para esta conta.' };
-    }
-
-    const { user: userPayload, driver: driverObj } = mapSupabaseRowToAppUser(cloudUser);
+    const { user: userPayload, driver: driverObj } = mapSupabaseRowToAppUser(authRes.data);
     saveSessionUser(userPayload);
 
     return { success: true, user: userPayload, driver: driverObj };

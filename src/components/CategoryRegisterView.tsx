@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { AppUser, Driver, VehicleCategory, UserTipo } from '../types';
 import { WEEKLY_FEE } from '../config/pricing';
 import { saveUserAccount } from '../services/userService';
+import { compressImageToMax200KB } from '../utils/imageCompression';
+import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { 
   Car, 
   Bike, 
@@ -12,7 +14,8 @@ import {
   ArrowLeft, 
   CheckCircle2, 
   Sparkles,
-  ShieldCheck 
+  ShieldCheck,
+  Camera
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -128,7 +131,21 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleYear, setVehicleYear] = useState(config.minYear ? String(config.minYear) : '2022');
   const [trunkType, setTrunkType] = useState('Baú 80 Litros');
+  const [avatar, setAvatar] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      if (typeof reader.result === 'string') {
+        const compressed = await compressImageToMax200KB(reader.result);
+        setAvatar(compressed);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,7 +162,22 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       return;
     }
 
-    if (password.length < 6) {
+    if (!avatar) {
+      setErrorMessage('Envie uma foto de perfil obrigatória antes de concluir o cadastro.');
+      return;
+    }
+
+    if (!isValidEmail(cleanEmail)) {
+      setErrorMessage('E-mail inválido! Digite um e-mail válido (ex: nome@dominio.com).');
+      return;
+    }
+
+    if (!isValidWhatsApp11(cleanPhone)) {
+      setErrorMessage('WhatsApp inválido! Digite exatamente 11 dígitos com DDD + 9 (ex: 19999999999).');
+      return;
+    }
+
+    if (!isValidPassword(password)) {
       setErrorMessage('A senha deve conter no mínimo 6 dígitos.');
       return;
     }
@@ -170,7 +202,7 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
     const newDriver: Driver = {
       id: '',
       name: cleanName,
-      avatar: '',
+      avatar: avatar,
       phone: cleanPhone,
       email: cleanEmail,
       cpf: '',
@@ -196,7 +228,6 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       vehicleVerified: true,
       criminalRecordClear: true,
       registrationDate: new Date().toISOString().split('T')[0],
-      password: password,
       trunkType: config.hasTrunkType ? trunkType : undefined,
     };
 
@@ -208,13 +239,12 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       role: config.role,
       tipo: config.userTipo,
       placa: newDriver.vehiclePlate,
-      avatar: '',
+      avatar: avatar,
       rating: 0,
-      password: password,
       driverData: newDriver,
     };
 
-    // Salva direto no Supabase (sem usar localStorage)
+    // Salva direto no Supabase (sem armazenar senha no localStorage)
     saveUserAccount({
       id: newDriver.id,
       name: newDriver.name,
@@ -224,7 +254,7 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
       tipo: config.userTipo,
       placa: newDriver.vehiclePlate,
       password: password,
-      avatar: '',
+      avatar: avatar,
       rating: 0,
       driverData: newDriver,
       rides: [],
@@ -286,6 +316,17 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
 
         {/* Formulário Específico da Categoria */}
         <form onSubmit={handleSubmit} className="space-y-3.5">
+          <div className="flex items-center gap-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-3">
+            <label className="w-12 h-12 rounded-full bg-zinc-900 border-2 border-[#ff6a00] flex items-center justify-center overflow-hidden cursor-pointer shrink-0">
+              {avatar ? <img src={avatar} alt="Foto" className="w-full h-full object-cover" /> : <Camera className="w-5 h-5 text-[#ff6a00]" />}
+              <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
+            </label>
+            <div className="text-xs">
+              <span className="font-bold text-white block">FOTO DE PERFIL * (OBRIGATÓRIA)</span>
+              <span className="text-zinc-400">{avatar ? 'Foto anexada' : 'Toque ao lado para enviar'}</span>
+            </div>
+          </div>
+
           {/* NOME COMPLETO */}
           <div className="space-y-1">
             <label className="text-white text-xs font-bold uppercase tracking-wider block">

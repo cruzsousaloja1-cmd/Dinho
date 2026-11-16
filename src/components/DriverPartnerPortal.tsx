@@ -4,6 +4,7 @@ import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCod
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
 import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
+import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverWorkSelectionView } from './DriverWorkSelectionView';
@@ -548,8 +549,22 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [regPixKey, setRegPixKey] = useState('');
   const [regTrunkType, setRegTrunkType] = useState('Baú 90 Litros');
   const [regRequirementsConfirmed, setRegRequirementsConfirmed] = useState(false);
+  const [regAvatar, setRegAvatar] = useState('');
   const [regError, setRegError] = useState<string | null>(null);
   const [registeredSuccess, setRegisteredSuccess] = useState(false);
+
+  const handleRegAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      if (typeof reader.result === 'string') {
+        const compressed = await compressImageToMax200KB(reader.result);
+        setRegAvatar(compressed);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleCategoryChange = (newCat: VehicleCategory) => {
     setRegCategory(newCat);
@@ -701,7 +716,22 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       return;
     }
 
-    if (regPassword.length < 6) {
+    if (!regAvatar) {
+      setRegError('Envie uma foto de perfil obrigatória para segurança nas corridas.');
+      return;
+    }
+
+    if (!isValidEmail(regEmail)) {
+      setRegError('E-mail inválido! Informe um e-mail válido (ex: nome@dominio.com).');
+      return;
+    }
+
+    if (!isValidWhatsApp11(regPhone)) {
+      setRegError('WhatsApp inválido! Digite exatamente 11 dígitos com DDD + 9 (ex: 19999999999).');
+      return;
+    }
+
+    if (!isValidPassword(regPassword)) {
       setRegError('A senha deve conter no mínimo 6 dígitos para sua segurança.');
       return;
     }
@@ -744,10 +774,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     const newDriver: Driver = {
       id: '',
       name: regName,
-      avatar: '',
+      avatar: regAvatar,
       phone: regPhone,
       email: regEmail,
-      password: regPassword,
       cpf: regCpf,
       cnh: regCnh ? `${regCnh} (EAR Ativo)` : '',
       category: finalCategory,
@@ -2663,6 +2692,21 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <h4 className="font-heading font-black text-slate-950 text-base">
                       2. Dados Pessoais, Habilitação e Recebimento
                     </h4>
+                  </div>
+
+                  <div className="flex items-center gap-3 bg-white border border-slate-300 rounded-xl p-3">
+                    <label className="w-12 h-12 rounded-full bg-slate-100 border-2 border-amber-500 flex items-center justify-center overflow-hidden cursor-pointer shrink-0">
+                      {regAvatar ? (
+                        <img src={regAvatar} alt="Foto do condutor" className="w-full h-full object-cover" />
+                      ) : (
+                        <Camera className="w-5 h-5 text-amber-700" />
+                      )}
+                      <input type="file" accept="image/*" onChange={handleRegAvatarUpload} className="hidden" />
+                    </label>
+                    <div className="text-xs">
+                      <span className="font-bold text-slate-900 block">Foto de Perfil * (Obrigatória)</span>
+                      <span className="text-slate-600">{regAvatar ? 'Foto anexada com sucesso' : 'Toque ao lado para enviar sua foto'}</span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">

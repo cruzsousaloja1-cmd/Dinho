@@ -196,7 +196,6 @@ export default function App() {
         const { user: hydratedUser, driver: hydratedDriver } = mapSupabaseRowToAppUser(cloudRow);
         const mergedUser: AppUser = {
           ...hydratedUser,
-          password: session.password || hydratedUser.password,
           avatar: hydratedUser.avatar || session.avatar || '',
         };
         setCurrentUser(mergedUser);

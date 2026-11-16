@@ -1,10 +1,11 @@
 /**
  * Serviço de Integração Asaas (PIX e Cartão)
- * Utiliza VITE_ASAAS_API_KEY injetada a partir do GitHub Secrets.
- * Suporta Sandbox e Produção com fallback resiliente para execução no GitHub Pages.
+ * Comunicação exclusiva via Supabase Edge Function segura (`asaas-proxy`).
+ * Nenhuma chave de API do Asaas existe ou é armazenada no frontend.
  */
 import QRCode from 'qrcode';
 import { RACE_PIX_KEY } from '../config/pricing';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabase';
 
 export interface AsaasCustomer {
   id: string;
@@ -41,30 +42,28 @@ export interface AsaasBalanceInfo {
   isLive: boolean;
 }
 
-export function getAsaasApiKey(): string {
-  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ASAAS_API_KEY) {
-    return String(import.meta.env.VITE_ASAAS_API_KEY).trim();
-  }
-  if (typeof window !== 'undefined') {
-    const local = localStorage.getItem('race_asaas_api_key');
-    if (local) return local.trim();
-  }
-  return '';
-}
+const ASAAS_PROXY_URL = `${SUPABASE_URL}/functions/v1/asaas-proxy`;
 
-export function setCustomAsaasApiKey(key: string): void {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('race_asaas_api_key', key.trim());
+async function callAsaasProxy<T = any>(payload: Record<string, any>): Promise<{ ok: boolean; data?: T }> {
+  try {
+    const res = await fetch(ASAAS_PROXY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || data.configured === false) {
+      return { ok: false, data: data || undefined };
+    }
+    return { ok: true, data };
+  } catch (err) {
+    console.warn('[Asaas Proxy] Edge Function indisponível no momento:', err);
+    return { ok: false };
   }
-}
-
-export function getAsaasBaseUrl(key?: string): string {
-  const currentKey = key || getAsaasApiKey();
-  // Se a chave contiver 'sandbox' ou começar com '$aact_YTU' normalmente é sandbox
-  if (currentKey.includes('sandbox') || currentKey.toLowerCase().startsWith('$aact_ytu')) {
-    return 'https://sandbox.asaas.com/v3';
-  }
-  return 'https://api.asaas.com/v3';
 }
 
 export function formatEMVField(id: string, val: string): string {
@@ -74,7 +73,7 @@ export function formatEMVField(id: string, val: string): string {
 
 /**
  * Calcula CRC16-CCITT (Polinômio 0x1021, valor inicial 0xFFFF)
- * Exigido estritamente pelo Banco Central do Brasil para validação em apps bancários (Nubank, Itaú, Bradesco, etc.)
+ * Exigido estritamente pelo Banco Central do Brasil para validação em apps bancários.
  */
 export function calculatePixCRC16(payload: string): string {
   let crc = 0xFFFF;
@@ -93,7 +92,6 @@ export function calculatePixCRC16(payload: string): string {
 
 /**
  * Gera string padrão PIX (EMV Co/Brcode) 100% válida e aceita por qualquer banco no Brasil
- * com CRC16 completo, nome do recebedor, cidade e chave PIX cadastrada.
  */
 export function generateFallbackPixCopiaECola(valor: number, desc = 'Corrida RACE'): string {
   const chavePix = RACE_PIX_KEY;
@@ -114,67 +112,11 @@ export function generateFallbackPixCopiaECola(valor: number, desc = 'Corrida RAC
     formatEMVField('62', additionalData) +
     '6304';
 
-  const fullBRCode = raw + calculatePixCRC16(raw);
-  return fullBRCode;
+  return raw + calculatePixCRC16(raw);
 }
 
 /**
- * Cria ou busca um cliente no Asaas
- */
-export async function getOrCreateAsaasCustomer(
-  name: string,
-  email?: string,
-  phone?: string
-): Promise<string> {
-  const apiKey = getAsaasApiKey();
-  if (!apiKey) return 'cus_simulated_race';
-
-  const baseUrl = getAsaasBaseUrl(apiKey);
-
-  try {
-    // 1. Tentar buscar cliente existente por e-mail
-    if (email) {
-      const searchRes = await fetch(`${baseUrl}/customers?email=${encodeURIComponent(email)}`, {
-        headers: {
-          access_token: apiKey,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        if (searchData.data && searchData.data.length > 0) {
-          return searchData.data[0].id;
-        }
-      }
-    }
-
-    // 2. Criar novo cliente
-    const createRes = await fetch(`${baseUrl}/customers`, {
-      method: 'POST',
-      headers: {
-        access_token: apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: name || 'Passageiro RACE',
-        email: email || `passageiro.${Date.now()}@race.com.br`,
-        mobilePhone: phone ? phone.replace(/\D/g, '') : undefined,
-      }),
-    });
-
-    if (createRes.ok) {
-      const newCustomer = await createRes.json();
-      return newCustomer.id;
-    }
-  } catch (err) {
-    console.warn('[Asaas] Aviso ao conectar API de clientes (usando cliente local/simulado):', err);
-  }
-
-  return 'cus_race_' + Math.random().toString(36).substring(2, 9);
-}
-
-/**
- * Cria uma cobrança PIX no Asaas para a corrida
+ * Cria uma cobrança PIX no Asaas via Edge Function segura (`asaas-proxy`)
  */
 export async function createAsaasPixPayment(params: {
   value: number;
@@ -183,101 +125,57 @@ export async function createAsaasPixPayment(params: {
   passengerEmail?: string;
   passengerPhone?: string;
 }): Promise<AsaasPaymentResult> {
-  const apiKey = getAsaasApiKey();
-  const baseUrl = getAsaasBaseUrl(apiKey);
-  const now = new Date();
-  const dueDate = now.toISOString().split('T')[0];
   const description = `Corrida RACE ${params.categoryName} - R$ ${params.value.toFixed(2)}`;
 
-  // Se tiver API Key, tenta criar cobrança real no Asaas
-  if (apiKey) {
-    try {
-      const customerId = await getOrCreateAsaasCustomer(
-        params.passengerName || 'Passageiro RACE',
-        params.passengerEmail,
-        params.passengerPhone
-      );
+  const proxyRes = await callAsaasProxy<{
+    configured?: boolean;
+    payment?: any;
+    pixQrCode?: any;
+  }>({
+    action: 'create_pix',
+    value: params.value,
+    categoryName: params.categoryName,
+    passengerName: params.passengerName,
+    passengerEmail: params.passengerEmail,
+    passengerPhone: params.passengerPhone,
+  });
 
-      const paymentRes = await fetch(`${baseUrl}/payments`, {
-        method: 'POST',
-        headers: {
-          access_token: apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customer: customerId,
-          billingType: 'PIX',
-          value: params.value,
-          dueDate: dueDate,
-          description: description,
-          postalService: false,
-        }),
-      });
+  if (proxyRes.ok && proxyRes.data?.payment?.id) {
+    const paymentData = proxyRes.data.payment;
+    const qrData = proxyRes.data.pixQrCode || {};
+    const rawPayload = (
+      qrData.payload ||
+      qrData.pixCopyPaste ||
+      qrData.copyAndPaste ||
+      qrData.copyAndPasteUrl ||
+      ''
+    ).trim();
+    const finalPayload = rawPayload || generateFallbackPixCopiaECola(params.value, description);
+    const imageStr = qrData.encodedImage
+      ? (qrData.encodedImage.startsWith('data:')
+          ? qrData.encodedImage
+          : `data:image/png;base64,${qrData.encodedImage}`)
+      : await QRCode.toDataURL(finalPayload, { width: 320, margin: 1 });
 
-      if (paymentRes.ok) {
-        const paymentData = await paymentRes.json();
-        const paymentId = paymentData.id;
-
-        // Obter QR Code PIX oficial do Asaas
-        let pixQrCode: AsaasPixQrCodeResponse | undefined;
-        try {
-          const qrRes = await fetch(`${baseUrl}/payments/${paymentId}/pixQrCode`, {
-            headers: {
-              access_token: apiKey,
-            },
-          });
-          if (qrRes.ok) {
-            const qrData = await qrRes.json();
-            const rawPayload = (qrData.payload || qrData.pixCopyPaste || qrData.copyAndPaste || qrData.copyAndPasteUrl || '').trim();
-            const finalPayload = rawPayload || generateFallbackPixCopiaECola(params.value, description);
-            const imageStr = qrData.encodedImage
-              ? (qrData.encodedImage.startsWith('data:') ? qrData.encodedImage : `data:image/png;base64,${qrData.encodedImage}`)
-              : await QRCode.toDataURL(finalPayload, { width: 320, margin: 1 });
-
-            pixQrCode = {
-              encodedImage: imageStr,
-              payload: finalPayload, // Código completo sem nenhum corte
-              pixCopyPaste: finalPayload,
-              expirationDate: qrData.expirationDate || new Date(Date.now() + 3600000).toISOString(),
-            };
-          }
-        } catch (qrErr) {
-          console.warn('[Asaas] Erro ao buscar QR Code direto:', qrErr);
-        }
-
-        // Se o Asaas não retornou QR Code imediato, gera via biblioteca local com o payload do Asaas
-        if (!pixQrCode) {
-          const payload = generateFallbackPixCopiaECola(params.value, description);
-          const dataUrl = await QRCode.toDataURL(payload, { width: 320, margin: 1 });
-          pixQrCode = {
-            encodedImage: dataUrl,
-            payload: payload,
-            pixCopyPaste: payload,
-            expirationDate: new Date(Date.now() + 3600000).toISOString(),
-          };
-        }
-
-        return {
-          id: paymentId,
-          value: params.value,
-          status: paymentData.status || 'PENDING',
-          billingType: 'PIX',
-          invoiceUrl: paymentData.invoiceUrl,
-          bankSlipUrl: paymentData.bankSlipUrl,
-          pixQrCode,
-          customer: customerId,
-          isSimulated: false,
-        };
-      } else {
-        const errJson = await paymentRes.json().catch(() => ({}));
-        console.warn('[Asaas] API retornou erro ao criar pagamento:', errJson);
-      }
-    } catch (apiErr) {
-      console.warn('[Asaas] Falha de conexão direta com API Asaas (CORS ou offline). Ativando fallback inteligente:', apiErr);
-    }
+    return {
+      id: paymentData.id,
+      value: params.value,
+      status: paymentData.status || 'PENDING',
+      billingType: 'PIX',
+      invoiceUrl: paymentData.invoiceUrl,
+      bankSlipUrl: paymentData.bankSlipUrl,
+      pixQrCode: {
+        encodedImage: imageStr,
+        payload: finalPayload,
+        pixCopyPaste: finalPayload,
+        expirationDate: qrData.expirationDate || new Date(Date.now() + 3600000).toISOString(),
+      },
+      customer: paymentData.customer,
+      isSimulated: false,
+    };
   }
 
-  // Fallback Inteligente e Resiliente (para GitHub Pages sem backend proxy ou preview local)
+  // Fallback local EMV caso a Edge Function ainda não esteja deployada no projeto Supabase
   const mockId = 'pay_asaas_' + Math.random().toString(36).substring(2, 10);
   const payload = generateFallbackPixCopiaECola(params.value, description);
   const encodedImage = await QRCode.toDataURL(payload, { width: 300, margin: 1 });
@@ -294,12 +192,12 @@ export async function createAsaasPixPayment(params: {
       pixCopyPaste: payload,
       expirationDate: new Date(Date.now() + 3600000).toISOString(),
     },
-    isSimulated: !apiKey,
+    isSimulated: true,
   };
 }
 
 /**
- * Cria cobrança de Cartão de Crédito / Link de Pagamento no Asaas
+ * Cria cobrança de Cartão de Crédito via Edge Function segura (`asaas-proxy`)
  */
 export async function createAsaasCardPayment(params: {
   value: number;
@@ -308,52 +206,30 @@ export async function createAsaasCardPayment(params: {
   passengerEmail?: string;
   passengerPhone?: string;
 }): Promise<AsaasPaymentResult> {
-  const apiKey = getAsaasApiKey();
-  const baseUrl = getAsaasBaseUrl(apiKey);
-  const now = new Date();
-  const dueDate = now.toISOString().split('T')[0];
-  const description = `Corrida RACE ${params.categoryName} - Cartão - R$ ${params.value.toFixed(2)}`;
+  const proxyRes = await callAsaasProxy<{
+    configured?: boolean;
+    payment?: any;
+  }>({
+    action: 'create_card',
+    value: params.value,
+    categoryName: params.categoryName,
+    passengerName: params.passengerName,
+    passengerEmail: params.passengerEmail,
+    passengerPhone: params.passengerPhone,
+  });
 
-  if (apiKey) {
-    try {
-      const customerId = await getOrCreateAsaasCustomer(
-        params.passengerName || 'Passageiro RACE',
-        params.passengerEmail,
-        params.passengerPhone
-      );
-
-      const paymentRes = await fetch(`${baseUrl}/payments`, {
-        method: 'POST',
-        headers: {
-          access_token: apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customer: customerId,
-          billingType: 'CREDIT_CARD',
-          value: params.value,
-          dueDate: dueDate,
-          description: description,
-          postalService: false,
-        }),
-      });
-
-      if (paymentRes.ok) {
-        const paymentData = await paymentRes.json();
-        return {
-          id: paymentData.id,
-          value: params.value,
-          status: paymentData.status || 'PENDING',
-          billingType: 'CREDIT_CARD',
-          invoiceUrl: paymentData.invoiceUrl,
-          bankSlipUrl: paymentData.bankSlipUrl,
-          customer: customerId,
-          isSimulated: false,
-        };
-      }
-    } catch (err) {
-      console.warn('[Asaas] Erro ao criar pagamento com Cartão no Asaas:', err);
-    }
+  if (proxyRes.ok && proxyRes.data?.payment?.id) {
+    const paymentData = proxyRes.data.payment;
+    return {
+      id: paymentData.id,
+      value: params.value,
+      status: paymentData.status || 'PENDING',
+      billingType: 'CREDIT_CARD',
+      invoiceUrl: paymentData.invoiceUrl,
+      bankSlipUrl: paymentData.bankSlipUrl,
+      customer: paymentData.customer,
+      isSimulated: false,
+    };
   }
 
   const mockId = 'pay_card_' + Math.random().toString(36).substring(2, 10);
@@ -363,12 +239,12 @@ export async function createAsaasCardPayment(params: {
     status: 'PENDING',
     billingType: 'CREDIT_CARD',
     invoiceUrl: `https://www.asaas.com/i/${mockId}`,
-    isSimulated: !apiKey,
+    isSimulated: true,
   };
 }
 
 /**
- * Processa pagamento com Cartão de Crédito diretamente na API do Asaas.
+ * Processa pagamento com Cartão de Crédito via Edge Function segura (`asaas-proxy`).
  * Só retorna isPaid = true se o Asaas retornar status RECEIVED ou CONFIRMED.
  */
 export async function payAsaasPaymentWithCreditCard(params: {
@@ -390,74 +266,71 @@ export async function payAsaasPaymentWithCreditCard(params: {
   isPaid: boolean;
   errorMessage?: string;
 }> {
-  const apiKey = getAsaasApiKey();
-  if (!apiKey || params.paymentId.startsWith('pay_card_') || params.paymentId.startsWith('pay_asaas_')) {
+  if (!params.paymentId || params.paymentId.startsWith('pay_card_') || params.paymentId.startsWith('pay_asaas_')) {
     return {
       id: params.paymentId,
       status: 'PENDING',
       isPaid: false,
-      errorMessage: 'Chave Asaas não configurada ou cobrança ainda não registrada no gateway Asaas.',
+      errorMessage: 'Configure a Edge Function asaas-proxy no Supabase para processar cartões em produção.',
     };
   }
 
-  try {
-    const baseUrl = getAsaasBaseUrl(apiKey);
-    const res = await fetch(`${baseUrl}/payments/${params.paymentId}/payWithCreditCard`, {
-      method: 'POST',
-      headers: {
-        access_token: apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        creditCard: {
-          holderName: params.cardHolder,
-          number: params.cardNumber.replace(/\D/g, ''),
-          expiryMonth: params.expiryMonth,
-          expiryYear: params.expiryYear,
-          ccv: params.ccv,
-        },
-        creditCardHolderInfo: {
-          name: params.holderName,
-          email: params.holderEmail,
-          cpfCnpj: params.holderCpfCnpj.replace(/\D/g, ''),
-          postalCode: params.holderPostalCode.replace(/\D/g, ''),
-          addressNumber: params.holderAddressNumber || 'S/N',
-          phone: params.holderPhone.replace(/\D/g, ''),
-        },
-      }),
-    });
+  const proxyRes = await callAsaasProxy<{
+    configured?: boolean;
+    ok?: boolean;
+    data?: any;
+    error?: string;
+  }>({
+    action: 'pay_card',
+    paymentId: params.paymentId,
+    creditCard: {
+      holderName: params.cardHolder,
+      number: params.cardNumber.replace(/\D/g, ''),
+      expiryMonth: params.expiryMonth,
+      expiryYear: params.expiryYear,
+      ccv: params.ccv,
+    },
+    creditCardHolderInfo: {
+      name: params.holderName,
+      email: params.holderEmail,
+      cpfCnpj: params.holderCpfCnpj.replace(/\D/g, ''),
+      postalCode: params.holderPostalCode.replace(/\D/g, ''),
+      addressNumber: params.holderAddressNumber || 'S/N',
+      phone: params.holderPhone.replace(/\D/g, ''),
+    },
+  });
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const apiErr = data?.errors?.[0]?.description || 'Cartão não autorizado pelo Asaas.';
-      return {
-        id: params.paymentId,
-        status: 'PENDING',
-        isPaid: false,
-        errorMessage: apiErr,
-      };
-    }
-
-    const status = (data.status || 'PENDING') as 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED';
-    const isPaid = status === 'RECEIVED' || status === 'CONFIRMED';
-    return {
-      id: params.paymentId,
-      status,
-      isPaid,
-      errorMessage: isPaid ? undefined : `Status atual no Asaas: ${status}. Aguardando confirmação.`,
-    };
-  } catch {
+  if (!proxyRes.ok || !proxyRes.data?.ok) {
+    const apiErr =
+      proxyRes.data?.data?.errors?.[0]?.description ||
+      proxyRes.data?.error ||
+      'Cartão não autorizado pelo gateway Asaas.';
     return {
       id: params.paymentId,
       status: 'PENDING',
       isPaid: false,
-      errorMessage: 'Não foi possível comunicar com o Asaas no navegador. Use o Link de Pagamento Asaas acima.',
+      errorMessage: apiErr,
     };
   }
+
+  const status = (proxyRes.data.data?.status || 'PENDING') as
+    | 'PENDING'
+    | 'RECEIVED'
+    | 'CONFIRMED'
+    | 'OVERDUE'
+    | 'REFUNDED';
+  const isPaid = status === 'RECEIVED' || status === 'CONFIRMED';
+
+  return {
+    id: params.paymentId,
+    status,
+    isPaid,
+    errorMessage: isPaid ? undefined : `Status atual no Asaas: ${status}. Aguardando confirmação.`,
+  };
 }
 
 /**
- * Verifica o status REAL de uma cobrança no Asaas.
+ * Verifica o status REAL de uma cobrança no Asaas via Edge Function segura.
  * Só retorna isPaid = true quando o Asaas confirmar status = 'RECEIVED' ou 'CONFIRMED'.
  */
 export async function checkAsaasPaymentStatus(paymentId: string): Promise<{
@@ -465,27 +338,20 @@ export async function checkAsaasPaymentStatus(paymentId: string): Promise<{
   status: 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED';
   isPaid: boolean;
 }> {
-  const apiKey = getAsaasApiKey();
-  if (apiKey && paymentId && !paymentId.startsWith('pay_asaas_') && !paymentId.startsWith('pay_card_')) {
-    try {
-      const baseUrl = getAsaasBaseUrl(apiKey);
-      const res = await fetch(`${baseUrl}/payments/${paymentId}`, {
-        headers: {
-          access_token: apiKey,
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const status = (data.status || 'PENDING') as 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED';
-        const isPaid = status === 'RECEIVED' || status === 'CONFIRMED';
-        return {
-          id: paymentId,
-          status,
-          isPaid,
-        };
-      }
-    } catch (err) {
-      console.warn('[Asaas] Erro ao consultar status da cobrança:', err);
+  if (paymentId && !paymentId.startsWith('pay_asaas_') && !paymentId.startsWith('pay_card_')) {
+    const proxyRes = await callAsaasProxy<{ ok?: boolean; data?: any }>({
+      action: 'check_status',
+      paymentId,
+    });
+    if (proxyRes.ok && proxyRes.data?.ok && proxyRes.data.data) {
+      const status = (proxyRes.data.data.status || 'PENDING') as
+        | 'PENDING'
+        | 'RECEIVED'
+        | 'CONFIRMED'
+        | 'OVERDUE'
+        | 'REFUNDED';
+      const isPaid = status === 'RECEIVED' || status === 'CONFIRMED';
+      return { id: paymentId, status, isPaid };
     }
   }
 
@@ -493,38 +359,26 @@ export async function checkAsaasPaymentStatus(paymentId: string): Promise<{
 }
 
 /**
- * Obtém saldo do Asaas e métricas de repasse de sexta-feira (85%) a partir dos pagamentos reais do Supabase
+ * Obtém saldo do Asaas via Edge Function segura e métricas de repasse de sexta-feira (85%)
  */
 export async function getAsaasFinancialSummary(completedRidesTotal = 0): Promise<AsaasBalanceInfo> {
-  const apiKey = getAsaasApiKey();
   let liveBalance = 0;
   let isLive = false;
 
-  if (apiKey) {
-    try {
-      const baseUrl = getAsaasBaseUrl(apiKey);
-      const res = await fetch(`${baseUrl}/finance/balance`, {
-        headers: {
-          access_token: apiKey,
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        liveBalance = Number(data.balance || 0);
-        isLive = true;
-      }
-    } catch (err) {
-      console.warn('[Asaas] Falha ao consultar saldo Asaas em tempo real:', err);
-    }
+  const proxyRes = await callAsaasProxy<{ ok?: boolean; balance?: number }>({
+    action: 'financial_summary',
+  });
+  if (proxyRes.ok && proxyRes.data?.ok) {
+    liveBalance = Number(proxyRes.data.balance || 0);
+    isLive = true;
   }
 
   const totalReceived = Number((completedRidesTotal || 0).toFixed(2));
   const raceCommission15 = Number((totalReceived * 0.15).toFixed(2));
   const repassarSexta85 = Number((totalReceived * 0.85).toFixed(2));
 
-  // Próxima sexta-feira às 18:00
   const now = new Date();
-  const dayOfWeek = now.getDay(); // 0 = Domingo, 5 = Sexta
+  const dayOfWeek = now.getDay();
   const daysUntilFriday = (5 - dayOfWeek + 7) % 7 || 7;
   const nextFriday = new Date(now.getTime() + daysUntilFriday * 24 * 60 * 60 * 1000);
   const nextPayoutDate = `Sexta-feira, ${nextFriday.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às 18:00`;

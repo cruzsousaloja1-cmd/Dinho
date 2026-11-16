@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { AppUser } from '../types';
-import { Eye, EyeOff, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle, ArrowLeft, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveUserAccount } from '../services/userService';
+import { compressImageToMax200KB } from '../utils/imageCompression';
+import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 
 interface PassengerRegisterViewProps {
   onRegisterSuccess: (user: AppUser) => void;
@@ -21,11 +23,26 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [avatar, setAvatar] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageToMax200KB(file);
+      if (compressed) setAvatar(compressed);
+    } catch {}
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    if (!avatar) {
+      setErrorMessage('Adicione sua foto para continuar.');
+      return;
+    }
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
@@ -36,12 +53,22 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       return;
     }
 
+    if (!isValidEmail(cleanEmail)) {
+      setErrorMessage('E-mail inválido. Digite um e-mail completo (ex: seu.nome@gmail.com).');
+      return;
+    }
+
+    if (!isValidWhatsApp11(cleanPhone)) {
+      setErrorMessage('WhatsApp inválido! Digite exatamente 11 dígitos com DDD + 9 (ex: 19999999999).');
+      return;
+    }
+
     if (password !== confirmPassword) {
       setErrorMessage('As senhas digitadas não coincidem. Verifique e tente novamente.');
       return;
     }
 
-    if (password.length < 6) {
+    if (!isValidPassword(password)) {
       setErrorMessage('A senha deve conter no mínimo 6 dígitos.');
       return;
     }
@@ -58,9 +85,8 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       phone: cleanPhone,
       role: 'passenger',
       tipo: 'passenger',
-      avatar: '',
+      avatar: avatar,
       rating: 0,
-      password: password,
     };
 
     // Salva direto no Supabase (sem logar automaticamente)
@@ -73,7 +99,7 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       tipo: 'passenger',
       placa: '',
       password: password,
-      avatar: '',
+      avatar: avatar,
       rating: 0,
       rides: [],
       createdAt: new Date().toISOString(),
@@ -109,6 +135,16 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
 
         {/* Formulário de Cadastro Passageiro */}
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+          <div className="flex items-center gap-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-3">
+            <label className="w-12 h-12 rounded-full bg-zinc-900 border-2 border-[#ff6a00] flex items-center justify-center overflow-hidden cursor-pointer shrink-0">
+              {avatar ? <img src={avatar} alt="Foto" className="w-full h-full object-cover" /> : <Camera className="w-5 h-5 text-[#ff6a00]" />}
+              <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
+            </label>
+            <div className="text-xs">
+              <span className="font-bold text-white block">FOTO DE PERFIL * (OBRIGATÓRIA)</span>
+              <span className="text-zinc-400">{avatar ? 'Foto anexada' : 'Toque ao lado para enviar'}</span>
+            </div>
+          </div>
           {/* NOME COMPLETO */}
           <div className="space-y-1.5">
             <label className="text-white text-xs font-bold uppercase tracking-wider block">

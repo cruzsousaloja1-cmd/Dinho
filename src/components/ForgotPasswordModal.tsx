@@ -12,7 +12,7 @@ import {
   MessageSquare,
   UserPlus,
 } from 'lucide-react';
-import { getUsuarioSupabase, updatePasswordSupabase } from '../supabase';
+import { getUsuarioSupabase, checkEmailExistsSupabase, updatePasswordSupabase } from '../supabase';
 import {
   ADMIN_EMAIL,
   findLocalUserAccount,
@@ -95,17 +95,22 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
         foundName = cloudUser.nome || 'Usuário RACE';
         foundPhone = cloudUser.celular || cloudUser.whatsapp || '';
       } else {
-        // 2. Verifica nas contas locais já cadastradas
-        const localUser = findLocalUserAccount(clean);
-        if (localUser) {
-          foundEmail = localUser.email.toLowerCase().trim();
-          foundName = localUser.name || 'Usuário RACE';
-          foundPhone = localUser.whatsapp || localUser.phone || '';
-        } else if (clean === ADMIN_EMAIL && getStoredAdminPassword()) {
-          // Apenas se o ADM já definiu senha personalizada localmente
-          foundEmail = ADMIN_EMAIL;
-          foundName = 'Administrador Geral';
-          foundPhone = '(19) 99999-0000';
+        const existsViaRpc = await checkEmailExistsSupabase(clean).catch(() => false);
+        if (existsViaRpc) {
+          foundEmail = clean;
+          foundName = 'Usuário RACE';
+        } else {
+          // 2. Verifica nas contas locais já cadastradas
+          const localUser = findLocalUserAccount(clean);
+          if (localUser) {
+            foundEmail = localUser.email.toLowerCase().trim();
+            foundName = localUser.name || 'Usuário RACE';
+            foundPhone = localUser.whatsapp || localUser.phone || '';
+          } else if (clean === ADMIN_EMAIL && getStoredAdminPassword()) {
+            foundEmail = ADMIN_EMAIL;
+            foundName = 'Administrador Geral';
+            foundPhone = '(19) 99999-0000';
+          }
         }
       }
 
@@ -115,7 +120,6 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
       }
 
       const code = String(Math.floor(1000 + Math.random() * 9000));
-      console.log(`[RACE] Código de redefinição de senha para ${foundEmail}: ${code}`);
 
       setResolvedEmail(foundEmail);
       setResolvedName(foundName);
@@ -132,7 +136,6 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
 
   const handleResendCode = () => {
     const newCode = String(Math.floor(1000 + Math.random() * 9000));
-    console.log(`[RACE] Novo código de redefinição de senha para ${resolvedEmail}: ${newCode}`);
     setGeneratedCode(newCode);
     setCodeInput('');
     setErrorMessage(null);

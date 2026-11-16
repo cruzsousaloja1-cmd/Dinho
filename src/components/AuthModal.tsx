@@ -20,11 +20,14 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   ArrowRight,
-  Zap
+  Zap,
+  Camera
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { verifyUserLoginAsync, saveUserAccount } from '../services/userService';
+import { compressImageToMax200KB } from '../utils/imageCompression';
+import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -50,6 +53,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [avatar, setAvatar] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // Driver-specific fields
@@ -65,6 +69,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [comfortNotice, setComfortNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageToMax200KB(file);
+      if (compressed) setAvatar(compressed);
+    } catch {}
+  };
 
   if (!isOpen) return null;
 
@@ -110,11 +123,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     if (mode === 'register') {
+      if (!avatar) {
+        setErrorMessage('Adicione sua foto para concluir o cadastro.');
+        return;
+      }
       if (!name || !phone) {
         setErrorMessage('Por favor, informe seu nome completo e telefone.');
         return;
       }
-      if (password.length < 6) {
+      if (!isValidEmail(email)) {
+        setErrorMessage('E-mail inválido. Digite um e-mail completo (ex: nome@dominio.com).');
+        return;
+      }
+      if (!isValidWhatsApp11(phone)) {
+        setErrorMessage('WhatsApp inválido! Informe exatamente 11 dígitos com DDD + 9 (ex: 19999999999).');
+        return;
+      }
+      if (!isValidPassword(password)) {
         setErrorMessage('A senha de cadastro deve conter no mínimo 6 dígitos.');
         return;
       }
@@ -151,10 +176,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       createdDriver = {
         id: '',
         name: name || (email.split('@')[0].toUpperCase()),
-        avatar: '',
+        avatar: avatar,
         phone: phone || '',
         email,
-        password,
         cpf: '',
         cnh: cnh ? `${cnh} (EAR Aprovado)` : '',
         category: finalCategory,
@@ -189,7 +213,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       phone: phone || '',
       role,
       tipo: userTipo,
-      avatar: '',
+      avatar: avatar,
       rating: 0,
       driverData: createdDriver,
     };
@@ -203,7 +227,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       tipo: userTipo,
       placa: createdDriver?.vehiclePlate || '',
       password,
-      avatar: '',
+      avatar: avatar,
       rating: 0,
       driverData: createdDriver,
       createdAt: new Date().toISOString(),
@@ -347,35 +371,53 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5">
           {mode === 'register' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Nome Completo *
+            <>
+              <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                <label className="w-14 h-14 rounded-full bg-slate-200 border-2 border-amber-500 flex items-center justify-center overflow-hidden cursor-pointer shrink-0">
+                  {avatar ? (
+                    <img src={avatar} alt="Foto" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera className="w-6 h-6 text-slate-600" />
+                  )}
+                  <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Seu Nome Completo"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                />
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-bold text-slate-900 block">Foto de Perfil * (Obrigatória)</span>
+                  <span className="text-[11px] text-slate-600 block">
+                    {avatar ? 'Foto anexada com sucesso' : 'Toque no círculo ao lado para enviar sua foto'}
+                  </span>
+                </div>
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Nome Completo *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Ex: Seu Nome Completo"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                  />
+                </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  WhatsApp / Telefone *
-                </label>
-                <input
-                  type="tel"
-                  required
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="(11) 99887-6655"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
-                />
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    WhatsApp / Telefone *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="(19) 99999-9999"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm text-slate-950 focus:outline-none focus:border-amber-500 font-medium"
+                  />
+                </div>
               </div>
-            </div>
+            </>
           )}
 
           <div>
