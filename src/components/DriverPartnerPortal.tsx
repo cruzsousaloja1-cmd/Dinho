@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity } from '../supabase';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
@@ -720,6 +720,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
+  const [isRegistering, setIsRegistering] = useState(false);
   const [registeredSuccess, setRegisteredSuccess] = useState(false);
 
   const handleRegAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -875,12 +876,15 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError(null);
     setComfortWarning(null);
 
-    if (!regName || !regPhone || !regCpf || !regModel || !regPlate || !regEmail || !regPassword) {
+    const cleanEmail = regEmail.replace(/\s+/g, '').trim().toLowerCase();
+    const cleanWhatsApp = regPhone.replace(/\D/g, '');
+
+    if (!regName || !cleanWhatsApp || !regCpf || !regModel || !regPlate || !cleanEmail || !regPassword) {
       setRegError('Por favor, preencha todos os campos obrigatórios (*).');
       return;
     }
@@ -890,12 +894,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       return;
     }
 
-    if (!isValidEmail(regEmail)) {
+    if (!isValidEmail(cleanEmail)) {
       setRegError('E-mail inválido! Informe um e-mail válido (ex: nome@dominio.com).');
       return;
     }
 
-    if (!isValidWhatsApp11(regPhone)) {
+    if (!isValidWhatsApp11(cleanWhatsApp)) {
       setRegError('WhatsApp inválido! Digite exatamente 11 dígitos com DDD + 9 (ex: 19999999999).');
       return;
     }
@@ -941,95 +945,110 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       return;
     }
 
-    const finalCategory = regCategory;
-    const comfortEligible = finalCategory === 'confort';
-    const reason = comfortEligible ? 'Aprovado para Confort (2020+).' : '';
-
-    const newDriver: Driver = {
-      id: '',
-      name: regName,
-      avatar: regAvatar,
-      phone: regPhone,
-      email: regEmail,
-      cpf: regCpf,
-      cnh: regCnh ? `${regCnh} (EAR Ativo)` : '',
-      category: finalCategory,
-      categoryConfigured: true,
-      requirementsConfirmed: true,
-      requirementsConfirmedAt: new Date().toISOString(),
-      vehicleModel: regModel,
-      vehiclePlate: regPlate.toUpperCase(),
-      vehicleColor: regColor || '',
-      vehicleYear: yearNum,
-      rating: 0,
-      totalRides: 0,
-      status: 'online',
-      lat: -23.0903,
-      lng: -47.2180,
-      weeklyPlanActive: true,
-      weeklyFeePaidAt: new Date().toISOString(),
-      weeklyFeeExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      weeklyPlanPrice: WEEKLY_FEE,
-      pixKey: regPixKey.trim() || regCpf,
-      trunkType: finalCategory === 'moto_entrega' ? regTrunkType : undefined,
-      earningsToday: 0,
-      earningsWeek: 0,
-      cnhVerified: true,
-      vehicleVerified: true,
-      criminalRecordClear: true,
-      registrationDate: new Date().toISOString().split('T')[0],
-      comfortEligible,
-      comfortEligibilityReason: reason,
-    };
-
-    // Determinar perfil e tipo para isolamento no sistema
-    const userRole: UserRole = (finalCategory === 'moto_passageiro' || finalCategory === 'moto_entrega') ? 'motoboy' : 'driver';
-    const userTipo: UserTipo = 
-      finalCategory === 'economica' ? 'motorista_economico' :
-      finalCategory === 'confort' ? 'motorista_confort' :
-      finalCategory === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas';
-
-    // Salvar no localStorage com id único race_user_${email} SEM auto-login (setActiveSession = false)
-    saveUserAccount({
-      id: newDriver.id,
-      name: newDriver.name,
-      email: newDriver.email,
-      phone: newDriver.phone,
-      password: regPassword,
-      role: userRole,
-      tipo: userTipo,
-      placa: newDriver.vehiclePlate,
-      avatar: newDriver.avatar,
-      rating: newDriver.rating,
-      driverData: newDriver,
-      createdAt: new Date().toISOString(),
-      aceitou_contrato: true,
-      aceitou_termos: true,
-      aceitou_lgpd: true,
-      data_aceite: new Date().toISOString(),
-    }, false);
-
-    onRegisterDriver(newDriver);
-    setRegisteredSuccess(false);
-
-    // Conforme solicitado: após cadastro, entrar com login e senha dentro do aplicativo
-    setLoginEmail(newDriver.email);
-    setLoginPassword('');
-    setLoginFeedback(null);
-    setLoginSuccessNotice(
-      `Cadastro de condutor (${newDriver.name}) realizado com sucesso! Para sua segurança, digite sua senha para entrar na sua conta.`
-    );
-    setActiveSubTab('login');
-
+    setIsRegistering(true);
     try {
-      confetti({
-        particleCount: 70,
-        spread: 75,
-        origin: { y: 0.6 },
+      const dupCheck = await checkDuplicateRegistrationSupabase({
+        email: cleanEmail,
+        whatsapp: cleanWhatsApp,
       });
-    } catch {
-      // safe
+      if (dupCheck.isDuplicate) {
+        setRegError(dupCheck.message || 'Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.');
+        return;
+      }
+
+      const finalCategory = regCategory;
+      const comfortEligible = finalCategory === 'confort';
+      const reason = comfortEligible ? 'Aprovado para Confort (2020+).' : '';
+
+      const newDriver: Driver = {
+        id: '',
+        name: regName.trim(),
+        avatar: regAvatar,
+        phone: cleanWhatsApp,
+        email: cleanEmail,
+        cpf: regCpf,
+        cnh: regCnh ? `${regCnh} (EAR Ativo)` : '',
+        category: finalCategory,
+        categoryConfigured: true,
+        requirementsConfirmed: true,
+        requirementsConfirmedAt: new Date().toISOString(),
+        vehicleModel: regModel,
+        vehiclePlate: regPlate.toUpperCase(),
+        vehicleColor: regColor || '',
+        vehicleYear: yearNum,
+        rating: 0,
+        totalRides: 0,
+        status: 'online',
+        lat: -23.0903,
+        lng: -47.2180,
+        weeklyPlanActive: true,
+        weeklyFeePaidAt: new Date().toISOString(),
+        weeklyFeeExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        weeklyPlanPrice: WEEKLY_FEE,
+        pixKey: regPixKey.trim() || regCpf,
+        trunkType: finalCategory === 'moto_entrega' ? regTrunkType : undefined,
+        earningsToday: 0,
+        earningsWeek: 0,
+        cnhVerified: true,
+        vehicleVerified: true,
+        criminalRecordClear: true,
+        registrationDate: new Date().toISOString().split('T')[0],
+        comfortEligible,
+        comfortEligibilityReason: reason,
+      };
+
+      // Determinar perfil e tipo para isolamento no sistema
+      const userRole: UserRole = (finalCategory === 'moto_passageiro' || finalCategory === 'moto_entrega') ? 'motoboy' : 'driver';
+      const userTipo: UserTipo = 
+        finalCategory === 'economica' ? 'motorista_economico' :
+        finalCategory === 'confort' ? 'motorista_confort' :
+        finalCategory === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas';
+
+      // Salvar no Supabase SEM auto-login (setActiveSession = false)
+      saveUserAccount({
+        id: newDriver.id,
+        name: newDriver.name,
+        email: cleanEmail,
+        phone: cleanWhatsApp,
+        whatsapp: cleanWhatsApp,
+        password: regPassword,
+        role: userRole,
+        tipo: userTipo,
+        placa: newDriver.vehiclePlate,
+        avatar: newDriver.avatar,
+        rating: newDriver.rating,
+        driverData: newDriver,
+        createdAt: new Date().toISOString(),
+        aceitou_contrato: true,
+        aceitou_termos: true,
+        aceitou_lgpd: true,
+        data_aceite: new Date().toISOString(),
+      }, false);
+
+      onRegisterDriver(newDriver);
+      setRegisteredSuccess(false);
+
+      // Conforme solicitado: após cadastro, entrar com login e senha dentro do aplicativo
+      setLoginEmail(cleanEmail);
+      setLoginPassword('');
+      setLoginFeedback(null);
+      setLoginSuccessNotice(
+        `Cadastro de condutor (${newDriver.name}) realizado com sucesso! Para sua segurança, digite sua senha para entrar na sua conta.`
+      );
+      setActiveSubTab('login');
+
+      try {
+        confetti({
+          particleCount: 70,
+          spread: 75,
+          origin: { y: 0.6 },
+        });
+      } catch {
+        // safe
+      }
+    } finally {
+      setIsRegistering(false);
     }
   };
 
@@ -3471,17 +3490,50 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   theme="light"
                 />
 
+                {regError && (
+                  <div className="bg-rose-50 border-2 border-rose-400 text-rose-800 text-sm p-4 rounded-2xl font-bold flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                      <span>{regError}</span>
+                    </div>
+                    {(regError.includes('cadastrado') || regError.includes('Entrar')) && (
+                      <div className="flex flex-wrap gap-2 pl-7">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLoginEmail(regEmail.replace(/\s+/g, '').trim().toLowerCase());
+                            setActiveSubTab('login');
+                            setRegError(null);
+                          }}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-bold cursor-pointer"
+                        >
+                          Ir para Entrar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsForgotPasswordOpen(true)}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-white border border-rose-300 text-rose-800 hover:bg-rose-100 font-bold cursor-pointer"
+                        >
+                          Esqueci minha senha
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Botão de Finalização com Categoria Específica */}
                 <button
                   type="submit"
-                  disabled={!regRequirementsConfirmed || !acceptedContract || !acceptedTerms || !acceptedLgpd}
+                  disabled={isRegistering || !regRequirementsConfirmed || !acceptedContract || !acceptedTerms || !acceptedLgpd}
                   className={`w-full font-heading font-black py-4 px-6 rounded-2xl transition-all text-sm sm:text-base border uppercase tracking-wider ${
-                    regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
+                    !isRegistering && regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
                       ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/25 border-blue-500 active:scale-[0.99]'
                       : 'bg-slate-300 text-slate-600 border-slate-400 cursor-not-allowed opacity-80'
                   }`}
                 >
-                  {regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
+                  {isRegistering
+                    ? 'VERIFICANDO E SALVANDO...'
+                    : regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
                     ? `Salvar e ficar ONLINE (${selectedGuide.title})`
                     : 'Aceite Exigências, Contrato, Termos e LGPD para Salvar'}
                 </button>

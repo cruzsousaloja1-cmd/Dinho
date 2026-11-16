@@ -332,9 +332,25 @@ SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.usuarios
-    WHERE lower(coalesce("e-mail", '')) = lower(trim(coalesce(p_email, '')))
-       OR lower(coalesce(email, '')) = lower(trim(coalesce(p_email, '')))
-       OR lower(coalesce(login, '')) = lower(trim(coalesce(p_email, '')))
+    WHERE lower(regexp_replace(coalesce("e-mail", ''), '\s+', '', 'g')) = lower(regexp_replace(coalesce(p_email, ''), '\s+', '', 'g'))
+       OR lower(regexp_replace(coalesce(email, ''), '\s+', '', 'g')) = lower(regexp_replace(coalesce(p_email, ''), '\s+', '', 'g'))
+       OR lower(regexp_replace(coalesce(login, ''), '\s+', '', 'g')) = lower(regexp_replace(coalesce(p_email, ''), '\s+', '', 'g'))
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.rpc_check_whatsapp_exists(p_whatsapp text)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.usuarios
+    WHERE length(regexp_replace(coalesce(p_whatsapp, ''), '[^0-9]', '', 'g')) >= 8
+      AND (
+        regexp_replace(coalesce(celular, ''), '[^0-9]', '', 'g') = regexp_replace(coalesce(p_whatsapp, ''), '[^0-9]', '', 'g')
+        OR regexp_replace(coalesce(whatsapp, ''), '[^0-9]', '', 'g') = regexp_replace(coalesce(p_whatsapp, ''), '[^0-9]', '', 'g')
+      )
   );
 $$;
 
@@ -761,7 +777,20 @@ export async function insertUsuarioSupabase(params: {
   data_aceite?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
-    const cleanEmail = params.email.trim().toLowerCase();
+    const cleanEmail = params.email.replace(/\s+/g, '').trim().toLowerCase();
+    const cleanCelularPre = (params.celular || params.whatsapp || '').trim();
+    const cleanWhatsappPre = (params.whatsapp || params.celular || '').trim();
+    const cleanLoginPre = (params.login || cleanEmail).replace(/\s+/g, '').trim().toLowerCase();
+
+    const dupCheck = await checkDuplicateRegistrationSupabase({
+      email: cleanEmail,
+      whatsapp: cleanWhatsappPre || cleanCelularPre,
+      login: cleanLoginPre,
+    });
+    if (dupCheck.isDuplicate) {
+      return { success: false, error: dupCheck.message };
+    }
+
     if (params.exigencias_confirmadas === true) {
       setDriverRequirementsConfirmedLocal(cleanEmail, true);
     }
@@ -935,6 +964,20 @@ export async function insertUsuarioSupabase(params: {
         return { success: false, error: 'Não foi possível concluir o cadastro com as colunas atuais do banco.' };
       }
 
+      if (error.code === '23505' || msg.toLowerCase().includes('duplicate key') || msg.toLowerCase().includes('already exists')) {
+        const lowerMsg = msg.toLowerCase();
+        if (lowerMsg.includes('celular') || lowerMsg.includes('whatsapp') || lowerMsg.includes('telefone')) {
+          return {
+            success: false,
+            error: 'Este WhatsApp já está cadastrado. Use outro WhatsApp ou entre com seu cadastro.',
+          };
+        }
+        return {
+          success: false,
+          error: 'Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.',
+        };
+      }
+
       console.log('Erro Supabase insertUsuarioSupabase:', error);
       lastSupabaseError = formatSupabaseError(error);
       return { success: false, error: lastSupabaseError };
@@ -955,7 +998,7 @@ export async function loginUsuarioSupabase(
   emailInput: string,
   senhaInput: string
 ): Promise<{ success: boolean; data?: any; error?: string }> {
-  const cleanEmail = emailInput.trim().toLowerCase();
+  const cleanEmail = emailInput.replace(/\s+/g, '').trim().toLowerCase();
   if (!cleanEmail || !senhaInput) {
     return { success: false, error: 'Informe login/e-mail e senha.' };
   }
@@ -1012,12 +1055,12 @@ export async function loginUsuarioSupabase(
           const res = await supabase
             .from('usuarios')
             .select(selectStr)
-            .eq(lookupCol, cleanEmail)
-            .maybeSingle();
+            .ilike(lookupCol, cleanEmail)
+            .limit(1);
 
           if (!res.error) {
-            if (res.data) {
-              foundRow = res.data;
+            if (res.data && res.data.length > 0) {
+              foundRow = res.data[0];
             }
             break;
           }
@@ -1046,13 +1089,13 @@ export async function loginUsuarioSupabase(
     }
 
     if (!foundRow) {
-      return { success: false, error: 'Usuário não encontrado ou senha incorreta no Supabase.' };
+      return { success: false, error: 'E-mail não encontrado, faça cadastro' };
     }
 
     const storedSenha = String(foundRow.senha || '');
     const isPasswordValid = await verifyPasswordBcrypt(senhaInput, storedSenha);
     if (!isPasswordValid) {
-      return { success: false, error: 'Usuário não encontrado ou senha incorreta no Supabase.' };
+      return { success: false, error: 'Senha incorreta. Tente novamente ou clique em Esqueci minha senha.' };
     }
 
     // Migração automática transparente: se a conta antiga tinha senha sem bcrypt, atualiza para hash bcrypt
@@ -1501,20 +1544,139 @@ export async function updateDriverOnlineStatusSupabase(params: {
   }
 }
 
+function normalizeEmailNoSpaces(email: string): string {
+  return String(email || '').replace(/\s+/g, '').trim().toLowerCase();
+}
+
+function normalizePhoneDigitsOnly(phone: string): string {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function phonesDigitsMatch(a: string, b: string): boolean {
+  const da = normalizePhoneDigitsOnly(a);
+  const db = normalizePhoneDigitsOnly(b);
+  if (da.length < 8 || db.length < 8) return false;
+  if (da === db) return true;
+  const daNo55 = da.startsWith('55') && da.length >= 12 ? da.slice(2) : da;
+  const dbNo55 = db.startsWith('55') && db.length >= 12 ? db.slice(2) : db;
+  return daNo55 === dbNo55;
+}
+
 /**
- * Verifica se e-mail ou login já está cadastrado no Supabase (via RPC segura ou consulta sem senha)
+ * Verifica se e-mail ou login já está cadastrado no Supabase (sem diferenciar maiúscula/minúscula e sem espaço)
  */
 export async function checkEmailExistsSupabase(emailOrLogin: string): Promise<boolean> {
-  const clean = emailOrLogin.trim().toLowerCase();
+  const clean = normalizeEmailNoSpaces(emailOrLogin);
   if (!clean) return false;
   try {
     const rpcRes = await supabase.rpc('rpc_check_email_exists', { p_email: clean });
-    if (!rpcRes.error && typeof rpcRes.data === 'boolean') {
-      return rpcRes.data;
+    if (!rpcRes.error && rpcRes.data === true) {
+      return true;
     }
   } catch {}
+
   const existing = await getUsuarioSupabase(clean);
-  return Boolean(existing);
+  if (existing) return true;
+
+  try {
+    const allRes = await selectSafeUsuariosRows();
+    if (Array.isArray(allRes.data)) {
+      const matched = allRes.data.some((row) => {
+        const em1 = normalizeEmailNoSpaces(row.email || '');
+        const em2 = normalizeEmailNoSpaces(row['e-mail'] || '');
+        const lg = normalizeEmailNoSpaces(row.login || '');
+        return em1 === clean || em2 === clean || lg === clean;
+      });
+      if (matched) return true;
+    }
+  } catch {}
+
+  return false;
+}
+
+/**
+ * Verifica se WhatsApp/celular já está cadastrado no Supabase (apenas números)
+ */
+export async function checkWhatsAppExistsSupabase(whatsapp: string): Promise<boolean> {
+  const cleanDigits = normalizePhoneDigitsOnly(whatsapp);
+  if (cleanDigits.length < 8) return false;
+
+  try {
+    const rpcRes = await supabase.rpc('rpc_check_whatsapp_exists', { p_whatsapp: cleanDigits });
+    if (!rpcRes.error && rpcRes.data === true) {
+      return true;
+    }
+  } catch {}
+
+  try {
+    const allRes = await selectSafeUsuariosRows();
+    if (Array.isArray(allRes.data)) {
+      const matched = allRes.data.some(
+        (row) =>
+          phonesDigitsMatch(row.celular || '', cleanDigits) ||
+          phonesDigitsMatch(row.whatsapp || '', cleanDigits) ||
+          phonesDigitsMatch(row.telefone || '', cleanDigits)
+      );
+      if (matched) return true;
+    }
+  } catch {}
+
+  try {
+    const rpcDrivers = await supabase.rpc('rpc_get_online_drivers');
+    if (!rpcDrivers.error && Array.isArray(rpcDrivers.data)) {
+      const matched = rpcDrivers.data.some(
+        (row: any) =>
+          phonesDigitsMatch(row.celular || '', cleanDigits) ||
+          phonesDigitsMatch(row.whatsapp || '', cleanDigits)
+      );
+      if (matched) return true;
+    }
+  } catch {}
+
+  return false;
+}
+
+/**
+ * Verificação única de duplicidade antes de qualquer cadastro (E-mail e WhatsApp)
+ */
+export async function checkDuplicateRegistrationSupabase(params: {
+  email: string;
+  whatsapp: string;
+  login?: string;
+}): Promise<{
+  isDuplicate: boolean;
+  field?: 'email' | 'whatsapp';
+  message?: string;
+}> {
+  const cleanEmail = normalizeEmailNoSpaces(params.email);
+  const cleanWhatsapp = normalizePhoneDigitsOnly(params.whatsapp);
+  const cleanLogin = normalizeEmailNoSpaces(params.login || '');
+
+  const [emailExists, whatsappExists, loginExists] = await Promise.all([
+    cleanEmail ? checkEmailExistsSupabase(cleanEmail).catch(() => false) : Promise.resolve(false),
+    cleanWhatsapp.length >= 8 ? checkWhatsAppExistsSupabase(cleanWhatsapp).catch(() => false) : Promise.resolve(false),
+    cleanLogin && cleanLogin !== cleanEmail
+      ? checkEmailExistsSupabase(cleanLogin).catch(() => false)
+      : Promise.resolve(false),
+  ]);
+
+  if (emailExists || loginExists) {
+    return {
+      isDuplicate: true,
+      field: 'email',
+      message: 'Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.',
+    };
+  }
+
+  if (whatsappExists) {
+    return {
+      isDuplicate: true,
+      field: 'whatsapp',
+      message: 'Este WhatsApp já está cadastrado. Use outro WhatsApp ou entre com seu cadastro.',
+    };
+  }
+
+  return { isDuplicate: false };
 }
 
 /**

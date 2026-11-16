@@ -3,7 +3,7 @@ import { Driver, AppUser, VehicleCategory } from '../types';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveSessionUser, verifyUserLogin, mapSupabaseRowToAppUser } from '../services/userService';
-import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase, checkEmailExistsSupabase } from '../supabase';
+import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase, checkEmailExistsSupabase, checkDuplicateRegistrationSupabase } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
@@ -128,8 +128,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setAdminRegSuccessMessage(null);
 
     const cleanName = adminRegName.trim();
-    const cleanEmail = adminRegEmail.trim().toLowerCase();
-    const cleanWhatsApp = adminRegWhatsApp.trim();
+    const cleanEmail = adminRegEmail.replace(/\s+/g, '').trim().toLowerCase();
+    const cleanWhatsApp = adminRegWhatsApp.replace(/\D/g, '').trim();
 
     if (!cleanName || !cleanEmail || !cleanWhatsApp || !adminRegPassword || !adminRegConfirmPassword) {
       setAdminRegErrorMessage('Por favor, preencha todos os campos obrigatórios.');
@@ -163,12 +163,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
     setIsCreatingAdmin(true);
     try {
-      // Verifica se já existe conta com este e-mail no Supabase
-      const alreadyExists = await checkEmailExistsSupabase(cleanEmail).catch(() => false);
-      if (alreadyExists) {
-        setAdminRegErrorMessage(
-          'Já existe um usuário cadastrado com este e-mail. Volte para ENTRAR NO ADM ou use Esqueci a senha.'
-        );
+      // Verifica se já existe conta com este e-mail ou WhatsApp no Supabase
+      const dupCheck = await checkDuplicateRegistrationSupabase({
+        email: cleanEmail,
+        whatsapp: cleanWhatsApp,
+      });
+      if (dupCheck.isDuplicate && dupCheck.message) {
+        setAdminRegErrorMessage(dupCheck.message);
         return;
       }
 
@@ -186,8 +187,12 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       if (!supabaseRes.success) {
         console.log('Erro Supabase ADM:', supabaseRes.error);
         const safeErr = String(supabaseRes.error || 'Falha ao salvar no banco de dados');
+        const isFriendlyDup =
+          safeErr.includes('já está cadastrado') || safeErr.includes('já está em uso');
         setAdminRegErrorMessage(
-          safeErr.includes('42703') || safeErr.toLowerCase().includes('does not exist')
+          isFriendlyDup
+            ? safeErr
+            : safeErr.includes('42703') || safeErr.toLowerCase().includes('does not exist')
             ? 'Não foi possível concluir o cadastro ADM com as colunas atuais do banco.'
             : `Erro Supabase: ${safeErr}`
         );
@@ -232,7 +237,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setLoginErrorMessage(null);
     setLoginSuccessMessage(null);
 
-    const cleanIdentifier = loginIdentifier.trim().toLowerCase();
+    const cleanIdentifier = loginIdentifier.replace(/\s+/g, '').trim().toLowerCase();
     if (!cleanIdentifier || !loginPassword) {
       setLoginErrorMessage('Por favor, informe seu E-mail ou Login e sua senha.');
       return;
@@ -314,11 +319,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           return;
         }
 
-        setLoginErrorMessage(
-          cleanIdentifier === 'admin@race.com.br'
-            ? 'Acesso restrito — senha incorreta ou conta ADM ainda não criada.'
-            : 'Acesso restrito'
-        );
+        setLoginErrorMessage('E-mail não encontrado, faça cadastro');
         return;
       }
 
@@ -348,9 +349,14 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           return;
         }
 
+        if (cloudAdmin.error === 'E-mail não encontrado, faça cadastro') {
+          setLoginErrorMessage('E-mail não encontrado, faça cadastro');
+          return;
+        }
+
         const result = verifyUserLogin(cleanIdentifier, loginPassword);
         if (!result.success || !result.user) {
-          setLoginErrorMessage(result.error || 'Credenciais inválidas para o Administrador.');
+          setLoginErrorMessage(cloudAdmin.error || result.error || 'Credenciais inválidas para o Administrador.');
           return;
         }
         setLoginSuccessMessage('Acesso ADM liberado!');
@@ -365,19 +371,12 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const cloudRes = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
       if (!cloudRes.success || !cloudRes.data) {
         // Fallback local apenas se não houver usuário na nuvem (ou offline)
-        const cloudExists = await getUsuarioSupabase(cleanIdentifier).catch(() => null);
+        const cloudExists = await checkEmailExistsSupabase(cleanIdentifier).catch(() => false);
         if (!cloudExists) {
-          const localRes = verifyUserLogin(cleanIdentifier, loginPassword);
-          if (localRes.success && localRes.user) {
-            setLoginSuccessMessage('Acesso autorizado!');
-            try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
-            setTimeout(() => {
-              onLoginSuccess(localRes.user!, localRes.driver);
-            }, 300);
-            return;
-          }
+          setLoginErrorMessage('E-mail não encontrado, faça cadastro');
+          return;
         }
-        setLoginErrorMessage(cloudRes.error || 'Usuário não encontrado ou senha incorreta no Supabase.');
+        setLoginErrorMessage(cloudRes.error || 'Senha incorreta. Tente novamente ou clique em Esqueci minha senha.');
         return;
       }
 
@@ -423,9 +422,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     }
 
     const cleanName = regName.trim();
-    const cleanEmail = regEmail.trim().toLowerCase();
-    const cleanWhatsApp = regWhatsApp.trim();
-    const cleanLogin = regLogin.trim().toLowerCase();
+    const cleanEmail = regEmail.replace(/\s+/g, '').trim().toLowerCase();
+    const cleanWhatsApp = regWhatsApp.replace(/\D/g, '').trim();
+    const cleanLogin = regLogin.replace(/\s+/g, '').trim().toLowerCase();
 
     if (!cleanName || !cleanEmail || !cleanWhatsApp || !cleanLogin || !regPassword) {
       setRegErrorMessage('Por favor, preencha todos os 5 campos obrigatórios (*).');
@@ -459,10 +458,14 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
     setIsRegistering(true);
     try {
-      // 1. Verifica duplicidade rápida no Supabase
-      const alreadyExists = await checkEmailExistsSupabase(cleanEmail).catch(() => false);
-      if (alreadyExists) {
-        setRegErrorMessage('Já existe uma conta no sistema com este e-mail. Faça login para continuar.');
+      // 1. Verifica duplicidade de e-mail e WhatsApp no Supabase ANTES de salvar
+      const dupCheck = await checkDuplicateRegistrationSupabase({
+        email: cleanEmail,
+        whatsapp: cleanWhatsApp,
+        login: cleanLogin,
+      });
+      if (dupCheck.isDuplicate && dupCheck.message) {
+        setRegErrorMessage(dupCheck.message);
         return;
       }
 
@@ -526,8 +529,12 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       if (!supabaseRes.success) {
         console.log('Erro Supabase cadastro:', supabaseRes.error);
         const safeErr = String(supabaseRes.error || 'Falha desconhecida ao salvar usuário.');
+        const isFriendlyDup =
+          safeErr.includes('já está cadastrado') || safeErr.includes('já está em uso');
         setRegErrorMessage(
-          safeErr.includes('42703') || safeErr.toLowerCase().includes('does not exist')
+          isFriendlyDup
+            ? safeErr
+            : safeErr.includes('42703') || safeErr.toLowerCase().includes('does not exist')
             ? 'Não foi possível concluir o cadastro com as colunas atuais do banco.'
             : `Erro Supabase: ${safeErr}`
         );
@@ -996,6 +1003,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 theme="dark"
               />
 
+              {adminRegErrorMessage && (
+                <div className="bg-red-950/90 border-2 border-red-500 text-red-200 text-xs sm:text-sm p-3.5 rounded-2xl font-bold flex items-start gap-2.5 shadow-md">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <span>{adminRegErrorMessage}</span>
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={isCreatingAdmin || !adminAcceptedContract || !adminAcceptedTerms || !adminAcceptedLgpd}
@@ -1396,6 +1410,41 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 <div className="p-3 bg-amber-950/60 border border-amber-500/70 rounded-2xl text-xs text-amber-200 flex items-center gap-2.5 font-bold">
                   <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>Adicione sua foto para continuar</span>
+                </div>
+              )}
+
+              {regErrorMessage && (
+                <div className="bg-red-950/90 border-2 border-red-500 text-red-200 text-xs sm:text-sm p-3.5 rounded-2xl font-bold space-y-2 shadow-md">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>{regErrorMessage}</span>
+                  </div>
+                  {(regErrorMessage.includes('Entrar') || regErrorMessage.includes('Esqueci')) && (
+                    <div className="flex items-center gap-2 flex-wrap pl-6">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLoginIdentifier(regEmail.replace(/\s+/g, '').trim().toLowerCase());
+                          setLoginErrorMessage(null);
+                          setRegErrorMessage(null);
+                          setViewMode('login');
+                        }}
+                        className="px-3 py-1 rounded-lg bg-[#ff6a00] hover:bg-[#e05e00] text-white text-xs font-heading font-black cursor-pointer"
+                      >
+                        Entrar agora
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLoginIdentifier(regEmail.replace(/\s+/g, '').trim().toLowerCase());
+                          setIsForgotPasswordOpen(true);
+                        }}
+                        className="px-3 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-heading font-bold border border-zinc-600 cursor-pointer"
+                      >
+                        Esqueci minha senha
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -29,6 +29,7 @@ import { verifyUserLoginAsync, saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { LegalConsentSection } from './LegalConsentSection';
+import { checkDuplicateRegistrationSupabase } from '../supabase';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -127,19 +128,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     if (mode === 'register') {
+      const cleanEmail = email.replace(/\s+/g, '').trim().toLowerCase();
+      const cleanPhone = phone.replace(/\D/g, '');
+
       if (!avatar) {
         setErrorMessage('Adicione sua foto para concluir o cadastro.');
         return;
       }
-      if (!name || !phone) {
+      if (!name || !cleanPhone) {
         setErrorMessage('Por favor, informe seu nome completo e telefone.');
         return;
       }
-      if (!isValidEmail(email)) {
+      if (!isValidEmail(cleanEmail)) {
         setErrorMessage('E-mail inválido. Digite um e-mail completo (ex: nome@dominio.com).');
         return;
       }
-      if (!isValidWhatsApp11(phone)) {
+      if (!isValidWhatsApp11(cleanPhone)) {
         setErrorMessage('WhatsApp inválido! Informe exatamente 11 dígitos com DDD + 9 (ex: 19999999999).');
         return;
       }
@@ -155,105 +159,121 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorMessage('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
         return;
       }
-    }
 
-    setIsSubmitting(true);
-
-    let createdDriver: Driver | undefined = undefined;
-    let finalCategory = driverCategory;
-    let comfortEligible = false;
-    let reason = '';
-
-    if (role === 'driver') {
-      const yearNum = parseInt(vehicleYear, 10) || 2023;
-      if (driverCategory === 'confort') {
-        const check = validateComfortEligibility(vehicleModel, yearNum);
-        if (!check.eligible) {
-          finalCategory = 'economica';
-          comfortEligible = false;
-          reason = `Homologado na Econômica: ${check.ruleDescription}`;
-          setComfortNotice(
-            `Aviso Confort: Seu ${vehicleModel} (${yearNum}) não atende à exigência mínima (${check.ruleDescription}). Homologado na categoria RACE Econômica (85% para você, 15% Race)!`
-          );
-        } else {
-          comfortEligible = true;
-          reason = `Aprovado Confort (${check.badgeText})`;
-        }
-      }
-
-      createdDriver = {
-        id: '',
-        name: name || (email.split('@')[0].toUpperCase()),
-        avatar: avatar,
-        phone: phone || '',
-        email,
-        cpf: '',
-        cnh: cnh ? `${cnh} (EAR Aprovado)` : '',
-        category: finalCategory,
-        vehicleModel,
-        vehiclePlate: vehiclePlate.toUpperCase(),
-        vehicleColor: '',
-        vehicleYear: parseInt(vehicleYear, 10) || 2023,
-        rating: 0,
-        totalRides: 0,
-        status: 'online',
-        lat: -23.5615,
-        lng: -46.6558,
-        weeklyPlanActive: true,
-        weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        weeklyPlanPrice: WEEKLY_SUBSCRIPTION_PRICE,
-        earningsToday: 0,
-        earningsWeek: 0,
-        cnhVerified: true,
-        vehicleVerified: true,
-        criminalRecordClear: true,
-        registrationDate: new Date().toISOString().split('T')[0],
-        comfortEligible,
-        comfortEligibilityReason: reason,
-      };
-    }
-
-    const userTipo = role === 'driver' ? 'driver' : 'passenger';
-    const appUser: AppUser = {
-      id: '',
-      name: name || (email.split('@')[0]),
-      email,
-      phone: phone || '',
-      role,
-      tipo: userTipo,
-      avatar: avatar,
-      rating: 0,
-      driverData: createdDriver,
-    };
-
-    saveUserAccount({
-      id: appUser.id,
-      name: appUser.name,
-      email: appUser.email,
-      phone: appUser.phone,
-      role: appUser.role,
-      tipo: userTipo,
-      placa: createdDriver?.vehiclePlate || '',
-      password,
-      avatar: avatar,
-      rating: 0,
-      driverData: createdDriver,
-      createdAt: new Date().toISOString(),
-      aceitou_contrato: mode === 'register' ? true : undefined,
-      aceitou_termos: mode === 'register' ? true : undefined,
-      aceitou_lgpd: mode === 'register' ? true : undefined,
-      data_aceite: mode === 'register' ? new Date().toISOString() : undefined,
-    }, true);
-
-    setTimeout(() => {
-      setIsSubmitting(false);
+      setIsSubmitting(true);
       try {
-        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-      } catch {}
-      // User requested: "Após realização de cadastro com login e senha todos entrarão no aplicativo direto na página de atendimento de corridas"
-      onAuthSuccess(appUser, createdDriver);
-      onClose();
-    }, 400);
+        const dupCheck = await checkDuplicateRegistrationSupabase({
+          email: cleanEmail,
+          whatsapp: cleanPhone,
+        });
+        if (dupCheck.isDuplicate) {
+          setErrorMessage(
+            dupCheck.message || 'Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.'
+          );
+          return;
+        }
+
+        let createdDriver: Driver | undefined = undefined;
+        let finalCategory = driverCategory;
+        let comfortEligible = false;
+        let reason = '';
+
+        if (role === 'driver') {
+          const yearNum = parseInt(vehicleYear, 10) || 2023;
+          if (driverCategory === 'confort') {
+            const check = validateComfortEligibility(vehicleModel, yearNum);
+            if (!check.eligible) {
+              finalCategory = 'economica';
+              comfortEligible = false;
+              reason = `Homologado na Econômica: ${check.ruleDescription}`;
+              setComfortNotice(
+                `Aviso Confort: Seu ${vehicleModel} (${yearNum}) não atende à exigência mínima (${check.ruleDescription}). Homologado na categoria RACE Econômica (85% para você, 15% Race)!`
+              );
+            } else {
+              comfortEligible = true;
+              reason = `Aprovado Confort (${check.badgeText})`;
+            }
+          }
+
+          createdDriver = {
+            id: '',
+            name: name.trim() || (cleanEmail.split('@')[0].toUpperCase()),
+            avatar: avatar,
+            phone: cleanPhone,
+            email: cleanEmail,
+            cpf: '',
+            cnh: cnh ? `${cnh} (EAR Aprovado)` : '',
+            category: finalCategory,
+            vehicleModel,
+            vehiclePlate: vehiclePlate.toUpperCase(),
+            vehicleColor: '',
+            vehicleYear: parseInt(vehicleYear, 10) || 2023,
+            rating: 0,
+            totalRides: 0,
+            status: 'online',
+            lat: -23.5615,
+            lng: -46.6558,
+            weeklyPlanActive: true,
+            weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            weeklyPlanPrice: WEEKLY_SUBSCRIPTION_PRICE,
+            earningsToday: 0,
+            earningsWeek: 0,
+            cnhVerified: true,
+            vehicleVerified: true,
+            criminalRecordClear: true,
+            registrationDate: new Date().toISOString().split('T')[0],
+            comfortEligible,
+            comfortEligibilityReason: reason,
+          };
+        }
+
+        const userTipo = role === 'driver' ? 'driver' : 'passenger';
+        const appUser: AppUser = {
+          id: '',
+          name: name.trim() || (cleanEmail.split('@')[0]),
+          email: cleanEmail,
+          phone: cleanPhone,
+          whatsapp: cleanPhone,
+          role,
+          tipo: userTipo,
+          avatar: avatar,
+          rating: 0,
+          driverData: createdDriver,
+        };
+
+        saveUserAccount({
+          id: appUser.id,
+          name: appUser.name,
+          email: cleanEmail,
+          phone: cleanPhone,
+          whatsapp: cleanPhone,
+          role: appUser.role,
+          tipo: userTipo,
+          placa: createdDriver?.vehiclePlate || '',
+          password,
+          avatar: avatar,
+          rating: 0,
+          driverData: createdDriver,
+          createdAt: new Date().toISOString(),
+          aceitou_contrato: true,
+          aceitou_termos: true,
+          aceitou_lgpd: true,
+          data_aceite: new Date().toISOString(),
+        }, true);
+
+        setTimeout(() => {
+          setIsSubmitting(false);
+          try {
+            confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+          } catch {}
+          onAuthSuccess(appUser, createdDriver);
+          onClose();
+        }, 400);
+        return;
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
   };
 
 
@@ -571,6 +591,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               onChangeLgpd={setAcceptedLgpd}
               theme="light"
             />
+          )}
+
+          {errorMessage && mode === 'register' && (
+            <div className="bg-rose-50 border-2 border-rose-400 text-rose-800 text-xs sm:text-sm p-3.5 rounded-2xl font-bold flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+              {(errorMessage.includes('cadastrado') || errorMessage.includes('Entrar')) && (
+                <div className="flex flex-wrap gap-2 pl-7">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('login');
+                      setErrorMessage(null);
+                    }}
+                    className="text-xs px-3 py-1 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-bold cursor-pointer"
+                  >
+                    Entrar agora
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsForgotPasswordOpen(true)}
+                    className="text-xs px-3 py-1 rounded-lg bg-white border border-rose-300 text-rose-800 hover:bg-rose-100 font-bold cursor-pointer"
+                  >
+                    Esqueci minha senha
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Submit Action */}

@@ -7,6 +7,7 @@ import { saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { LegalConsentSection } from './LegalConsentSection';
+import { checkDuplicateRegistrationSupabase } from '../supabase';
 
 interface MotoboyRegisterViewProps {
   onRegisterSuccess: (user: AppUser, newMotoboy: Driver) => void;
@@ -32,6 +33,7 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -42,7 +44,7 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
     } catch {}
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -51,9 +53,9 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
       return;
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = email.replace(/\s+/g, '').trim().toLowerCase();
     const cleanName = name.trim();
-    const cleanPhone = phone.trim();
+    const cleanPhone = phone.replace(/\D/g, '');
     const cleanPlate = motoPlate.trim().toUpperCase();
     const cleanModel = motoModel.trim() || 'Honda CG 160 Fan';
     const cleanCnh = cnh.trim();
@@ -83,79 +85,95 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
       return;
     }
 
-    if (existingDrivers.some((d) => d.email.toLowerCase() === cleanEmail)) {
-      setErrorMessage('Já existe uma conta cadastrada com este e-mail. Faça login para continuar.');
+    if (existingDrivers.some((d) => d.email.replace(/\s+/g, '').trim().toLowerCase() === cleanEmail)) {
+      setErrorMessage('Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.');
       return;
     }
 
-    // Cria conta de Motoboy Parceiro (RACE Flash Entregas & Moto Passageiro)
-    const newMotoboy: Driver = {
-      id: '',
-      name: cleanName,
-      avatar: avatar,
-      phone: cleanPhone,
-      email: cleanEmail,
-      cpf: '',
-      cnh: `${cleanCnh} - Categoria A (EAR)`,
-      category: 'moto_entrega',
-      vehicleModel: cleanModel,
-      vehiclePlate: cleanPlate,
-      vehicleColor: '',
-      vehicleYear: 2024,
-      rating: 0,
-      totalRides: 0,
-      status: 'online',
-      lat: -23.0903,
-      lng: -47.2180,
-      weeklyPlanActive: true,
-      weeklyPlanExpiresAt: null,
-      weeklyFeePaidAt: null,
-      weeklyFeeExpiresAt: null,
-      weeklyPlanPrice: 0,
-      earningsToday: 0,
-      earningsWeek: 0,
-      cnhVerified: true,
-      vehicleVerified: true,
-      criminalRecordClear: true,
-      registrationDate: new Date().toISOString().split('T')[0],
-    };
-
-    const appUser: AppUser = {
-      id: newMotoboy.id,
-      name: newMotoboy.name,
-      email: newMotoboy.email,
-      phone: newMotoboy.phone,
-      role: 'motoboy',
-      tipo: 'motoboy',
-      avatar: avatar,
-      rating: 0,
-      driverData: newMotoboy,
-    };
-
-    saveUserAccount({
-      id: appUser.id,
-      name: appUser.name,
-      email: appUser.email,
-      phone: appUser.phone,
-      role: 'motoboy',
-      tipo: 'motoboy',
-      placa: cleanPlate,
-      password,
-      avatar: avatar,
-      rating: 0,
-      driverData: newMotoboy,
-      createdAt: new Date().toISOString(),
-      aceitou_contrato: true,
-      aceitou_termos: true,
-      aceitou_lgpd: true,
-      data_aceite: new Date().toISOString(),
-    }, true);
-
+    setIsSubmitting(true);
     try {
-      confetti({ particleCount: 75, spread: 80, origin: { y: 0.6 } });
-    } catch {}
+      const dupCheck = await checkDuplicateRegistrationSupabase({
+        email: cleanEmail,
+        whatsapp: cleanPhone,
+      });
+      if (dupCheck.isDuplicate) {
+        setErrorMessage(dupCheck.message || 'Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.');
+        return;
+      }
 
-    onRegisterSuccess(appUser, newMotoboy);
+      // Cria conta de Motoboy Parceiro (RACE Flash Entregas & Moto Passageiro)
+      const newMotoboy: Driver = {
+        id: '',
+        name: cleanName,
+        avatar: avatar,
+        phone: cleanPhone,
+        email: cleanEmail,
+        cpf: '',
+        cnh: `${cleanCnh} - Categoria A (EAR)`,
+        category: 'moto_entrega',
+        vehicleModel: cleanModel,
+        vehiclePlate: cleanPlate,
+        vehicleColor: '',
+        vehicleYear: 2024,
+        rating: 0,
+        totalRides: 0,
+        status: 'online',
+        lat: -23.0903,
+        lng: -47.2180,
+        weeklyPlanActive: true,
+        weeklyPlanExpiresAt: null,
+        weeklyFeePaidAt: null,
+        weeklyFeeExpiresAt: null,
+        weeklyPlanPrice: 0,
+        earningsToday: 0,
+        earningsWeek: 0,
+        cnhVerified: true,
+        vehicleVerified: true,
+        criminalRecordClear: true,
+        registrationDate: new Date().toISOString().split('T')[0],
+      };
+
+      const appUser: AppUser = {
+        id: newMotoboy.id,
+        name: newMotoboy.name,
+        email: newMotoboy.email,
+        phone: newMotoboy.phone,
+        whatsapp: cleanPhone,
+        role: 'motoboy',
+        tipo: 'motoboy',
+        avatar: avatar,
+        rating: 0,
+        driverData: newMotoboy,
+      };
+
+      saveUserAccount({
+        id: appUser.id,
+        name: appUser.name,
+        email: cleanEmail,
+        phone: cleanPhone,
+        whatsapp: cleanPhone,
+        role: 'motoboy',
+        tipo: 'motoboy',
+        placa: cleanPlate,
+        password,
+        avatar: avatar,
+        rating: 0,
+        driverData: newMotoboy,
+        createdAt: new Date().toISOString(),
+        aceitou_contrato: true,
+        aceitou_termos: true,
+        aceitou_lgpd: true,
+        data_aceite: new Date().toISOString(),
+      }, true);
+
+      try {
+        confetti({ particleCount: 75, spread: 80, origin: { y: 0.6 } });
+      } catch {}
+
+      onRegisterSuccess(appUser, newMotoboy);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -333,17 +351,26 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
             theme="dark"
           />
 
+          {errorMessage && (
+            <div className="bg-red-950/90 border border-red-500 text-red-200 text-xs sm:text-sm p-3.5 rounded-xl flex items-center gap-2 font-bold">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
           {/* BOTÃO CADASTRAR */}
           <button
             type="submit"
-            disabled={!acceptedContract || !acceptedTerms || !acceptedLgpd}
+            disabled={isSubmitting || !acceptedContract || !acceptedTerms || !acceptedLgpd}
             className={`w-full font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all uppercase tracking-wider block mt-4 ${
-              acceptedContract && acceptedTerms && acceptedLgpd
+              !isSubmitting && acceptedContract && acceptedTerms && acceptedLgpd
                 ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
                 : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
             }`}
           >
-            {acceptedContract && acceptedTerms && acceptedLgpd
+            {isSubmitting
+              ? 'VERIFICANDO CADASTRO...'
+              : acceptedContract && acceptedTerms && acceptedLgpd
               ? 'CONCLUIR CADASTRO MOTOBOY'
               : 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'}
           </button>

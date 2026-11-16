@@ -6,6 +6,7 @@ import { saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { LegalConsentSection } from './LegalConsentSection';
+import { checkDuplicateRegistrationSupabase } from '../supabase';
 
 interface PassengerRegisterViewProps {
   onRegisterSuccess: (user: AppUser) => void;
@@ -29,6 +30,7 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -39,7 +41,7 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
     } catch {}
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -48,9 +50,9 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       return;
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = email.replace(/\s+/g, '').trim().toLowerCase();
     const cleanName = name.trim();
-    const cleanPhone = phone.trim();
+    const cleanPhone = phone.replace(/\D/g, '');
 
     if (!cleanName || !cleanEmail || !cleanPhone || !password || !confirmPassword) {
       setErrorMessage('Por favor, preencha todos os campos obrigatórios.');
@@ -82,47 +84,63 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       return;
     }
 
-    if (existingPassengers.some((p) => p.email.toLowerCase() === cleanEmail)) {
-      setErrorMessage('Já existe uma conta cadastrada com este e-mail. Faça login para continuar.');
+    if (existingPassengers.some((p) => p.email.replace(/\s+/g, '').trim().toLowerCase() === cleanEmail)) {
+      setErrorMessage('Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.');
       return;
     }
 
-    const newPassenger: AppUser = {
-      id: '',
-      name: cleanName,
-      email: cleanEmail,
-      phone: cleanPhone,
-      role: 'passenger',
-      tipo: 'passenger',
-      avatar: avatar,
-      rating: 0,
-    };
-
-    // Salva direto no Supabase (sem logar automaticamente)
-    saveUserAccount({
-      id: newPassenger.id,
-      name: newPassenger.name,
-      email: newPassenger.email,
-      phone: newPassenger.phone,
-      role: 'passenger',
-      tipo: 'passenger',
-      placa: '',
-      password: password,
-      avatar: avatar,
-      rating: 0,
-      rides: [],
-      createdAt: new Date().toISOString(),
-      aceitou_contrato: true,
-      aceitou_termos: true,
-      aceitou_lgpd: true,
-      data_aceite: new Date().toISOString(),
-    }, false);
-
+    setIsSubmitting(true);
     try {
-      confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });
-    } catch {}
+      const dupCheck = await checkDuplicateRegistrationSupabase({
+        email: cleanEmail,
+        whatsapp: cleanPhone,
+      });
+      if (dupCheck.isDuplicate) {
+        setErrorMessage(dupCheck.message || 'Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.');
+        return;
+      }
 
-    onRegisterSuccess(newPassenger);
+      const newPassenger: AppUser = {
+        id: '',
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        whatsapp: cleanPhone,
+        role: 'passenger',
+        tipo: 'passenger',
+        avatar: avatar,
+        rating: 0,
+      };
+
+      // Salva direto no Supabase (sem logar automaticamente)
+      saveUserAccount({
+        id: newPassenger.id,
+        name: newPassenger.name,
+        email: cleanEmail,
+        phone: cleanPhone,
+        whatsapp: cleanPhone,
+        role: 'passenger',
+        tipo: 'passenger',
+        placa: '',
+        password: password,
+        avatar: avatar,
+        rating: 0,
+        rides: [],
+        createdAt: new Date().toISOString(),
+        aceitou_contrato: true,
+        aceitou_termos: true,
+        aceitou_lgpd: true,
+        data_aceite: new Date().toISOString(),
+      }, false);
+
+      try {
+        confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });
+      } catch {}
+
+      onRegisterSuccess(newPassenger);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -252,17 +270,26 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
             theme="dark"
           />
 
+          {errorMessage && (
+            <div className="bg-red-950/90 border border-red-500 text-red-200 text-xs sm:text-sm p-3.5 rounded-xl flex items-center gap-2 font-bold">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
           {/* BOTÃO CADASTRAR */}
           <button
             type="submit"
-            disabled={!acceptedContract || !acceptedTerms || !acceptedLgpd}
+            disabled={isSubmitting || !acceptedContract || !acceptedTerms || !acceptedLgpd}
             className={`w-full font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all uppercase tracking-wider block mt-6 ${
-              acceptedContract && acceptedTerms && acceptedLgpd
+              !isSubmitting && acceptedContract && acceptedTerms && acceptedLgpd
                 ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
                 : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
             }`}
           >
-            {acceptedContract && acceptedTerms && acceptedLgpd
+            {isSubmitting
+              ? 'VERIFICANDO CADASTRO...'
+              : acceptedContract && acceptedTerms && acceptedLgpd
               ? 'CADASTRAR E PEDIR CORRIDA'
               : 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'}
           </button>
