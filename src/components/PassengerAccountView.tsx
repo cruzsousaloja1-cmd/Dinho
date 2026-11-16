@@ -21,7 +21,7 @@ import {
   X,
   Check
 } from 'lucide-react';
-import { reverseGeocodeCoords } from '../services/addressSearchService';
+import { requestCurrentLocationFast } from '../services/addressSearchService';
 import { saveSessionUser } from '../services/userService';
 import { saveUsuarioSupabase } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
@@ -213,47 +213,38 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   const displayLogin = currentUser?.login || currentUser?.email || '';
   const visibleAvatar = isEditingProfile ? draftAvatar : userAvatar;
 
-  // Atualizar endereço com GPS Real em Indaiatuba-SP
-  const handleUpdateGps = () => {
+  // Atualizar endereço com GPS Real em Indaiatuba-SP (máx 5s, sem loop, fallback última localização salva)
+  const handleUpdateGps = async () => {
+    if (isLocating) return;
     const gpsErrorMsg =
       'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
 
     setIsLocating(true);
-    setGpsStatus('Localizando satélites GPS...');
+    setGpsStatus('Buscando GPS...');
 
-    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          try {
-            const detected = await reverseGeocodeCoords(lat, lng);
-            if (!detected.success || !detected.inIndaiatuba || !detected.fullAddress) {
-              setGpsStatus(detected.errorMessage || gpsErrorMsg);
-              return;
-            }
-            const addressString = detected.fullAddress;
-            setActiveAddress(addressString);
-            if (onUpdateAddress) onUpdateAddress(addressString, lat, lng);
-            setGpsStatus('📍 Localização GPS atualizada com sucesso!');
-          } catch {
-            setGpsStatus(gpsErrorMsg);
-          } finally {
-            setIsLocating(false);
-            setTimeout(() => setGpsStatus(null), 5000);
-          }
-        },
-        () => {
-          setGpsStatus(gpsErrorMsg);
-          setIsLocating(false);
-          setTimeout(() => setGpsStatus(null), 5000);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    } else {
+    try {
+      const result = await requestCurrentLocationFast();
+      if (
+        (result.status === 'ok' || result.status === 'fallback_saved') &&
+        result.fullAddress &&
+        typeof result.lat === 'number' &&
+        typeof result.lng === 'number'
+      ) {
+        setActiveAddress(result.fullAddress);
+        if (onUpdateAddress) onUpdateAddress(result.fullAddress, result.lat, result.lng);
+        setGpsStatus(
+          result.status === 'fallback_saved' && result.notice
+            ? result.notice
+            : '📍 Localização GPS atualizada com sucesso!'
+        );
+        return;
+      }
+      setGpsStatus(result.errorMessage || gpsErrorMsg);
+    } catch {
       setGpsStatus(gpsErrorMsg);
+    } finally {
       setIsLocating(false);
-      setTimeout(() => setGpsStatus(null), 5000);
+      setTimeout(() => setGpsStatus(null), 6000);
     }
   };
 
@@ -596,7 +587,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
           >
             <Crosshair className={`w-3.5 h-3.5 ${isLocating ? 'animate-spin' : ''}`} />
-            <span>{isLocating ? 'Obtendo GPS...' : 'Atualizar com Meu GPS'}</span>
+            <span>{isLocating ? 'Buscando GPS...' : 'Atualizar com Meu GPS'}</span>
           </button>
         </div>
 

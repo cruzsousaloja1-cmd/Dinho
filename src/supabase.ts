@@ -1837,7 +1837,12 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     : 'economica';
 
   const rawStatus = String(u.status || '').toLowerCase().trim();
-  const isRowOnline = rawStatus === 'online' || u.online === true;
+  const hasExplicitStatus = rawStatus !== '';
+  const hasExplicitOnline = typeof u.online === 'boolean';
+  const isRowOnline =
+    rawStatus === 'online' ||
+    u.online === true ||
+    (!hasExplicitStatus && !hasExplicitOnline && categoryConfigured);
   const driverStatus: Driver['status'] = !categoryConfigured
     ? 'offline'
     : isRowOnline

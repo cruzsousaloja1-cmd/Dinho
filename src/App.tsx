@@ -164,12 +164,30 @@ export default function App() {
     let active = true;
     const initFromSupabase = async () => {
       try {
-        const [cloudDrivers, cloudPassengers] = await Promise.all([
+        const [cloudDrivers, onlineRpcDrivers, cloudPassengers] = await Promise.all([
           getAllDriversFromSupabase(),
+          getOnlineDriversFromSupabase(),
           getAllPassengersFromSupabase(),
         ]);
+        const mergedDriversMap = new Map<string, Driver>();
+        [...cloudDrivers, ...onlineRpcDrivers].forEach((drv) => {
+          const key = drv.id || drv.email || `${drv.name}-${drv.vehiclePlate}`;
+          if (!key) return;
+          const prev = mergedDriversMap.get(key);
+          if (!prev) {
+            mergedDriversMap.set(key, drv);
+          } else {
+            mergedDriversMap.set(key, {
+              ...prev,
+              ...drv,
+              avatar: drv.avatar || prev.avatar,
+              status: prev.status === 'online' || drv.status === 'online' ? 'online' : drv.status,
+            });
+          }
+        });
+        const mergedDrivers = Array.from(mergedDriversMap.values());
         if (active) {
-          setDrivers(cloudDrivers);
+          setDrivers(mergedDrivers);
           setPassengers(cloudPassengers);
         }
       } catch {}

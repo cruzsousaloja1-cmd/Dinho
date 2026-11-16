@@ -13,7 +13,7 @@ import { fetchUsuarioPhotoByIdentity, normalizeRideCategory } from '../supabase'
 import { 
   searchAddressAutocomplete, 
   calculateDistanceKm, 
-  reverseGeocodeCoords,
+  requestCurrentLocationFast,
   hasAddressNumber,
   extractAddressNumber,
   AddressSuggestion, 
@@ -275,7 +275,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [isLocatingUser, setIsLocatingUser] = useState(false);
   const [gpsDetectedNotice, setGpsDetectedNotice] = useState<string | null>(null);
   const [gpsErrorNotice, setGpsErrorNotice] = useState<string | null>(null);
+  const [gpsFallbackNotice, setGpsFallbackNotice] = useState<string | null>(null);
   const [gpsPinCoords, setGpsPinCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [fullscreenAddressField, setFullscreenAddressField] = useState<'pickup' | 'destination' | null>(null);
 
   // Rating modal state
   const [ratingVal, setRatingVal] = useState(5);
@@ -522,62 +524,69 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setActiveDropdown(null);
   };
 
-  // Detecta a localização GPS REAL atual do celular na hora do clique (somente Indaiatuba-SP)
-  const handleUseCurrentLocation = () => {
+  // Detecta a localização GPS REAL atual do celular na hora do clique (máx 5s, sem loop, fallback última localização salva)
+  const handleUseCurrentLocation = async () => {
+    if (isLocatingUser) return;
     const gpsErrorMsg =
       'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
 
     setIsLocatingUser(true);
     setGpsDetectedNotice(null);
     setGpsErrorNotice(null);
+    setGpsFallbackNotice(null);
     setGpsPinCoords(null);
     if (addressValidationError) setAddressValidationError(null);
     setActiveDropdown(null);
 
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setIsLocatingUser(false);
-      setGpsErrorNotice(gpsErrorMsg);
-      return;
-    }
+    try {
+      const result = await requestCurrentLocationFast();
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        try {
-          const geoResult = await reverseGeocodeCoords(lat, lng);
-          if (!geoResult.inIndaiatuba) {
-            setGpsErrorNotice(
-              'Sua localização atual está fora de Indaiatuba-SP. Ative o GPS em Indaiatuba ou digite seu endereço com número.'
-            );
-            return;
-          }
-          if (!geoResult.success || !geoResult.fullAddress) {
-            setGpsErrorNotice(geoResult.errorMessage || gpsErrorMsg);
-            return;
-          }
+      if (result.status === 'outside_indaiatuba') {
+        setGpsErrorNotice(
+          result.errorMessage ||
+            'Sua localização atual está fora de Indaiatuba-SP. Ative o GPS em Indaiatuba ou digite seu endereço com número.'
+        );
+        return;
+      }
 
-          setPickup({
-            address: geoResult.fullAddress,
-            lat,
-            lng,
-          });
-          setPickupInput(geoResult.fullAddress);
-          setGpsDetectedNotice(geoResult.fullAddress);
-          setGpsPinCoords({ lat, lng });
-          onRouteSearched?.(false);
-        } catch {
-          setGpsErrorNotice(gpsErrorMsg);
-        } finally {
-          setIsLocatingUser(false);
+      if (
+        (result.status === 'ok' || result.status === 'fallback_saved') &&
+        result.fullAddress &&
+        typeof result.lat === 'number' &&
+        typeof result.lng === 'number'
+      ) {
+        setPickup({
+          address: result.fullAddress,
+          lat: result.lat,
+          lng: result.lng,
+        });
+        setPickupInput(result.fullAddress);
+        setGpsDetectedNotice(result.fullAddress);
+        setGpsPinCoords({ lat: result.lat, lng: result.lng });
+        onRouteSearched?.(false);
+
+        if (result.status === 'fallback_saved' && result.notice) {
+          setGpsFallbackNotice(result.notice);
         }
-      },
-      () => {
-        setIsLocatingUser(false);
-        setGpsErrorNotice(gpsErrorMsg);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
+
+        if (!hasAddressNumber(result.fullAddress)) {
+          setAddressValidationError(
+            'Endereço encontrado sem número. Digite o número da casa ou local abaixo para continuar.'
+          );
+          setTimeout(() => {
+            const numInput = document.getElementById('pickup-number-input') as HTMLInputElement | null;
+            numInput?.focus();
+          }, 120);
+        }
+        return;
+      }
+
+      setGpsErrorNotice(result.errorMessage || gpsErrorMsg);
+    } catch {
+      setGpsErrorNotice(gpsErrorMsg);
+    } finally {
+      setIsLocatingUser(false);
+    }
   };
 
   const handleRequestRideWithCategory = (
@@ -1505,21 +1514,34 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         <div className="relative w-full min-w-0">
           {/* Título em 1 linha + Botão 'Meu GPS' embaixo do título */}
           <div className="flex flex-col items-start gap-2 mb-2.5 w-full min-w-0">
-            <label className="w-full flex items-center gap-1.5 text-[11px] min-[390px]:text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-tight whitespace-nowrap">
-              <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Endereço de Saída / Embarque (Com Número)</span>
+            <label className="w-full flex items-center justify-between gap-2 text-[11px] min-[390px]:text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-tight">
+              <span className="flex items-center gap-1.5 min-w-0">
+                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Endereço de Saída / Embarque (Com Número)</span>
+              </span>
+              {pickupInput.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFullscreenAddressField('pickup')}
+                  className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold normal-case cursor-pointer"
+                  title="Ver endereço completo em tela cheia"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Tela cheia</span>
+                </button>
+              )}
             </label>
             <button
               type="button"
               onClick={handleUseCurrentLocation}
               title="Detectar Minha Localização GPS Atual"
               disabled={isLocatingUser}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer shadow-xs inline-flex items-center gap-1.5 transition-all disabled:opacity-60"
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer shadow-xs inline-flex items-center gap-1.5 transition-all disabled:opacity-75"
             >
               {isLocatingUser ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" />
-                  <span>Buscando seu GPS...</span>
+                  <span>Buscando GPS...</span>
                 </>
               ) : (
                 <>
@@ -1531,23 +1553,37 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           </div>
 
           <div className="relative w-full min-w-0">
-            <input
-              type="text"
+            <textarea
+              rows={2}
               value={pickupInput}
-              onChange={(e) => handlePickupChange(e.target.value)}
+              onChange={(e) => handlePickupChange(e.target.value.replace(/\r?\n/g, ' '))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  setActiveDropdown(null);
+                }
+              }}
               onFocus={() => {
                 setActiveDropdown('pickup');
                 if (!pickupSuggestions.length) setPickupSuggestions(POPULAR_DATABASE_LOCATIONS.slice(0, 4));
               }}
-              placeholder="Ex: Av. Presidente Vargas, 1250"
+              placeholder="Ex: Rua Maria Philomena Mattioni, 420 - Jardim Europa, Indaiatuba-SP"
+              style={{
+                width: '100%',
+                whiteSpace: 'normal',
+                wordWrap: 'break-word',
+                overflowWrap: 'anywhere',
+                textAlign: 'left',
+                paddingLeft: '16px',
+              }}
               className={`w-full min-w-0 box-border bg-white border-2 ${
                 !hasAddressNumber(pickupInput) && pickupInput.trim().length > 3
                   ? 'border-amber-400 focus:border-amber-500'
                   : 'border-slate-300 hover:border-emerald-400 focus:border-emerald-600'
-              } rounded-2xl p-4 ${pickupInput || isSearchingPickup ? 'pr-10' : ''} text-[14px] sm:text-base leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 font-bold shadow-xs transition-all overflow-hidden text-ellipsis`}
+              } rounded-2xl py-3.5 pl-4 ${pickupInput || isSearchingPickup ? 'pr-11' : 'pr-4'} text-[14px] sm:text-base leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 font-bold shadow-xs transition-all resize-none whitespace-normal break-words text-left`}
             />
             {isSearchingPickup && (
-              <Loader2 className="w-5 h-5 text-emerald-600 animate-spin absolute right-3.5 top-1/2 -translate-y-1/2" />
+              <Loader2 className="w-5 h-5 text-emerald-600 animate-spin absolute right-3.5 top-4" />
             )}
             {pickupInput && !isSearchingPickup && (
               <button
@@ -1557,16 +1593,35 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   setPickup(null);
                   setGpsDetectedNotice(null);
                   setGpsErrorNotice(null);
+                  setGpsFallbackNotice(null);
                   setGpsPinCoords(null);
                   onRouteSearched?.(false);
                 }}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 cursor-pointer p-0.5"
+                className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-800 cursor-pointer p-1"
                 title="Limpar endereço de saída"
               >
                 <X className="w-5 h-5" />
               </button>
             )}
           </div>
+
+          {/* Aviso de fallback para última localização salva (> 5s sem resposta de GPS) */}
+          {gpsFallbackNotice && (
+            <div className="mt-2.5 p-3 bg-amber-50 border-2 border-amber-400 rounded-2xl flex items-start justify-between gap-2 text-xs sm:text-sm text-amber-950 font-bold animate-fade-in shadow-xs">
+              <div className="flex items-start gap-2 min-w-0 flex-1">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span className="leading-snug">{gpsFallbackNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGpsFallbackNotice(null)}
+                className="text-amber-700 hover:text-amber-950 font-bold text-xs cursor-pointer p-0.5 shrink-0"
+                title="Fechar"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* Erro ao tentar obter GPS ou localização fora de Indaiatuba */}
           {gpsErrorNotice && (
@@ -1591,7 +1646,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             <div className="mt-2.5 p-3.5 bg-amber-50 border-2 border-amber-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs sm:text-sm text-amber-950 font-bold animate-fade-in shadow-xs">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                <span>Coloque o número do endereço para o motorista te achar</span>
+                <span>Endereço sem número. Digite o número para o motorista te achar</span>
               </div>
               <div className="flex items-center gap-1.5 self-end sm:self-center">
                 <input
@@ -1633,11 +1688,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           {/* Endereço de Saída detectado pelo Meu GPS + Pino exato no mapa */}
           {gpsDetectedNotice && (
             <div className="mt-2.5 space-y-2.5 animate-fade-in">
-              <div className="flex items-center justify-between gap-2 bg-emerald-50 border-2 border-emerald-300 px-3.5 py-3 rounded-2xl text-xs sm:text-sm text-emerald-950 font-bold shadow-xs min-w-0">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse shrink-0" />
+              <div className="flex items-start justify-between gap-2 bg-emerald-50 border-2 border-emerald-300 px-3.5 py-3 rounded-2xl text-xs sm:text-sm text-emerald-950 font-bold shadow-xs min-w-0">
+                <div className="flex items-start gap-2 min-w-0 flex-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse shrink-0 mt-1" />
                   <span className="text-emerald-800 font-black uppercase font-mono shrink-0">GPS:</span>
-                  <span className="text-slate-900 truncate font-extrabold">{gpsDetectedNotice}</span>
+                  <span className="text-slate-900 font-extrabold whitespace-normal break-words leading-snug text-left">{gpsDetectedNotice}</span>
                 </div>
                 <button
                   type="button"
@@ -1664,13 +1719,30 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
           {/* Dropdown de Busca Automática para Embarque */}
           {activeDropdown === 'pickup' && (
-            <div className="absolute left-0 right-0 top-full z-50 bg-white border-2 border-emerald-400 rounded-2xl shadow-2xl mt-1 overflow-hidden divide-y divide-slate-100 max-h-64 overflow-y-auto">
+            <div className="absolute left-0 right-0 top-full z-50 bg-white border-2 border-emerald-400 rounded-2xl shadow-2xl mt-1 overflow-hidden divide-y divide-slate-100 max-h-72 overflow-y-auto">
+              {pickupInput.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFullscreenAddressField('pickup')}
+                  className="w-full text-left bg-emerald-50/90 hover:bg-emerald-100/80 px-3.5 py-2.5 flex items-start justify-between gap-2 cursor-pointer transition-colors"
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-mono font-black text-emerald-800 uppercase block">
+                      Endereço completo selecionado (Toque para tela cheia)
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-slate-950 whitespace-normal break-words leading-snug block">
+                      {pickupInput}
+                    </span>
+                  </div>
+                  <Maximize2 className="w-4 h-4 text-emerald-700 shrink-0 mt-1" />
+                </button>
+              )}
               <div className="bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-900 flex items-center justify-between">
                 <span>Sugestões Automáticas com Número (Indaiatuba-SP)</span>
                 <button
                   type="button"
                   onClick={() => setActiveDropdown(null)}
-                  className="text-emerald-700 hover:text-emerald-950 text-xs font-bold shrink-0"
+                  className="text-emerald-700 hover:text-emerald-950 text-xs font-bold shrink-0 cursor-pointer"
                 >
                   Fechar ✕
                 </button>
@@ -1684,10 +1756,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 >
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <span className="font-bold text-slate-900 text-sm sm:text-base block truncate">
+                    <span className="font-bold text-slate-900 text-sm sm:text-base block whitespace-normal break-words leading-snug">
                       {sug.label}
                     </span>
-                    <span className="text-xs sm:text-sm text-slate-500 block truncate">
+                    <span className="text-xs sm:text-sm text-slate-500 block whitespace-normal break-words">
                       {sug.secondaryText}
                     </span>
                   </div>
@@ -1701,30 +1773,57 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         <div className="relative w-full min-w-0">
           {/* Barra Superior do Destino */}
           <div className="flex flex-col items-start mb-2.5 w-full min-w-0">
-            <label className="w-full flex items-center gap-1.5 text-[11px] min-[390px]:text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-tight whitespace-nowrap">
-              <Navigation className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>Endereço de Chegada / Destino (Com Número)</span>
+            <label className="w-full flex items-center justify-between gap-2 text-[11px] min-[390px]:text-xs sm:text-sm font-heading font-black text-slate-900 uppercase tracking-tight">
+              <span className="flex items-center gap-1.5 min-w-0">
+                <Navigation className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Endereço de Chegada / Destino (Com Número)</span>
+              </span>
+              {destInput.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFullscreenAddressField('destination')}
+                  className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold normal-case cursor-pointer"
+                  title="Ver destino completo em tela cheia"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Tela cheia</span>
+                </button>
+              )}
             </label>
           </div>
 
           <div className="relative w-full min-w-0">
-            <input
-              type="text"
+            <textarea
+              rows={2}
               value={destInput}
-              onChange={(e) => handleDestChange(e.target.value)}
+              onChange={(e) => handleDestChange(e.target.value.replace(/\r?\n/g, ' '))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  setActiveDropdown(null);
+                }
+              }}
               onFocus={() => {
                 setActiveDropdown('destination');
                 if (!destSuggestions.length) setDestSuggestions(POPULAR_DATABASE_LOCATIONS.slice(0, 4));
               }}
-              placeholder="Ex: Av. dos Trabalhadores, 350"
+              placeholder="Ex: Av. dos Trabalhadores, 350 - Jardim América, Indaiatuba-SP"
+              style={{
+                width: '100%',
+                whiteSpace: 'normal',
+                wordWrap: 'break-word',
+                overflowWrap: 'anywhere',
+                textAlign: 'left',
+                paddingLeft: '16px',
+              }}
               className={`w-full min-w-0 box-border bg-white border-2 ${
                 !hasAddressNumber(destInput) && destInput.trim().length > 3
                   ? 'border-amber-400 focus:border-amber-500'
                   : 'border-slate-300 hover:border-amber-400 focus:border-amber-500'
-              } rounded-2xl p-4 ${destInput || isSearchingDest ? 'pr-10' : ''} text-[14px] sm:text-base leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-amber-500/10 font-bold shadow-xs transition-all overflow-hidden text-ellipsis`}
+              } rounded-2xl py-3.5 pl-4 ${destInput || isSearchingDest ? 'pr-11' : 'pr-4'} text-[14px] sm:text-base leading-snug text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-amber-500/10 font-bold shadow-xs transition-all resize-none whitespace-normal break-words text-left`}
             />
             {isSearchingDest && (
-              <Loader2 className="w-5 h-5 text-amber-600 animate-spin absolute right-3.5 top-1/2 -translate-y-1/2" />
+              <Loader2 className="w-5 h-5 text-amber-600 animate-spin absolute right-3.5 top-4" />
             )}
             {destInput && !isSearchingDest && (
               <button
@@ -1734,7 +1833,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   setDestination(null);
                   onRouteSearched?.(false);
                 }}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 cursor-pointer p-0.5"
+                className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-800 cursor-pointer p-1"
                 title="Limpar destino"
               >
                 <X className="w-5 h-5" />
@@ -1875,13 +1974,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 <span>•</span>
                 <span className="text-[#ff6a00] font-black">{dynamicDistanceKm} km</span>
               </div>
-              <div className="text-xs sm:text-sm font-bold text-slate-900 truncate flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="truncate">{pickupInput}</span>
+              <div className="text-xs sm:text-sm font-bold text-slate-900 flex items-start gap-2 min-w-0">
+                <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span className="whitespace-normal break-words leading-snug">{pickupInput}</span>
               </div>
-              <div className="text-xs sm:text-sm font-bold text-slate-900 truncate flex items-center gap-2">
-                <Navigation className="w-4 h-4 text-amber-600 shrink-0" />
-                <span className="truncate">{destInput}</span>
+              <div className="text-xs sm:text-sm font-bold text-slate-900 flex items-start gap-2 min-w-0">
+                <Navigation className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span className="whitespace-normal break-words leading-snug">{destInput}</span>
               </div>
             </div>
 
@@ -3106,6 +3205,126 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           RACE 24H
         </span>
       </div>
+
+      {/* Modal em Tela Cheia para Visualizar e Editar Endereço Completo sem Corte */}
+      {fullscreenAddressField && (
+        <div className="fixed inset-0 z-[1300] bg-white flex flex-col p-5 sm:p-7 animate-fade-in overflow-y-auto">
+          <div className="max-w-xl w-full mx-auto flex flex-col gap-4 flex-1">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                {fullscreenAddressField === 'pickup' ? (
+                  <MapPin className="w-5 h-5 text-emerald-600 shrink-0" />
+                ) : (
+                  <Navigation className="w-5 h-5 text-amber-600 shrink-0" />
+                )}
+                <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg uppercase">
+                  {fullscreenAddressField === 'pickup'
+                    ? 'Endereço de Saída Completo'
+                    : 'Endereço de Chegada Completo'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFullscreenAddressField(null)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 cursor-pointer"
+                aria-label="Fechar tela cheia"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {fullscreenAddressField === 'pickup' && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleUseCurrentLocation}
+                  disabled={isLocatingUser}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-75"
+                >
+                  {isLocatingUser ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Buscando GPS...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Crosshair className="w-4 h-4 text-emerald-100" />
+                      <span>Atualizar com Meu GPS</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            <textarea
+              rows={3}
+              autoFocus
+              value={fullscreenAddressField === 'pickup' ? pickupInput : destInput}
+              onChange={(e) => {
+                const cleanVal = e.target.value.replace(/\r?\n/g, ' ');
+                if (fullscreenAddressField === 'pickup') {
+                  handlePickupChange(cleanVal);
+                } else {
+                  handleDestChange(cleanVal);
+                }
+              }}
+              placeholder={
+                fullscreenAddressField === 'pickup'
+                  ? 'Digite Rua, Número, Bairro - Indaiatuba-SP'
+                  : 'Digite o destino completo com número - Indaiatuba-SP'
+              }
+              style={{
+                width: '100%',
+                whiteSpace: 'normal',
+                wordWrap: 'break-word',
+                overflowWrap: 'anywhere',
+                textAlign: 'left',
+                paddingLeft: '16px',
+              }}
+              className="w-full box-border bg-slate-50 border-2 border-slate-300 focus:border-emerald-600 rounded-2xl p-4 text-base sm:text-lg font-extrabold text-slate-950 leading-snug resize-none whitespace-normal break-words text-left focus:outline-none"
+            />
+
+            {!hasAddressNumber(fullscreenAddressField === 'pickup' ? pickupInput : destInput) && (
+              <div className="p-3 bg-amber-50 border-2 border-amber-400 rounded-2xl text-xs sm:text-sm font-bold text-amber-950 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Digite o número do endereço antes de confirmar.</span>
+              </div>
+            )}
+
+            <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-64 overflow-y-auto bg-white">
+              {(fullscreenAddressField === 'pickup' ? pickupSuggestions : destSuggestions).map((sug) => (
+                <button
+                  key={sug.id}
+                  type="button"
+                  onClick={() => {
+                    handleSelectSuggestion(fullscreenAddressField, sug);
+                    setFullscreenAddressField(null);
+                  }}
+                  className="w-full text-left p-3.5 hover:bg-emerald-50/70 cursor-pointer flex items-start gap-2.5"
+                >
+                  <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <span className="font-bold text-slate-900 text-sm block whitespace-normal break-words">
+                      {sug.label}
+                    </span>
+                    <span className="text-xs text-slate-500 block whitespace-normal break-words">
+                      {sug.secondaryText}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setFullscreenAddressField(null)}
+              className="w-full py-3.5 rounded-2xl bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-base uppercase tracking-wider cursor-pointer shadow-lg mt-auto"
+            >
+              Confirmar Endereço
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

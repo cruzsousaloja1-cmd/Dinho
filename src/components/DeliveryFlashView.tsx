@@ -4,7 +4,7 @@ import { Driver, Ride, LocationPoint } from '../types';
 import { 
   searchAddressAutocomplete, 
   calculateDistanceKm, 
-  reverseGeocodeCoords,
+  requestCurrentLocationFast,
   AddressSuggestion, 
   POPULAR_DATABASE_LOCATIONS 
 } from '../services/addressSearchService';
@@ -144,7 +144,8 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
     setActiveDropdown(null);
   };
 
-  const handleUseCurrentLocation = () => {
+  const handleUseCurrentLocation = async () => {
+    if (isLocatingUser) return;
     const gpsErrorMsg =
       'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
 
@@ -152,36 +153,27 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
     setGpsErrorNotice(null);
     setActiveDropdown(null);
 
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setIsLocatingUser(false);
-      setGpsErrorNotice(gpsErrorMsg);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        try {
-          const geoResult = await reverseGeocodeCoords(lat, lng);
-          if (!geoResult.success || !geoResult.inIndaiatuba || !geoResult.fullAddress) {
-            setGpsErrorNotice(geoResult.errorMessage || gpsErrorMsg);
-            return;
-          }
-          if (setPickup) setPickup({ address: geoResult.fullAddress, lat, lng });
-          setPickupInput(geoResult.fullAddress);
-        } catch {
-          setGpsErrorNotice(gpsErrorMsg);
-        } finally {
-          setIsLocatingUser(false);
+    try {
+      const result = await requestCurrentLocationFast();
+      if (
+        (result.status === 'ok' || result.status === 'fallback_saved') &&
+        result.fullAddress &&
+        typeof result.lat === 'number' &&
+        typeof result.lng === 'number'
+      ) {
+        if (setPickup) setPickup({ address: result.fullAddress, lat: result.lat, lng: result.lng });
+        setPickupInput(result.fullAddress);
+        if (result.status === 'fallback_saved' && result.notice) {
+          setGpsErrorNotice(result.notice);
         }
-      },
-      () => {
-        setIsLocatingUser(false);
-        setGpsErrorNotice(gpsErrorMsg);
-      },
-      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
-    );
+        return;
+      }
+      setGpsErrorNotice(result.errorMessage || gpsErrorMsg);
+    } catch {
+      setGpsErrorNotice(gpsErrorMsg);
+    } finally {
+      setIsLocatingUser(false);
+    }
   };
 
   const handleCreateDelivery = () => {
@@ -282,14 +274,17 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
           <div className="space-y-3 relative">
             {/* Campo de Coleta / Remetente */}
             <div className="relative">
-              <div className="relative flex items-center">
-                <div className="absolute left-3.5 flex items-center justify-center text-emerald-600">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <input
-                  type="text"
+              <div className="relative flex items-start">
+                <textarea
+                  rows={2}
                   value={pickupInput}
-                  onChange={(e) => handlePickupChange(e.target.value)}
+                  onChange={(e) => handlePickupChange(e.target.value.replace(/\r?\n/g, ' '))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setActiveDropdown(null);
+                    }
+                  }}
                   onFocus={() => {
                     setActiveDropdown('pickup');
                     if (pickupSuggestions.length === 0) {
@@ -297,10 +292,18 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
                     }
                   }}
                   placeholder="Buscar endereço automático de Coleta..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-11 pr-24 py-3.5 text-sm sm:text-base text-slate-950 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-2 focus:ring-purple-100 font-medium transition-all"
+                  style={{
+                    width: '100%',
+                    whiteSpace: 'normal',
+                    wordWrap: 'break-word',
+                    overflowWrap: 'anywhere',
+                    textAlign: 'left',
+                    paddingLeft: '16px',
+                  }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-4 pr-28 py-3 text-sm sm:text-base text-slate-950 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-2 focus:ring-purple-100 font-medium transition-all resize-none whitespace-normal break-words text-left leading-snug"
                 />
                 
-                <div className="absolute right-3 flex items-center gap-1.5">
+                <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5">
                   {isSearchingPickup && (
                     <Loader2 className="w-4 h-4 text-purple-600 animate-spin" />
                   )}
@@ -325,17 +328,26 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
                     title="Usar minha localização GPS"
                   >
                     {isLocatingUser ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Buscando GPS...</span>
+                      </>
                     ) : (
-                      <Crosshair className="w-3.5 h-3.5" />
+                      <>
+                        <Crosshair className="w-3.5 h-3.5" />
+                        <span>Meu GPS</span>
+                      </>
                     )}
-                    <span className="hidden sm:inline">GPS</span>
                   </button>
                 </div>
               </div>
 
               {gpsErrorNotice && (
-                <div className="mt-2 p-2.5 bg-rose-50 border border-rose-300 rounded-xl text-xs font-bold text-rose-900">
+                <div className={`mt-2 p-2.5 border rounded-xl text-xs font-bold ${
+                  gpsErrorNotice.includes('última localização')
+                    ? 'bg-amber-50 border-amber-300 text-amber-950'
+                    : 'bg-rose-50 border-rose-300 text-rose-900'
+                }`}>
                   {gpsErrorNotice}
                 </div>
               )}
@@ -367,10 +379,10 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
                         <MapPin className="w-4 h-4" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold text-slate-900 truncate">
-                          {item.mainText}
+                        <div className="text-sm font-bold text-slate-900 whitespace-normal break-words">
+                          {item.label}
                         </div>
-                        <div className="text-xs text-slate-500 truncate">
+                        <div className="text-xs text-slate-500 whitespace-normal break-words">
                           {item.secondaryText}
                         </div>
                       </div>
@@ -382,14 +394,17 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
 
             {/* Campo de Entrega / Destinatário */}
             <div className="relative">
-              <div className="relative flex items-center">
-                <div className="absolute left-3.5 flex items-center justify-center text-purple-600">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <input
-                  type="text"
+              <div className="relative flex items-start">
+                <textarea
+                  rows={2}
                   value={destInput}
-                  onChange={(e) => handleDestChange(e.target.value)}
+                  onChange={(e) => handleDestChange(e.target.value.replace(/\r?\n/g, ' '))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setActiveDropdown(null);
+                    }
+                  }}
                   onFocus={() => {
                     setActiveDropdown('destination');
                     if (destSuggestions.length === 0) {
@@ -397,10 +412,18 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
                     }
                   }}
                   placeholder="Buscar endereço automático de Entrega..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-11 pr-16 py-3.5 text-sm sm:text-base text-slate-950 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-2 focus:ring-purple-100 font-medium transition-all"
+                  style={{
+                    width: '100%',
+                    whiteSpace: 'normal',
+                    wordWrap: 'break-word',
+                    overflowWrap: 'anywhere',
+                    textAlign: 'left',
+                    paddingLeft: '16px',
+                  }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-4 pr-14 py-3 text-sm sm:text-base text-slate-950 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-2 focus:ring-purple-100 font-medium transition-all resize-none whitespace-normal break-words text-left leading-snug"
                 />
                 
-                <div className="absolute right-3 flex items-center gap-1.5">
+                <div className="absolute right-3 top-3 flex items-center gap-1.5">
                   {isSearchingDest && (
                     <Loader2 className="w-4 h-4 text-purple-600 animate-spin" />
                   )}
