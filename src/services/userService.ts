@@ -288,7 +288,6 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     celular: account.phone,
     whatsapp: account.whatsapp || account.phone,
     login: account.login || cleanEmail,
-    senha: account.password,
     tipo: account.tipo || (account.role === 'passenger' ? 'passenger' : 'driver'),
     categoria: account.role === 'passenger' || isAdminAccount
       ? undefined

@@ -632,7 +632,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const backupPayload = {
       app: 'RACE Indaiatuba',
       exportedAt: new Date().toISOString(),
-      securityNote: 'Senhas omitidas (hash bcrypt no banco) e CPF/CNH mascarados (últimos 4 dígitos).',
+      securityNote: 'Senhas gerenciadas exclusivamente pelo Supabase Auth (nenhuma coluna de senha em public.usuarios) e CPF/CNH mascarados (últimos 4 dígitos).',
       usuarios: safeUsers,
       corridas: supabaseCorridas,
       pagamentos: supabasePagamentos,
@@ -2452,7 +2452,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] font-mono text-slate-700 space-y-0.5">
                 <p>• id (chave primária)</p>
                 <p>• nome, email, celular, whatsapp</p>
-                <p>• login, senha (hash bcrypt — oculta no ADM)</p>
+                <p>• login (somente identificador; senha no Supabase Auth)</p>
                 <p>• tipo, categoria</p>
                 <p>• placa, modelo, ano, cnh (mascarada), foto</p>
                 <p>• rating, saldo, divida</p>
@@ -2535,8 +2535,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 Vê corridas disponíveis da sua categoria e suas próprias corridas aceitas.
               </div>
               <div className="p-3.5 bg-purple-50 rounded-2xl border border-purple-200">
-                <strong className="text-purple-950 block mb-1">Admin Geral (admin@race.com.br):</strong>
-                Acesso de auditoria com senhas ocultas (bcrypt) e CPF/CNH mascarados (últimos 4 dígitos).
+                <strong className="text-purple-950 block mb-1">Admin Geral (role = 'admin'):</strong>
+                Acesso total via RLS ativo nas 5 tabelas (<code className="font-mono">usuarios</code>, <code className="font-mono">corridas</code>, <code className="font-mono">motoristas</code>, <code className="font-mono">pagamentos</code>, <code className="font-mono">avaliacoes</code>), autenticação Supabase Auth e CPF/CNH mascarados.
               </div>
             </div>
 

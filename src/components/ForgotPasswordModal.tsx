@@ -17,7 +17,6 @@ import {
   ADMIN_EMAIL,
   findLocalUserAccount,
   getStoredAdminPassword,
-  updateUserPasswordLocal,
 } from '../services/userService';
 
 interface ForgotPasswordModalProps {
@@ -177,21 +176,18 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
     try {
       const targetEmail = resolvedEmail || identifier.trim().toLowerCase();
 
-      // 1. Atualiza na tabela public.usuarios no Supabase
+      // 1. Atualiza ou envia redefinição exclusivamente via Supabase Auth
       const cloudRes = await updatePasswordSupabase(targetEmail, newPassword, resolvedName);
       if (!cloudRes.success) {
-        const localExists = findLocalUserAccount(targetEmail);
-        if (!localExists && !(targetEmail === ADMIN_EMAIL && getStoredAdminPassword())) {
-          setErrorMessage(cloudRes.error || 'Erro ao salvar nova senha no Supabase.');
-          return;
-        }
+        setErrorMessage(cloudRes.error || 'Erro ao redefinir senha no Supabase Auth.');
+        return;
       }
 
-      // 2. Atualiza no armazenamento local (inclui ADM, motoristas, motoboys e passageiros)
-      updateUserPasswordLocal(targetEmail, newPassword);
-
-      // 3. Retorna à tela de login com a mensagem de confirmação
-      onPasswordResetSuccess(targetEmail, 'Senha alterada! Entre com a nova senha');
+      // 2. Retorna à tela de login com a mensagem de confirmação
+      const successMsg = cloudRes.sentResetEmail
+        ? `Link de redefinição enviado para ${targetEmail}! Confirme no seu e-mail e entre com a nova senha.`
+        : 'Senha alterada! Entre com a nova senha';
+      onPasswordResetSuccess(targetEmail, successMsg);
       onClose();
     } catch (err: any) {
       setErrorMessage(err?.message || 'Erro ao salvar a nova senha. Tente novamente.');

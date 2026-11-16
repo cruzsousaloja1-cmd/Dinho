@@ -76,7 +76,8 @@ import {
   getPassengerDebtSupabase,
   clearPassengerDebtSupabase,
   hydrateRidesWithUserPhotosSupabase,
-  fetchUsuarioPhotoByIdentity
+  fetchUsuarioPhotoByIdentity,
+  signOutSupabase
 } from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
 
@@ -1328,6 +1329,7 @@ export default function App() {
         status: 'offline',
       }).catch(() => {});
     }
+    signOutSupabase().catch(() => {});
     saveSessionUser(null);
     purgeLegacyTestLocalStorage(false);
     clearWalletMemoryCache();
