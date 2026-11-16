@@ -3021,7 +3021,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   disabled={!regRequirementsConfirmed || !acceptedContract || !acceptedTerms || !acceptedLgpd}
                   className={`w-full font-heading font-black py-4 px-6 rounded-2xl transition-all text-sm sm:text-base border uppercase tracking-wider ${
                     regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
-                      ? 'bg-[#ff6a00] hover:bg-[#e05e00] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/25 border-orange-500 active:scale-[0.99]'
+                      ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/25 border-blue-500 active:scale-[0.99]'
                       : 'bg-slate-300 text-slate-600 border-slate-400 cursor-not-allowed opacity-80'
                   }`}
                 >

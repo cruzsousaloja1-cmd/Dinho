@@ -258,7 +258,7 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
             disabled={!acceptedContract || !acceptedTerms || !acceptedLgpd}
             className={`w-full font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all uppercase tracking-wider block mt-6 ${
               acceptedContract && acceptedTerms && acceptedLgpd
-                ? 'bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/20'
+                ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
                 : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
             }`}
           >

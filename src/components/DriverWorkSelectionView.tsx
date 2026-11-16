@@ -27,6 +27,7 @@ import {
 } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isBasicPopularOneLiterModel } from '../services/vehicleValidationService';
+import { LegalConsentSection } from './LegalConsentSection';
 
 export type WorkCategoryKey =
   | 'motorista_economico'
@@ -279,6 +280,9 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   const [cnhPhoto, setCnhPhoto] = useState(currentUser.driverData?.cnhPhoto || '');
   const [crlvPhoto, setCrlvPhoto] = useState(currentUser.driverData?.crlvPhoto || '');
   const [requirementsChecked, setRequirementsChecked] = useState<boolean>(false);
+  const [acceptedContract, setAcceptedContract] = useState<boolean>(false);
+  const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
+  const [acceptedLgpd, setAcceptedLgpd] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -302,6 +306,9 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       setHasTrunk('Não');
     }
     setRequirementsChecked(false);
+    setAcceptedContract(false);
+    setAcceptedTerms(false);
+    setAcceptedLgpd(false);
     setErrorMessage(null);
     setStage('fill_details');
   };
@@ -391,6 +398,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       return;
     }
 
+    if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
+      setErrorMessage('Marque os 3 aceites obrigatórios (Contrato de Parceria RACE, Termos de Uso e LGPD) antes de salvar.');
+      return;
+    }
+
     setIsSaving(true);
     try {
       const existingDriver = currentUser.driverData;
@@ -460,7 +472,13 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         createdAt: confirmedTimestamp,
       };
 
-      saveUserAccount(updatedAccount, true);
+      saveUserAccount({
+        ...updatedAccount,
+        aceitou_contrato: true,
+        aceitou_termos: true,
+        aceitou_lgpd: true,
+        data_aceite: confirmedTimestamp,
+      }, true);
 
       const updRes = await updateMotoristaSupabase(currentUser.email, {
         categoria: selectedCategory.title,
@@ -479,6 +497,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         status: 'online',
         online: true,
         plano_ativo: true,
+        aceitou_contrato: true,
+        aceitou_termos: true,
+        aceitou_lgpd: true,
+        data_aceite: confirmedTimestamp,
       }).catch(() => ({ success: false, data: null }));
 
       if (!updRes.success || !updRes.data) {
@@ -507,6 +529,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           plano_ativo: true,
           online: true,
           status: 'online',
+          aceitou_contrato: true,
+          aceitou_termos: true,
+          aceitou_lgpd: true,
+          data_aceite: confirmedTimestamp,
         }).catch(() => {});
       }
 
@@ -645,7 +671,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   if (stage === 'fill_details') {
     const isCarCategory = selectedCategory.role === 'driver';
     const isDeliveryMoto = selectedCategory.key === 'motoboy_entregas';
-    const isSaveBlocked = isSaving || !requirementsChecked || Boolean(liveBlockingAlert);
+    const all4CheckboxesMarked =
+      requirementsChecked && acceptedContract && acceptedTerms && acceptedLgpd;
+    const isSaveBlocked =
+      isSaving || !all4CheckboxesMarked || Boolean(liveBlockingAlert);
 
     return (
       <div className="space-y-5 max-w-2xl mx-auto py-2 animate-fade-in">
@@ -1159,7 +1188,6 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
           {/* CHECKBOX OBRIGATÓRIO ANTES DE "Salvar e ficar ONLINE" */}
           <label
-            onClick={() => setRequirementsChecked((prev) => !prev)}
             className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all select-none ${
               requirementsChecked
                 ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
@@ -1182,13 +1210,24 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             </span>
           </label>
 
+          {/* 3 CHECKBOXES OBRIGATÓRIOS: CONTRATO, TERMOS E LGPD */}
+          <LegalConsentSection
+            acceptedContract={acceptedContract}
+            acceptedTerms={acceptedTerms}
+            acceptedLgpd={acceptedLgpd}
+            onChangeContract={setAcceptedContract}
+            onChangeTerms={setAcceptedTerms}
+            onChangeLgpd={setAcceptedLgpd}
+            theme="light"
+          />
+
           <button
             type="submit"
             disabled={isSaveBlocked}
             className={`w-full py-4 px-6 rounded-2xl font-heading font-black text-base sm:text-lg transition-all shadow-lg flex items-center justify-center gap-2 ${
               isSaveBlocked
                 ? 'bg-slate-300 text-slate-600 border-2 border-slate-400 cursor-not-allowed opacity-85'
-                : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-[0.99]'
+                : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer active:scale-[0.99]'
             }`}
           >
             {isSaving ? (

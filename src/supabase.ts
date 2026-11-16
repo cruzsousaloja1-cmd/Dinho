@@ -961,6 +961,10 @@ export async function updateMotoristaSupabase(
     status?: string;
     online?: boolean;
     plano_ativo?: boolean;
+    aceitou_contrato?: boolean;
+    aceitou_termos?: boolean;
+    aceitou_lgpd?: boolean;
+    data_aceite?: string;
   }
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   const cleanEmail = emailInput.trim().toLowerCase();
@@ -994,6 +998,10 @@ export async function updateMotoristaSupabase(
     if (params.status !== undefined) updatePayload.status = params.status;
     if (typeof params.online === 'boolean') updatePayload.online = params.online;
     if (typeof params.plano_ativo === 'boolean') updatePayload.plano_ativo = params.plano_ativo;
+    if (typeof params.aceitou_contrato === 'boolean') updatePayload.aceitou_contrato = params.aceitou_contrato;
+    if (typeof params.aceitou_termos === 'boolean') updatePayload.aceitou_termos = params.aceitou_termos;
+    if (typeof params.aceitou_lgpd === 'boolean') updatePayload.aceitou_lgpd = params.aceitou_lgpd;
+    if (params.data_aceite) updatePayload.data_aceite = params.data_aceite;
 
     const knownCols = await getUsuariosTableColumns();
     if (knownCols && knownCols.size > 0) {
@@ -1004,7 +1012,7 @@ export async function updateMotoristaSupabase(
       }
     }
 
-    const optionalCols = ['cor', 'cpf', 'bau', 'foto_veiculo', 'foto_cnh', 'foto_crlv', 'exigencias_confirmadas', 'online', 'status', 'plano_ativo', 'tipo', 'ano', 'cnh'];
+    const optionalCols = ['cor', 'cpf', 'bau', 'foto_veiculo', 'foto_cnh', 'foto_crlv', 'exigencias_confirmadas', 'online', 'status', 'plano_ativo', 'tipo', 'ano', 'cnh', 'aceitou_contrato', 'aceitou_termos', 'aceitou_lgpd', 'data_aceite'];
     let lastSupabaseError = 'Erro ao atualizar motorista no Supabase.';
 
     for (let attempt = 0; attempt < 25; attempt++) {
@@ -1012,20 +1020,20 @@ export async function updateMotoristaSupabase(
         .from('usuarios')
         .update(updatePayload)
         .eq('e-mail', cleanEmail)
-        .select();
+        .select('id,nome,tipo,categoria,placa,modelo,ano,cor,cnh,cpf,bau,foto,avatar,status,online,plano_ativo,lat,lng,created_at');
 
       if (error && error.message?.includes('e-mail')) {
         const retry = await supabase
           .from('usuarios')
           .update(updatePayload)
           .eq('email', cleanEmail)
-          .select();
+          .select('id,nome,tipo,categoria,placa,modelo,ano,cor,cnh,cpf,bau,foto,avatar,status,online,plano_ativo,lat,lng,created_at');
         data = retry.data;
         error = retry.error;
       }
 
       if (!error) {
-        return { success: true, data: data?.[0] };
+        return { success: true, data: stripSensitiveUserFields(data?.[0]) };
       }
 
       console.log('Erro Supabase updateMotoristaSupabase:', error);

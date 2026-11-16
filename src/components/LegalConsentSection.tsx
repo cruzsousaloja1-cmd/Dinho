@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, ShieldCheck, Scale, X, CheckCircle2, ExternalLink } from 'lucide-react';
+import { FileText, ShieldCheck, Scale, ArrowLeft, CheckCircle2, ExternalLink } from 'lucide-react';
 
 export type LegalDocKey = 'contrato' | 'termos' | 'lgpd';
 
@@ -78,6 +78,7 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
 
   const items: Array<{
     key: LegalDocKey;
+    number: string;
     labelPrefix: string;
     docName: string;
     checked: boolean;
@@ -86,27 +87,30 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
   }> = [
     {
       key: 'contrato',
-      labelPrefix: 'Li e aceito o',
-      docName: 'Contrato de Parceria',
+      number: '1)',
+      labelPrefix: 'Li e concordo com o',
+      docName: 'Contrato de Parceria RACE',
       checked: acceptedContract,
       onChange: onChangeContract,
-      icon: <FileText className="w-3.5 h-3.5 text-[#ff6a00] shrink-0" />,
+      icon: <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />,
     },
     {
       key: 'termos',
-      labelPrefix: 'Li e aceito os',
+      number: '2)',
+      labelPrefix: 'Li e concordo com os',
       docName: 'Termos de Uso',
       checked: acceptedTerms,
       onChange: onChangeTerms,
-      icon: <Scale className="w-3.5 h-3.5 text-[#ff6a00] shrink-0" />,
+      icon: <Scale className="w-3.5 h-3.5 text-blue-600 shrink-0" />,
     },
     {
       key: 'lgpd',
-      labelPrefix: 'Li e aceito a',
-      docName: 'Política de Privacidade (LGPD)',
+      number: '3)',
+      labelPrefix: 'Li e concordo com a',
+      docName: 'LGPD',
       checked: acceptedLgpd,
       onChange: onChangeLgpd,
-      icon: <ShieldCheck className="w-3.5 h-3.5 text-[#ff6a00] shrink-0" />,
+      icon: <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />,
     },
   ];
 
@@ -120,23 +124,23 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
   return (
     <>
       <div
-        className={`rounded-2xl p-3.5 border space-y-2.5 ${
+        className={`rounded-2xl p-3.5 sm:p-4 border-2 space-y-2.5 ${
           isDark
             ? allAccepted
               ? 'bg-emerald-950/25 border-emerald-500/50'
               : 'bg-[#121212] border-zinc-800'
             : allAccepted
-            ? 'bg-emerald-50 border-emerald-300'
+            ? 'bg-emerald-50 border-emerald-400'
             : 'bg-slate-50 border-slate-300'
         }`}
       >
         <div className="flex items-center justify-between gap-2">
           <span
-            className={`text-[11px] font-heading font-black uppercase tracking-wider ${
+            className={`text-[11px] sm:text-xs font-heading font-black uppercase tracking-wider ${
               isDark ? 'text-zinc-200' : 'text-slate-900'
             }`}
           >
-            Aceite Obrigatório antes de Salvar *
+            Documentos Obrigatórios antes de Salvar *
           </span>
           <span
             className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
@@ -149,7 +153,7 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
                 : 'bg-amber-100 text-amber-900 border border-amber-300'
             }`}
           >
-            {allAccepted ? '3/3 Aceitos' : 'Obrigatório'}
+            {allAccepted ? '3/3 Marcados' : 'Obrigatório'}
           </span>
         </div>
 
@@ -157,7 +161,7 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
           {items.map((item) => (
             <div
               key={item.key}
-              className={`flex items-start gap-2.5 p-2 rounded-xl border transition-colors ${
+              className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-colors ${
                 isDark
                   ? item.checked
                     ? 'bg-emerald-950/20 border-emerald-500/40'
@@ -172,21 +176,25 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
                 type="checkbox"
                 checked={item.checked}
                 onChange={(e) => item.onChange(e.target.checked)}
-                className="mt-0.5 w-4 h-4 accent-[#ff6a00] rounded cursor-pointer shrink-0"
+                className="mt-0.5 w-4 h-4 accent-blue-600 rounded cursor-pointer shrink-0"
               />
-              <div className="flex-1 min-w-0 text-xs leading-snug">
+              <div className="flex-1 min-w-0 text-xs sm:text-sm leading-snug">
                 <label
                   htmlFor={`legal-check-${item.key}-${theme}`}
-                  className={`cursor-pointer font-medium ${
+                  className={`cursor-pointer font-semibold ${
                     isDark ? 'text-zinc-200' : 'text-slate-800'
                   }`}
                 >
-                  {item.labelPrefix}{' '}
+                  {item.number} {item.labelPrefix}{' '}
                 </label>
                 <button
                   type="button"
                   onClick={() => setOpenDoc(item.key)}
-                  className="inline-flex items-center gap-1 font-bold text-[#ff6a00] hover:underline underline-offset-2 cursor-pointer text-left"
+                  className={`inline-flex items-center gap-1 font-bold underline underline-offset-2 cursor-pointer text-left ${
+                    isDark
+                      ? 'text-blue-400 hover:text-blue-300'
+                      : 'text-blue-600 hover:text-blue-800'
+                  }`}
                 >
                   <span>{item.docName}</span>
                   <ExternalLink className="w-3 h-3 shrink-0 inline" />
@@ -196,73 +204,74 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
           ))}
         </div>
 
-        <p className={`text-[11px] ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
-          Toque em cada título em laranja acima para ler o texto completo antes de confirmar.
+        <p className={`text-[11px] ${isDark ? 'text-zinc-400' : 'text-slate-600'}`}>
+          Clique em cada link azul acima para abrir a tela do documento completo antes de marcar.
         </p>
       </div>
 
-      {/* Modal Fullscreen com o Texto Completo do Documento Selecionado */}
+      {/* Tela Simples do Documento Completo com Botão Voltar */}
       {openDoc && (
         <div
-          className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          className="fixed inset-0 z-[1500] bg-white text-slate-900 flex flex-col overflow-hidden animate-fade-in"
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-lg max-h-[88vh] bg-[#0f0f0f] text-white border border-zinc-700 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="p-5 border-b border-zinc-800 flex items-start justify-between gap-3 bg-[#151515]">
-              <div className="space-y-1 min-w-0">
-                <div className="flex items-center gap-2 text-[#ff6a00] text-xs font-mono font-bold uppercase">
-                  <ShieldCheck className="w-4 h-4 shrink-0" />
-                  <span>Documento Oficial RACE</span>
-                </div>
-                <h3 className="font-heading font-black text-base sm:text-lg text-white leading-tight">
-                  {LEGAL_DOCUMENTS[openDoc].title}
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  {LEGAL_DOCUMENTS[openDoc].subtitle}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpenDoc(null)}
-                className="w-9 h-9 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
+          {/* Topo com botão Voltar */}
+          <div className="px-4 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => setOpenDoc(null)}
+              className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-bold text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar</span>
+            </button>
+            <span className="text-[11px] font-mono font-bold text-slate-600 uppercase truncate">
+              Documento Oficial RACE
+            </span>
+          </div>
+
+          {/* Conteúdo completo para leitura */}
+          <div className="flex-1 overflow-y-auto p-5 sm:p-6 max-w-2xl w-full mx-auto space-y-4">
+            <div className="space-y-1 border-b border-slate-200 pb-3">
+              <h2 className="font-heading font-black text-lg sm:text-xl text-slate-950 leading-tight">
+                {LEGAL_DOCUMENTS[openDoc].title}
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 font-medium">
+                {LEGAL_DOCUMENTS[openDoc].subtitle}
+              </p>
             </div>
 
-            {/* Body */}
-            <div className="p-5 overflow-y-auto space-y-3 text-xs sm:text-sm text-zinc-200 leading-relaxed">
+            <div className="space-y-3 text-sm text-slate-800 leading-relaxed">
               {LEGAL_DOCUMENTS[openDoc].clauses.map((clause, idx) => (
                 <p
                   key={idx}
-                  className="bg-[#181818] border border-zinc-800/80 rounded-xl p-3 font-medium"
+                  className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 font-medium"
                 >
                   {clause}
                 </p>
               ))}
             </div>
+          </div>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-zinc-800 bg-[#151515] flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setOpenDoc(null)}
-                className="px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs sm:text-sm cursor-pointer transition-colors"
-              >
-                Fechar
-              </button>
-              <button
-                type="button"
-                onClick={handleAcceptFromModal}
-                className="flex-1 py-3 px-4 rounded-xl bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 transition-all active:scale-95"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Li e Aceito este Documento</span>
-              </button>
-            </div>
+          {/* Rodapé com Voltar e Concordo */}
+          <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center gap-3 max-w-2xl w-full mx-auto shrink-0">
+            <button
+              type="button"
+              onClick={() => setOpenDoc(null)}
+              className="px-5 py-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-900 font-heading font-bold text-sm flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleAcceptFromModal}
+              className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-sm uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 transition-all active:scale-95"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Li e Concordo — Voltar</span>
+            </button>
           </div>
         </div>
       )}

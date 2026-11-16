@@ -52,6 +52,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [adminRegErrorMessage, setAdminRegErrorMessage] = useState<string | null>(null);
   const [adminRegSuccessMessage, setAdminRegSuccessMessage] = useState<string | null>(null);
   const [isCreatingAdmin, setIsCreatingAdmin] = useState(false);
+  const [adminAcceptedContract, setAdminAcceptedContract] = useState(false);
+  const [adminAcceptedTerms, setAdminAcceptedTerms] = useState(false);
+  const [adminAcceptedLgpd, setAdminAcceptedLgpd] = useState(false);
 
   // Estados do cadastro com 5 campos: Nome, E-mail, WhatsApp, Login, Senha
   const [regName, setRegName] = useState('');
@@ -112,6 +115,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setAdminRegConfirmPassword('');
     setShowAdminRegPassword(false);
     setShowAdminRegConfirmPassword(false);
+    setAdminAcceptedContract(false);
+    setAdminAcceptedTerms(false);
+    setAdminAcceptedLgpd(false);
     setViewMode('admin_register');
   };
 
@@ -150,6 +156,11 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
+    if (!adminAcceptedContract || !adminAcceptedTerms || !adminAcceptedLgpd) {
+      setAdminRegErrorMessage('Marque os 3 aceites obrigatórios (Contrato de Parceria RACE, Termos de Uso e LGPD) antes de salvar.');
+      return;
+    }
+
     setIsCreatingAdmin(true);
     try {
       // Verifica se já existe conta com este e-mail no Supabase
@@ -170,6 +181,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         login: cleanEmail,
         senha: adminRegPassword,
         tipo: 'ADM',
+        aceitou_contrato: true,
+        aceitou_termos: true,
+        aceitou_lgpd: true,
+        data_aceite: new Date().toISOString(),
       });
 
       if (!supabaseRes.success) {
@@ -975,10 +990,24 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </div>
               </div>
 
+              <LegalConsentSection
+                acceptedContract={adminAcceptedContract}
+                acceptedTerms={adminAcceptedTerms}
+                acceptedLgpd={adminAcceptedLgpd}
+                onChangeContract={setAdminAcceptedContract}
+                onChangeTerms={setAdminAcceptedTerms}
+                onChangeLgpd={setAdminAcceptedLgpd}
+                theme="dark"
+              />
+
               <button
                 type="submit"
-                disabled={isCreatingAdmin}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 active:scale-[0.99] text-white font-heading font-black text-base py-4 px-6 rounded-2xl transition-all cursor-pointer shadow-lg shadow-emerald-600/25 uppercase tracking-wider flex items-center justify-center gap-2 mt-4"
+                disabled={isCreatingAdmin || !adminAcceptedContract || !adminAcceptedTerms || !adminAcceptedLgpd}
+                className={`w-full font-heading font-black text-base py-4 px-6 rounded-2xl transition-all uppercase tracking-wider flex items-center justify-center gap-2 mt-4 ${
+                  !isCreatingAdmin && adminAcceptedContract && adminAcceptedTerms && adminAcceptedLgpd
+                    ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
+                    : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
+                }`}
               >
                 <ShieldCheck className="w-5 h-5" />
                 <span>{isCreatingAdmin ? 'CRIANDO CONTA DE ADM...' : 'CRIAR CONTA DE ADM'}</span>
@@ -1379,7 +1408,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 disabled={!regAvatar || !acceptedContract || !acceptedTerms || !acceptedLgpd || isRegistering}
                 className={`w-full font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl transition-all uppercase tracking-wider block mt-3 ${
                   regAvatar && acceptedContract && acceptedTerms && acceptedLgpd && !isRegistering
-                    ? 'bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/25'
+                    ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
                     : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
                 }`}
               >

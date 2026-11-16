@@ -580,6 +580,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             className={`w-full font-heading font-black py-4 rounded-xl transition-all text-sm sm:text-base flex items-center justify-center gap-2 mt-4 uppercase tracking-wider ${
               mode === 'register' && (!acceptedContract || !acceptedTerms || !acceptedLgpd)
                 ? 'bg-slate-300 text-slate-600 cursor-not-allowed opacity-80'
+                : mode === 'register'
+                ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/25 active:scale-98 disabled:opacity-50'
                 : 'bg-[#ff6a00] hover:bg-[#e05e00] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/20 active:scale-98 disabled:opacity-50'
             }`}
           >
