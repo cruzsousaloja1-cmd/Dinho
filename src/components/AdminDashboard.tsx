@@ -38,7 +38,10 @@ import {
   Database,
   RefreshCw,
   Car,
-  KeyRound
+  KeyRound,
+  Camera,
+  Pencil,
+  Loader2
 } from 'lucide-react';
 import { getWithdrawals, markWithdrawalAsPaid, setWithdrawalsFromSupabase } from '../services/walletService';
 import { WithdrawalRequest } from '../types';
@@ -61,6 +64,7 @@ import {
   AsaasBalanceInfo
 } from '../services/asaasService';
 import { maskLast4Digits } from '../utils/security';
+import { compressImageToMax200KB } from '../utils/imageCompression';
 
 interface AdminDashboardProps {
   drivers: Driver[];
@@ -230,9 +234,123 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   } | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
 
+  // Modal de edição de usuário pelo ADM (com botão SALVAR ALTERAÇÕES no final)
+  const [editingAdminUser, setEditingAdminUser] = useState<any | null>(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserEmail, setEditUserEmail] = useState('');
+  const [editUserPhone, setEditUserPhone] = useState('');
+  const [editUserAvatar, setEditUserAvatar] = useState('');
+  const [editUserModel, setEditUserModel] = useState('');
+  const [editUserPlate, setEditUserPlate] = useState('');
+  const [hasPendingEditAvatar, setHasPendingEditAvatar] = useState(false);
+  const [isSavingAdminUser, setIsSavingAdminUser] = useState(false);
+  const [editUserError, setEditUserError] = useState<string | null>(null);
+  const adminEditPhotoRef = React.useRef<HTMLInputElement>(null);
+
   const showToast = (msg: string) => {
     setActionToast(msg);
     setTimeout(() => setActionToast(null), 3500);
+  };
+
+  const handleOpenAdminEditUser = (u: any) => {
+    setEditingAdminUser(u);
+    setEditUserName(u.name || '');
+    setEditUserEmail(u.email === 'Sem e-mail' ? '' : (u.email || ''));
+    setEditUserPhone(u.phone === 'Não informado' ? '' : (u.phone || ''));
+    setEditUserAvatar(u.avatar || u.raw?.foto || u.raw?.avatar || '');
+    setEditUserModel(u.model || '');
+    setEditUserPlate(u.plate || '');
+    setHasPendingEditAvatar(false);
+    setEditUserError(null);
+  };
+
+  const handleAdminEditAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await compressImageToMax200KB(file);
+      if (base64) {
+        setEditUserAvatar(base64);
+        setHasPendingEditAvatar(true);
+        setEditUserError(null);
+      }
+    } catch {
+      setEditUserError('Não foi possível processar a imagem escolhida.');
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleSaveAdminUserChanges = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAdminUser) return;
+    const cleanName = editUserName.trim();
+    const cleanEmail = editUserEmail.trim().toLowerCase();
+    const cleanPhone = editUserPhone.trim();
+
+    if (!cleanName) {
+      setEditUserError('Informe o nome completo do usuário.');
+      return;
+    }
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setEditUserError('Informe um e-mail válido.');
+      return;
+    }
+
+    setIsSavingAdminUser(true);
+    setEditUserError(null);
+
+    try {
+      const res = await saveUsuarioSupabase({
+        id: editingAdminUser.id,
+        previousEmail: editingAdminUser.email,
+        nome: cleanName,
+        email: cleanEmail,
+        celular: cleanPhone,
+        whatsapp: cleanPhone,
+        login: editingAdminUser.login,
+        tipo: editingAdminUser.raw?.tipo,
+        categoria: editingAdminUser.raw?.categoria,
+        modelo: !editingAdminUser.isPassenger && editUserModel.trim() ? editUserModel.trim() : undefined,
+        placa: !editingAdminUser.isPassenger && editUserPlate.trim() ? editUserPlate.trim().toUpperCase() : undefined,
+        foto: editUserAvatar || undefined,
+        avatar: editUserAvatar || undefined,
+      });
+
+      if (!res.success) {
+        setEditUserError(res.error || 'Erro ao salvar alterações no Supabase.');
+        return;
+      }
+
+      const returnedPhoto = String(res.data?.foto || res.data?.avatar || editUserAvatar || '').trim();
+      setSupabaseUsers((prev) =>
+        prev.map((row) =>
+          String(row.id) === String(editingAdminUser.id)
+            ? {
+                ...row,
+                nome: cleanName,
+                email: cleanEmail,
+                'e-mail': cleanEmail,
+                celular: cleanPhone,
+                whatsapp: cleanPhone,
+                modelo: !editingAdminUser.isPassenger && editUserModel.trim() ? editUserModel.trim() : row.modelo,
+                placa: !editingAdminUser.isPassenger && editUserPlate.trim() ? editUserPlate.trim().toUpperCase() : row.placa,
+                foto: returnedPhoto || row.foto,
+                avatar: returnedPhoto || row.avatar,
+              }
+            : row
+        )
+      );
+
+      setEditingAdminUser(null);
+      setHasPendingEditAvatar(false);
+      showToast('Perfil atualizado com sucesso!');
+      fetchSupabaseUsuarios().catch(() => {});
+    } catch (err: any) {
+      setEditUserError(err?.message || 'Falha ao salvar alterações no Supabase.');
+    } finally {
+      setIsSavingAdminUser(false);
+    }
   };
 
   const handleLiberar7Dias = async (u: any) => {
@@ -1034,8 +1152,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                         </div>
 
-                        {/* Os 3 Botões: Liberar 7 dias, Bloquear, Ver avaliações */}
-                        <div className="flex items-center gap-1.5">
+                        {/* Botões: Editar, Liberar 7 dias, Bloquear, Ver avaliações */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAdminEditUser(driver)}
+                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                            title="Editar usuário e foto"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>Editar</span>
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => handleLiberar7Dias(driver.raw)}
@@ -1292,11 +1420,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
                       {/* Motorista info */}
                       <div className="flex items-center gap-3.5">
-                        <img
-                          src={driver.avatar}
-                          alt={driver.name}
-                          className="w-13 h-13 rounded-2xl object-cover border-2 border-amber-400 shadow-xs"
-                        />
+                        {(() => {
+                          const matchedAvatar =
+                            driver.avatar ||
+                            parsedUsers.find(
+                              (pu) =>
+                                pu.id === driver.id ||
+                                (driver.email && pu.email.toLowerCase() === driver.email.toLowerCase())
+                            )?.avatar;
+                          return matchedAvatar ? (
+                            <img
+                              src={matchedAvatar}
+                              alt={driver.name}
+                              className="w-13 h-13 rounded-2xl object-cover border-2 border-amber-400 shadow-xs shrink-0"
+                            />
+                          ) : (
+                            <div className="w-13 h-13 rounded-2xl bg-amber-100 text-amber-800 border-2 border-amber-400 shadow-xs shrink-0 flex items-center justify-center font-heading font-black text-lg">
+                              {(driver.name || 'M').charAt(0).toUpperCase()}
+                            </div>
+                          );
+                        })()}
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="font-heading font-black text-slate-950 text-base sm:text-lg">
@@ -1691,8 +1834,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Botões de Controle ADM: Ativar / Liberar 7 dias, Bloquear, Remover, Ver avaliações */}
+                    {/* Botões de Controle ADM: Editar, Ativar / Liberar 7 dias, Bloquear, Remover, Ver avaliações */}
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Botão Editar */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAdminEditUser(u)}
+                        className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                        title="Editar nome, e-mail, WhatsApp e foto"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
+
                       {/* Botão 1: Ativar / Liberar 7 dias */}
                       <button
                         type="button"
@@ -2687,6 +2841,193 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 Fechar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal ADM: Editar Usuário (Nome, E-mail, WhatsApp, Foto + SALVAR ALTERAÇÕES) */}
+      {editingAdminUser && (
+        <div className="fixed inset-0 z-[1250] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full border-2 border-emerald-500 shadow-2xl p-6 space-y-5 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                  <Pencil className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                    Editar Usuário (ADM)
+                  </h3>
+                  <span className="text-xs text-slate-500 font-medium">
+                    {editingAdminUser.userType} &bull; Login: <strong className="font-mono">{editingAdminUser.login}</strong>
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingAdminUser(null)}
+                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAdminUserChanges} className="space-y-4">
+              <input
+                ref={adminEditPhotoRef}
+                type="file"
+                accept="image/*"
+                onChange={handleAdminEditAvatarChange}
+                className="hidden"
+              />
+
+              {/* Prévia e Troca da Foto */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-4">
+                <div
+                  onClick={() => adminEditPhotoRef.current?.click()}
+                  className="relative cursor-pointer shrink-0"
+                >
+                  {editUserAvatar ? (
+                    <img
+                      src={editUserAvatar}
+                      alt={editUserName || 'Usuário'}
+                      className="w-20 h-20 rounded-full object-cover border-4 border-[#ff6a00] shadow-md"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-full bg-amber-100 text-amber-800 border-4 border-[#ff6a00] shadow-md flex items-center justify-center font-heading font-black text-2xl">
+                      {(editUserName || 'U').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#ff6a00] text-white border-2 border-white shadow">
+                    <Camera className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+
+                <div className="flex-1 text-center sm:text-left space-y-2">
+                  {hasPendingEditAvatar ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-heading font-black text-emerald-700 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-full">
+                      <Check className="w-3.5 h-3.5" />
+                      Prévia da nova foto pronta — clique em SALVAR ALTERAÇÕES
+                    </span>
+                  ) : (
+                    <p className="text-xs font-bold text-slate-600">
+                      Toque na foto para trocar pela galeria antes de salvar.
+                    </p>
+                  )}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => adminEditPhotoRef.current?.click()}
+                      className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-[#ff6a00]" />
+                      <span>{hasPendingEditAvatar ? 'Escolher Outra Foto' : 'Trocar Foto'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                    Nome Completo
+                  </label>
+                  <input
+                    type="text"
+                    value={editUserName}
+                    onChange={(e) => setEditUserName(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-bold text-sm outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                    E-mail
+                  </label>
+                  <input
+                    type="email"
+                    value={editUserEmail}
+                    onChange={(e) => setEditUserEmail(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                    WhatsApp / Celular
+                  </label>
+                  <input
+                    type="tel"
+                    value={editUserPhone}
+                    onChange={(e) => setEditUserPhone(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm outline-none"
+                  />
+                </div>
+
+                {!editingAdminUser.isPassenger && !editingAdminUser.isAdminRow && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                        Veículo / Modelo
+                      </label>
+                      <input
+                        type="text"
+                        value={editUserModel}
+                        onChange={(e) => setEditUserModel(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-bold text-sm outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                        Placa
+                      </label>
+                      <input
+                        type="text"
+                        value={editUserPlate}
+                        onChange={(e) => setEditUserPlate(e.target.value.toUpperCase())}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm uppercase outline-none"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {editUserError && (
+                <div className="bg-rose-50 border border-rose-300 text-rose-900 rounded-xl p-3 text-xs font-bold">
+                  {editUserError}
+                </div>
+              )}
+
+              {/* Botão Grande Verde SALVAR ALTERAÇÕES no final */}
+              <div className="pt-2 space-y-2">
+                <button
+                  type="submit"
+                  disabled={isSavingAdminUser}
+                  className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-heading font-black text-base rounded-2xl shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer disabled:opacity-60"
+                >
+                  {isSavingAdminUser ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Salvando alterações...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5" />
+                      <span>SALVAR ALTERAÇÕES</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingAdminUser(null)}
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

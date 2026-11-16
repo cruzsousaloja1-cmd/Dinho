@@ -1650,6 +1650,10 @@ export default function App() {
                 }
               }}
               onUpdateDriver={handleUpdateDriver}
+              onUpdateUserProfile={(updatedUser) => {
+                setCurrentUser(updatedUser);
+                saveSessionUser(updatedUser);
+              }}
               onRegisterDriver={(newDriver) => {
                 handleRegisterDriver(newDriver);
               }}
@@ -1757,7 +1761,15 @@ export default function App() {
             onOpenSupport={() => setIsSupportOpen(true)}
             onOpenShare={() => setIsShareOpen(true)}
             onUpdateAvatar={(avatarBase64) => {
-              setCurrentUser((prev) => (prev ? { ...prev, avatar: avatarBase64 } : null));
+              setCurrentUser((prev) => {
+                const next = prev ? { ...prev, avatar: avatarBase64 } : null;
+                if (next) saveSessionUser(next);
+                return next;
+              });
+            }}
+            onUpdateProfile={(updatedUser) => {
+              setCurrentUser(updatedUser);
+              saveSessionUser(updatedUser);
             }}
           />
         )}

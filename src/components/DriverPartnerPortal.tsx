@@ -230,7 +230,8 @@ import {
   Phone,
   ArrowDownCircle,
   XCircle,
-  User
+  User,
+  Pencil
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
@@ -251,6 +252,7 @@ interface DriverPartnerPortalProps {
   rides?: Ride[];
   activeRide?: Ride | null;
   onUpdateDriver: (driver: Driver) => void;
+  onUpdateUserProfile?: (user: AppUser) => void;
   onRegisterDriver: (newDriver: Driver) => void;
   onLoginDriverSuccess?: (user: AppUser, driver?: Driver) => void;
   onAcceptIncomingRide?: (ride: Ride) => void;
@@ -268,6 +270,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   rides = [],
   activeRide,
   onUpdateDriver,
+  onUpdateUserProfile,
   onRegisterDriver,
   onLoginDriverSuccess,
   onAcceptIncomingRide,
@@ -433,6 +436,57 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [cnhDocPreview, setCnhDocPreview] = useState<string | null>(null);
   const [vehicleDocPreview, setVehicleDocPreview] = useState<string | null>(null);
 
+  const [isEditingDriverProfile, setIsEditingDriverProfile] = useState(false);
+  const [draftDriverName, setDraftDriverName] = useState<string>(currentDriver.name || '');
+  const [draftDriverEmail, setDraftDriverEmail] = useState<string>(currentDriver.email || '');
+  const [draftDriverPhone, setDraftDriverPhone] = useState<string>(currentDriver.phone || '');
+  const [draftDriverAvatar, setDraftDriverAvatar] = useState<string>(
+    currentDriver.avatar || currentUser?.avatar || ''
+  );
+  const [hasPendingDriverAvatar, setHasPendingDriverAvatar] = useState(false);
+  const [isSavingDriverProfile, setIsSavingDriverProfile] = useState(false);
+  const [driverProfileSuccessMsg, setDriverProfileSuccessMsg] = useState<string | null>(null);
+  const [driverProfileErrorMsg, setDriverProfileErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isEditingDriverProfile && !hasPendingDriverAvatar) {
+      setDraftDriverName(currentDriver.name || '');
+      setDraftDriverEmail(currentDriver.email || '');
+      setDraftDriverPhone(currentDriver.phone || '');
+      setDraftDriverAvatar(currentDriver.avatar || currentUser?.avatar || '');
+    }
+  }, [
+    currentDriver.name,
+    currentDriver.email,
+    currentDriver.phone,
+    currentDriver.avatar,
+    currentUser?.avatar,
+    isEditingDriverProfile,
+    hasPendingDriverAvatar,
+  ]);
+
+  const handleOpenDriverProfileEdit = () => {
+    setDraftDriverName(currentDriver.name || '');
+    setDraftDriverEmail(currentDriver.email || '');
+    setDraftDriverPhone(currentDriver.phone || '');
+    setDraftDriverAvatar(currentDriver.avatar || currentUser?.avatar || '');
+    setHasPendingDriverAvatar(false);
+    setDriverProfileErrorMsg(null);
+    setDriverProfileSuccessMsg(null);
+    setDashboardSection('perfil');
+    setIsEditingDriverProfile(true);
+  };
+
+  const handleCancelDriverProfileEdit = () => {
+    setDraftDriverName(currentDriver.name || '');
+    setDraftDriverEmail(currentDriver.email || '');
+    setDraftDriverPhone(currentDriver.phone || '');
+    setDraftDriverAvatar(currentDriver.avatar || currentUser?.avatar || '');
+    setHasPendingDriverAvatar(false);
+    setDriverProfileErrorMsg(null);
+    setIsEditingDriverProfile(false);
+  };
+
   const handleDriverAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -440,30 +494,103 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     try {
       const base64 = await compressImageToMax200KB(file);
       if (base64) {
-        const updated: Driver = {
-          ...currentDriver,
-          avatar: base64,
-        };
-        onUpdateDriver(updated);
-
-        saveUsuarioSupabase({
-          nome: currentDriver.name,
-          email: currentDriver.email,
-          celular: currentDriver.phone,
-          foto: base64,
-          avatar: base64,
-        }).catch(() => {});
-
-        if (currentUser && currentUser.email) {
-          saveSessionUser({
-            ...currentUser,
-            avatar: base64,
-            driverData: updated,
-          });
-        }
+        // Mostra prévia da foto nova e só salva ao clicar em SALVAR ALTERAÇÕES
+        setDraftDriverAvatar(base64);
+        setHasPendingDriverAvatar(true);
+        setDriverProfileErrorMsg(null);
+        setDriverProfileSuccessMsg(null);
+        setDashboardSection('perfil');
+        setIsEditingDriverProfile(true);
       }
     } catch (err) {
       console.log('Erro ao comprimir foto do motorista:', err);
+      setDriverProfileErrorMsg('Não foi possível processar a imagem escolhida.');
+    } finally {
+      if (e.target) {
+        e.target.value = '';
+      }
+    }
+  };
+
+  const handleSaveDriverProfileChanges = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanName = draftDriverName.trim();
+    const cleanEmail = draftDriverEmail.trim().toLowerCase();
+    const cleanPhone = draftDriverPhone.trim();
+
+    if (!cleanName) {
+      setDriverProfileErrorMsg('Informe seu nome completo.');
+      return;
+    }
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setDriverProfileErrorMsg('Informe um e-mail válido.');
+      return;
+    }
+
+    setIsSavingDriverProfile(true);
+    setDriverProfileErrorMsg(null);
+    setDriverProfileSuccessMsg(null);
+
+    try {
+      const finalAvatar = draftDriverAvatar || currentDriver.avatar || currentUser?.avatar || '';
+      const res = await saveUsuarioSupabase({
+        id: currentDriver.id || currentUser?.id,
+        previousEmail: currentDriver.email || currentUser?.email,
+        nome: cleanName,
+        email: cleanEmail,
+        celular: cleanPhone,
+        whatsapp: cleanPhone,
+        login: currentUser?.login || currentDriver.email || cleanEmail,
+        tipo: currentUser?.tipo,
+        categoria: currentDriver.category,
+        placa: currentDriver.vehiclePlate,
+        modelo: currentDriver.vehicleModel,
+        ano: currentDriver.vehicleYear,
+        cnh: currentDriver.cnh,
+        foto: finalAvatar || undefined,
+        avatar: finalAvatar || undefined,
+      });
+
+      if (!res.success) {
+        setDriverProfileErrorMsg(res.error || 'Erro ao salvar alterações no Supabase. Tente novamente.');
+        return;
+      }
+
+      const returnedPhoto = String(res.data?.foto || res.data?.avatar || finalAvatar || '').trim();
+      const updatedDriver: Driver = {
+        ...currentDriver,
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        avatar: returnedPhoto,
+      };
+      onUpdateDriver(updatedDriver);
+
+      if (currentUser) {
+        const updatedUser: AppUser = {
+          ...currentUser,
+          id: res.data?.id ? String(res.data.id) : currentUser.id,
+          name: cleanName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          whatsapp: cleanPhone,
+          avatar: returnedPhoto,
+          driverData: updatedDriver,
+        };
+        saveSessionUser(updatedUser);
+        if (onUpdateUserProfile) {
+          onUpdateUserProfile(updatedUser);
+        }
+      }
+
+      setHasPendingDriverAvatar(false);
+      setIsEditingDriverProfile(false);
+      setDriverProfileSuccessMsg('Perfil atualizado com sucesso!');
+      setTimeout(() => setDriverProfileSuccessMsg(null), 6000);
+    } catch (err: any) {
+      setDriverProfileErrorMsg(err?.message || 'Falha ao salvar perfil. Tente novamente.');
+    } finally {
+      setIsSavingDriverProfile(false);
     }
   };
 
@@ -2061,15 +2188,31 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   id="driver-vehicle-photo-input"
                 />
 
+                {driverProfileSuccessMsg && (
+                  <div className="bg-emerald-50 border-2 border-emerald-500 text-emerald-950 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                      <span className="font-heading font-black text-sm">{driverProfileSuccessMsg}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDriverProfileSuccessMsg(null)}
+                      className="text-emerald-700 hover:text-emerald-950 p-1 rounded-lg cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
                   <div className="flex items-center gap-4">
                     <div 
                       onClick={() => driverAvatarInputRef.current?.click()}
                       className="relative group cursor-pointer shrink-0"
                     >
-                      {(currentDriver.avatar || currentUser?.avatar) ? (
+                      {((isEditingDriverProfile ? draftDriverAvatar : (currentDriver.avatar || currentUser?.avatar))) ? (
                         <img
-                          src={currentDriver.avatar || currentUser?.avatar}
+                          src={isEditingDriverProfile ? draftDriverAvatar : (currentDriver.avatar || currentUser?.avatar)}
                           alt={currentDriver.name}
                           className="w-20 h-20 rounded-full object-cover border-4 border-amber-500 shadow-md group-hover:opacity-90 transition-opacity"
                         />
@@ -2107,6 +2250,15 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                           <span>Trocar foto de perfil</span>
                         </button>
                         <span className="text-slate-300">•</span>
+                        <button
+                          type="button"
+                          onClick={handleOpenDriverProfileEdit}
+                          className="text-xs font-heading font-black text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Editar perfil</span>
+                        </button>
+                        <span className="text-slate-300">•</span>
                         <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-0.5 rounded-full border border-emerald-300">
                           CNH EAR Homologada
                         </span>
@@ -2116,7 +2268,153 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {!isEditingDriverProfile && (
+                    <button
+                      type="button"
+                      onClick={handleOpenDriverProfileEdit}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 shrink-0"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Editar perfil</span>
+                    </button>
+                  )}
                 </div>
+
+                {isEditingDriverProfile && (
+                  <form
+                    onSubmit={handleSaveDriverProfileChanges}
+                    className="bg-slate-50 border-2 border-emerald-500 rounded-2xl p-4 sm:p-5 space-y-4 shadow-md animate-fade-in"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                      <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
+                        <Pencil className="w-4 h-4 text-[#ff6a00]" />
+                        <span>Editar Perfil do Condutor</span>
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={handleCancelDriverProfileEdit}
+                        className="px-3 py-1 rounded-xl bg-white border border-slate-300 text-slate-700 font-heading font-bold text-xs cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+
+                    <div className="bg-white border border-slate-200 rounded-2xl p-3.5 flex flex-col sm:flex-row items-center gap-4">
+                      <div
+                        onClick={() => driverAvatarInputRef.current?.click()}
+                        className="relative cursor-pointer shrink-0"
+                      >
+                        {draftDriverAvatar ? (
+                          <img
+                            src={draftDriverAvatar}
+                            alt="Prévia da foto"
+                            className="w-20 h-20 rounded-full object-cover border-4 border-[#ff6a00] shadow"
+                          />
+                        ) : (
+                          <div className="w-20 h-20 rounded-full bg-amber-100 text-amber-900 border-4 border-[#ff6a00] flex flex-col items-center justify-center font-heading font-black text-2xl">
+                            <span>{(draftDriverName || currentDriver.name || 'M').charAt(0).toUpperCase()}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 text-center sm:text-left space-y-2">
+                        {hasPendingDriverAvatar ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-heading font-black text-emerald-700 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-full">
+                            <Check className="w-3.5 h-3.5" />
+                            Prévia da nova foto pronta — clique em SALVAR ALTERAÇÕES
+                          </span>
+                        ) : (
+                          <p className="text-xs font-bold text-slate-600">
+                            Clique na foto para escolher uma imagem da galeria e ver a prévia antes de salvar.
+                          </p>
+                        )}
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => driverAvatarInputRef.current?.click()}
+                            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-[#ff6a00]" />
+                            <span>{hasPendingDriverAvatar ? 'Escolher Outra Foto' : 'Escolher Foto na Galeria'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div className="space-y-1">
+                        <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                          Nome Completo
+                        </label>
+                        <input
+                          type="text"
+                          value={draftDriverName}
+                          onChange={(e) => setDraftDriverName(e.target.value)}
+                          required
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-bold text-sm outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                          E-mail
+                        </label>
+                        <input
+                          type="email"
+                          value={draftDriverEmail}
+                          onChange={(e) => setDraftDriverEmail(e.target.value)}
+                          required
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                          WhatsApp / Celular
+                        </label>
+                        <input
+                          type="tel"
+                          value={draftDriverPhone}
+                          onChange={(e) => setDraftDriverPhone(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-heading font-black text-slate-500 uppercase block">
+                          Login (não alterável)
+                        </label>
+                        <div className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 font-mono font-bold text-sm">
+                          {currentUser?.login || currentDriver.email}
+                        </div>
+                      </div>
+                    </div>
+
+                    {driverProfileErrorMsg && (
+                      <div className="bg-rose-50 border border-rose-300 text-rose-900 rounded-xl p-3 text-xs font-bold">
+                        {driverProfileErrorMsg}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSavingDriverProfile}
+                      className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-heading font-black text-base rounded-2xl shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer disabled:opacity-60"
+                    >
+                      {isSavingDriverProfile ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <span>Salvando alterações...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-5 h-5" />
+                          <span>SALVAR ALTERAÇÕES</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
 
                 {/* Card de Avaliações e Últimos 3 Comentários dos Passageiros */}
                 <div className="bg-white border-2 border-amber-300 rounded-3xl p-5 shadow-sm space-y-3.5">

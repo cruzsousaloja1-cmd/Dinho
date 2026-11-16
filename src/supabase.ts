@@ -1234,6 +1234,8 @@ export async function updateMotoristaSupabase(
  * Salva ou atualiza usuário na tabela public.usuarios no Supabase (sem enviar `id` manual e sem colunas inexistentes)
  */
 export async function saveUsuarioSupabase(user: {
+  id?: string | number;
+  previousEmail?: string;
   codigo_usuario?: string;
   nome: string;
   email: string;
@@ -1270,23 +1272,47 @@ export async function saveUsuarioSupabase(user: {
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = user.email.toLowerCase().trim();
+    const prevEmail = String(user.previousEmail || '').toLowerCase().trim();
     if (user.exigencias_confirmadas === true) {
       setDriverRequirementsConfirmedLocal(cleanEmail, true);
     }
 
-    // Verifica se já existe na nuvem
-    const existing = await getUsuarioSupabase(cleanEmail);
+    // Verifica se já existe na nuvem (priorizando id numérico, e-mail anterior, e-mail atual ou login)
+    let existing: any = null;
+    if (user.id !== undefined && user.id !== null && /^\d+$/.test(String(user.id).trim())) {
+      try {
+        const byIdRes = await selectSafeUsuariosRows((q) =>
+          q.eq('id', Number(String(user.id).trim())).limit(1)
+        );
+        if (byIdRes.data && byIdRes.data.length > 0) {
+          existing = byIdRes.data[0];
+        }
+      } catch {}
+    }
+    if (!existing && prevEmail) {
+      existing = await getUsuarioSupabase(prevEmail);
+    }
+    if (!existing && cleanEmail) {
+      existing = await getUsuarioSupabase(cleanEmail);
+    }
+    if (!existing && user.login) {
+      existing = await getUsuarioSupabase(user.login);
+    }
 
     if (existing) {
       const knownCols = await getUsuariosTableColumns();
       const existingKeys = new Set(Object.keys(existing));
       const allowedCols = knownCols && knownCols.size > 0 ? knownCols : existingKeys;
 
+      const phoneVal = (user.whatsapp || user.celular || existing.celular || '').trim();
       const updateData: Record<string, any> = {
         nome: user.nome,
-        celular: user.celular || user.whatsapp || existing.celular || '',
+        celular: phoneVal,
         tipo: user.tipo || existing.tipo || 'passenger',
       };
+      if (cleanEmail && allowedCols.has('email')) updateData.email = cleanEmail;
+      if (cleanEmail && allowedCols.has('e-mail')) updateData['e-mail'] = cleanEmail;
+      if (phoneVal && allowedCols.has('whatsapp')) updateData.whatsapp = phoneVal;
       if (user.categoria !== undefined && user.categoria !== '') updateData.categoria = user.categoria;
       if (user.placa !== undefined && user.placa !== '') updateData.placa = user.placa;
       if (user.modelo !== undefined && user.modelo !== '') updateData.modelo = user.modelo;
@@ -1349,7 +1375,9 @@ export async function saveUsuarioSupabase(user: {
           .select(selectClause);
 
         if (!error) {
-          return { success: true, data: stripSensitiveUserFields(data?.[0] || existing) };
+          userProfileHydrationCache = null;
+          userProfileHydrationCacheAt = 0;
+          return { success: true, data: stripSensitiveUserFields(data?.[0] || { ...existing, ...updateData }) };
         }
 
         const msg = error.message || '';
