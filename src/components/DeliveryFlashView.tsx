@@ -57,6 +57,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
   const [isSearchingPickup, setIsSearchingPickup] = useState(false);
   const [isSearchingDest, setIsSearchingDest] = useState(false);
   const [isLocatingUser, setIsLocatingUser] = useState(false);
+  const [gpsErrorNotice, setGpsErrorNotice] = useState<string | null>(null);
 
   const searchTimeoutRef = useRef<any>(null);
 
@@ -144,36 +145,42 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
   };
 
   const handleUseCurrentLocation = () => {
+    const gpsErrorMsg =
+      'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
+
     setIsLocatingUser(true);
+    setGpsErrorNotice(null);
+    setActiveDropdown(null);
 
-    const onCoordsResolved = async (lat: number, lng: number) => {
-      try {
-        const geoResult = await reverseGeocodeCoords(lat, lng);
-        if (setPickup) setPickup({ address: geoResult.fullAddress, lat, lng });
-        setPickupInput(geoResult.fullAddress);
-      } catch {
-        const fallback = 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP';
-        if (setPickup) setPickup({ address: fallback, lat, lng });
-        setPickupInput(fallback);
-      } finally {
-        setIsLocatingUser(false);
-        setActiveDropdown(null);
-      }
-    };
-
-    if (!navigator.geolocation) {
-      onCoordsResolved(-23.0903, -47.2180);
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setIsLocatingUser(false);
+      setGpsErrorNotice(gpsErrorMsg);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        onCoordsResolved(pos.coords.latitude, pos.coords.longitude);
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        try {
+          const geoResult = await reverseGeocodeCoords(lat, lng);
+          if (!geoResult.success || !geoResult.inIndaiatuba || !geoResult.fullAddress) {
+            setGpsErrorNotice(geoResult.errorMessage || gpsErrorMsg);
+            return;
+          }
+          if (setPickup) setPickup({ address: geoResult.fullAddress, lat, lng });
+          setPickupInput(geoResult.fullAddress);
+        } catch {
+          setGpsErrorNotice(gpsErrorMsg);
+        } finally {
+          setIsLocatingUser(false);
+        }
       },
       () => {
-        onCoordsResolved(-23.0903, -47.2180);
+        setIsLocatingUser(false);
+        setGpsErrorNotice(gpsErrorMsg);
       },
-      { timeout: 7000, enableHighAccuracy: true }
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
     );
   };
 
@@ -326,6 +333,12 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
                   </button>
                 </div>
               </div>
+
+              {gpsErrorNotice && (
+                <div className="mt-2 p-2.5 bg-rose-50 border border-rose-300 rounded-xl text-xs font-bold text-rose-900">
+                  {gpsErrorNotice}
+                </div>
+              )}
 
               {/* Suggestions Dropdown for Coleta */}
               {activeDropdown === 'pickup' && (

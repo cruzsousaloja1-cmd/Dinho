@@ -252,6 +252,9 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
       } else {
         pickupMarkerRef.current.setLatLng([pickup.lat, pickup.lng]);
       }
+      if (!destination) {
+        map.setView([pickup.lat, pickup.lng], 16, { animate: true });
+      }
     } else if (pickupMarkerRef.current) {
       pickupMarkerRef.current.remove();
       pickupMarkerRef.current = null;

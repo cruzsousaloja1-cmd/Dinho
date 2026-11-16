@@ -84,7 +84,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   };
 
   const [activeAddress, setActiveAddress] = useState(
-    pickup?.address || currentAddress || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP'
+    pickup?.address || currentAddress || 'Clique em Atualizar com Meu GPS para detectar sua localização'
   );
 
   const displayName = currentUser?.name || 'Passageiro RACE';
@@ -92,8 +92,11 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   const displayPhone = currentUser?.whatsapp || currentUser?.phone || 'Não informado';
   const displayLogin = currentUser?.login || currentUser?.email || '';
 
-  // Atualizar endereço com GPS Real ou Indaiatuba
+  // Atualizar endereço com GPS Real em Indaiatuba-SP
   const handleUpdateGps = () => {
+    const gpsErrorMsg =
+      'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
+
     setIsLocating(true);
     setGpsStatus('Localizando satélites GPS...');
 
@@ -104,38 +107,32 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           const lng = position.coords.longitude;
           try {
             const detected = await reverseGeocodeCoords(lat, lng);
+            if (!detected.success || !detected.inIndaiatuba || !detected.fullAddress) {
+              setGpsStatus(detected.errorMessage || gpsErrorMsg);
+              return;
+            }
             const addressString = detected.fullAddress;
             setActiveAddress(addressString);
             if (onUpdateAddress) onUpdateAddress(addressString, lat, lng);
             setGpsStatus('📍 Localização GPS atualizada com sucesso!');
           } catch {
-            const defaultAddress = 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP';
-            setActiveAddress(defaultAddress);
-            if (onUpdateAddress) onUpdateAddress(defaultAddress, -23.0842, -47.2118);
-            setGpsStatus('📍 Localização GPS Indaiatuba atualizada!');
+            setGpsStatus(gpsErrorMsg);
           } finally {
             setIsLocating(false);
-            setTimeout(() => setGpsStatus(null), 4000);
+            setTimeout(() => setGpsStatus(null), 5000);
           }
         },
         () => {
-          // Fallback seguro em Indaiatuba
-          const fallbackAddr = 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP';
-          setActiveAddress(fallbackAddr);
-          if (onUpdateAddress) onUpdateAddress(fallbackAddr, -23.0842, -47.2118);
-          setGpsStatus('📍 Localização GPS definida em Indaiatuba - SP');
+          setGpsStatus(gpsErrorMsg);
           setIsLocating(false);
-          setTimeout(() => setGpsStatus(null), 4000);
+          setTimeout(() => setGpsStatus(null), 5000);
         },
-        { enableHighAccuracy: true, timeout: 6000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
-      const fallbackAddr = 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP';
-      setActiveAddress(fallbackAddr);
-      if (onUpdateAddress) onUpdateAddress(fallbackAddr, -23.0842, -47.2118);
-      setGpsStatus('📍 Localização GPS definida em Indaiatuba - SP');
+      setGpsStatus(gpsErrorMsg);
       setIsLocating(false);
-      setTimeout(() => setGpsStatus(null), 4000);
+      setTimeout(() => setGpsStatus(null), 5000);
     }
   };
 
@@ -299,8 +296,14 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         </div>
 
         {gpsStatus && (
-          <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-3 text-xs text-emerald-900 font-bold flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <div className={`border rounded-2xl p-3 text-xs font-bold flex items-center gap-2 ${
+            gpsStatus.includes('Ative o GPS')
+              ? 'bg-rose-50 border-rose-300 text-rose-900'
+              : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+          }`}>
+            <CheckCircle2 className={`w-4 h-4 shrink-0 ${
+              gpsStatus.includes('Ative o GPS') ? 'text-rose-600' : 'text-emerald-600'
+            }`} />
             <span>{gpsStatus}</span>
           </div>
         )}

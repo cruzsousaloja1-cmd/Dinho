@@ -19,6 +19,7 @@ import {
   AddressSuggestion, 
   POPULAR_DATABASE_LOCATIONS 
 } from '../services/addressSearchService';
+import { GpsLocationPinMap } from './GpsLocationPinMap';
 import { 
   Car, 
   Sparkles, 
@@ -213,6 +214,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [isSearchingDest, setIsSearchingDest] = useState(false);
   const [isLocatingUser, setIsLocatingUser] = useState(false);
   const [gpsDetectedNotice, setGpsDetectedNotice] = useState<string | null>(null);
+  const [gpsErrorNotice, setGpsErrorNotice] = useState<string | null>(null);
+  const [gpsPinCoords, setGpsPinCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // Rating modal state
   const [ratingVal, setRatingVal] = useState(5);
@@ -398,6 +401,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setPickupInput(value);
     onRouteSearched?.(false);
     if (addressValidationError) setAddressValidationError(null);
+    if (gpsErrorNotice) setGpsErrorNotice(null);
     setActiveDropdown('pickup');
 
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
@@ -458,45 +462,59 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setActiveDropdown(null);
   };
 
-  // Detect Current User Location with GPS and resolve real departure street address
+  // Detecta a localização GPS REAL atual do celular na hora do clique (somente Indaiatuba-SP)
   const handleUseCurrentLocation = () => {
+    const gpsErrorMsg =
+      'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
+
     setIsLocatingUser(true);
     setGpsDetectedNotice(null);
+    setGpsErrorNotice(null);
+    setGpsPinCoords(null);
     if (addressValidationError) setAddressValidationError(null);
+    setActiveDropdown(null);
 
-    const onCoordsResolved = async (lat: number, lng: number) => {
-      try {
-        const geoResult = await reverseGeocodeCoords(lat, lng);
-        setPickup({
-          address: geoResult.fullAddress,
-          lat,
-          lng,
-        });
-        setPickupInput(geoResult.fullAddress);
-        setGpsDetectedNotice(geoResult.fullAddress);
-      } catch {
-        const fallback = 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP';
-        setPickup({ address: fallback, lat, lng });
-        setPickupInput(fallback);
-        setGpsDetectedNotice(fallback);
-      } finally {
-        setIsLocatingUser(false);
-        setActiveDropdown(null);
-      }
-    };
-
-    if (!navigator.geolocation) {
-      onCoordsResolved(-23.0842, -47.2118);
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setIsLocatingUser(false);
+      setGpsErrorNotice(gpsErrorMsg);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        onCoordsResolved(pos.coords.latitude, pos.coords.longitude);
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        try {
+          const geoResult = await reverseGeocodeCoords(lat, lng);
+          if (!geoResult.inIndaiatuba) {
+            setGpsErrorNotice(
+              'Sua localização atual está fora de Indaiatuba-SP. Ative o GPS em Indaiatuba ou digite seu endereço com número.'
+            );
+            return;
+          }
+          if (!geoResult.success || !geoResult.fullAddress) {
+            setGpsErrorNotice(geoResult.errorMessage || gpsErrorMsg);
+            return;
+          }
+
+          setPickup({
+            address: geoResult.fullAddress,
+            lat,
+            lng,
+          });
+          setPickupInput(geoResult.fullAddress);
+          setGpsDetectedNotice(geoResult.fullAddress);
+          setGpsPinCoords({ lat, lng });
+          onRouteSearched?.(false);
+        } catch {
+          setGpsErrorNotice(gpsErrorMsg);
+        } finally {
+          setIsLocatingUser(false);
+        }
       },
       () => {
-        // Fallback default position: Av. Presidente Vargas, 1250, Centro de Indaiatuba - SP
-        onCoordsResolved(-23.0842, -47.2118);
+        setIsLocatingUser(false);
+        setGpsErrorNotice(gpsErrorMsg);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -643,15 +661,20 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     }
 
     if (!pickup || pickup.address !== pickupInput) {
-      let pLat = pickup?.lat ?? -23.0842;
-      let pLng = pickup?.lng ?? -47.2118;
-      try {
-        const matches = await searchAddressAutocomplete(pickupInput);
-        if (matches.length > 0) {
-          pLat = matches[0].lat;
-          pLng = matches[0].lng;
-        }
-      } catch {}
+      const keepGpsCoords = Boolean(
+        gpsPinCoords && pickup && pickup.lat === gpsPinCoords.lat && pickup.lng === gpsPinCoords.lng
+      );
+      let pLat = keepGpsCoords ? gpsPinCoords!.lat : pickup?.lat ?? -23.0842;
+      let pLng = keepGpsCoords ? gpsPinCoords!.lng : pickup?.lng ?? -47.2118;
+      if (!keepGpsCoords) {
+        try {
+          const matches = await searchAddressAutocomplete(pickupInput);
+          if (matches.length > 0) {
+            pLat = matches[0].lat;
+            pLng = matches[0].lng;
+          }
+        } catch {}
+      }
       setPickup({ address: pickupInput, lat: pLat, lng: pLng });
     }
 
@@ -1426,6 +1449,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   setPickupInput('');
                   setPickup(null);
                   setGpsDetectedNotice(null);
+                  setGpsErrorNotice(null);
+                  setGpsPinCoords(null);
                   onRouteSearched?.(false);
                 }}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 cursor-pointer p-0.5"
@@ -1435,6 +1460,24 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               </button>
             )}
           </div>
+
+          {/* Erro ao tentar obter GPS ou localização fora de Indaiatuba */}
+          {gpsErrorNotice && (
+            <div className="mt-2.5 p-3.5 bg-rose-50 border-2 border-rose-400 rounded-2xl flex items-start justify-between gap-2.5 text-xs sm:text-sm text-rose-950 font-bold animate-fade-in shadow-xs">
+              <div className="flex items-start gap-2 min-w-0 flex-1">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <span className="leading-snug">{gpsErrorNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGpsErrorNotice(null)}
+                className="text-rose-700 hover:text-rose-950 font-bold text-xs cursor-pointer p-0.5 shrink-0"
+                title="Fechar"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* 3. Alerta de Validação: Se endereço não tiver número */}
           {!hasAddressNumber(pickupInput) && pickupInput.trim().length > 3 && (
@@ -1448,21 +1491,28 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   id="pickup-number-input"
                   type="text"
                   placeholder="Nº"
-                  defaultValue="1250"
+                  defaultValue=""
                   className="w-20 px-2.5 py-1.5 bg-white border-2 border-amber-400 rounded-xl text-xs font-black text-slate-900 focus:outline-none text-center"
                 />
                 <button
                   type="button"
                   onClick={() => {
                     const inputEl = document.getElementById('pickup-number-input') as HTMLInputElement;
-                    const num = inputEl?.value?.trim() || '1250';
-                    const updated = `${pickupInput}, ${num} - Indaiatuba-SP`;
+                    const num = inputEl?.value?.trim();
+                    if (!num) return;
+                    const indaiatubaSuffixMatch = pickupInput.match(/^(.*?)(\s*-\s*[^,]+,\s*Indaiatuba-SP)$/i);
+                    const updated = indaiatubaSuffixMatch
+                      ? `${indaiatubaSuffixMatch[1].trim()}, ${num}${indaiatubaSuffixMatch[2]}`
+                      : `${pickupInput.trim()}, ${num} - Indaiatuba-SP`;
                     setPickupInput(updated);
+                    const nextLat = gpsPinCoords?.lat ?? pickup?.lat ?? -23.0842;
+                    const nextLng = gpsPinCoords?.lng ?? pickup?.lng ?? -47.2118;
                     setPickup({
                       address: updated,
-                      lat: pickup?.lat ?? -23.0842,
-                      lng: pickup?.lng ?? -47.2118,
+                      lat: nextLat,
+                      lng: nextLng,
                     });
+                    if (gpsDetectedNotice) setGpsDetectedNotice(updated);
                     if (addressValidationError) setAddressValidationError(null);
                   }}
                   className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 rounded-xl font-black text-xs cursor-pointer shadow-xs transition-all uppercase"
@@ -1473,22 +1523,35 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </div>
           )}
 
-          {/* Endereço de Saída detectado pelo Meu GPS */}
+          {/* Endereço de Saída detectado pelo Meu GPS + Pino exato no mapa */}
           {gpsDetectedNotice && (
-            <div className="mt-2.5 flex items-center justify-between gap-2 bg-emerald-50 border-2 border-emerald-300 px-3.5 py-3 rounded-2xl text-xs sm:text-sm text-emerald-950 font-bold animate-fade-in shadow-xs min-w-0">
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse shrink-0" />
-                <span className="text-emerald-800 font-black uppercase font-mono shrink-0">GPS:</span>
-                <span className="text-slate-900 truncate font-extrabold">{gpsDetectedNotice}</span>
+            <div className="mt-2.5 space-y-2.5 animate-fade-in">
+              <div className="flex items-center justify-between gap-2 bg-emerald-50 border-2 border-emerald-300 px-3.5 py-3 rounded-2xl text-xs sm:text-sm text-emerald-950 font-bold shadow-xs min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse shrink-0" />
+                  <span className="text-emerald-800 font-black uppercase font-mono shrink-0">GPS:</span>
+                  <span className="text-slate-900 truncate font-extrabold">{gpsDetectedNotice}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGpsDetectedNotice(null);
+                    setGpsPinCoords(null);
+                  }}
+                  className="text-emerald-700 hover:text-emerald-950 font-bold text-xs ml-1 cursor-pointer p-0.5 shrink-0"
+                  title="Fechar"
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setGpsDetectedNotice(null)}
-                className="text-emerald-700 hover:text-emerald-950 font-bold text-xs ml-1 cursor-pointer p-0.5 shrink-0"
-                title="Fechar"
-              >
-                ✕
-              </button>
+
+              {gpsPinCoords && (
+                <GpsLocationPinMap
+                  lat={gpsPinCoords.lat}
+                  lng={gpsPinCoords.lng}
+                  address={pickupInput || gpsDetectedNotice}
+                />
+              )}
             </div>
           )}
 

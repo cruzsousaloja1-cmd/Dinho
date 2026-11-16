@@ -371,34 +371,57 @@ export function calculateDistanceKm(
 }
 
 /**
- * Converte latitude e longitude em endereço de saída real formatado (Geocodificação Reversa)
- * Exemplo de retorno: "Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP"
+ * Verifica se as coordenadas estão dentro da região de Indaiatuba - SP
+ */
+export function isCoordsWithinIndaiatuba(lat: number, lng: number): boolean {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  return lat >= -23.225 && lat <= -22.985 && lng >= -47.345 && lng <= -47.105;
+}
+
+const GPS_PERMISSION_OR_CITY_ERROR =
+  'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
+
+/**
+ * Converte latitude e longitude reais em endereço de saída SOMENTE de Indaiatuba-SP
+ * Exemplo de retorno: "Rua 15 de Novembro, 500 - Centro, Indaiatuba-SP"
  */
 export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
+  success: boolean;
+  inIndaiatuba: boolean;
   fullAddress: string;
   road: string;
   number: string;
   neighborhood: string;
+  errorMessage?: string;
 }> {
-  // Se estiver na região central de Indaiatuba (-23.08xx, -47.21xx), prioriza Av. Presidente Vargas com número 1250
-  const isNearCenter = Math.abs(lat - (-23.0842)) < 0.008 && Math.abs(lng - (-47.2118)) < 0.008;
-  if (isNearCenter) {
+  if (!isCoordsWithinIndaiatuba(lat, lng)) {
     return {
-      fullAddress: 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP',
-      road: 'Av. Presidente Vargas',
-      number: '1250',
-      neighborhood: 'Centro',
+      success: false,
+      inIndaiatuba: false,
+      fullAddress: '',
+      road: '',
+      number: '',
+      neighborhood: '',
+      errorMessage: GPS_PERMISSION_OR_CITY_ERROR,
     };
   }
 
-  // 1. Consulta em tempo real no OpenStreetMap Nominatim Reverse com format=jsonv2 e zoom=18
+  let road = '';
+  let houseNumber = '';
+  let neighborhood = '';
+  let detectedOtherCity = false;
+
+  // 1. Consulta em tempo real no OpenStreetMap Nominatim Reverse (zoom=18)
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
 
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1&zoom=18`;
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+      String(lat)
+    )}&lon=${encodeURIComponent(String(lng))}&addressdetails=1&zoom=18&accept-language=pt-BR`;
     const res = await fetch(url, {
       signal: controller.signal,
+      cache: 'no-store',
       headers: {
         'Accept-Language': 'pt-BR,pt;q=0.9',
       },
@@ -407,70 +430,130 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
 
     if (res.ok) {
       const data = await res.json();
-      const addr = data.address || {};
-      let road = addr.road || addr.pedestrian || addr.suburb || addr.street;
-      let neighborhood =
-        addr.neighbourhood || addr.suburb || addr.city_district || addr.quarter || 'Centro';
-      
-      // Se não retornou nome de rua ou retornou apenas Indaiatuba
-      if (!road || road.toLowerCase() === 'indaiatuba') {
-        const closestLoc = findClosestPopularLocation(lat, lng);
-        road = closestLoc.streetName || 'Av. Presidente Vargas';
-        neighborhood = closestLoc.neighborhood || 'Centro';
-      }
+      const addr = data?.address || {};
+      const cityCandidate = String(
+        addr.city || addr.town || addr.municipality || addr.village || ''
+      )
+        .toLowerCase()
+        .trim();
 
-      // Se não vier número na resposta do GPS, busca o número mais próximo na rua
-      let houseNumber = addr.house_number;
-      if (!houseNumber) {
-        const lowerRoad = road.toLowerCase();
-        if (lowerRoad.includes('presidente vargas') || lowerRoad.includes('vargas')) {
-          houseNumber = '1250';
-        } else if (lowerRoad.includes('trabalhadores')) {
-          houseNumber = '350';
-        } else if (lowerRoad.includes('15 de novembro') || lowerRoad.includes('novembro')) {
-          houseNumber = '840';
-        } else if (lowerRoad.includes('barnabé') || lowerRoad.includes('parque')) {
-          houseNumber = '2800';
-        } else if (lowerRoad.includes('paula leite') || lowerRoad.includes('haoc')) {
-          houseNumber = '399';
-        } else if (lowerRoad.includes('filtros mann') || lowerRoad.includes('polo')) {
-          houseNumber = '670';
-        } else {
-          // Busca o número mais próximo no banco de dados de vias
-          const closestLoc = findClosestPopularLocation(lat, lng);
-          houseNumber = closestLoc.streetNumber || '100';
-        }
+      if (cityCandidate && !cityCandidate.includes('indaiatuba')) {
+        detectedOtherCity = true;
+      } else {
+        road = String(
+          addr.road ||
+            addr.pedestrian ||
+            addr.residential ||
+            addr.footway ||
+            addr.path ||
+            addr.street ||
+            addr.cycleway ||
+            ''
+        ).trim();
+        houseNumber = String(addr.house_number || '').trim();
+        neighborhood = String(
+          addr.neighbourhood ||
+            addr.suburb ||
+            addr.quarter ||
+            addr.city_district ||
+            addr.residential ||
+            ''
+        ).trim();
       }
-
-      const fullAddress = `${road}, ${houseNumber} - ${neighborhood}, Indaiatuba-SP`;
-      return {
-        fullAddress,
-        road,
-        number: houseNumber,
-        neighborhood,
-      };
     }
   } catch {
-    // Falha de rede ou timeout
+    // Tenta Photon como fallback de geocodificação reversa real
   }
 
-  // 2. Fallback baseado no ponto de referência mais próximo de Indaiatuba
-  const closestLoc = findClosestPopularLocation(lat, lng);
+  if (detectedOtherCity) {
+    return {
+      success: false,
+      inIndaiatuba: false,
+      fullAddress: '',
+      road: '',
+      number: '',
+      neighborhood: '',
+      errorMessage: GPS_PERMISSION_OR_CITY_ERROR,
+    };
+  }
+
+  // 2. Se faltou rua ou número no Nominatim, consulta Photon Reverse pelas mesmas coordenadas reais
+  if (!road || !houseNumber) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const photonUrl = `https://photon.komoot.io/reverse?lat=${encodeURIComponent(
+        String(lat)
+      )}&lon=${encodeURIComponent(String(lng))}`;
+      const res = await fetch(photonUrl, {
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const photonData = await res.json();
+        const feat = Array.isArray(photonData?.features) ? photonData.features[0] : null;
+        const props = feat?.properties || {};
+        const photonCity = String(props.city || props.county || '').toLowerCase().trim();
+
+        if (photonCity && !photonCity.includes('indaiatuba')) {
+          if (!road) {
+            return {
+              success: false,
+              inIndaiatuba: false,
+              fullAddress: '',
+              road: '',
+              number: '',
+              neighborhood: '',
+              errorMessage: GPS_PERMISSION_OR_CITY_ERROR,
+            };
+          }
+        } else {
+          const photonRoad = String(props.street || props.name || '').trim();
+          const photonNum = String(props.housenumber || '').trim();
+          const photonNeighborhood = String(props.district || props.locality || '').trim();
+
+          if (!road && photonRoad && photonRoad.toLowerCase() !== 'indaiatuba') {
+            road = photonRoad;
+          }
+          if (!houseNumber && photonNum) {
+            houseNumber = photonNum;
+          }
+          if (!neighborhood && photonNeighborhood) {
+            neighborhood = photonNeighborhood;
+          }
+        }
+      }
+    } catch {
+      // Sem resposta do Photon
+    }
+  }
+
+  if (!road || road.toLowerCase() === 'indaiatuba') {
+    return {
+      success: false,
+      inIndaiatuba: true,
+      fullAddress: '',
+      road: '',
+      number: '',
+      neighborhood: '',
+      errorMessage: GPS_PERMISSION_OR_CITY_ERROR,
+    };
+  }
+
+  const finalNeighborhood = neighborhood || 'Centro';
+  const fullAddress = houseNumber
+    ? `${road}, ${houseNumber} - ${finalNeighborhood}, Indaiatuba-SP`
+    : `${road} - ${finalNeighborhood}, Indaiatuba-SP`;
+
   return {
-    fullAddress: closestLoc.label,
-    road: closestLoc.streetName || 'Av. Presidente Vargas',
-    number: closestLoc.streetNumber || '1250',
-    neighborhood: closestLoc.neighborhood || 'Centro',
+    success: true,
+    inIndaiatuba: true,
+    fullAddress,
+    road,
+    number: houseNumber,
+    neighborhood: finalNeighborhood,
   };
 }
 
-function findClosestPopularLocation(lat: number, lng: number): AddressSuggestion {
-  let closest: { loc: AddressSuggestion; dist: number } | null = null;
-  for (const loc of POPULAR_DATABASE_LOCATIONS) {
-    const d = calculateDistanceKm(lat, lng, loc.lat, loc.lng);
-    if (!closest || d < closest.dist) {
-      closest = { loc, dist: d };
-    }
-  }
-  return closest?.loc || POPULAR_DATABASE_LOCATIONS[3]; // Av. Presidente Vargas, 1250
-}
