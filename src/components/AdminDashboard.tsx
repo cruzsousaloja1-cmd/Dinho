@@ -2544,7 +2544,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
                 <strong className="text-slate-900 block">Chave Asaas Protegida no Backend:</strong>
                 <p className="text-slate-600 leading-relaxed">
-                  Nenhuma chave secreta fica no código do navegador. Configure <code className="font-mono bg-slate-200 px-1 rounded">ASAAS_API_KEY</code> nos Secrets da Edge Function <code className="font-mono bg-slate-200 px-1 rounded">asaas-proxy</code> no Supabase.
+                  Nenhuma chave secreta fica no código do navegador. A variável <code className="font-mono bg-slate-200 px-1 rounded">ASAAS_API_KEY</code> é lida exclusivamente no servidor (<code className="font-mono bg-slate-200 px-1 rounded">/api/asaas</code> ou Edge Function <code className="font-mono bg-slate-200 px-1 rounded">asaas-proxy</code>).
                 </p>
               </div>
               <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">

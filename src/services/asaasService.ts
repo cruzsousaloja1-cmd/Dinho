@@ -1,6 +1,7 @@
 /**
  * Serviço de Integração Asaas (PIX e Cartão)
- * Comunicação exclusiva via Supabase Edge Function segura (`asaas-proxy`).
+ * Comunicação exclusiva via proxy server-side (`/api/asaas` usando `ASAAS_API_KEY`)
+ * ou via Supabase Edge Function segura (`asaas-proxy`).
  * Nenhuma chave de API do Asaas existe ou é armazenada no frontend.
  */
 import QRCode from 'qrcode';
@@ -42,11 +43,43 @@ export interface AsaasBalanceInfo {
   isLive: boolean;
 }
 
-const ASAAS_PROXY_URL = `${SUPABASE_URL}/functions/v1/asaas-proxy`;
+const SUPABASE_ASAAS_PROXY_URL = `${SUPABASE_URL}/functions/v1/asaas-proxy`;
+
+function getLocalAsaasProxyUrl(): string {
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/Dinho/')) {
+    return '/Dinho/api/asaas';
+  }
+  return '/api/asaas';
+}
 
 async function callAsaasProxy<T = any>(payload: Record<string, any>): Promise<{ ok: boolean; data?: T }> {
+  // 1. Tenta primeiro o proxy server-side local (/api/asaas), que lê process.env.ASAAS_API_KEY com segurança
   try {
-    const res = await fetch(ASAAS_PROXY_URL, {
+    const localUrl = getLocalAsaasProxyUrl();
+    const localRes = await fetch(localUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const contentType = localRes.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const localData = await localRes.json().catch(() => null);
+      if (localData && localData.configured !== false) {
+        if (!localRes.ok) {
+          return { ok: false, data: localData };
+        }
+        return { ok: true, data: localData };
+      }
+    }
+  } catch {
+    // Segue para o proxy do Supabase Edge Function caso esteja em hospedagem estática (ex: GitHub Pages)
+  }
+
+  // 2. Fallback para Supabase Edge Function segura (`asaas-proxy` usando Secret ASAAS_API_KEY no Supabase)
+  try {
+    const res = await fetch(SUPABASE_ASAAS_PROXY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -61,7 +94,7 @@ async function callAsaasProxy<T = any>(payload: Record<string, any>): Promise<{ 
     }
     return { ok: true, data };
   } catch (err) {
-    console.warn('[Asaas Proxy] Edge Function indisponível no momento:', err);
+    console.warn('[Asaas Proxy] Gateway indisponível no momento:', err);
     return { ok: false };
   }
 }
