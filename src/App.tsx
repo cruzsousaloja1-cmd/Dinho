@@ -1857,7 +1857,13 @@ export default function App() {
       <SosModal
         isOpen={isSosOpen}
         onClose={() => setIsSosOpen(false)}
-        currentLocation={pickup?.address || 'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP'}
+        currentLocation={
+          activeRide?.pickup?.address ||
+          pickup?.address ||
+          'Av. Presidente Vargas, 1250 - Centro, Indaiatuba-SP'
+        }
+        currentLat={activeRide?.pickup?.lat ?? pickup?.lat}
+        currentLng={activeRide?.pickup?.lng ?? pickup?.lng}
       />
 
       {/* Share Platform Modal */}
