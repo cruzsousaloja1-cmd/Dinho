@@ -31,6 +31,7 @@ const SAFE_USUARIO_COLS_LIST = [
   'ano',
   'cnh',
   'foto',
+  'avatar',
   'rating',
   'saldo',
   'divida',
@@ -641,6 +642,7 @@ function buildSafeReturnCols(knownCols: Set<string> | null): string[] {
     'ano',
     'cnh',
     'foto',
+    'avatar',
     'rating',
     'saldo',
     'divida',
@@ -765,7 +767,7 @@ export async function insertUsuarioSupabase(params: {
     }
 
     // Comprime apenas fotos realmente enviadas para no máximo 200KB
-    const rawPhoto = params.foto || '';
+    const rawPhoto = params.foto || params.avatar || '';
     const compressedPhoto = rawPhoto ? await compressImageToMax200KB(rawPhoto) : '';
     const compressedVehiclePhoto = params.foto_veiculo
       ? await compressImageToMax200KB(params.foto_veiculo)
@@ -807,7 +809,14 @@ export async function insertUsuarioSupabase(params: {
     if (cleanCelular) row.celular = cleanCelular;
     if (cleanWhatsapp) row.whatsapp = cleanWhatsapp;
     if (cleanLogin) row.login = cleanLogin;
-    if (compressedPhoto) row.foto = compressedPhoto;
+    if (compressedPhoto) {
+      if (!knownCols || knownCols.size === 0 || knownCols.has('foto')) {
+        row.foto = compressedPhoto;
+      }
+      if (knownCols && knownCols.has('avatar')) {
+        row.avatar = compressedPhoto;
+      }
+    }
 
     // Só inclui campos de motorista quando informados (nunca inventa colunas nulas no ADM/passageiro)
     if (params.categoria && params.categoria.trim()) row.categoria = params.categoria.trim();
@@ -979,6 +988,7 @@ export async function loginUsuarioSupabase(
         'ano',
         'cnh',
         'foto',
+        'avatar',
         'rating',
         'saldo',
         'divida',
@@ -987,6 +997,8 @@ export async function loginUsuarioSupabase(
       if (knownCols && knownCols.size > 0) {
         authCols = authCols.filter((c) => knownCols.has(c));
         if (!authCols.includes('senha')) authCols.push('senha');
+      } else {
+        authCols = authCols.filter((c) => c !== 'avatar');
       }
 
       const lookupCols = ['email', 'e-mail', 'login'].filter(
@@ -1308,11 +1320,13 @@ export async function saveUsuarioSupabase(user: {
         updateData.data_aceite = user.data_aceite;
       }
 
-      const compressedProfilePhoto = user.foto
-        ? await compressImageToMax200KB(user.foto)
+      const rawProfilePhoto = user.foto || user.avatar || '';
+      const compressedProfilePhoto = rawProfilePhoto
+        ? await compressImageToMax200KB(rawProfilePhoto)
         : '';
       if (compressedProfilePhoto) {
-        updateData.foto = compressedProfilePhoto;
+        if (allowedCols.has('foto')) updateData.foto = compressedProfilePhoto;
+        if (allowedCols.has('avatar')) updateData.avatar = compressedProfilePhoto;
       }
 
       filterPayloadToExistingColumns(updateData, allowedCols, new Set(['senha']));
@@ -1394,7 +1408,8 @@ export async function saveUsuarioSupabase(user: {
         modelo: user.modelo,
         ano: user.ano,
         cnh: user.cnh,
-        foto: user.foto,
+        foto: user.foto || user.avatar,
+        avatar: user.avatar || user.foto,
         foto_veiculo: user.foto_veiculo,
         foto_cnh: user.foto_cnh,
         foto_crlv: user.foto_crlv,
@@ -1491,6 +1506,14 @@ export async function getUsuarioSupabase(emailOrLogin: string): Promise<any | nu
       const res = await selectSafeUsuariosRows((q) => q.eq(col, clean).limit(1));
       if (res.data && res.data.length > 0) return res.data[0];
     }
+
+    // Fallback seguro via RPC caso RLS restrinja SELECT direto
+    try {
+      const rpcRes = await supabase.rpc('rpc_login_usuario', { p_identifier: clean });
+      if (!rpcRes.error && rpcRes.data) {
+        return stripSensitiveUserFields(rpcRes.data);
+      }
+    } catch {}
   } catch (err) {
     console.warn('Aviso ao consultar Supabase:', err);
   }
@@ -1988,6 +2011,224 @@ export function isRidePaidOrConfirmedCash(ride?: Ride | null): boolean {
   return ride.paymentStatus === 'paid';
 }
 
+// Cache curto em memória dos perfis/fotos para hidratação instantânea das chamadas sem recarregar a página
+let userProfileHydrationCache: Map<string, any> | null = null;
+let userProfileHydrationCacheAt = 0;
+
+function indexUsuarioRowIntoMap(map: Map<string, any>, row: any) {
+  if (!row || typeof row !== 'object') return;
+  if (row.id !== undefined && row.id !== null) {
+    map.set(`id:${String(row.id)}`, row);
+  }
+  const emailVal = String(row['e-mail'] || row.email || '').trim().toLowerCase();
+  if (emailVal) {
+    map.set(`email:${emailVal}`, row);
+  }
+  const loginVal = String(row.login || '').trim().toLowerCase();
+  if (loginVal) {
+    map.set(`email:${loginVal}`, row);
+  }
+  const phoneDigits = String(row.celular || row.whatsapp || row.telefone || '').replace(/\D/g, '');
+  if (phoneDigits.length >= 8) {
+    map.set(`phone:${phoneDigits.slice(-11)}`, row);
+  }
+  const nomeVal = String(row.nome || '').trim().toLowerCase();
+  if (nomeVal) {
+    map.set(`name:${nomeVal}`, row);
+  }
+}
+
+async function getUsuariosHydrationLookupMap(forceRefresh: boolean = false): Promise<Map<string, any>> {
+  if (
+    !forceRefresh &&
+    userProfileHydrationCache &&
+    Date.now() - userProfileHydrationCacheAt < 8000
+  ) {
+    return userProfileHydrationCache;
+  }
+
+  const map = new Map<string, any>();
+  try {
+    const { data } = await selectSafeUsuariosRows();
+    if (Array.isArray(data)) {
+      data.forEach((row) => indexUsuarioRowIntoMap(map, row));
+    }
+  } catch {}
+
+  if (map.size === 0) {
+    try {
+      const rpcRes = await supabase.rpc('rpc_get_online_drivers');
+      if (!rpcRes.error && Array.isArray(rpcRes.data)) {
+        rpcRes.data.forEach((row: any) => indexUsuarioRowIntoMap(map, row));
+      }
+    } catch {}
+  }
+
+  userProfileHydrationCache = map;
+  userProfileHydrationCacheAt = Date.now();
+  return map;
+}
+
+export async function fetchUsuarioPhotoByIdentity(params: {
+  id?: string | number;
+  email?: string;
+  phone?: string;
+  name?: string;
+}): Promise<{
+  avatar: string;
+  name?: string;
+  phone?: string;
+  vehicleModel?: string;
+  vehiclePlate?: string;
+  vehicleYear?: number;
+  vehicleColor?: string;
+  rating?: number;
+} | null> {
+  const cleanId = params.id !== undefined && params.id !== null ? String(params.id).trim() : '';
+  const cleanEmail = String(params.email || '').trim().toLowerCase();
+  const cleanPhone = String(params.phone || '').replace(/\D/g, '').slice(-11);
+  const cleanName = String(params.name || '').trim().toLowerCase();
+  if (!cleanId && !cleanEmail && cleanPhone.length < 8 && !cleanName) return null;
+
+  let row: any = null;
+  try {
+    if (cleanEmail) {
+      row = await getUsuarioSupabase(cleanEmail);
+    }
+    if (!row && cleanId && /^\d+$/.test(cleanId)) {
+      const res = await selectSafeUsuariosRows((q) => q.eq('id', Number(cleanId)).limit(1));
+      if (res.data && res.data.length > 0) {
+        row = res.data[0];
+      }
+    }
+    if (!row) {
+      const map = await getUsuariosHydrationLookupMap(true);
+      row =
+        (cleanId && map.get(`id:${cleanId}`)) ||
+        (cleanEmail && map.get(`email:${cleanEmail}`)) ||
+        (cleanPhone.length >= 8 && map.get(`phone:${cleanPhone}`)) ||
+        (cleanName && map.get(`name:${cleanName}`)) ||
+        null;
+    }
+  } catch {}
+
+  if (!row) return null;
+  const resolvedAvatar = String(row.foto || row.avatar || '').trim();
+  return {
+    avatar: resolvedAvatar,
+    name: row.nome || undefined,
+    phone: row.celular || row.whatsapp || undefined,
+    vehicleModel: row.modelo || undefined,
+    vehiclePlate: row.placa || undefined,
+    vehicleYear: row.ano ? Number(row.ano) : undefined,
+    vehicleColor: row.cor || undefined,
+    rating: typeof row.rating === 'number' ? row.rating : undefined,
+  };
+}
+
+/**
+ * Hidrata corridas com a foto real (colunas `foto` OU `avatar`) e dados do motorista/passageiro direto do Supabase
+ * sem precisar recarregar a página.
+ */
+export async function hydrateRidesWithUserPhotosSupabase(rides: Ride[]): Promise<Ride[]> {
+  if (!Array.isArray(rides) || rides.length === 0) return rides;
+
+  const needsHydration = rides.some((r) => {
+    const missingPassenger = !r.passengerAvatar || !r.passengerPhone;
+    const missingDriver = Boolean(
+      r.driver && (!r.driver.avatar || !r.driver.vehiclePlate || !r.driver.vehicleModel || !r.driver.phone)
+    );
+    return missingPassenger || missingDriver;
+  });
+
+  if (!needsHydration) return rides;
+
+  try {
+    const lookupMap = await getUsuariosHydrationLookupMap(false);
+
+    // Garante busca individual por RPC caso RLS restrinja a listagem completa
+    const individualFetches: Promise<void>[] = [];
+    const checkedEmails = new Set<string>();
+
+    const ensureEmailLookup = (email?: string, id?: string) => {
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      const cleanId = String(id || '').trim();
+      const alreadyHas =
+        (cleanId && lookupMap.has(`id:${cleanId}`)) ||
+        (cleanEmail && lookupMap.has(`email:${cleanEmail}`));
+      if (alreadyHas) return;
+      if (cleanEmail && !checkedEmails.has(cleanEmail)) {
+        checkedEmails.add(cleanEmail);
+        individualFetches.push(
+          getUsuarioSupabase(cleanEmail)
+            .then((u) => {
+              if (u) indexUsuarioRowIntoMap(lookupMap, u);
+            })
+            .catch(() => {})
+        );
+      }
+    };
+
+    for (const r of rides) {
+      if (!r.passengerAvatar) {
+        ensureEmailLookup(r.passengerEmail, r.passengerId);
+      }
+      if (r.driver && (!r.driver.avatar || !r.driver.vehiclePlate)) {
+        ensureEmailLookup(r.driver.email, r.driver.id);
+      }
+    }
+
+    if (individualFetches.length > 0) {
+      await Promise.all(individualFetches);
+    }
+
+    return rides.map((r) => {
+      const pRow =
+        (r.passengerId && lookupMap.get(`id:${String(r.passengerId)}`)) ||
+        (r.passengerEmail && lookupMap.get(`email:${String(r.passengerEmail).trim().toLowerCase()}`)) ||
+        null;
+
+      const dRow = r.driver
+        ? (r.driver.id && lookupMap.get(`id:${String(r.driver.id)}`)) ||
+          (r.driver.email && lookupMap.get(`email:${String(r.driver.email).trim().toLowerCase()}`)) ||
+          null
+        : null;
+
+      const pPhoto = pRow ? String(pRow.foto || pRow.avatar || '').trim() : '';
+      const dPhoto = dRow ? String(dRow.foto || dRow.avatar || '').trim() : '';
+
+      const hydratedDriver = r.driver
+        ? {
+            ...r.driver,
+            avatar: r.driver.avatar || dPhoto || '',
+            name: r.driver.name || dRow?.nome || 'Motorista',
+            phone: r.driver.phone || dRow?.celular || dRow?.whatsapp || '',
+            vehicleModel: r.driver.vehicleModel || dRow?.modelo || '',
+            vehiclePlate: r.driver.vehiclePlate || dRow?.placa || '',
+            vehicleColor: r.driver.vehicleColor || dRow?.cor || '',
+            vehicleYear: r.driver.vehicleYear || Number(dRow?.ano) || 2023,
+            rating: r.driver.rating || (typeof dRow?.rating === 'number' ? dRow.rating : 0),
+          }
+        : undefined;
+
+      return {
+        ...r,
+        passengerAvatar: r.passengerAvatar || pPhoto || '',
+        passengerPhone: r.passengerPhone || pRow?.celular || pRow?.whatsapp || '',
+        passengerName:
+          r.passengerName && r.passengerName !== 'Passageiro'
+            ? r.passengerName
+            : pRow?.nome || r.passengerName || 'Passageiro',
+        passengerRating:
+          r.passengerRating || (typeof pRow?.rating === 'number' ? pRow.rating : 0),
+        driver: hydratedDriver,
+      };
+    });
+  } catch {
+    return rides;
+  }
+}
+
 // Canal Realtime compartilhado 'corridas' (postgres_changes + broadcast instantâneo)
 type CorridaRealtimeListener = {
   onInsert?: (ride: Ride, raw: any) => void;
@@ -2001,6 +2242,24 @@ let sharedCorridasChannelSubscribed = false;
 function ensureSharedCorridasChannel() {
   if (sharedCorridasChannel) return sharedCorridasChannel;
 
+  const notifyHydratedInsert = async (ride: Ride, raw: any) => {
+    const [hydrated] = await hydrateRidesWithUserPhotosSupabase([ride]).catch(() => [ride]);
+    corridasRealtimeListeners.forEach((l) => {
+      try {
+        l.onInsert?.(hydrated || ride, raw);
+      } catch {}
+    });
+  };
+
+  const notifyHydratedUpdate = async (ride: Ride, raw: any) => {
+    const [hydrated] = await hydrateRidesWithUserPhotosSupabase([ride]).catch(() => [ride]);
+    corridasRealtimeListeners.forEach((l) => {
+      try {
+        l.onUpdate?.(hydrated || ride, raw);
+      } catch {}
+    });
+  };
+
   sharedCorridasChannel = supabase
     .channel('corridas')
     .on(
@@ -2009,11 +2268,7 @@ function ensureSharedCorridasChannel() {
       (payload: any) => {
         if (!payload?.new) return;
         const ride = mapSupabaseCorridaToRide(payload.new as SupabaseCorridaRow);
-        corridasRealtimeListeners.forEach((l) => {
-          try {
-            l.onInsert?.(ride, payload.new);
-          } catch {}
-        });
+        notifyHydratedInsert(ride, payload.new);
       }
     )
     .on(
@@ -2022,32 +2277,20 @@ function ensureSharedCorridasChannel() {
       (payload: any) => {
         if (!payload?.new) return;
         const ride = mapSupabaseCorridaToRide(payload.new as SupabaseCorridaRow);
-        corridasRealtimeListeners.forEach((l) => {
-          try {
-            l.onUpdate?.(ride, payload.new);
-          } catch {}
-        });
+        notifyHydratedUpdate(ride, payload.new);
       }
     )
     .on('broadcast', { event: 'nova_corrida' }, (msg: any) => {
       const row = msg?.payload;
       if (!row) return;
       const ride = row.pickup && row.destination ? (row as Ride) : mapSupabaseCorridaToRide(row as SupabaseCorridaRow);
-      corridasRealtimeListeners.forEach((l) => {
-        try {
-          l.onInsert?.(ride, row);
-        } catch {}
-      });
+      notifyHydratedInsert(ride, row);
     })
     .on('broadcast', { event: 'corrida_aceita' }, (msg: any) => {
       const row = msg?.payload;
       if (!row) return;
       const ride = row.pickup && row.destination ? (row as Ride) : mapSupabaseCorridaToRide(row as SupabaseCorridaRow);
-      corridasRealtimeListeners.forEach((l) => {
-        try {
-          l.onUpdate?.(ride, row);
-        } catch {}
-      });
+      notifyHydratedUpdate(ride, row);
     });
 
   sharedCorridasChannel.subscribe((status: string) => {
@@ -2306,9 +2549,13 @@ export async function getAllCorridasForAdminSupabase(): Promise<Ride[]> {
     if (error || !data) {
       const retry = await supabase.from('corridas').select('*');
       if (retry.error || !retry.data) return [];
-      return (retry.data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
+      return hydrateRidesWithUserPhotosSupabase(
+        (retry.data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide)
+      );
     }
-    return (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
+    return hydrateRidesWithUserPhotosSupabase(
+      (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide)
+    );
   } catch {
     return [];
   }
@@ -2330,14 +2577,16 @@ export async function getSearchingCorridasSupabase(): Promise<Ride[]> {
         .in('status', ['procurando', 'searching', 'procurando_motorista'])
         .limit(20);
       if (retry.error || !retry.data) return [];
-      return (retry.data as SupabaseCorridaRow[])
+      const mapped = (retry.data as SupabaseCorridaRow[])
         .map(mapSupabaseCorridaToRide)
         .filter((r) => isRidePaidOrConfirmedCash(r));
+      return hydrateRidesWithUserPhotosSupabase(mapped);
     }
     if (!data) return [];
-    return (data as SupabaseCorridaRow[])
+    const mapped = (data as SupabaseCorridaRow[])
       .map(mapSupabaseCorridaToRide)
       .filter((r) => isRidePaidOrConfirmedCash(r));
+    return hydrateRidesWithUserPhotosSupabase(mapped);
   } catch {
     return [];
   }
@@ -2353,7 +2602,9 @@ export async function getCorridaByIdSupabase(rideId: string | number): Promise<R
       .limit(1);
 
     if (error || !data || data.length === 0) return null;
-    return mapSupabaseCorridaToRide(data[0] as SupabaseCorridaRow);
+    const mapped = mapSupabaseCorridaToRide(data[0] as SupabaseCorridaRow);
+    const [hydrated] = await hydrateRidesWithUserPhotosSupabase([mapped]);
+    return hydrated || mapped;
   } catch {
     return null;
   }
@@ -2363,14 +2614,31 @@ export async function acceptCorridaSupabase(
   rideId: string | number,
   driver: Driver
 ): Promise<{ success: boolean; error?: string }> {
-  // Envia broadcast em tempo real para o passageiro imediatamente
+  let resolvedDriver = driver;
+  if (!resolvedDriver.avatar && (resolvedDriver.email || resolvedDriver.id)) {
+    const profile = await fetchUsuarioPhotoByIdentity({
+      id: resolvedDriver.id,
+      email: resolvedDriver.email,
+    }).catch(() => null);
+    if (profile?.avatar) {
+      resolvedDriver = {
+        ...resolvedDriver,
+        avatar: profile.avatar,
+        vehiclePlate: resolvedDriver.vehiclePlate || profile.vehiclePlate || '',
+        vehicleModel: resolvedDriver.vehicleModel || profile.vehicleModel || '',
+        phone: resolvedDriver.phone || profile.phone || '',
+      };
+    }
+  }
+
+  // Envia broadcast em tempo real para o passageiro imediatamente (incluindo foto do motorista)
   broadcastCorridaEvent('corrida_aceita', {
     id: String(rideId || ''),
     status: 'aceita',
-    motorista_id: driver.id,
-    nome_motorista: driver.name,
-    email_motorista: driver.email,
-    driver,
+    motorista_id: resolvedDriver.id,
+    nome_motorista: resolvedDriver.name,
+    email_motorista: resolvedDriver.email,
+    driver: resolvedDriver,
   });
 
   if (!rideId || !/^\d+$/.test(String(rideId))) {
@@ -2496,7 +2764,9 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
           : fallbackQuery.eq('passageiro_id', Number(currentUser.id));
         const fb = await fallbackQuery;
         if (!fb.error && fb.data) {
-          return (fb.data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
+          return hydrateRidesWithUserPhotosSupabase(
+            (fb.data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide)
+          );
         }
       }
       console.warn('Aviso ao consultar corridas no Supabase:', error.message);
@@ -2504,7 +2774,9 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
     }
 
     if (!data || data.length === 0) return [];
-    return (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide);
+    return hydrateRidesWithUserPhotosSupabase(
+      (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide)
+    );
   } catch (err) {
     console.warn('Erro ao consultar corridas no Supabase:', err);
     return [];

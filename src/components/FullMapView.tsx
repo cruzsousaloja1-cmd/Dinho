@@ -19,7 +19,8 @@ import {
   Check,
   Phone,
   Loader2,
-  XCircle
+  XCircle,
+  User,
 } from 'lucide-react';
 import { 
   INDAIATUBA_CENTER_COORDS, 
@@ -44,6 +45,7 @@ import {
   cancelVoiceSpeech
 } from '../services/audioNotificationService';
 import { generateUniqueRideConfirmationCode } from '../services/pricingService';
+import { fetchUsuarioPhotoByIdentity, hydrateRidesWithUserPhotosSupabase } from '../supabase';
 import { ShieldCheck } from 'lucide-react';
 
 interface FullMapViewProps {
@@ -57,6 +59,8 @@ interface FullMapViewProps {
   onUpdateDriverPosition?: (pos: { lat: number; lng: number }) => void;
   onCompleteRide?: () => void;
   onCancelRide?: () => void;
+  currentUserAvatar?: string;
+  currentUserName?: string;
 }
 
 export const FullMapView: React.FC<FullMapViewProps> = ({
@@ -70,6 +74,8 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   onUpdateDriverPosition,
   onCompleteRide,
   onCancelRide,
+  currentUserAvatar,
+  currentUserName,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -137,6 +143,81 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
     criminalRecordClear: true,
     registrationDate: '',
   };
+
+  const [hydratedDriverAvatar, setHydratedDriverAvatar] = useState<string>(
+    effectiveDriver.avatar || ''
+  );
+  const [hydratedPassengerAvatar, setHydratedPassengerAvatar] = useState<string>(
+    activeRide?.passengerAvatar || currentUserAvatar || ''
+  );
+
+  useEffect(() => {
+    const knownDriverPhoto = effectiveDriver.avatar || activeDriver?.avatar || '';
+    const knownPassengerPhoto = activeRide?.passengerAvatar || currentUserAvatar || '';
+    if (knownDriverPhoto) setHydratedDriverAvatar(knownDriverPhoto);
+    if (knownPassengerPhoto) setHydratedPassengerAvatar(knownPassengerPhoto);
+
+    if (knownDriverPhoto && knownPassengerPhoto) return;
+
+    let cancelled = false;
+    const loadMissingPhotos = async () => {
+      if (activeRide) {
+        try {
+          const [hydrated] = await hydrateRidesWithUserPhotosSupabase([activeRide]);
+          if (!cancelled && hydrated) {
+            if (hydrated.driver?.avatar) setHydratedDriverAvatar(hydrated.driver.avatar);
+            if (hydrated.passengerAvatar) setHydratedPassengerAvatar(hydrated.passengerAvatar);
+          }
+        } catch {}
+      }
+
+      if (!knownDriverPhoto && effectiveDriver.name && effectiveDriver.name !== 'Condutor RACE') {
+        try {
+          const photo = await fetchUsuarioPhotoByIdentity({
+            id: effectiveDriver.id,
+            email: effectiveDriver.email,
+            phone: effectiveDriver.phone,
+            name: effectiveDriver.name,
+          });
+          if (!cancelled && photo?.avatar) setHydratedDriverAvatar(photo.avatar);
+        } catch {}
+      }
+
+      if (!knownPassengerPhoto && (activeRide?.passengerName || currentUserName)) {
+        try {
+          const photo = await fetchUsuarioPhotoByIdentity({
+            phone: activeRide?.passengerPhone,
+            name: activeRide?.passengerName || currentUserName,
+          });
+          if (!cancelled && photo?.avatar) setHydratedPassengerAvatar(photo.avatar);
+        } catch {}
+      }
+    };
+
+    loadMissingPhotos();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeRide?.id,
+    activeRide?.status,
+    activeRide?.passengerAvatar,
+    activeRide?.passengerName,
+    activeRide?.passengerPhone,
+    effectiveDriver.id,
+    effectiveDriver.email,
+    effectiveDriver.phone,
+    effectiveDriver.name,
+    effectiveDriver.avatar,
+    activeDriver?.avatar,
+    currentUserAvatar,
+    currentUserName,
+  ]);
+
+  const displayDriverAvatar = effectiveDriver.avatar || hydratedDriverAvatar;
+  const displayPassengerName = activeRide?.passengerName || currentUserName || 'Passageiro';
+  const displayPassengerAvatar =
+    activeRide?.passengerAvatar || currentUserAvatar || hydratedPassengerAvatar;
 
   // Rota real consultada via OSRM com ruas e esquinas de Indaiatuba
   const [routeData, setRouteData] = useState<StreetRouteResult>({
@@ -858,14 +939,31 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         {isSearching ? (
           <div className="pointer-events-auto bg-white/95 backdrop-blur-xl border-2 border-[#ff6a00] text-slate-900 rounded-3xl p-4 shadow-[0_8px_30px_rgba(0,0,0,0.22)] space-y-3">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-[#ff6a00]/15 text-[#ff6a00] border border-[#ff6a00]/40 flex items-center justify-center shrink-0">
-                <Loader2 className="w-6 h-6 animate-spin" />
+              <div className="relative shrink-0">
+                {displayPassengerAvatar ? (
+                  <img
+                    src={displayPassengerAvatar}
+                    alt={displayPassengerName}
+                    className="w-14 h-14 rounded-full object-cover border-2 border-[#ff6a00] shadow-sm"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-full bg-[#ff6a00]/15 text-[#ff6a00] border-2 border-[#ff6a00] flex flex-col items-center justify-center font-heading font-black text-base">
+                    <span>{displayPassengerName.charAt(0).toUpperCase()}</span>
+                    <User className="w-3.5 h-3.5 opacity-75" />
+                  </div>
+                )}
+                <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white border border-[#ff6a00] flex items-center justify-center shadow">
+                  <Loader2 className="w-3 h-3 text-[#ff6a00] animate-spin" />
+                </span>
               </div>
               <div className="min-w-0 flex-1">
-                <h4 className="font-heading font-black text-base text-slate-950 flex items-center gap-2">
+                <h4 className="font-heading font-black text-base text-slate-950 flex items-center gap-2 truncate">
                   <span>Procurando motorista...</span>
                 </h4>
-                <p className="text-xs text-slate-600 font-semibold truncate">
+                <p className="text-xs text-slate-700 font-bold truncate">
+                  Passageiro: {displayPassengerName}
+                </p>
+                <p className="text-[11px] text-slate-600 font-semibold truncate">
                   {onlineDrivers.filter((d) => d.status === 'online').length > 0
                     ? `${onlineDrivers.filter((d) => d.status === 'online').length} motoristas online parados no mapa aguardando aceite`
                     : 'Aguardando um motorista aceitar sua solicitação'}
@@ -929,19 +1027,20 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
               </button>
             </div>
             
-            {/* Header Compacto: Foto + Motorista + Placa + Tempo de chegada */}
+            {/* Header Compacto: Foto grande redonda do Motorista + Nome + Placa + Tempo de chegada */}
             <div className="flex items-center justify-between gap-2.5">
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-3 min-w-0">
                 <div className="relative shrink-0">
-                  {effectiveDriver.avatar ? (
+                  {displayDriverAvatar ? (
                     <img
-                      src={effectiveDriver.avatar}
+                      src={displayDriverAvatar}
                       alt={effectiveDriver.name}
-                      className="w-11 h-11 rounded-full object-cover border-2 border-[#ff6a00] shadow-sm"
+                      className="w-16 h-16 rounded-full object-cover border-2 border-[#ff6a00] shadow-md"
                     />
                   ) : (
-                    <div className="w-11 h-11 rounded-full bg-[#ff6a00]/15 text-[#ff6a00] border-2 border-[#ff6a00] flex items-center justify-center font-heading font-black text-base shadow-sm">
-                      {(effectiveDriver.name || 'M').charAt(0).toUpperCase()}
+                    <div className="w-16 h-16 rounded-full bg-[#ff6a00]/15 text-[#ff6a00] border-2 border-[#ff6a00] flex flex-col items-center justify-center font-heading font-black text-xl shadow-md">
+                      <span>{(effectiveDriver.name || 'M').charAt(0).toUpperCase()}</span>
+                      <User className="w-4 h-4 opacity-75" />
                     </div>
                   )}
                   <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-[9px] px-1 rounded-full border border-black shadow">
@@ -957,8 +1056,8 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                       {isRideFinished ? 'Chegou' : (minutesLeft > 0 ? `${minutesLeft} min` : 'No local')}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-700 font-medium truncate">
-                    {effectiveDriver.vehicleModel || 'Veículo'} {effectiveDriver.vehiclePlate ? `• ${effectiveDriver.vehiclePlate}` : ''} {effectiveDriver.vehicleColor ? `• ${effectiveDriver.vehicleColor}` : ''}
+                  <p className="text-[11px] text-slate-700 font-bold truncate">
+                    {effectiveDriver.vehicleModel || 'Veículo'} {effectiveDriver.vehiclePlate ? `• Placa ${effectiveDriver.vehiclePlate}` : ''} {effectiveDriver.vehicleColor ? `• ${effectiveDriver.vehicleColor}` : ''}
                   </p>
                 </div>
               </div>
@@ -971,6 +1070,30 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                 <div className="text-[10px] font-mono text-slate-500 font-bold">
                   {isRideFinished ? 'Destino' : `${speedKmh} km/h`}
                 </div>
+              </div>
+            </div>
+
+            {/* Passageiro na chamada */}
+            <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+              {displayPassengerAvatar ? (
+                <img
+                  src={displayPassengerAvatar}
+                  alt={displayPassengerName}
+                  className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500 shrink-0 shadow-xs"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shrink-0 flex flex-col items-center justify-center font-heading font-black text-sm shadow-xs">
+                  <span>{displayPassengerName.charAt(0).toUpperCase()}</span>
+                  <User className="w-3 h-3 opacity-75" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase block leading-none">
+                  Passageiro
+                </span>
+                <p className="text-xs font-heading font-black text-slate-950 truncate">
+                  {displayPassengerName}
+                </p>
               </div>
             </div>
 

@@ -300,6 +300,7 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     ano: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.vehicleYear || undefined),
     cnh: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.cnh || undefined),
     foto: account.avatar || undefined,
+    avatar: account.avatar || undefined,
     rating: account.rating || 0,
     saldo: account.driverData?.walletBalance || 0,
   })

@@ -9,7 +9,7 @@ import {
 } from '../types';
 import { VEHICLE_CATEGORIES, calculateFare, formatBRL, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { FINAL_RIDE_MESSAGE, WEEKLY_FEE_TEXT } from '../config/pricing';
-import { normalizeRideCategory } from '../supabase';
+import { fetchUsuarioPhotoByIdentity, normalizeRideCategory } from '../supabase';
 import { 
   searchAddressAutocomplete, 
   calculateDistanceKm, 
@@ -174,6 +174,66 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [pixCopied, setPixCopied] = useState(false);
   const [rideCodeCopied, setRideCodeCopied] = useState(false);
+  const [livePassengerAvatar, setLivePassengerAvatar] = useState('');
+  const [liveDriverAvatar, setLiveDriverAvatar] = useState('');
+
+  useEffect(() => {
+    if (!activeRide) {
+      setLivePassengerAvatar('');
+      setLiveDriverAvatar('');
+      return;
+    }
+    const knownPassenger = activeRide.passengerAvatar || currentUser?.avatar || '';
+    const knownDriver = activeRide.driver?.avatar || '';
+    if (knownPassenger) setLivePassengerAvatar(knownPassenger);
+    if (knownDriver) setLiveDriverAvatar(knownDriver);
+
+    let cancelled = false;
+    const sync = async () => {
+      if (!knownPassenger && (activeRide.passengerName || currentUser?.name)) {
+        try {
+          const p = await fetchUsuarioPhotoByIdentity({
+            id: currentUser?.id,
+            email: currentUser?.email,
+            phone: activeRide.passengerPhone || currentUser?.phone,
+            name: activeRide.passengerName || currentUser?.name,
+          });
+          if (!cancelled && p?.avatar) setLivePassengerAvatar(p.avatar);
+        } catch {}
+      }
+      if (!knownDriver && activeRide.driver?.name && activeRide.driver.name !== 'Condutor RACE') {
+        try {
+          const d = await fetchUsuarioPhotoByIdentity({
+            id: activeRide.driver.id,
+            email: activeRide.driver.email,
+            phone: activeRide.driver.phone,
+            name: activeRide.driver.name,
+          });
+          if (!cancelled && d?.avatar) setLiveDriverAvatar(d.avatar);
+        } catch {}
+      }
+    };
+    sync();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeRide?.id,
+    activeRide?.status,
+    activeRide?.passengerAvatar,
+    activeRide?.passengerName,
+    activeRide?.passengerPhone,
+    activeRide?.driver?.id,
+    activeRide?.driver?.email,
+    activeRide?.driver?.phone,
+    activeRide?.driver?.name,
+    activeRide?.driver?.avatar,
+    currentUser?.id,
+    currentUser?.email,
+    currentUser?.phone,
+    currentUser?.name,
+    currentUser?.avatar,
+  ]);
 
   // Estados Asaas (somente libera após RECEIVED ou CONFIRMED real)
   const [asaasPayment, setAsaasPayment] = useState<AsaasPaymentResult | null>(null);
@@ -1060,6 +1120,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
       {/* 2. Mini Card de Corrida Ativa: MODO PROCURANDO vs MODO A CAMINHO */}
       {activeRide && (() => {
+        const passengerDisplayName = activeRide.passengerName || currentUser?.name || 'Passageiro';
+        const passengerDisplayAvatar =
+          activeRide.passengerAvatar || currentUser?.avatar || livePassengerAvatar || '';
+        const driverDisplayName = activeRide.driver?.name || 'Condutor RACE';
+        const driverDisplayAvatar = activeRide.driver?.avatar || liveDriverAvatar || '';
         const isRideDone =
           activeRide.status === 'completed' || (activeRide.status as string) === 'finalizada';
         const isRideAccepted =
@@ -1075,8 +1140,22 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             <div className="bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-fade-in">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5 w-full sm:w-auto">
-                  <div className="w-12 h-12 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] shrink-0 flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 animate-spin" />
+                  <div className="relative shrink-0">
+                    {passengerDisplayAvatar ? (
+                      <img
+                        src={passengerDisplayAvatar}
+                        alt={passengerDisplayName}
+                        className="w-16 h-16 rounded-full object-cover border-2 border-[#ff6a00] shadow-lg"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] flex flex-col items-center justify-center font-heading font-black text-lg">
+                        <span>{passengerDisplayName.charAt(0).toUpperCase()}</span>
+                        <User className="w-4 h-4 opacity-75" />
+                      </div>
+                    )}
+                    <span className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-zinc-900 border border-[#ff6a00] flex items-center justify-center">
+                      <Loader2 className="w-3.5 h-3.5 text-[#ff6a00] animate-spin" />
+                    </span>
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -1086,7 +1165,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       </span>
                     </div>
                     <h4 className="font-heading font-black text-base text-white truncate">
-                      Aguardando motorista aceitar sua corrida
+                      {passengerDisplayName} • Aguardando motorista aceitar
                     </h4>
                     <p className="text-xs text-zinc-400 truncate">
                       {activeRide.pickup?.address} → {activeRide.destination?.address}
@@ -1162,15 +1241,16 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3.5 w-full sm:w-auto">
-                {activeRide.driver?.avatar ? (
+                {driverDisplayAvatar ? (
                   <img
-                    src={activeRide.driver.avatar}
-                    alt={activeRide.driver.name}
-                    className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
+                    src={driverDisplayAvatar}
+                    alt={driverDisplayName}
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-[#ff6a00] shrink-0 shadow-lg"
                   />
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] shrink-0 flex items-center justify-center font-heading font-black text-lg">
-                    {(activeRide.driver?.name || 'M').charAt(0).toUpperCase()}
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] shrink-0 flex flex-col items-center justify-center font-heading font-black text-xl">
+                    <span>{driverDisplayName.charAt(0).toUpperCase()}</span>
+                    <User className="w-4 h-4 opacity-75" />
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
@@ -1181,7 +1261,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     </span>
                   </div>
                   <h4 className="font-heading font-black text-base text-white truncate">
-                    {activeRide.driver?.name} {activeRide.driver?.vehicleModel ? `• ${activeRide.driver.vehicleModel}` : ''}
+                    {driverDisplayName} {activeRide.driver?.vehicleModel ? `• ${activeRide.driver.vehicleModel}` : ''}
                   </h4>
                   <p className="text-xs text-zinc-300 font-mono">
                     {activeRide.driver?.vehiclePlate ? `Placa ${activeRide.driver.vehiclePlate}` : 'Condutor confirmado'}
@@ -1230,6 +1310,33 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     Avaliar
                   </button>
                 )}
+              </div>
+            </div>
+
+            {/* Passageiro na chamada */}
+            <div className="flex items-center gap-3 bg-zinc-900/90 border border-zinc-800 rounded-2xl px-3.5 py-2.5">
+              {passengerDisplayAvatar ? (
+                <img
+                  src={passengerDisplayAvatar}
+                  alt={passengerDisplayName}
+                  className="w-14 h-14 rounded-full object-cover border-2 border-emerald-500 shrink-0 shadow-md"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-300 border-2 border-emerald-500 shrink-0 flex flex-col items-center justify-center font-heading font-black text-lg">
+                  <span>{passengerDisplayName.charAt(0).toUpperCase()}</span>
+                  <User className="w-3.5 h-3.5 opacity-75" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase block">
+                  Passageiro
+                </span>
+                <p className="font-heading font-black text-sm text-white truncate">
+                  {passengerDisplayName}
+                </p>
+                <p className="text-xs text-zinc-400 truncate">
+                  {activeRide.pickup?.address}
+                </p>
               </div>
             </div>
           </div>

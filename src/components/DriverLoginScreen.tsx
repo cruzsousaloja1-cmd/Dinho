@@ -520,6 +520,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         senha: regPassword,
         tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
         foto: chosenAvatar || undefined,
+        avatar: chosenAvatar || undefined,
       });
 
       if (!supabaseRes.success) {

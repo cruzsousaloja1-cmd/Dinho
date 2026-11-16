@@ -30,6 +30,7 @@ import {
   KeyRound,
   Delete,
   ExternalLink,
+  User,
 } from 'lucide-react';
 import {
   INDAIATUBA_BOUNDS,
@@ -49,6 +50,7 @@ import {
   setAudioEnabled,
   speakNavigationInstruction,
 } from '../services/audioNotificationService';
+import { fetchUsuarioPhotoByIdentity, hydrateRidesWithUserPhotosSupabase } from '../supabase';
 import { Driver, Ride } from '../types';
 
 type DriverTripPhase = 'to_pickup' | 'arrived_pickup' | 'to_destination' | 'completed';
@@ -90,8 +92,54 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     ride?.category === 'moto_passageiro' ||
     ride?.category === 'moto_entrega';
 
+  const [hydratedRide, setHydratedRide] = useState<Ride | null>(ride || null);
+  const [hydratedDriverAvatar, setHydratedDriverAvatar] = useState<string>(
+    driver.avatar || ride?.driver?.avatar || ''
+  );
+
+  useEffect(() => {
+    setHydratedRide(ride || null);
+    if (driver.avatar || ride?.driver?.avatar) {
+      setHydratedDriverAvatar(driver.avatar || ride?.driver?.avatar || '');
+    }
+
+    let cancelled = false;
+    const syncPhotos = async () => {
+      if (ride && (!ride.passengerAvatar || !(driver.avatar || ride.driver?.avatar))) {
+        try {
+          const [hydrated] = await hydrateRidesWithUserPhotosSupabase([ride]);
+          if (!cancelled && hydrated) {
+            setHydratedRide(hydrated);
+            if (hydrated.driver?.avatar) {
+              setHydratedDriverAvatar(hydrated.driver.avatar);
+            }
+          }
+        } catch {}
+      }
+
+      if (!(driver.avatar || ride?.driver?.avatar)) {
+        try {
+          const photo = await fetchUsuarioPhotoByIdentity({
+            id: driver.id,
+            email: driver.email,
+            phone: driver.phone,
+            name: driver.name,
+          });
+          if (!cancelled && photo?.avatar) {
+            setHydratedDriverAvatar(photo.avatar);
+          }
+        } catch {}
+      }
+    };
+
+    syncPhotos();
+    return () => {
+      cancelled = true;
+    };
+  }, [ride, driver.id, driver.email, driver.phone, driver.name, driver.avatar]);
+
   // Dados reais da corrida aceita
-  const effectiveRide: Ride = ride || {
+  const baseEffectiveRide: Ride = hydratedRide || ride || {
     id: '',
     passengerName: 'Passageiro',
     passengerPhone: '',
@@ -118,6 +166,17 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
     paymentStatus: 'pending',
     status: 'idle',
     createdAt: '',
+  };
+
+  const effectiveDriverAvatar =
+    hydratedDriverAvatar || driver.avatar || baseEffectiveRide.driver?.avatar || '';
+
+  const effectiveRide: Ride = {
+    ...baseEffectiveRide,
+    driver: {
+      ...(baseEffectiveRide.driver || driver),
+      avatar: effectiveDriverAvatar,
+    },
   };
 
   const startCarLat = driver.lat || -23.084087;
@@ -941,11 +1000,12 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                   <img
                     src={effectiveRide.passengerAvatar}
                     alt={effectiveRide.passengerName}
-                    className="w-11 h-11 rounded-full object-cover border-2 border-emerald-500 shrink-0"
+                    className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500 shrink-0 shadow-sm"
                   />
                 ) : (
-                  <div className="w-11 h-11 rounded-full bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shrink-0 flex items-center justify-center font-heading font-black text-base">
-                    {(effectiveRide.passengerName || 'P').charAt(0).toUpperCase()}
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shrink-0 flex items-center justify-center font-heading font-black text-base gap-0.5 shadow-sm">
+                    <span>{(effectiveRide.passengerName || 'P').charAt(0).toUpperCase()}</span>
+                    <User className="w-3.5 h-3.5 opacity-70" />
                   </div>
                 )}
                 <div className="min-w-0 flex-1 space-y-0.5">
@@ -1106,17 +1166,18 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                 </div>
               </div>
             <div className="flex items-center justify-between gap-2.5 bg-slate-50 border border-slate-200 rounded-2xl p-3">
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-3 min-w-0">
                 <div className="relative shrink-0">
                   {effectiveRide.passengerAvatar ? (
                     <img
                       src={effectiveRide.passengerAvatar}
                       alt={effectiveRide.passengerName}
-                      className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shadow-sm"
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-[#ff6a00] shadow-md"
                     />
                   ) : (
-                    <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-900 border-2 border-[#ff6a00] shadow-sm flex items-center justify-center font-heading font-black text-lg">
-                      {(effectiveRide.passengerName || 'P').charAt(0).toUpperCase()}
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-amber-100 text-amber-900 border-2 border-[#ff6a00] shadow-md flex flex-col items-center justify-center font-heading font-black text-xl">
+                      <span>{(effectiveRide.passengerName || 'P').charAt(0).toUpperCase()}</span>
+                      <User className="w-4 h-4 opacity-70" />
                     </div>
                   )}
                   <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-[10px] px-1.5 rounded-full border border-slate-900">
@@ -1157,6 +1218,33 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
                   <MessageCircle className="w-3.5 h-3.5" />
                   <span>WhatsApp</span>
                 </a>
+              </div>
+            </div>
+
+            {/* Motorista / Veículo na chamada */}
+            <div className="flex items-center gap-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3">
+              {effectiveDriverAvatar ? (
+                <img
+                  src={effectiveDriverAvatar}
+                  alt={driver.name}
+                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-emerald-600 shadow-sm shrink-0"
+                />
+              ) : (
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-emerald-100 text-emerald-900 border-2 border-emerald-600 shadow-sm shrink-0 flex flex-col items-center justify-center font-heading font-black text-lg">
+                  <span>{(driver.name || 'M').charAt(0).toUpperCase()}</span>
+                  <User className="w-3.5 h-3.5 opacity-70" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-mono font-black text-emerald-700 uppercase block">
+                  {isMotoboy ? 'Motoboy em Atendimento' : 'Motorista em Atendimento'}
+                </span>
+                <p className="font-heading font-black text-sm text-slate-950 truncate">
+                  {driver.name}
+                </p>
+                <p className="text-xs font-mono font-bold text-slate-700 truncate">
+                  {driver.vehicleModel || 'Veículo'} {driver.vehiclePlate ? `• Placa ${driver.vehiclePlate}` : ''}
+                </p>
               </div>
             </div>
 

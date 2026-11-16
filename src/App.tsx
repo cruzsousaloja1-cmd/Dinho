@@ -74,7 +74,9 @@ import {
   purgeLegacyTestLocalStorage,
   normalizeRideCategory,
   getPassengerDebtSupabase,
-  clearPassengerDebtSupabase
+  clearPassengerDebtSupabase,
+  hydrateRidesWithUserPhotosSupabase,
+  fetchUsuarioPhotoByIdentity
 } from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
 
@@ -479,25 +481,55 @@ export default function App() {
           st === 'in_progress')
       ) {
         handledAccept = true;
-        let fullDriver = latestRide.driver;
+        const [hydratedLatest] = await hydrateRidesWithUserPhotosSupabase([latestRide]).catch(() => [latestRide]);
+        if (!isMounted) return;
+        const resolvedRide = hydratedLatest || latestRide;
+        let fullDriver = resolvedRide.driver;
         if (fullDriver) {
           let matched = drivers.find(
             (d) =>
               (fullDriver?.id && d.id === fullDriver.id) ||
               (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
           );
-          if (!matched) {
+          if (!matched || !matched.avatar) {
             const refreshedDrivers = await getAllDriversFromSupabase().catch(() => []);
             if (!isMounted) return;
             if (refreshedDrivers.length > 0) setDrivers(refreshedDrivers);
-            matched = refreshedDrivers.find(
+            const foundInRefreshed = refreshedDrivers.find(
               (d) =>
                 (fullDriver?.id && d.id === fullDriver.id) ||
                 (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
             );
+            if (foundInRefreshed) matched = foundInRefreshed;
           }
           if (matched) {
-            fullDriver = matched;
+            fullDriver = {
+              ...matched,
+              ...fullDriver,
+              avatar: fullDriver.avatar || matched.avatar || '',
+              vehicleModel: fullDriver.vehicleModel || matched.vehicleModel || '',
+              vehiclePlate: fullDriver.vehiclePlate || matched.vehiclePlate || '',
+              vehicleColor: fullDriver.vehicleColor || matched.vehicleColor || '',
+              vehicleYear: fullDriver.vehicleYear || matched.vehicleYear || 2023,
+              phone: fullDriver.phone || matched.phone || '',
+              rating: fullDriver.rating || matched.rating || 0,
+            };
+          }
+          if (!fullDriver.avatar && (fullDriver.email || fullDriver.id)) {
+            const drvProfile = await fetchUsuarioPhotoByIdentity({
+              id: fullDriver.id,
+              email: fullDriver.email,
+            }).catch(() => null);
+            if (!isMounted) return;
+            if (drvProfile?.avatar) {
+              fullDriver = {
+                ...fullDriver,
+                avatar: drvProfile.avatar,
+                vehiclePlate: fullDriver.vehiclePlate || drvProfile.vehiclePlate || '',
+                vehicleModel: fullDriver.vehicleModel || drvProfile.vehicleModel || '',
+                phone: fullDriver.phone || drvProfile.phone || '',
+              };
+            }
           }
         }
         const acceptedDriverName = (fullDriver?.name || '').trim() || 'Motorista';
@@ -505,7 +537,8 @@ export default function App() {
           curr
             ? {
                 ...curr,
-                id: latestRide.id || curr.id,
+                id: resolvedRide.id || curr.id,
+                passengerAvatar: resolvedRide.passengerAvatar || curr.passengerAvatar || currentUser?.avatar || '',
                 status: 'aceita',
                 driver: fullDriver || curr.driver,
               }
@@ -557,6 +590,58 @@ export default function App() {
       clearInterval(interval);
     };
   }, [activeRide?.id, activeRide?.status, activeRide?.confirmationCode, currentUser, drivers]);
+
+  // Hidrata automaticamente fotos do motorista e passageiro direto do Supabase sempre que abrir a chamada/corrida
+  useEffect(() => {
+    if (!activeRide) return;
+    const needsPassengerPhoto = !activeRide.passengerAvatar;
+    const needsDriverPhoto = Boolean(
+      activeRide.driver && (!activeRide.driver.avatar || !activeRide.driver.vehiclePlate)
+    );
+    if (!needsPassengerPhoto && !needsDriverPhoto) return;
+
+    let mounted = true;
+    hydrateRidesWithUserPhotosSupabase([activeRide])
+      .then(([hydrated]) => {
+        if (!mounted || !hydrated) return;
+        const nextPassengerAvatar = hydrated.passengerAvatar || activeRide.passengerAvatar || currentUser?.avatar || '';
+        const nextDriver = hydrated.driver || activeRide.driver;
+        if (
+          nextPassengerAvatar !== (activeRide.passengerAvatar || '') ||
+          nextDriver?.avatar !== activeRide.driver?.avatar ||
+          nextDriver?.vehiclePlate !== activeRide.driver?.vehiclePlate
+        ) {
+          setActiveRide((curr) =>
+            curr
+              ? {
+                  ...curr,
+                  passengerAvatar: nextPassengerAvatar || curr.passengerAvatar,
+                  driver: nextDriver
+                    ? {
+                        ...nextDriver,
+                        avatar: nextDriver.avatar || curr.driver?.avatar || '',
+                      }
+                    : curr.driver,
+                }
+              : curr
+          );
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    activeRide?.id,
+    activeRide?.status,
+    activeRide?.passengerAvatar,
+    activeRide?.driver?.id,
+    activeRide?.driver?.email,
+    activeRide?.driver?.avatar,
+    activeRide?.driver?.vehiclePlate,
+    currentUser?.avatar,
+  ]);
 
   // Simulated GPS movement ONLY after ride is accepted by a driver
   useEffect(() => {
@@ -638,16 +723,31 @@ export default function App() {
     }
 
     const confirmationCode = ride.confirmationCode || generateUniqueRideConfirmationCode();
+    const resolvedPassengerAvatar = ride.passengerAvatar || currentUser?.avatar || '';
     const startedRide: Ride = {
       ...ride,
       passengerId: ride.passengerId || currentUser?.id,
       passengerEmail: ride.passengerEmail || currentUser?.email,
+      passengerAvatar: resolvedPassengerAvatar,
       paymentMethod: isCash ? 'dinheiro' : ride.paymentMethod,
       paymentStatus: isCash ? 'pending' : 'paid',
       status: 'procurando',
       confirmationCode,
     };
     setActiveRide(startedRide);
+    if (!resolvedPassengerAvatar && (currentUser?.email || currentUser?.id)) {
+      fetchUsuarioPhotoByIdentity({ id: currentUser?.id, email: currentUser?.email })
+        .then((prof) => {
+          if (prof?.avatar) {
+            setActiveRide((curr) =>
+              curr && curr.confirmationCode === confirmationCode
+                ? { ...curr, passengerAvatar: prof.avatar }
+                : curr
+            );
+          }
+        })
+        .catch(() => {});
+    }
     setRidesHistory((prev) => [
       startedRide,
       ...prev.filter((r) => (startedRide.id ? r.id !== startedRide.id : r !== startedRide)),
@@ -1539,10 +1639,14 @@ export default function App() {
               rides={ridesHistory}
               activeRide={activeRide}
               onAcceptIncomingRide={(ride) => {
-                const acceptedObj: Ride = { ...ride, driver: currentDriver, status: 'accepted' };
+                const resolvedDriver: Driver = {
+                  ...currentDriver,
+                  avatar: currentDriver.avatar || currentUser?.avatar || '',
+                };
+                const acceptedObj: Ride = { ...ride, driver: resolvedDriver, status: 'accepted' };
                 setActiveRide(acceptedObj);
                 if (ride.id && /^\d+$/.test(String(ride.id))) {
-                  acceptCorridaSupabase(ride.id, currentDriver).catch(() => {});
+                  acceptCorridaSupabase(ride.id, resolvedDriver).catch(() => {});
                 }
               }}
               onUpdateDriver={handleUpdateDriver}
@@ -1779,6 +1883,8 @@ export default function App() {
               destination={destination}
               activeDriver={activeRide.driver ?? null}
               activeRide={activeRide}
+              currentUserAvatar={currentUser?.avatar}
+              currentUserName={currentUser?.name}
               onlineDrivers={matchingOnlineDrivers}
               onCompleteRide={handleCompleteRide}
               onCancelRide={handleCancelRide}

@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
-import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, getUserAccount } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase } from '../supabase';
+import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser } from '../services/userService';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
@@ -229,7 +229,8 @@ import {
   MapPin,
   Phone,
   ArrowDownCircle,
-  XCircle
+  XCircle,
+  User
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
@@ -392,6 +393,38 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     };
   }, [isOnline, isCategoryConfigured, acceptedDriverRide, currentDriver.category, dismissedTick]);
 
+  // Carrega automaticamente foto do motorista e do passageiro direto do Supabase se estiverem vazias na chamada
+  useEffect(() => {
+    if (!currentDriver.avatar && (currentDriver.email || currentDriver.id)) {
+      fetchUsuarioPhotoByIdentity({ id: currentDriver.id, email: currentDriver.email })
+        .then((prof) => {
+          if (prof?.avatar) {
+            onUpdateDriver({ ...currentDriver, avatar: prof.avatar });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [currentDriver.id, currentDriver.email, currentDriver.avatar]);
+
+  useEffect(() => {
+    const targetRide = acceptedDriverRide || cloudSearchingRide;
+    if (!targetRide || targetRide.passengerAvatar) return;
+    let mounted = true;
+    hydrateRidesWithUserPhotosSupabase([targetRide])
+      .then(([hydrated]) => {
+        if (!mounted || !hydrated?.passengerAvatar) return;
+        if (acceptedDriverRide && acceptedDriverRide === targetRide) {
+          setAcceptedDriverRide({ ...acceptedDriverRide, passengerAvatar: hydrated.passengerAvatar });
+        } else if (cloudSearchingRide && cloudSearchingRide === targetRide) {
+          setCloudSearchingRide({ ...cloudSearchingRide, passengerAvatar: hydrated.passengerAvatar });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [acceptedDriverRide, cloudSearchingRide]);
+
   // Galeria de Fotos: Perfil, CNH e Foto do Veículo
   const driverAvatarInputRef = useRef<HTMLInputElement>(null);
   const cnhDocInputRef = useRef<HTMLInputElement>(null);
@@ -413,15 +446,20 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         };
         onUpdateDriver(updated);
 
+        saveUsuarioSupabase({
+          nome: currentDriver.name,
+          email: currentDriver.email,
+          celular: currentDriver.phone,
+          foto: base64,
+          avatar: base64,
+        }).catch(() => {});
+
         if (currentUser && currentUser.email) {
-          const userAcc = getUserAccount(currentUser.email);
-          if (userAcc) {
-            saveUserAccount({
-              ...userAcc,
-              avatar: base64,
-              driverData: updated,
-            }, true);
-          }
+          saveSessionUser({
+            ...currentUser,
+            avatar: base64,
+            driverData: updated,
+          });
         }
       }
     } catch (err) {
@@ -906,22 +944,44 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       ? (activePropSearchingRide || cloudSearchingRide)
       : null;
 
-  const acceptIncomingRideHandler = (rideToAccept: Ride) => {
+  const acceptIncomingRideHandler = async (rideToAccept: Ride) => {
     const price = rideToAccept.price || 0;
     const driverEarns = rideToAccept.driverEarnings || Number((price * 0.85).toFixed(2));
     const raceCommission = rideToAccept.platformFee || Number((price * 0.15).toFixed(2));
     const isCash =
       rideToAccept.paymentMethod === 'money' ||
       rideToAccept.paymentMethod === 'dinheiro';
+
+    let driverForRide: Driver = {
+      ...currentDriver,
+      avatar: currentDriver.avatar || currentUser?.avatar || '',
+    };
+    if (!driverForRide.avatar && (driverForRide.email || driverForRide.id)) {
+      const prof = await fetchUsuarioPhotoByIdentity({
+        id: driverForRide.id,
+        email: driverForRide.email,
+      }).catch(() => null);
+      if (prof?.avatar) {
+        driverForRide = { ...driverForRide, avatar: prof.avatar };
+        onUpdateDriver(driverForRide);
+      }
+    }
+
+    let hydratedRideToAccept = rideToAccept;
+    if (!hydratedRideToAccept.passengerAvatar) {
+      const [hydrated] = await hydrateRidesWithUserPhotosSupabase([rideToAccept]).catch(() => [rideToAccept]);
+      if (hydrated) hydratedRideToAccept = hydrated;
+    }
+
     const acceptedRideObj: Ride = {
-      ...rideToAccept,
-      driver: currentDriver,
+      ...hydratedRideToAccept,
+      driver: driverForRide,
       status: 'aceita',
     };
     setAcceptedDriverRide(acceptedRideObj);
     setCloudSearchingRide(null);
-    if (rideToAccept.id) {
-      acceptCorridaSupabase(rideToAccept.id, currentDriver).catch(() => {});
+    if (hydratedRideToAccept.id) {
+      acceptCorridaSupabase(hydratedRideToAccept.id, driverForRide).catch(() => {});
     }
     if (onAcceptIncomingRide) {
       onAcceptIncomingRide(acceptedRideObj);
@@ -978,11 +1038,63 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               </div>
             )}
 
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-3.5 text-sm space-y-1.5">
-              <p className="font-bold text-white flex items-center gap-2">
-                <span>Passageiro:</span>
-                <span className="text-amber-400">{openIncomingRide.passengerName || 'Passageiro'}</span>
-              </p>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-sm space-y-3">
+              {/* Foto grande redonda do PASSAGEIRO e do MOTORISTA na chamada */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  {openIncomingRide.passengerAvatar ? (
+                    <img
+                      src={openIncomingRide.passengerAvatar}
+                      alt={openIncomingRide.passengerName || 'Passageiro'}
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-3 border-emerald-400 shadow-lg shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-500/20 text-emerald-300 border-3 border-emerald-400 shadow-lg shrink-0 flex flex-col items-center justify-center font-heading font-black">
+                      <span className="text-2xl leading-none">
+                        {(openIncomingRide.passengerName || 'P').trim().charAt(0).toUpperCase()}
+                      </span>
+                      <User className="w-3.5 h-3.5 opacity-80 mt-0.5" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-mono font-bold uppercase text-emerald-400 tracking-wider block">
+                      Passageiro Chamando
+                    </span>
+                    <p className="font-heading font-black text-lg sm:text-xl text-amber-400 truncate">
+                      {openIncomingRide.passengerName || 'Passageiro'}
+                    </p>
+                    {openIncomingRide.passengerPhone && (
+                      <p className="text-xs text-zinc-400 font-mono truncate">
+                        {openIncomingRide.passengerPhone}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Foto redonda do MOTORISTA com Nome e Placa */}
+                <div className="flex items-center gap-2.5 bg-zinc-950/90 border border-zinc-700 rounded-2xl px-3 py-2 shrink-0">
+                  {(currentDriver.avatar || currentUser?.avatar) ? (
+                    <img
+                      src={currentDriver.avatar || currentUser?.avatar}
+                      alt={currentDriver.name}
+                      className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] shrink-0 flex items-center justify-center font-heading font-black text-lg">
+                      {(currentDriver.name || 'M').trim().charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-mono text-zinc-400 block truncate max-w-[140px]">
+                      {currentDriver.name}
+                    </span>
+                    <span className="text-xs font-mono font-black text-[#ff6a00] block">
+                      {currentDriver.vehiclePlate || 'Sem placa'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <p className="text-zinc-200 font-semibold">
                 <strong className="text-emerald-400">Origem:</strong> {openIncomingRide.pickup?.address}
               </p>
@@ -1099,11 +1211,20 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="relative">
-                  <img
-                    src={currentDriver.avatar}
-                    alt={currentDriver.name}
-                    className="w-16 h-16 rounded-full object-cover border-2 border-amber-500 shadow-md"
-                  />
+                  {(currentDriver.avatar || currentUser?.avatar) ? (
+                    <img
+                      src={currentDriver.avatar || currentUser?.avatar}
+                      alt={currentDriver.name}
+                      className="w-16 h-16 rounded-full object-cover border-2 border-amber-500 shadow-md"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-800 border-2 border-amber-500 shadow-md flex flex-col items-center justify-center font-heading font-black">
+                      <span className="text-xl leading-none">
+                        {(currentDriver.name || 'M').trim().charAt(0).toUpperCase()}
+                      </span>
+                      <User className="w-3.5 h-3.5 opacity-75 mt-0.5" />
+                    </div>
+                  )}
                   <span
                     className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white ${
                       isOnline ? 'bg-emerald-500 radar-pulse' : 'bg-slate-400'
@@ -1383,9 +1504,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                             </div>
                           </div>
 
-                          {/* Card do Passageiro */}
-                          <div className="bg-white rounded-2xl p-4 border border-slate-200 flex items-center justify-between gap-4 shadow-sm">
-                            <div className="flex items-center gap-3.5">
+                          {/* Card do Passageiro + Motorista na Chamada */}
+                          <div className="bg-white rounded-2xl p-4 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                            <div className="flex items-center gap-3.5 min-w-0">
                               <div className="relative shrink-0">
                                 {incomingPassengerAvatar ? (
                                   <img
@@ -1394,16 +1515,19 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                                     className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-3 border-emerald-500 shadow-md"
                                   />
                                 ) : (
-                                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-heading font-black text-2xl border-3 border-emerald-500 shadow-md">
-                                    {incomingPassengerName.charAt(0).toUpperCase()}
+                                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-100 text-emerald-800 flex flex-col items-center justify-center font-heading font-black border-3 border-emerald-500 shadow-md">
+                                    <span className="text-2xl leading-none">
+                                      {incomingPassengerName.trim().charAt(0).toUpperCase()}
+                                    </span>
+                                    <User className="w-4 h-4 opacity-75 mt-0.5" />
                                   </div>
                                 )}
                               </div>
-                              <div>
+                              <div className="min-w-0">
                                 <span className="text-[10px] font-mono font-bold text-emerald-700 uppercase tracking-wider block">
                                   Passageiro Solicitante
                                 </span>
-                                <h5 className="font-heading font-black text-slate-950 text-base sm:text-xl">
+                                <h5 className="font-heading font-black text-slate-950 text-base sm:text-xl truncate">
                                   {incomingPassengerName}
                                 </h5>
                                 {incomingPassengerPhone && (
@@ -1414,19 +1538,44 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                               </div>
                             </div>
 
-                            {incomingPassengerPhone && (
-                              <a
-                                href={`https://wa.me/55${incomingPassengerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
-                                  `Olá ${incomingPassengerName}! Sou seu condutor da RACE. Recebi sua chamada de corrida e estou a caminho!`
-                                )}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-2xl border border-emerald-300 shadow-sm transition-all active:scale-95 shrink-0"
-                                title="Ligar ou conversar no WhatsApp com o passageiro"
-                              >
-                                <Phone className="w-5 h-5" />
-                              </a>
-                            )}
+                            <div className="flex items-center justify-between sm:justify-end gap-3">
+                              {/* Foto redonda do Motorista + Placa do Veículo */}
+                              <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2">
+                                {(currentDriver.avatar || currentUser?.avatar) ? (
+                                  <img
+                                    src={currentDriver.avatar || currentUser?.avatar}
+                                    alt={currentDriver.name}
+                                    className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-800 border-2 border-[#ff6a00] shrink-0 flex items-center justify-center font-heading font-black text-lg">
+                                    {(currentDriver.name || 'M').trim().charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <span className="text-[11px] font-heading font-black text-slate-900 block truncate max-w-[130px]">
+                                    {currentDriver.name}
+                                  </span>
+                                  <span className="text-[11px] font-mono font-bold text-[#ff6a00] block">
+                                    {currentDriver.vehiclePlate || 'Condutor'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {incomingPassengerPhone && (
+                                <a
+                                  href={`https://wa.me/55${incomingPassengerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                                    `Olá ${incomingPassengerName}! Sou seu condutor da RACE. Recebi sua chamada de corrida e estou a caminho!`
+                                  )}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-2xl border border-emerald-300 shadow-sm transition-all active:scale-95 shrink-0"
+                                  title="Ligar ou conversar no WhatsApp com o passageiro"
+                                >
+                                  <Phone className="w-5 h-5" />
+                                </a>
+                              )}
+                            </div>
                           </div>
 
                           {/* Endereço de Início e Chegada */}
@@ -1918,11 +2067,20 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       onClick={() => driverAvatarInputRef.current?.click()}
                       className="relative group cursor-pointer shrink-0"
                     >
-                      <img
-                        src={currentDriver.avatar}
-                        alt={currentDriver.name}
-                        className="w-20 h-20 rounded-full object-cover border-4 border-amber-500 shadow-md group-hover:opacity-90 transition-opacity"
-                      />
+                      {(currentDriver.avatar || currentUser?.avatar) ? (
+                        <img
+                          src={currentDriver.avatar || currentUser?.avatar}
+                          alt={currentDriver.name}
+                          className="w-20 h-20 rounded-full object-cover border-4 border-amber-500 shadow-md group-hover:opacity-90 transition-opacity"
+                        />
+                      ) : (
+                        <div className="w-20 h-20 rounded-full bg-amber-100 text-amber-800 border-4 border-amber-500 shadow-md flex flex-col items-center justify-center font-heading font-black">
+                          <span className="text-2xl leading-none">
+                            {(currentDriver.name || 'M').trim().charAt(0).toUpperCase()}
+                          </span>
+                          <User className="w-4 h-4 opacity-75 mt-0.5" />
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={(e) => {
