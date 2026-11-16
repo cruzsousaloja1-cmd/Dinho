@@ -172,7 +172,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         return;
       }
 
-      // Salva na tabela public.usuarios no Supabase com tipo = 'ADM' (sem mandar `id` manual)
+      // Salva na tabela public.usuarios usando SOMENTE colunas que já existem
       const supabaseRes = await insertUsuarioSupabase({
         nome: cleanName,
         email: cleanEmail,
@@ -181,15 +181,16 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         login: cleanEmail,
         senha: adminRegPassword,
         tipo: 'ADM',
-        aceitou_contrato: true,
-        aceitou_termos: true,
-        aceitou_lgpd: true,
-        data_aceite: new Date().toISOString(),
       });
 
       if (!supabaseRes.success) {
         console.log('Erro Supabase ADM:', supabaseRes.error);
-        setAdminRegErrorMessage(`Erro Supabase: ${supabaseRes.error || 'Falha no banco de dados'}`);
+        const safeErr = String(supabaseRes.error || 'Falha ao salvar no banco de dados');
+        setAdminRegErrorMessage(
+          safeErr.includes('42703') || safeErr.toLowerCase().includes('does not exist')
+            ? 'Não foi possível concluir o cadastro ADM com as colunas atuais do banco.'
+            : `Erro Supabase: ${safeErr}`
+        );
         return;
       }
 
@@ -508,8 +509,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         };
       }
 
-      // INSERT DIRETO NA TABELA "usuarios" NO SUPABASE SEM MANDAR `id` (auto-incremento bigint)
-      // Motorista/Motoboy inicia sem categoria escolhida e status = 'offline' até configurar dentro do app
+      // INSERT DIRETO NA TABELA "usuarios" USANDO SOMENTE AS COLUNAS EXISTENTES
+      // Nunca inventa avatar, bau, cor, cpf, lat, lng, online, plano_ativo ou status
       const supabaseRes = await insertUsuarioSupabase({
         nome: cleanName,
         email: cleanEmail,
@@ -518,23 +519,17 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         login: cleanLogin,
         senha: regPassword,
         tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
-        categoria: '',
-        placa: '',
-        modelo: '',
-        ano: 2023,
-        cnh: '',
         foto: chosenAvatar || undefined,
-        status: isPassengerRole ? 'online' : 'offline',
-        plano_ativo: false,
-        aceitou_contrato: true,
-        aceitou_termos: true,
-        aceitou_lgpd: true,
-        data_aceite: new Date().toISOString(),
       });
 
       if (!supabaseRes.success) {
         console.log('Erro Supabase cadastro:', supabaseRes.error);
-        setRegErrorMessage(`Erro Supabase: ${supabaseRes.error || 'Falha desconhecida ao salvar usuário.'}`);
+        const safeErr = String(supabaseRes.error || 'Falha desconhecida ao salvar usuário.');
+        setRegErrorMessage(
+          safeErr.includes('42703') || safeErr.toLowerCase().includes('does not exist')
+            ? 'Não foi possível concluir o cadastro com as colunas atuais do banco.'
+            : `Erro Supabase: ${safeErr}`
+        );
         return;
       }
 

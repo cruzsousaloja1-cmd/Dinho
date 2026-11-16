@@ -51,6 +51,7 @@ import {
   testSupabaseConnection, 
   saveUsuarioSupabase,
   selectSafeUsuariosRows,
+  updateDriverOnlineStatusSupabase,
   getAllCorridasForAdminSupabase,
   getAllPagamentosSupabase,
   SupabasePagamentoRow
@@ -252,7 +253,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
 
     try {
-      await supabase.from('usuarios').update({ plano_ativo: true, status: 'online' }).eq('id', u.id);
+      await updateDriverOnlineStatusSupabase({
+        id: String(u.id),
+        email: userEmail,
+        status: 'online',
+      });
     } catch {}
 
     showToast(`✅ Acesso de 7 dias liberado com sucesso para ${u.nome}!`);
@@ -276,7 +281,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
 
     try {
-      await supabase.from('usuarios').update({ plano_ativo: false, status: 'bloqueado' }).eq('id', u.id);
+      await updateDriverOnlineStatusSupabase({
+        id: String(u.id),
+        email: userEmail,
+        status: 'offline',
+      });
     } catch {}
 
     showToast(`⛔ Usuário ${u.nome} bloqueado pela administração.`);
@@ -2214,10 +2223,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           modelo: d.vehicleModel,
                           ano: d.vehicleYear,
                           cnh: d.cnh,
-                          avatar: d.avatar,
+                          foto: d.avatar,
                           rating: d.rating,
                           saldo: d.walletBalance || 0,
-                          plano_ativo: d.weeklyPlanActive,
                         });
                         count++;
                       }
@@ -2230,12 +2238,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           login: p.login || p.email.split('@')[0],
                           senha: '',
                           tipo: 'passenger',
-                          categoria: 'economica',
-                          placa: '',
-                          modelo: '',
-                          ano: 2023,
-                          cnh: '',
-                          avatar: p.avatar,
+                          foto: p.avatar,
                           rating: p.rating || 0,
                         });
                         count++;
@@ -2297,8 +2300,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <p>• nome, email, celular, whatsapp</p>
                 <p>• login, senha (hash bcrypt — oculta no ADM)</p>
                 <p>• tipo, categoria</p>
-                <p>• placa, modelo, ano, cnh/cpf (mascarados), avatar</p>
-                <p>• rating, saldo, plano_ativo</p>
+                <p>• placa, modelo, ano, cnh (mascarada), foto</p>
+                <p>• rating, saldo, divida</p>
               </div>
             </div>
 

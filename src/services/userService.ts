@@ -6,7 +6,7 @@ import {
   saveCorridaSupabase,
   deleteUsuarioSupabase,
   zerarDadosTesteSupabase,
-  supabase,
+  updateDriverOnlineStatusSupabase,
   mapSupabaseRowToDriver,
   normalizeRideCategory,
   getWorkCategoryFullTitle,
@@ -234,7 +234,7 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
     tipo: (cloudUser.tipo as UserTipo) || role,
     isAdmin: isCloudAdmin || undefined,
     placa: cloudUser.placa || '',
-    avatar: cloudUser.avatar || '',
+    avatar: cloudUser.foto || cloudUser.avatar || '',
     rating: Number(cloudUser.rating || 0),
     driverData: driverObj,
     debtAmount: Number(cloudUser.divida || 0),
@@ -291,34 +291,17 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     senha: account.password,
     tipo: account.tipo || (account.role === 'passenger' ? 'passenger' : 'driver'),
     categoria: account.role === 'passenger' || isAdminAccount
-      ? ''
+      ? undefined
       : isConfiguredDriver && account.driverData?.category
       ? getWorkCategoryFullTitle(account.driverData.category)
-      : '',
-    placa: account.placa || account.driverData?.vehiclePlate || '',
-    modelo: account.driverData?.vehicleModel || '',
-    ano: account.driverData?.vehicleYear || 2023,
-    cor: account.driverData?.vehicleColor || '',
-    cnh: account.driverData?.cnh || '',
-    cpf: account.driverData?.cpf || '',
-    bau: account.driverData?.trunkType || '',
-    foto: account.avatar || '',
-    avatar: account.avatar || '',
-    foto_veiculo: account.driverData?.vehiclePhoto || '',
-    foto_cnh: account.driverData?.cnhPhoto || '',
-    foto_crlv: account.driverData?.crlvPhoto || '',
-    exigencias_confirmadas: account.driverData?.requirementsConfirmed === true,
+      : undefined,
+    placa: account.role === 'passenger' || isAdminAccount ? undefined : (account.placa || account.driverData?.vehiclePlate || undefined),
+    modelo: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.vehicleModel || undefined),
+    ano: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.vehicleYear || undefined),
+    cnh: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.cnh || undefined),
+    foto: account.avatar || undefined,
     rating: account.rating || 0,
     saldo: account.driverData?.walletBalance || 0,
-    plano_ativo: account.driverData?.weeklyPlanActive ?? false,
-    online: isConfiguredDriver && account.driverData?.status === 'online',
-    status: isConfiguredDriver ? account.driverData?.status : 'offline',
-    lat: account.driverData?.lat,
-    lng: account.driverData?.lng,
-    aceitou_contrato: account.aceitou_contrato,
-    aceitou_termos: account.aceitou_termos,
-    aceitou_lgpd: account.aceitou_lgpd,
-    data_aceite: account.data_aceite,
   })
     .then((res) => {
       if (setActiveSession && res.success && res.data?.id !== undefined && res.data?.id !== null) {
@@ -451,12 +434,12 @@ export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
         : null,
     };
 
-    if (driver.id) {
-      supabase
-        .from('usuarios')
-        .update({ plano_ativo: true, status: 'online' })
-        .eq('id', driver.id)
-        .then(() => {}, () => {});
+    if (driver.id || driver.email) {
+      updateDriverOnlineStatusSupabase({
+        id: driver.id,
+        email: driver.email,
+        status: 'online',
+      }).catch(() => {});
     }
 
     return updated;
