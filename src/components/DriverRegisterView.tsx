@@ -6,6 +6,7 @@ import confetti from 'canvas-confetti';
 import { saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
+import { LegalConsentSection } from './LegalConsentSection';
 
 interface DriverRegisterViewProps {
   onRegisterSuccess: (user: AppUser, newDriver: Driver) => void;
@@ -29,6 +30,9 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
   const [cnh, setCnh] = useState('');
   const [category, setCategory] = useState<VehicleCategory>('economica');
   const [avatar, setAvatar] = useState('');
+  const [acceptedContract, setAcceptedContract] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedLgpd, setAcceptedLgpd] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,6 +77,11 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
 
     if (!isValidPassword(password)) {
       setErrorMessage('A senha deve conter no mínimo 6 dígitos.');
+      return;
+    }
+
+    if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
+      setErrorMessage('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
       return;
     }
 
@@ -138,6 +147,10 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
       rating: 0,
       driverData: newDriver,
       createdAt: new Date().toISOString(),
+      aceitou_contrato: true,
+      aceitou_termos: true,
+      aceitou_lgpd: true,
+      data_aceite: new Date().toISOString(),
     }, true);
 
     try {
@@ -331,12 +344,29 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
             </select>
           </div>
 
+          <LegalConsentSection
+            acceptedContract={acceptedContract}
+            acceptedTerms={acceptedTerms}
+            acceptedLgpd={acceptedLgpd}
+            onChangeContract={setAcceptedContract}
+            onChangeTerms={setAcceptedTerms}
+            onChangeLgpd={setAcceptedLgpd}
+            theme="dark"
+          />
+
           {/* BOTÃO CADASTRAR */}
           <button
             type="submit"
-            className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/20 uppercase tracking-wider block mt-5"
+            disabled={!acceptedContract || !acceptedTerms || !acceptedLgpd}
+            className={`w-full font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all uppercase tracking-wider block mt-5 ${
+              acceptedContract && acceptedTerms && acceptedLgpd
+                ? 'bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/20'
+                : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
+            }`}
           >
-            CONCLUIR CADASTRO MOTORISTA
+            {acceptedContract && acceptedTerms && acceptedLgpd
+              ? 'CONCLUIR CADASTRO MOTORISTA'
+              : 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'}
           </button>
 
           {/* Voltar para login */}

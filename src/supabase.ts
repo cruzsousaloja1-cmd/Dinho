@@ -51,6 +51,10 @@ const SAFE_USUARIO_COLS_LIST = [
   'bloqueado_divida',
   'corrida_divida_id',
   'data_cadastro',
+  'aceitou_contrato',
+  'aceitou_termos',
+  'aceitou_lgpd',
+  'data_aceite',
 ];
 
 export function stripSensitiveUserFields<T extends Record<string, any> | null | undefined>(row: T): T {
@@ -103,7 +107,11 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   divida NUMERIC DEFAULT 0.00,
   bloqueado_divida BOOLEAN DEFAULT false,
   corrida_divida_id TEXT,
-  data_cadastro TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+  data_cadastro TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  aceitou_contrato BOOLEAN DEFAULT false,
+  aceitou_termos BOOLEAN DEFAULT false,
+  aceitou_lgpd BOOLEAN DEFAULT false,
+  data_aceite TIMESTAMP WITH TIME ZONE
 );
 
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
@@ -128,6 +136,10 @@ ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS bloqueado_divida BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS corrida_divida_id TEXT;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_contrato BOOLEAN DEFAULT false;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_termos BOOLEAN DEFAULT false;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_lgpd BOOLEAN DEFAULT false;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS data_aceite TIMESTAMP WITH TIME ZONE;
 
 -- 2. TABELA DE CORRIDAS (Tempo Real via Supabase Realtime)
 CREATE TABLE IF NOT EXISTS public.corridas (
@@ -676,6 +688,10 @@ export async function insertUsuarioSupabase(params: {
   plano_ativo?: boolean;
   lat?: number;
   lng?: number;
+  aceitou_contrato?: boolean;
+  aceitou_termos?: boolean;
+  aceitou_lgpd?: boolean;
+  data_aceite?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = params.email.trim().toLowerCase();
@@ -734,6 +750,10 @@ export async function insertUsuarioSupabase(params: {
     if (typeof params.plano_ativo === 'boolean') row.plano_ativo = params.plano_ativo;
     if (typeof params.lat === 'number' && !Number.isNaN(params.lat)) row.lat = params.lat;
     if (typeof params.lng === 'number' && !Number.isNaN(params.lng)) row.lng = params.lng;
+    if (typeof params.aceitou_contrato === 'boolean') row.aceitou_contrato = params.aceitou_contrato;
+    if (typeof params.aceitou_termos === 'boolean') row.aceitou_termos = params.aceitou_termos;
+    if (typeof params.aceitou_lgpd === 'boolean') row.aceitou_lgpd = params.aceitou_lgpd;
+    if (params.data_aceite) row.data_aceite = params.data_aceite;
 
     // Nunca enviar `id` manual para permitir geração automática bigint pelo Supabase
     delete row.id;
@@ -778,6 +798,10 @@ export async function insertUsuarioSupabase(params: {
       'bau',
       'celular',
       'divida',
+      'aceitou_contrato',
+      'aceitou_termos',
+      'aceitou_lgpd',
+      'data_aceite',
     ];
 
     let lastSupabaseError = 'Erro desconhecido ao inserir em public.usuarios.';
@@ -1064,6 +1088,10 @@ export async function saveUsuarioSupabase(user: {
   status?: string;
   lat?: number;
   lng?: number;
+  aceitou_contrato?: boolean;
+  aceitou_termos?: boolean;
+  aceitou_lgpd?: boolean;
+  data_aceite?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = user.email.toLowerCase().trim();
@@ -1119,6 +1147,18 @@ export async function saveUsuarioSupabase(user: {
       if (typeof user.lng === 'number' && !Number.isNaN(user.lng)) {
         updateData.lng = user.lng;
       }
+      if (typeof user.aceitou_contrato === 'boolean') {
+        updateData.aceitou_contrato = user.aceitou_contrato;
+      }
+      if (typeof user.aceitou_termos === 'boolean') {
+        updateData.aceitou_termos = user.aceitou_termos;
+      }
+      if (typeof user.aceitou_lgpd === 'boolean') {
+        updateData.aceitou_lgpd = user.aceitou_lgpd;
+      }
+      if (user.data_aceite) {
+        updateData.data_aceite = user.data_aceite;
+      }
       const compressedProfilePhoto = (user.foto || user.avatar)
         ? await compressImageToMax200KB(user.foto || user.avatar || '')
         : '';
@@ -1159,7 +1199,7 @@ export async function saveUsuarioSupabase(user: {
         }
 
         let removed = false;
-        for (const col of ['avatar', 'foto', 'foto_veiculo', 'foto_cnh', 'foto_crlv', 'exigencias_confirmadas', 'lat', 'lng', 'online', 'status', 'cor', 'cpf', 'bau', 'plano_ativo']) {
+        for (const col of ['avatar', 'foto', 'foto_veiculo', 'foto_cnh', 'foto_crlv', 'exigencias_confirmadas', 'lat', 'lng', 'online', 'status', 'cor', 'cpf', 'bau', 'plano_ativo', 'aceitou_contrato', 'aceitou_termos', 'aceitou_lgpd', 'data_aceite']) {
           if (col in updateData && msg.includes(col)) {
             delete updateData[col];
             removed = true;
@@ -1200,6 +1240,10 @@ export async function saveUsuarioSupabase(user: {
         plano_ativo: user.plano_ativo,
         lat: user.lat,
         lng: user.lng,
+        aceitou_contrato: user.aceitou_contrato,
+        aceitou_termos: user.aceitou_termos,
+        aceitou_lgpd: user.aceitou_lgpd,
+        data_aceite: user.data_aceite,
       });
     }
   } catch (err: any) {

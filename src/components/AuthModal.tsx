@@ -28,6 +28,7 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { verifyUserLoginAsync, saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
+import { LegalConsentSection } from './LegalConsentSection';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -69,6 +70,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [comfortNotice, setComfortNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+  const [acceptedContract, setAcceptedContract] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedLgpd, setAcceptedLgpd] = useState(false);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -145,6 +149,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
       if (password !== confirmPassword) {
         setErrorMessage('A confirmação de senha não confere com a senha digitada.');
+        return;
+      }
+      if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
+        setErrorMessage('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
         return;
       }
     }
@@ -231,6 +239,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       rating: 0,
       driverData: createdDriver,
       createdAt: new Date().toISOString(),
+      aceitou_contrato: mode === 'register' ? true : undefined,
+      aceitou_termos: mode === 'register' ? true : undefined,
+      aceitou_lgpd: mode === 'register' ? true : undefined,
+      data_aceite: mode === 'register' ? new Date().toISOString() : undefined,
     }, true);
 
     setTimeout(() => {
@@ -549,15 +561,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
+          {mode === 'register' && (
+            <LegalConsentSection
+              acceptedContract={acceptedContract}
+              acceptedTerms={acceptedTerms}
+              acceptedLgpd={acceptedLgpd}
+              onChangeContract={setAcceptedContract}
+              onChangeTerms={setAcceptedTerms}
+              onChangeLgpd={setAcceptedLgpd}
+              theme="light"
+            />
+          )}
+
           {/* Submit Action */}
           <button
             type="submit"
-            disabled={isSubmitting}
-            className="w-full bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black py-4 rounded-xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/20 text-sm sm:text-base flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 mt-4 uppercase tracking-wider"
+            disabled={isSubmitting || (mode === 'register' && (!acceptedContract || !acceptedTerms || !acceptedLgpd))}
+            className={`w-full font-heading font-black py-4 rounded-xl transition-all text-sm sm:text-base flex items-center justify-center gap-2 mt-4 uppercase tracking-wider ${
+              mode === 'register' && (!acceptedContract || !acceptedTerms || !acceptedLgpd)
+                ? 'bg-slate-300 text-slate-600 cursor-not-allowed opacity-80'
+                : 'bg-[#ff6a00] hover:bg-[#e05e00] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/20 active:scale-98 disabled:opacity-50'
+            }`}
           >
             <span>
               {mode === 'login'
                 ? 'ENTRAR DIRETO NA CENTRAL DE ATENDIMENTO'
+                : !acceptedContract || !acceptedTerms || !acceptedLgpd
+                ? 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'
                 : 'CONCLUIR CADASTRO E ENTRAR NA CENTRAL DE CORRIDAS'}
             </span>
             <ArrowRight className="w-5 h-5" />

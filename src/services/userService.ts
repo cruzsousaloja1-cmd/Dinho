@@ -28,6 +28,10 @@ export interface StoredUserAccount {
   driverData?: Driver;
   rides?: Ride[];
   createdAt: string;
+  aceitou_contrato?: boolean;
+  aceitou_termos?: boolean;
+  aceitou_lgpd?: boolean;
+  data_aceite?: string;
 }
 
 export const ADMIN_EMAIL = 'admin@race.com.br';
@@ -311,6 +315,10 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     status: isConfiguredDriver ? account.driverData?.status : 'offline',
     lat: account.driverData?.lat,
     lng: account.driverData?.lng,
+    aceitou_contrato: account.aceitou_contrato,
+    aceitou_termos: account.aceitou_termos,
+    aceitou_lgpd: account.aceitou_lgpd,
+    data_aceite: account.data_aceite,
   })
     .then((res) => {
       if (setActiveSession && res.success && res.data?.id !== undefined && res.data?.id !== null) {

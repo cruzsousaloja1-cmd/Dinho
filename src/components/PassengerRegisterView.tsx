@@ -5,6 +5,7 @@ import confetti from 'canvas-confetti';
 import { saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
+import { LegalConsentSection } from './LegalConsentSection';
 
 interface PassengerRegisterViewProps {
   onRegisterSuccess: (user: AppUser) => void;
@@ -24,6 +25,9 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [avatar, setAvatar] = useState('');
+  const [acceptedContract, setAcceptedContract] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedLgpd, setAcceptedLgpd] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,6 +77,11 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       return;
     }
 
+    if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
+      setErrorMessage('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
+      return;
+    }
+
     if (existingPassengers.some((p) => p.email.toLowerCase() === cleanEmail)) {
       setErrorMessage('Já existe uma conta cadastrada com este e-mail. Faça login para continuar.');
       return;
@@ -103,6 +112,10 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       rating: 0,
       rides: [],
       createdAt: new Date().toISOString(),
+      aceitou_contrato: true,
+      aceitou_termos: true,
+      aceitou_lgpd: true,
+      data_aceite: new Date().toISOString(),
     }, false);
 
     try {
@@ -229,12 +242,29 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
             />
           </div>
 
+          <LegalConsentSection
+            acceptedContract={acceptedContract}
+            acceptedTerms={acceptedTerms}
+            acceptedLgpd={acceptedLgpd}
+            onChangeContract={setAcceptedContract}
+            onChangeTerms={setAcceptedTerms}
+            onChangeLgpd={setAcceptedLgpd}
+            theme="dark"
+          />
+
           {/* BOTÃO CADASTRAR */}
           <button
             type="submit"
-            className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all cursor-pointer shadow-lg shadow-[#ff6a00]/20 uppercase tracking-wider block mt-6"
+            disabled={!acceptedContract || !acceptedTerms || !acceptedLgpd}
+            className={`w-full font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all uppercase tracking-wider block mt-6 ${
+              acceptedContract && acceptedTerms && acceptedLgpd
+                ? 'bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/20'
+                : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
+            }`}
           >
-            CADASTRAR E PEDIR CORRIDA
+            {acceptedContract && acceptedTerms && acceptedLgpd
+              ? 'CADASTRAR E PEDIR CORRIDA'
+              : 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'}
           </button>
 
           {/* Voltar para login */}

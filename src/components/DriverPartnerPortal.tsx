@@ -8,6 +8,7 @@ import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/secur
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverWorkSelectionView } from './DriverWorkSelectionView';
+import { LegalConsentSection } from './LegalConsentSection';
 import { 
   WEEKLY_FEE, 
   WEEKLY_FEE_TEXT, 
@@ -550,6 +551,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [regTrunkType, setRegTrunkType] = useState('Baú 90 Litros');
   const [regRequirementsConfirmed, setRegRequirementsConfirmed] = useState(false);
   const [regAvatar, setRegAvatar] = useState('');
+  const [acceptedContract, setAcceptedContract] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedLgpd, setAcceptedLgpd] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
   const [registeredSuccess, setRegisteredSuccess] = useState(false);
 
@@ -767,6 +771,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       return;
     }
 
+    if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
+      setRegError('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
+      return;
+    }
+
     const finalCategory = regCategory;
     const comfortEligible = finalCategory === 'confort';
     const reason = comfortEligible ? 'Aprovado para Confort (2020+).' : '';
@@ -830,6 +839,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       rating: newDriver.rating,
       driverData: newDriver,
       createdAt: new Date().toISOString(),
+      aceitou_contrato: true,
+      aceitou_termos: true,
+      aceitou_lgpd: true,
+      data_aceite: new Date().toISOString(),
     }, false);
 
     onRegisterDriver(newDriver);
@@ -2992,17 +3005,29 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </span>
                 </div>
 
+                <LegalConsentSection
+                  acceptedContract={acceptedContract}
+                  acceptedTerms={acceptedTerms}
+                  acceptedLgpd={acceptedLgpd}
+                  onChangeContract={setAcceptedContract}
+                  onChangeTerms={setAcceptedTerms}
+                  onChangeLgpd={setAcceptedLgpd}
+                  theme="light"
+                />
+
                 {/* Botão de Finalização com Categoria Específica */}
                 <button
                   type="submit"
-                  disabled={!regRequirementsConfirmed}
+                  disabled={!regRequirementsConfirmed || !acceptedContract || !acceptedTerms || !acceptedLgpd}
                   className={`w-full font-heading font-black py-4 px-6 rounded-2xl transition-all text-sm sm:text-base border uppercase tracking-wider ${
-                    regRequirementsConfirmed
+                    regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
                       ? 'bg-[#ff6a00] hover:bg-[#e05e00] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/25 border-orange-500 active:scale-[0.99]'
                       : 'bg-slate-300 text-slate-600 border-slate-400 cursor-not-allowed opacity-80'
                   }`}
                 >
-                  Salvar e ficar ONLINE ({selectedGuide.title})
+                  {regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
+                    ? `Salvar e ficar ONLINE (${selectedGuide.title})`
+                    : 'Aceite Exigências, Contrato, Termos e LGPD para Salvar'}
                 </button>
               </form>
             )}

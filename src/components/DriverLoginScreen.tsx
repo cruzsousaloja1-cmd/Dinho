@@ -7,6 +7,7 @@ import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase, checkE
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { LegalConsentSection } from './LegalConsentSection';
 
 interface DriverLoginScreenProps {
   drivers: Driver[];
@@ -63,6 +64,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [regErrorMessage, setRegErrorMessage] = useState<string | null>(null);
   const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [acceptedContract, setAcceptedContract] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedLgpd, setAcceptedLgpd] = useState(false);
 
   // Foto de perfil do cadastro (Galeria do Celular ou Câmera)
   const [regAvatar, setRegAvatar] = useState<string | null>(null);
@@ -88,6 +92,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setRegRole(role);
     setRegErrorMessage(null);
     setRegSuccessMessage(null);
+    setAcceptedContract(false);
+    setAcceptedTerms(false);
+    setAcceptedLgpd(false);
     setViewMode('register');
   };
 
@@ -429,6 +436,11 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
+    if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
+      setRegErrorMessage('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
+      return;
+    }
+
     setIsRegistering(true);
     try {
       // 1. Verifica duplicidade rápida no Supabase
@@ -499,6 +511,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         foto: chosenAvatar || undefined,
         status: isPassengerRole ? 'online' : 'offline',
         plano_ativo: false,
+        aceitou_contrato: true,
+        aceitou_termos: true,
+        aceitou_lgpd: true,
+        data_aceite: new Date().toISOString(),
       });
 
       if (!supabaseRes.success) {
@@ -1341,6 +1357,16 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </div>
               )}
 
+              <LegalConsentSection
+                acceptedContract={acceptedContract}
+                acceptedTerms={acceptedTerms}
+                acceptedLgpd={acceptedLgpd}
+                onChangeContract={setAcceptedContract}
+                onChangeTerms={setAcceptedTerms}
+                onChangeLgpd={setAcceptedLgpd}
+                theme="dark"
+              />
+
               {!regAvatar && (
                 <div className="p-3 bg-amber-950/60 border border-amber-500/70 rounded-2xl text-xs text-amber-200 flex items-center gap-2.5 font-bold">
                   <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
@@ -1350,18 +1376,20 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
               <button
                 type="submit"
-                disabled={!regAvatar || isRegistering}
+                disabled={!regAvatar || !acceptedContract || !acceptedTerms || !acceptedLgpd || isRegistering}
                 className={`w-full font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl transition-all uppercase tracking-wider block mt-3 ${
-                  regAvatar && !isRegistering
+                  regAvatar && acceptedContract && acceptedTerms && acceptedLgpd && !isRegistering
                     ? 'bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/25'
                     : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
                 }`}
               >
                 {isRegistering
                   ? 'CRIANDO CONTA NA NUVEM...'
-                  : regAvatar
-                  ? 'CRIAR CONTA E ENTRAR'
-                  : '📸 ADICIONE SUA FOTO PARA CONTINUAR'}
+                  : !regAvatar
+                  ? '📸 ADICIONE SUA FOTO PARA CONTINUAR'
+                  : !acceptedContract || !acceptedTerms || !acceptedLgpd
+                  ? 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'
+                  : 'CRIAR CONTA E ENTRAR'}
               </button>
 
               <div className="text-center pt-2">
