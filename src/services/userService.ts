@@ -48,6 +48,31 @@ export function isAdminTipoValue(rawTipo?: unknown): boolean {
   return normalized === 'adm' || normalized === 'admin' || normalized === 'administrador';
 }
 
+export function isMotoTipoValue(rawTipo?: unknown): boolean {
+  const normalized = String(rawTipo || '').trim().toLowerCase();
+  return (
+    normalized === 'motoboy' ||
+    normalized === 'motoboy_passageiro' ||
+    normalized === 'motoboy_entregas'
+  );
+}
+
+export function isDriverTipoValue(rawTipo?: unknown): boolean {
+  const normalized = String(rawTipo || '').trim().toLowerCase();
+  return (
+    normalized === 'driver' ||
+    normalized === 'motorista' ||
+    normalized === 'motorista_economico' ||
+    normalized === 'motorista_confort' ||
+    isMotoTipoValue(normalized)
+  );
+}
+
+export function isPassengerTipoValue(rawTipo?: unknown): boolean {
+  const normalized = String(rawTipo || '').trim().toLowerCase();
+  return normalized === 'passenger' || normalized === 'passageiro' || normalized === '';
+}
+
 export function isAppUserAdmin(user?: Partial<AppUser> | null): boolean {
   if (!user) return false;
   return Boolean(
@@ -55,6 +80,16 @@ export function isAppUserAdmin(user?: Partial<AppUser> | null): boolean {
       user.isAdmin ||
       isAdminTipoValue(user.tipo) ||
       normalizeEmail(user.email || '') === ADMIN_EMAIL
+  );
+}
+
+export function isAppUserDriver(user?: Partial<AppUser> | null): boolean {
+  if (!user || isAppUserAdmin(user)) return false;
+  return Boolean(
+    user.role === 'driver' ||
+      user.role === 'motoboy' ||
+      Boolean(user.driverData) ||
+      isDriverTipoValue(user.tipo)
   );
 }
 
@@ -176,20 +211,8 @@ export function getSessionUser(): AppUser | null {
       parsed.role === 'admin' ||
       isAdminTipoValue(tipoStr) ||
       cleanEmail === ADMIN_EMAIL;
-    const isMoto =
-      !isAdmin &&
-      (parsed.role === 'motoboy' ||
-        tipoLower === 'motoboy' ||
-        tipoLower === 'motoboy_passageiro' ||
-        tipoLower === 'motoboy_entregas');
-    const isDriver =
-      !isAdmin &&
-      (parsed.role === 'driver' ||
-        tipoLower === 'driver' ||
-        tipoLower === 'motorista' ||
-        tipoLower === 'motorista_economico' ||
-        tipoLower === 'motorista_confort' ||
-        isMoto);
+    const isMoto = !isAdmin && (parsed.role === 'motoboy' || isMotoTipoValue(tipoLower));
+    const isDriver = !isAdmin && (parsed.role === 'driver' || isDriverTipoValue(tipoLower));
 
     const role: UserRole = isAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
 
@@ -223,19 +246,11 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
   const rawCatNorm = cloudUser.categoria ? normalizeRideCategory(cloudUser.categoria) : null;
   const isMoto =
     !isCloudAdmin &&
-    (tipoLower === 'motoboy' ||
-      tipoLower === 'motoboy_passageiro' ||
-      tipoLower === 'motoboy_entregas' ||
+    (isMotoTipoValue(tipoLower) ||
       rawCatNorm === 'moto_passageiro' ||
       rawCatNorm === 'moto_entrega');
 
-  const isDriver =
-    !isCloudAdmin &&
-    (tipoLower === 'driver' ||
-      tipoLower === 'motorista' ||
-      tipoLower === 'motorista_economico' ||
-      tipoLower === 'motorista_confort' ||
-      isMoto);
+  const isDriver = !isCloudAdmin && (isDriverTipoValue(tipoLower) || isMoto);
 
   const driverObj: Driver | undefined = isDriver ? mapSupabaseRowToDriver(cloudUser) : undefined;
   const role: UserRole = isCloudAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
@@ -265,14 +280,25 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
 /**
  * Sincroniza a conta do usuário diretamente no Supabase (sem armazenar dados em localStorage)
  */
-export function saveUserAccount(account: StoredUserAccount, setActiveSession: boolean = true): void {
+export async function saveUserAccount(
+  account: StoredUserAccount,
+  setActiveSession: boolean = true
+): Promise<{ success: boolean; data?: any; error?: string }> {
   const cleanEmail = normalizeEmail(account.email);
-  if (!cleanEmail) return;
+  if (!cleanEmail) return { success: false, error: 'E-mail inválido.' };
 
   const isAdminAccount =
     account.role === 'admin' ||
     isAdminTipoValue(account.tipo) ||
     cleanEmail === ADMIN_EMAIL;
+
+  const normalizedTipo = String(
+    isAdminAccount
+      ? 'admin'
+      : account.tipo || (account.role === 'passenger' ? 'passenger' : account.role === 'motoboy' ? 'motoboy' : 'driver')
+  )
+    .trim()
+    .toLowerCase();
 
   const currentUserPayload: AppUser = {
     id: account.id,
@@ -282,7 +308,7 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     whatsapp: account.whatsapp || account.phone,
     login: account.login || cleanEmail,
     role: isAdminAccount ? 'admin' : account.role,
-    tipo: account.tipo || (isAdminAccount ? 'admin' : undefined),
+    tipo: normalizedTipo as UserTipo,
     isAdmin: isAdminAccount || undefined,
     placa: account.placa || account.driverData?.vehiclePlate || '',
     avatar: account.avatar,
@@ -290,50 +316,55 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     driverData: account.driverData,
   };
 
-  if (setActiveSession) {
-    saveSessionUser(currentUserPayload);
-  }
-
   const isConfiguredDriver = Boolean(
     account.driverData?.categoryConfigured !== false &&
     account.driverData?.vehiclePlate?.trim() &&
     account.driverData?.vehicleModel?.trim()
   );
 
-  saveUsuarioSupabase({
-    nome: account.name,
-    email: cleanEmail,
-    celular: account.phone,
-    whatsapp: account.whatsapp || account.phone,
-    login: account.login || cleanEmail,
-    tipo: isAdminAccount
-      ? (account.tipo || 'admin')
-      : (account.tipo || (account.role === 'passenger' ? 'passenger' : 'driver')),
-    categoria: account.role === 'passenger' || isAdminAccount
-      ? undefined
-      : isConfiguredDriver && account.driverData?.category
-      ? getWorkCategoryFullTitle(account.driverData.category)
-      : undefined,
-    placa: account.role === 'passenger' || isAdminAccount ? undefined : (account.placa || account.driverData?.vehiclePlate || undefined),
-    modelo: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.vehicleModel || undefined),
-    ano: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.vehicleYear || undefined),
-    cnh: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.cnh || undefined),
-    foto: account.avatar || undefined,
-    avatar: account.avatar || undefined,
-    rating: account.rating || 0,
-    saldo: account.driverData?.walletBalance || 0,
-  })
-    .then((res) => {
-      if (setActiveSession && res.success && res.data?.id !== undefined && res.data?.id !== null) {
-        saveSessionUser({
-          ...currentUserPayload,
-          id: String(res.data.id),
-        });
-      }
-    })
-    .catch((cloudErr) => {
-      console.warn('Aviso de sincronização Supabase usuarios:', cloudErr);
+  try {
+    const res = await saveUsuarioSupabase({
+      nome: account.name,
+      email: cleanEmail,
+      celular: account.phone,
+      whatsapp: account.whatsapp || account.phone,
+      login: account.login || cleanEmail,
+      senha: account.password,
+      tipo: normalizedTipo,
+      categoria: account.role === 'passenger' || isAdminAccount
+        ? undefined
+        : isConfiguredDriver && account.driverData?.category
+        ? getWorkCategoryFullTitle(account.driverData.category)
+        : undefined,
+      placa: account.role === 'passenger' || isAdminAccount ? undefined : (account.placa || account.driverData?.vehiclePlate || undefined),
+      modelo: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.vehicleModel || undefined),
+      ano: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.vehicleYear || undefined),
+      cnh: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.cnh || undefined),
+      foto: account.avatar || '',
+      avatar: account.avatar || '',
+      rating: account.rating || 0,
+      saldo: account.driverData?.walletBalance || 0,
+      aceitou_contrato: account.aceitou_contrato,
+      aceitou_termos: account.aceitou_termos,
+      aceitou_lgpd: account.aceitou_lgpd,
+      data_aceite: account.data_aceite,
     });
+
+    if (!res.success) {
+      return { success: false, error: res.error || 'Falha ao salvar conta no Supabase.' };
+    }
+
+    if (setActiveSession) {
+      saveSessionUser({
+        ...currentUserPayload,
+        id: res.data?.id !== undefined && res.data?.id !== null ? String(res.data.id) : currentUserPayload.id,
+      });
+    }
+    return res;
+  } catch (cloudErr: any) {
+    console.warn('Aviso de sincronização Supabase usuarios:', cloudErr);
+    return { success: false, error: cloudErr?.message || 'Erro ao sincronizar conta no Supabase.' };
+  }
 }
 
 export function getUserAccount(_email: string): StoredUserAccount | null {

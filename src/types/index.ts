@@ -3,8 +3,10 @@ export type VehicleCategory = 'economica' | 'confort' | 'moto_passageiro' | 'mot
 export type UserRole = 'passenger' | 'driver' | 'motoboy' | 'admin';
 export type UserTipo = 
   | 'driver' 
+  | 'motorista'
   | 'motoboy' 
   | 'passenger' 
+  | 'passageiro'
   | 'motorista_economico' 
   | 'motorista_confort' 
   | 'motoboy_passageiro' 

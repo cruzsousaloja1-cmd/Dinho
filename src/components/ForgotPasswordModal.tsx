@@ -23,6 +23,7 @@ interface ForgotPasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialIdentifier?: string;
+  recoveryEmail?: string;
   onPasswordResetSuccess: (resolvedIdentifier: string, successMessage: string) => void;
   onCreateAccountNow?: (unregisteredIdentifier: string) => void;
 }
@@ -31,6 +32,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
   isOpen,
   onClose,
   initialIdentifier = '',
+  recoveryEmail = '',
   onPasswordResetSuccess,
   onCreateAccountNow,
 }) => {
@@ -51,11 +53,12 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setStep(1);
-      setIdentifier(initialIdentifier || '');
-      setResolvedEmail('');
+      const cleanRecovery = recoveryEmail.trim().toLowerCase();
+      setStep(cleanRecovery ? 3 : 1);
+      setIdentifier(cleanRecovery || initialIdentifier || '');
+      setResolvedEmail(cleanRecovery);
       setResolvedName('');
-      setResolvedContactHint('');
+      setResolvedContactHint(cleanRecovery);
       setGeneratedCode('');
       setCodeInput('');
       setNewPassword('');
@@ -66,7 +69,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
       setUnregisteredEmailPrompt(null);
       setIsLoading(false);
     }
-  }, [isOpen, initialIdentifier]);
+  }, [isOpen, initialIdentifier, recoveryEmail]);
 
   if (!isOpen) return null;
 

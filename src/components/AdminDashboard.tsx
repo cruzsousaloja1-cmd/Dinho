@@ -486,13 +486,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const email = (u['e-mail'] || u.email || '').trim();
     const phone = (u.celular || u.whatsapp || '').trim();
     const login = (u.login || email.split('@')[0] || '').trim();
-    const isPassenger = u.tipo === 'passenger';
-    const isMotoboy =
-      u.tipo === 'motoboy' ||
-      u.tipo === 'motoboy_passageiro' ||
-      u.tipo === 'motoboy_entregas' ||
-      (u.categoria && u.categoria.includes('moto'));
     const tipoNorm = String(u.tipo || '').trim().toLowerCase();
+    const isPassenger = tipoNorm === 'passenger' || tipoNorm === 'passageiro';
+    const isMotoboy =
+      tipoNorm === 'motoboy' ||
+      tipoNorm === 'motoboy_passageiro' ||
+      tipoNorm === 'motoboy_entregas' ||
+      (u.categoria && u.categoria.includes('moto'));
     const isAdminRow =
       tipoNorm === 'adm' ||
       tipoNorm === 'admin' ||

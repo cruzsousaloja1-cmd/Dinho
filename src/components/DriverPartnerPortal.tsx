@@ -1187,8 +1187,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         finalCategory === 'confort' ? 'motorista_confort' :
         finalCategory === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas';
 
-      // Salvar no Supabase SEM auto-login (setActiveSession = false)
-      saveUserAccount({
+      // Salvar no Supabase Auth + usuarios juntos (rollback automático se um falhar), SEM auto-login
+      const saveRes = await saveUserAccount({
         id: newDriver.id,
         name: newDriver.name,
         email: cleanEmail,
@@ -1198,7 +1198,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         role: userRole,
         tipo: userTipo,
         placa: newDriver.vehiclePlate,
-        avatar: newDriver.avatar,
+        avatar: newDriver.avatar || '',
         rating: newDriver.rating,
         driverData: newDriver,
         createdAt: new Date().toISOString(),
@@ -1207,6 +1207,15 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         aceitou_lgpd: true,
         data_aceite: new Date().toISOString(),
       }, false);
+
+      if (!saveRes.success) {
+        setRegError(saveRes.error || 'Erro ao salvar cadastro de motorista no Supabase.');
+        return;
+      }
+
+      if (saveRes.data?.id !== undefined && saveRes.data?.id !== null) {
+        newDriver.id = String(saveRes.data.id);
+      }
 
       await saveDriverApplicationSupabase({
         id: newDriver.id,

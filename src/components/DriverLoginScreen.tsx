@@ -4,10 +4,8 @@ import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, S
 import confetti from 'canvas-confetti';
 import {
   saveSessionUser,
-  verifyUserLogin,
   mapSupabaseRowToAppUser,
   isAdminTipoValue,
-  isAppUserAdmin,
 } from '../services/userService';
 import {
   insertUsuarioSupabase,
@@ -19,6 +17,8 @@ import {
   fetchDriverApplicationsSupabase,
   mergeDriverWithApplication,
   getWorkCategoryFullTitle,
+  extractPhotoFromRow,
+  withPhotoCacheBuster,
 } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
@@ -235,7 +235,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         return;
       }
 
-      // Salva na tabela public.usuarios usando SOMENTE colunas que já existem (sempre 'admin' minúsculo)
+      // Salva no Supabase Auth + public.usuarios com tipo = 'admin' e foto/avatar inicializados
       const supabaseRes = await insertUsuarioSupabase({
         nome: cleanName,
         email: cleanEmail,
@@ -244,6 +244,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         login: cleanEmail,
         senha: adminRegPassword,
         tipo: 'admin',
+        foto: '',
+        avatar: '',
       });
 
       if (!supabaseRes.success) {
@@ -307,9 +309,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
     setIsLoggingIn(true);
     try {
-      // FLUXO DEDICADO DA TELA ADM (aceita conta criada com tipo = ADM, admin, Administrador ou admin@race.com.br)
+      // FLUXO DEDICADO DA TELA ADM (autentica via Supabase Auth e valida tipo = admin/adm/administrador)
       if (viewMode === 'admin_login') {
-        // 1. Tenta autenticar no Supabase primeiro
         const cloudAdminRes = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
         if (cloudAdminRes.success && cloudAdminRes.data) {
           const row = cloudAdminRes.data;
@@ -321,6 +322,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             return;
           }
 
+          const resolvedAdminAvatar = withPhotoCacheBuster(extractPhotoFromRow(row));
           const adminUser: AppUser = {
             id: row?.id !== undefined && row?.id !== null ? String(row.id) : '',
             name: row.nome || 'Administrador Geral',
@@ -332,6 +334,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             tipo: row.tipo || 'admin',
             isAdmin: true,
             placa: 'ADMIN-01',
+            avatar: resolvedAdminAvatar || undefined,
             rating: 0,
           };
 
@@ -345,25 +348,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           return;
         }
 
-        // 2. Fallback local (ex: senha mestre ou conta ADM salva offline)
-        const localAdminRes = verifyUserLogin(cleanIdentifier, loginPassword);
-        if (localAdminRes.success && localAdminRes.user) {
-          const isLocalAdmin = isAppUserAdmin(localAdminRes.user);
-
-          if (!isLocalAdmin) {
-            setLoginErrorMessage('Acesso restrito');
-            return;
-          }
-
-          setLoginSuccessMessage('Acesso ADM liberado!');
-          try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
-          setTimeout(() => {
-            onLoginSuccess(localAdminRes.user!);
-          }, 300);
-          return;
-        }
-
-        // 3. Verifica se o usuário existe mas não tem perfil ADM -> exibe "Acesso restrito"
+        // Verifica se o usuário existe mas não tem perfil ADM -> exibe "Acesso restrito"
         const existingUser = await getUsuarioSupabase(cleanIdentifier).catch(() => null);
         if (existingUser) {
           const existingEmail = (existingUser['e-mail'] || existingUser.email || '').toLowerCase().trim();
@@ -371,11 +356,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             setLoginErrorMessage('Acesso restrito');
             return;
           }
-          setLoginErrorMessage('Senha incorreta para a conta ADM.');
-          return;
         }
 
-        setLoginErrorMessage('E-mail não encontrado, faça cadastro');
+        setLoginErrorMessage(cloudAdminRes.error || 'E-mail ou senha incorretos.');
         return;
       }
 
@@ -384,16 +367,19 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         const cloudAdmin = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
         if (cloudAdmin.success && cloudAdmin.data) {
           const row = cloudAdmin.data;
+          const resolvedAdminAvatar = withPhotoCacheBuster(extractPhotoFromRow(row));
           const adminUser: AppUser = {
             id: row?.id !== undefined && row?.id !== null ? String(row.id) : '',
             name: row.nome || 'Administrador Geral',
             email: 'admin@race.com.br',
             phone: row.celular || '',
+            whatsapp: row.whatsapp || row.celular || '',
             login: row.login || 'admin@race.com.br',
             role: 'admin',
             tipo: row.tipo || 'admin',
             isAdmin: true,
             placa: 'ADMIN-01',
+            avatar: resolvedAdminAvatar || undefined,
             rating: 0,
           };
           saveSessionUser(adminUser);
@@ -405,28 +391,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           return;
         }
 
-        if (cloudAdmin.error === 'E-mail não encontrado, faça cadastro') {
-          setLoginErrorMessage('E-mail não encontrado, faça cadastro');
-          return;
-        }
-
-        const result = verifyUserLogin(cleanIdentifier, loginPassword);
-        if (!result.success || !result.user) {
-          setLoginErrorMessage(cloudAdmin.error || result.error || 'Credenciais inválidas para o Administrador.');
-          return;
-        }
-        setLoginSuccessMessage('Acesso ADM liberado!');
-        try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
-        setTimeout(() => {
-          onLoginSuccess(result.user!, result.driver);
-        }, 300);
+        setLoginErrorMessage(cloudAdmin.error || 'Credenciais inválidas para o Administrador.');
         return;
       }
 
-      // 1. Busca direta na tabela "usuarios" no Supabase pelo email/login + senha
+      // 1. Login via Supabase Auth (signInWithPassword) + leitura de tipo em public.usuarios
       const cloudRes = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
       if (!cloudRes.success || !cloudRes.data) {
-        // Fallback local apenas se não houver usuário na nuvem (ou offline)
         const cloudExists = await checkEmailExistsSupabase(cleanIdentifier).catch(() => false);
         if (!cloudExists) {
           setLoginErrorMessage('E-mail não encontrado, faça cadastro');
@@ -439,10 +410,15 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       // Sucesso no Supabase
       const row = cloudRes.data;
       const { user: mappedUser, driver: mappedDriver } = mapSupabaseRowToAppUser(row);
+      const resolvedPhoto = mappedUser.avatar
+        ? withPhotoCacheBuster(mappedUser.avatar)
+        : mappedDriver?.avatar
+        ? withPhotoCacheBuster(mappedDriver.avatar)
+        : '';
       let driverObj: Driver | undefined = mappedDriver
         ? {
             ...mappedDriver,
-            avatar: regAvatar || mappedDriver.avatar || '',
+            avatar: resolvedPhoto || mappedDriver.avatar || '',
           }
         : undefined;
       if (driverObj && driverObj.email) {
@@ -456,7 +432,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       }
       const userPayload: AppUser = {
         ...mappedUser,
-        avatar: regAvatar || mappedUser.avatar || driverObj?.avatar || undefined,
+        avatar: resolvedPhoto || driverObj?.avatar || undefined,
         driverData: driverObj,
       };
       saveSessionUser(userPayload);
@@ -641,8 +617,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         placa: !isPassengerRole ? cleanPlate : undefined,
         modelo: !isPassengerRole ? cleanModel : undefined,
         ano: !isPassengerRole ? parsedYear : undefined,
-        foto: chosenAvatar || undefined,
-        avatar: chosenAvatar || undefined,
+        foto: chosenAvatar || '',
+        avatar: chosenAvatar || '',
       });
 
       if (!supabaseRes.success) {

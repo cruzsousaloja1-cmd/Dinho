@@ -284,7 +284,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           driverData: createdDriver,
         };
 
-        saveUserAccount({
+        const saveRes = await saveUserAccount({
           id: appUser.id,
           name: appUser.name,
           email: cleanEmail,
@@ -294,7 +294,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           tipo: userTipo,
           placa: createdDriver?.vehiclePlate || '',
           password,
-          avatar: avatar,
+          avatar: avatar || '',
           rating: 0,
           driverData: createdDriver,
           createdAt: new Date().toISOString(),
@@ -304,8 +304,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           data_aceite: new Date().toISOString(),
         }, true);
 
+        if (!saveRes.success) {
+          setErrorMessage(saveRes.error || 'Erro ao concluir cadastro no Supabase.');
+          return;
+        }
+
+        if (saveRes.data?.id !== undefined && saveRes.data?.id !== null) {
+          appUser.id = String(saveRes.data.id);
+        }
+
         if (createdDriver) {
+          createdDriver.id = appUser.id;
           await saveDriverApplicationSupabase({
+            id: appUser.id,
             email: cleanEmail,
             name: appUser.name,
             phone: cleanPhone,
@@ -326,14 +337,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           }).catch(() => {});
         }
 
-        setTimeout(() => {
-          setIsSubmitting(false);
-          try {
-            confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-          } catch {}
-          onAuthSuccess(appUser, createdDriver);
-          onClose();
-        }, 400);
+        try {
+          confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+        } catch {}
+        onAuthSuccess(appUser, createdDriver);
+        onClose();
         return;
       } finally {
         setIsSubmitting(false);

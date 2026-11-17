@@ -34,6 +34,7 @@ import {
   withPhotoCacheBuster,
 } from '../supabase';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 interface PassengerAccountViewProps {
   currentUser: AppUser | null;
@@ -80,6 +81,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileSuccessMsg, setProfileSuccessMsg] = useState<string | null>(null);
   const [profileErrorMsg, setProfileErrorMsg] = useState<string | null>(null);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -492,6 +494,15 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                 <Pencil className="w-3.5 h-3.5" />
                 <span>Editar perfil</span>
               </button>
+              <span className="text-slate-300">•</span>
+              <button
+                type="button"
+                onClick={() => setIsChangePasswordOpen(true)}
+                className="text-xs font-heading font-black text-slate-700 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-[#ff6a00]" />
+                <span>Alterar senha</span>
+              </button>
             </div>
 
             <div className="flex items-center gap-3 mt-1 text-xs text-slate-600 font-medium">
@@ -885,6 +896,18 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           <span>Sair da Minha Conta</span>
         </button>
       </div>
+
+      <ForgotPasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+        initialIdentifier={currentUser?.email || ''}
+        onPasswordResetSuccess={(_id, msg) => {
+          setIsChangePasswordOpen(false);
+          setProfileErrorMsg(null);
+          setProfileSuccessMsg(msg || 'Senha alterada com sucesso!');
+          setTimeout(() => setProfileSuccessMsg(null), 6000);
+        }}
+      />
     </div>
   );
 };

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { AppUser } from '../types';
 import { WEEKLY_FEE_BADGE } from '../config/pricing';
-import { isAppUserAdmin } from '../services/userService';
+import { isAppUserAdmin, isAppUserDriver } from '../services/userService';
 
 interface HeaderProps {
   unreadNotifsCount: number;
@@ -45,17 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const isAdmin = isAppUserAdmin(currentUser);
 
-  const isUserDriver = Boolean(
-    currentUser && (
-      currentUser.role === 'driver' ||
-      currentUser.role === 'motoboy' ||
-      Boolean(currentUser.driverData) ||
-      currentUser.tipo === 'motorista_economico' ||
-      currentUser.tipo === 'motorista_confort' ||
-      currentUser.tipo === 'motoboy_passageiro' ||
-      currentUser.tipo === 'motoboy_entregas'
-    )
-  );
+  const isUserDriver = isAppUserDriver(currentUser);
 
   const handleMobileNav = (action: () => void) => {
     action();

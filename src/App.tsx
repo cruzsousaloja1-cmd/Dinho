@@ -26,6 +26,7 @@ import { SosModal } from './components/SosModal';
 import { PushNotificationToast } from './components/PushNotificationToast';
 import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
+import { ForgotPasswordModal } from './components/ForgotPasswordModal';
 import { DriverLoginScreen } from './components/DriverLoginScreen';
 import { SplashScreen } from './components/SplashScreen';
 import { FullMapView } from './components/FullMapView';
@@ -47,6 +48,7 @@ import {
   normalizeEmail,
   ADMIN_EMAIL,
   isAppUserAdmin,
+  isAppUserDriver,
   deleteUserAccount,
   deleteAllUserAccounts,
   activateAllDriverAccounts
@@ -97,18 +99,7 @@ export default function App() {
   const resolveInitialTab = (u: AppUser | null): TabType => {
     if (!u) return 'driver_portal';
     if (isAppUserAdmin(u)) return 'admin';
-    const tLower = String(u.tipo || '').toLowerCase().trim();
-    const isDriverUser =
-      u.role === 'driver' ||
-      u.role === 'motoboy' ||
-      tLower === 'driver' ||
-      tLower === 'motorista' ||
-      tLower === 'motoboy' ||
-      tLower === 'motorista_economico' ||
-      tLower === 'motorista_confort' ||
-      tLower === 'motoboy_passageiro' ||
-      tLower === 'motoboy_entregas';
-    return isDriverUser ? 'driver_portal' : 'rides';
+    return isAppUserDriver(u) ? 'driver_portal' : 'rides';
   };
 
   // Global States
@@ -158,6 +149,7 @@ export default function App() {
   const [isNotifCenterOpen, setIsNotifCenterOpen] = useState(false);
   const [notifications, setNotifications] = useState<PushNotification[]>(INITIAL_NOTIFICATIONS);
   const [currentToast, setCurrentToast] = useState<PushNotification | null>(null);
+  const [passwordRecoveryEmail, setPasswordRecoveryEmail] = useState<string | null>(null);
 
   const isPrivacyPath = () => {
     if (typeof window === 'undefined') return false;
@@ -174,6 +166,33 @@ export default function App() {
     return () => {
       window.removeEventListener('popstate', syncPrivacyRoute);
       window.removeEventListener('hashchange', syncPrivacyRoute);
+    };
+  }, []);
+
+  // Detecta retorno do link de redefinição de senha do Supabase Auth (/Dinho/#...type=recovery)
+  useEffect(() => {
+    const checkInitialRecovery = async () => {
+      try {
+        const hash = typeof window !== 'undefined' ? window.location.hash.toLowerCase() : '';
+        if (hash.includes('type=recovery')) {
+          const { data } = await supabase.auth.getSession();
+          const email = data?.session?.user?.email || '';
+          if (email) {
+            setPasswordRecoveryEmail(email.toLowerCase());
+          }
+        }
+      } catch {}
+    };
+    checkInitialRecovery();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        const email = session?.user?.email || '';
+        setPasswordRecoveryEmail(email ? email.toLowerCase() : '');
+      }
+    });
+    return () => {
+      authListener?.subscription?.unsubscribe();
     };
   }, []);
 
@@ -309,17 +328,7 @@ export default function App() {
           return;
         }
 
-        const hydratedTipoLower = String(hydratedUser.tipo || '').toLowerCase().trim();
-        const isDriverOrMotoboy =
-          hydratedUser.role === 'driver' ||
-          hydratedUser.role === 'motoboy' ||
-          hydratedTipoLower === 'driver' ||
-          hydratedTipoLower === 'motorista' ||
-          hydratedTipoLower === 'motoboy' ||
-          hydratedTipoLower === 'motorista_economico' ||
-          hydratedTipoLower === 'motorista_confort' ||
-          hydratedTipoLower === 'motoboy_passageiro' ||
-          hydratedTipoLower === 'motoboy_entregas';
+        const isDriverOrMotoboy = isAppUserDriver(hydratedUser);
 
         if (isDriverOrMotoboy && hydratedDriver) {
           const emailKey = (hydratedDriver.email || mergedUser.email || '').trim().toLowerCase();
@@ -1547,10 +1556,7 @@ export default function App() {
     const isAdminUser = isAppUserAdmin(user);
     const isDriverUser =
       !isAdminUser &&
-      (user.role === 'driver' ||
-        user.role === 'motoboy' ||
-        Boolean(driver) ||
-        Boolean(user.driverData));
+      (isAppUserDriver(user) || Boolean(driver) || Boolean(user.driverData));
     setActiveTab(isAdminUser ? 'admin' : isDriverUser ? 'driver_portal' : 'rides');
     const roleName = isAdminUser
       ? 'Administrador ADM'
@@ -1625,6 +1631,33 @@ export default function App() {
     );
   }
 
+  if (passwordRecoveryEmail !== null) {
+    return (
+      <div className="min-h-screen bg-[#000000] text-white flex items-center justify-center p-4">
+        <ForgotPasswordModal
+          isOpen={true}
+          recoveryEmail={passwordRecoveryEmail}
+          initialIdentifier={passwordRecoveryEmail}
+          onClose={() => {
+            setPasswordRecoveryEmail(null);
+            try {
+              if (window.location.hash.includes('type=recovery') || window.location.hash.includes('access_token=')) {
+                window.history.replaceState({}, '', `${import.meta.env.BASE_URL}`);
+              }
+            } catch {}
+          }}
+          onPasswordResetSuccess={(_id, msg) => {
+            setPasswordRecoveryEmail(null);
+            try {
+              window.history.replaceState({}, '', `${import.meta.env.BASE_URL}`);
+            } catch {}
+            setLoginSuccessBanner(msg || 'Senha alterada com sucesso!');
+          }}
+        />
+      </div>
+    );
+  }
+
   // 1. Quando o app abre deslogado, NÃO mostrar PassengerRideView, Header ou BottomNav.
   // Mostrar tela de login de motorista full-screen com design preto e laranja igual ao print.
   if (!currentUser) {
@@ -1649,16 +1682,7 @@ export default function App() {
           }
 
           const loginTipoLower = String(user.tipo || '').toLowerCase().trim();
-          const isDriverOrMotoboy =
-            user.role === 'driver' ||
-            user.role === 'motoboy' ||
-            loginTipoLower === 'driver' ||
-            loginTipoLower === 'motorista' ||
-            loginTipoLower === 'motoboy' ||
-            loginTipoLower === 'motorista_economico' ||
-            loginTipoLower === 'motorista_confort' ||
-            loginTipoLower === 'motoboy_passageiro' ||
-            loginTipoLower === 'motoboy_entregas';
+          const isDriverOrMotoboy = isAppUserDriver(user);
 
           if (isDriverOrMotoboy) {
             const targetDriver: Driver = driver || user.driverData || {
@@ -1731,20 +1755,8 @@ export default function App() {
     );
   }
 
-  const userTipoLower = String(currentUser.tipo || '').toLowerCase().trim();
   const isUserDriver = Boolean(
-    currentUser && (
-      currentUser.role === 'driver' ||
-      currentUser.role === 'motoboy' ||
-      Boolean(currentUser.driverData) ||
-      userTipoLower === 'driver' ||
-      userTipoLower === 'motorista' ||
-      userTipoLower === 'motoboy' ||
-      userTipoLower === 'motorista_economico' ||
-      userTipoLower === 'motorista_confort' ||
-      userTipoLower === 'motoboy_passageiro' ||
-      userTipoLower === 'motoboy_entregas'
-    )
+    currentUser && (isAppUserDriver(currentUser) || Boolean(currentUser.driverData))
   );
 
   const isDriverCategoryConfigured = Boolean(

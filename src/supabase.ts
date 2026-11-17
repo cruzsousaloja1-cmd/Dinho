@@ -10,6 +10,7 @@ import {
 
 export const SUPABASE_URL = 'https://catljaosibqsqexzkrrv.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_FLS7sl0xEJ2StmxWfsJQ3Q_y_GiYKoM';
+export const PRODUCTION_REDIRECT_URL = 'https://cruzsousaloja1-cmd.github.io/Dinho/';
 
 // Cliente oficial Supabase
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -116,10 +117,6 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   saldo NUMERIC DEFAULT 0.0,
   divida NUMERIC DEFAULT 0.00
 );
-
--- Remover qualquer coluna de senha/password da tabela usuarios (Senhas somente no Supabase Auth)
-ALTER TABLE public.usuarios DROP COLUMN IF EXISTS senha;
-ALTER TABLE public.usuarios DROP COLUMN IF EXISTS password;
 
 -- 2. TABELA DE CORRIDAS (Tempo Real via Supabase Realtime)
 CREATE TABLE IF NOT EXISTS public.corridas (
@@ -291,7 +288,7 @@ AS $$
         OR lower(coalesce(u."e-mail", '')) = lower(auth.jwt() ->> 'email')
         OR lower(coalesce(u.login, '')) = lower(auth.jwt() ->> 'email')
       )
-      AND lower(coalesce(u.tipo, '')) <> 'passenger'
+      AND lower(coalesce(u.tipo, '')) NOT IN ('passenger', 'passageiro')
   );
 $$;
 
@@ -337,7 +334,7 @@ END $$;
 -- ============================================================================
 
 -- 1A. RLS em public.usuarios:
--- RLS ativado com usuarios_tudo_autenticado (ALL para authenticated) + usuarios_cadastro_anon_insert (INSERT para anon)
+-- RLS ativado com usuarios_tudo_autenticado + usuarios_cadastro_anon_insert + usuarios_login_anon_select
 ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "usuarios_tudo_autenticado" ON public.usuarios
@@ -350,6 +347,11 @@ CREATE POLICY "usuarios_cadastro_anon_insert" ON public.usuarios
   FOR INSERT
   TO anon
   WITH CHECK (true);
+
+CREATE POLICY "usuarios_login_anon_select" ON public.usuarios
+  FOR SELECT
+  TO anon
+  USING (true);
 
 -- 2A. RLS em public.corridas:
 -- Passageiro só vê as próprias corridas; Motorista só vê corridas disponíveis em Indaiatuba ou que ele aceitou; ADM vê tudo.
@@ -663,7 +665,7 @@ BEGIN
     CASE
       WHEN lower(coalesce(p_tipo, '')) IN ('adm', 'admin', 'administrador') AND v_auth_role = 'admin' THEN 'admin'
       WHEN lower(coalesce(p_tipo, '')) IN ('adm', 'admin', 'administrador') THEN 'passenger'
-      ELSE coalesce(nullif(trim(p_tipo), ''), 'passenger')
+      ELSE lower(coalesce(nullif(trim(p_tipo), ''), 'passenger'))
     END,
     coalesce(p_categoria, ''),
     coalesce(p_placa, ''),
@@ -675,6 +677,40 @@ BEGIN
   RETURNING * INTO v_row;
 
   RETURN to_jsonb(v_row) - 'senha' - 'password';
+END;
+$$;
+
+-- Rollback automático: apaga conta recém-criada em auth.users caso o INSERT em public.usuarios falhe
+CREATE OR REPLACE FUNCTION public.rpc_rollback_orphaned_signup(
+  p_auth_uid uuid,
+  p_email text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_clean_email text := lower(regexp_replace(coalesce(p_email, ''), '\s+', '', 'g'));
+BEGIN
+  IF p_auth_uid IS NULL OR v_clean_email = '' THEN
+    RETURN false;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.usuarios u
+    WHERE lower(coalesce(u.email, '')) = v_clean_email
+       OR lower(coalesce(u."e-mail", '')) = v_clean_email
+  ) THEN
+    RETURN false;
+  END IF;
+
+  DELETE FROM auth.users au
+  WHERE au.id = p_auth_uid
+    AND lower(coalesce(au.email, '')) = v_clean_email
+    AND au.created_at > now() - interval '5 minutes';
+
+  RETURN FOUND;
 END;
 $$;
 
@@ -721,7 +757,7 @@ AS $$
   FROM public.usuarios u
   INNER JOIN public.motoristas m
     ON lower(coalesce(m.email, '')) = lower(coalesce(u.email, u."e-mail", u.login, ''))
-  WHERE lower(coalesce(u.tipo, '')) <> 'passenger'
+  WHERE lower(coalesce(u.tipo, '')) NOT IN ('passenger', 'passageiro')
     AND lower(coalesce(u.tipo, '')) NOT IN ('adm', 'admin', 'administrador')
     AND coalesce(nullif(m.placa, ''), u.placa, '') <> ''
     AND coalesce(nullif(m.modelo, ''), u.modelo, '') <> ''
@@ -1322,7 +1358,7 @@ export async function insertUsuarioSupabase(params: {
     const rawTipoStr = String(params.tipo || 'passenger').trim();
     const tipoLower = rawTipoStr.toLowerCase();
     const isAdminTipo = tipoLower === 'adm' || tipoLower === 'admin' || tipoLower === 'administrador';
-    const tipoStr = isAdminTipo ? 'admin' : rawTipoStr;
+    const tipoStr = isAdminTipo ? 'admin' : tipoLower;
     const authRole =
       isAdminTipo
         ? 'admin'
@@ -1330,11 +1366,12 @@ export async function insertUsuarioSupabase(params: {
         ? 'driver'
         : 'passenger';
 
-    // Senha gerenciada EXCLUSIVAMENTE pelo Supabase Auth (criptografada) — nunca gravada na tabela usuarios
+    // 1. Cria conta no Supabase Auth (com redirectTo de produção /Dinho/)
     const authSignUpRes = await supabase.auth.signUp({
       email: cleanEmail,
       password: rawSenha,
       options: {
+        emailRedirectTo: PRODUCTION_REDIRECT_URL,
         data: {
           nome: params.nome.trim(),
           tipo: tipoStr,
@@ -1345,10 +1382,34 @@ export async function insertUsuarioSupabase(params: {
 
     let signedAuthUserId: string | undefined = authSignUpRes.data?.user?.id;
     let hasActiveAuthSession = Boolean(authSignUpRes.data?.session);
+    let createdFreshAuthUser = Boolean(
+      !authSignUpRes.error &&
+      authSignUpRes.data?.user &&
+      (!Array.isArray(authSignUpRes.data.user.identities) || authSignUpRes.data.user.identities.length > 0)
+    );
 
-    if (authSignUpRes.error) {
-      const authMsg = (authSignUpRes.error.message || '').toLowerCase();
-      if (authMsg.includes('already registered') || authMsg.includes('already exists') || authMsg.includes('user already')) {
+    // Quando "Confirm email" está ligado, Supabase retorna user com identities: [] sem error para e-mail já existente
+    const isSilentAlreadyRegistered = Boolean(
+      !authSignUpRes.error &&
+      authSignUpRes.data?.user &&
+      Array.isArray(authSignUpRes.data.user.identities) &&
+      authSignUpRes.data.user.identities.length === 0
+    );
+
+    if (authSignUpRes.error || isSilentAlreadyRegistered) {
+      const authMsg = (authSignUpRes.error?.message || '').toLowerCase();
+      if (authMsg.includes('rate limit') || authMsg.includes('too many requests')) {
+        return {
+          success: false,
+          error: 'Limite temporário de e-mails do Supabase Auth atingido. Aguarde alguns minutos e tente novamente.',
+        };
+      }
+      if (
+        isSilentAlreadyRegistered ||
+        authMsg.includes('already registered') ||
+        authMsg.includes('already exists') ||
+        authMsg.includes('user already')
+      ) {
         // Caso exista em auth.users sem registro correspondente em public.usuarios, valida senha via signInWithPassword
         const existingAuthSignIn = await supabase.auth.signInWithPassword({
           email: cleanEmail,
@@ -1357,6 +1418,7 @@ export async function insertUsuarioSupabase(params: {
         if (!existingAuthSignIn.error && existingAuthSignIn.data?.user) {
           signedAuthUserId = existingAuthSignIn.data.user.id;
           hasActiveAuthSession = Boolean(existingAuthSignIn.data.session);
+          createdFreshAuthUser = false;
         } else {
           return {
             success: false,
@@ -1366,7 +1428,7 @@ export async function insertUsuarioSupabase(params: {
       } else if (authMsg.includes('password')) {
         return { success: false, error: 'A senha deve ter no mínimo 6 caracteres.' };
       } else {
-        return { success: false, error: authSignUpRes.error.message || 'Falha ao cadastrar autenticação no Supabase Auth.' };
+        return { success: false, error: authSignUpRes.error?.message || 'Falha ao cadastrar autenticação no Supabase Auth.' };
       }
     } else if (!hasActiveAuthSession && signedAuthUserId) {
       // Tenta autenticar imediatamente caso o servidor exija login após signUp
@@ -1379,6 +1441,23 @@ export async function insertUsuarioSupabase(params: {
       }
     }
 
+    const rollbackAuthOnUsuariosFailure = async () => {
+      try {
+        await supabase.from('usuarios').delete().eq(useEmailCol, cleanEmail);
+      } catch {}
+      if (createdFreshAuthUser && signedAuthUserId) {
+        try {
+          await supabase.rpc('rpc_rollback_orphaned_signup', {
+            p_auth_uid: signedAuthUserId,
+            p_email: cleanEmail,
+          });
+        } catch {}
+      }
+      try {
+        await supabase.auth.signOut();
+      } catch {}
+    };
+
     const cleanCelular = (params.celular || params.whatsapp || '').trim();
     const cleanWhatsapp = (params.whatsapp || params.celular || '').trim();
     const cleanLogin = (params.login || cleanEmail).trim().toLowerCase();
@@ -1389,22 +1468,32 @@ export async function insertUsuarioSupabase(params: {
       tipo: tipoStr,
     };
 
+    if (signedAuthUserId && (!knownCols || knownCols.size === 0 || knownCols.has('auth_uid'))) {
+      row.auth_uid = signedAuthUserId;
+    }
+
     if (cleanCelular) row.celular = cleanCelular;
     if (cleanWhatsapp) row.whatsapp = cleanWhatsapp;
     if (cleanLogin) row.login = cleanLogin;
+
+    // Sempre envia foto e avatar ('' quando não enviada foto ou URL pública quando enviada)
+    if (!knownCols || knownCols.size === 0 || knownCols.has('foto')) {
+      row.foto = finalSignupPhoto || '';
+    }
+    if (!knownCols || knownCols.size === 0 || knownCols.has('avatar')) {
+      row.avatar = finalSignupPhoto || '';
+    }
     if (finalSignupPhoto) {
-      if (!knownCols || knownCols.size === 0 || knownCols.has('foto')) {
-        row.foto = finalSignupPhoto;
-      }
       if (knownCols && knownCols.has('foto_url')) {
         row.foto_url = finalSignupPhoto;
       }
       if (knownCols && knownCols.has('avatar_url')) {
         row.avatar_url = finalSignupPhoto;
       }
-      if (knownCols && knownCols.has('avatar')) {
-        row.avatar = finalSignupPhoto;
-      }
+    }
+    // Se a coluna `senha` existir em public.usuarios, envia junto para manter compatibilidade (nunca usada no login)
+    if (!knownCols || knownCols.size === 0 || knownCols.has('senha')) {
+      row.senha = rawSenha;
     }
 
     // Só inclui campos de motorista quando informados (nunca inventa colunas nulas no ADM/passageiro)
@@ -1438,9 +1527,7 @@ export async function insertUsuarioSupabase(params: {
       }
     }
 
-    // Nunca enviar `id`, `senha` nem colunas inventadas
     delete row.id;
-    delete row.senha;
     delete row.password;
     filterPayloadToExistingColumns(row, knownCols, new Set(['nome', 'tipo', 'email', 'e-mail']));
 
@@ -1501,13 +1588,6 @@ export async function insertUsuarioSupabase(params: {
         continue;
       }
 
-      if (error.code === '23502' && (msg.toLowerCase().includes('senha') || msg.toLowerCase().includes('password'))) {
-        return {
-          success: false,
-          error: 'Execute no Supabase SQL Editor: ALTER TABLE public.usuarios DROP COLUMN IF EXISTS senha;',
-        };
-      }
-
       if (isMissingColumnError(error)) {
         const missingCol = extractMissingColumnFromSupabaseError(msg);
         let strippedSomething = false;
@@ -1550,10 +1630,12 @@ export async function insertUsuarioSupabase(params: {
             continue;
           }
         }
+        await rollbackAuthOnUsuariosFailure();
         return { success: false, error: 'Não foi possível concluir o cadastro com as colunas atuais do banco.' };
       }
 
       if (error.code === '23505' || msg.toLowerCase().includes('duplicate key') || msg.toLowerCase().includes('already exists')) {
+        await rollbackAuthOnUsuariosFailure();
         const lowerMsg = msg.toLowerCase();
         if (lowerMsg.includes('celular') || lowerMsg.includes('whatsapp') || lowerMsg.includes('telefone')) {
           return {
@@ -1569,9 +1651,11 @@ export async function insertUsuarioSupabase(params: {
 
       console.log('Erro Supabase insertUsuarioSupabase:', error);
       lastSupabaseError = formatSupabaseError(error);
+      await rollbackAuthOnUsuariosFailure();
       return { success: false, error: lastSupabaseError };
     }
 
+    await rollbackAuthOnUsuariosFailure();
     return { success: false, error: lastSupabaseError };
   } catch (error: any) {
     console.log('Erro Supabase insertUsuarioSupabase exception:', error);
@@ -1582,6 +1666,7 @@ export async function insertUsuarioSupabase(params: {
 /**
  * 2. LOGIN EXCLUSIVO VIA SUPABASE AUTH (signInWithPassword)
  * Nunca lê nem compara coluna `senha` na tabela public.usuarios.
+ * Após autenticar, busca o `tipo` em `usuarios` aceitando minúscula/maiúscula.
  */
 export async function loginUsuarioSupabase(
   emailInput: string,
@@ -1611,6 +1696,12 @@ export async function loginUsuarioSupabase(
 
     if (authError || !authData?.user) {
       const errMsg = (authError?.message || '').toLowerCase();
+      if (errMsg.includes('rate limit') || errMsg.includes('too many requests')) {
+        return {
+          success: false,
+          error: 'Muitas tentativas seguidas no Supabase Auth. Aguarde alguns minutos e tente novamente.',
+        };
+      }
       if (errMsg.includes('email not confirmed')) {
         return {
           success: false,
@@ -1627,7 +1718,19 @@ export async function loginUsuarioSupabase(
       };
     }
 
-    // Sessão JWT autenticada! Agora busca o perfil do próprio usuário respeitando a RLS
+    // Sessão JWT autenticada! Busca tipo e perfil em `usuarios` respeitando a RLS
+    let directTipo = '';
+    try {
+      const { data: tipoRes } = await supabase
+        .from('usuarios')
+        .select('tipo')
+        .eq('email', authEmail)
+        .single();
+      if (tipoRes?.tipo) {
+        directTipo = String(tipoRes.tipo).trim().toLowerCase();
+      }
+    } catch {}
+
     let foundRow = await getUsuarioSupabase(authEmail);
     if (!foundRow) {
       try {
@@ -1638,10 +1741,11 @@ export async function loginUsuarioSupabase(
       } catch {}
     }
 
+    const meta: any = authData.user.user_metadata || {};
+    const metaPhoto = String(meta.avatar_url || meta.foto || meta.avatar || '').trim();
+
     if (!foundRow) {
-      const meta: any = authData.user.user_metadata || {};
-      const metaPhoto = String(meta.avatar_url || meta.foto || meta.avatar || '').trim();
-      const metaTipoLower = String(meta.tipo || '').trim().toLowerCase();
+      const metaTipoLower = String(directTipo || meta.tipo || '').trim().toLowerCase();
       const isMetaAdmin =
         meta.role === 'admin' ||
         metaTipoLower === 'adm' ||
@@ -1652,27 +1756,32 @@ export async function loginUsuarioSupabase(
         nome: meta.nome || authEmail.split('@')[0],
         email: authEmail,
         login: authEmail,
-        tipo: isMetaAdmin ? (meta.tipo || 'admin') : (meta.tipo || 'passenger'),
+        tipo: isMetaAdmin ? 'admin' : (metaTipoLower || 'passenger'),
         foto: metaPhoto,
         avatar: metaPhoto,
       };
-    } else if (!extractPhotoFromRow(foundRow)) {
-      try {
-        const { data: photoRow } = await supabase
-          .from('usuarios')
-          .select('foto, avatar')
-          .eq('email', authEmail)
-          .single();
-        const resolvedFoto =
-          photoRow?.avatar ||
-          photoRow?.foto ||
-          authData.user.user_metadata?.avatar_url ||
-          authData.user.user_metadata?.foto ||
-          '';
-        if (resolvedFoto) {
-          foundRow = { ...foundRow, foto: resolvedFoto, avatar: resolvedFoto };
-        }
-      } catch {}
+    } else {
+      if (directTipo && !foundRow.tipo) {
+        foundRow = { ...foundRow, tipo: directTipo };
+      }
+      if (!extractPhotoFromRow(foundRow)) {
+        try {
+          const { data: photoRow } = await supabase
+            .from('usuarios')
+            .select('foto, avatar')
+            .eq('email', authEmail)
+            .single();
+          const resolvedFoto =
+            photoRow?.avatar ||
+            photoRow?.foto ||
+            meta.avatar_url ||
+            meta.foto ||
+            '';
+          if (resolvedFoto) {
+            foundRow = { ...foundRow, foto: resolvedFoto, avatar: resolvedFoto };
+          }
+        } catch {}
+      }
     }
 
     return { success: true, data: stripSensitiveUserFields(foundRow) };
@@ -2447,8 +2556,10 @@ export async function getUsuarioSupabase(emailOrLogin: string): Promise<any | nu
 }
 
 /**
- * Atualiza ou envia redefinição de senha EXCLUSIVAMENTE via Supabase Auth (criptografada).
- * Nunca grava nem atualiza coluna de senha na tabela public.usuarios.
+ * Atualiza senha fazendo as DUAS operações juntas:
+ * 1) supabase.auth.updateUser({ password: newPassword })
+ * 2) update em public.usuarios { senha: newPassword } (quando coluna existir)
+ * Caso não haja sessão ativa para o e-mail, envia resetPasswordForEmail com redirectTo de produção (/Dinho/).
  */
 export async function updatePasswordSupabase(
   identifier: string,
@@ -2470,20 +2581,70 @@ export async function updatePasswordSupabase(
       }
     }
 
+    const syncUsuariosSenhaRow = async () => {
+      const knownCols = await getUsuariosTableColumns().catch(() => null);
+      if (knownCols && knownCols.size > 0 && !knownCols.has('senha')) {
+        return { error: null };
+      }
+      const matchCols = ['email', 'e-mail'].filter(
+        (col) => !knownCols || knownCols.size === 0 || knownCols.has(col)
+      );
+      for (const col of matchCols) {
+        const res = await supabase
+          .from('usuarios')
+          .update({ senha: newPassword })
+          .eq(col, targetEmail);
+        if (!res.error) return { error: null };
+        if (isMissingColumnError(res.error)) {
+          const msg = res.error.message || '';
+          if (msg.includes('senha')) return { error: null };
+          continue;
+        }
+        return { error: res.error };
+      }
+      return { error: null };
+    };
+
     const { data: sessionData } = await supabase.auth.getSession();
     const activeAuthEmail = String(sessionData?.session?.user?.email || '').trim().toLowerCase();
 
     if (activeAuthEmail && activeAuthEmail === targetEmail) {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) {
-        return { success: false, error: error.message || 'Erro ao atualizar senha no Supabase Auth.' };
+      const [authRes, tableRes] = await Promise.all([
+        supabase.auth.updateUser({ password: newPassword }),
+        syncUsuariosSenhaRow(),
+      ]);
+
+      if (authRes.error) {
+        return {
+          success: false,
+          error: authRes.error.message || 'Erro ao atualizar senha no Supabase Auth.',
+        };
+      }
+      if (tableRes.error) {
+        return {
+          success: false,
+          error: formatSupabaseError(tableRes.error) || 'Erro ao atualizar senha na tabela usuarios.',
+        };
       }
       return { success: true };
     }
 
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(targetEmail);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+      redirectTo: PRODUCTION_REDIRECT_URL,
+    });
     if (resetError) {
-      return { success: false, error: resetError.message || 'Não foi possível enviar redefinição pelo Supabase Auth.' };
+      const errLower = (resetError.message || '').toLowerCase();
+      if (errLower.includes('rate limit') || errLower.includes('too many requests')) {
+        return {
+          success: false,
+          error:
+            'Limite temporário de envios de e-mail do Supabase atingido (1 hora). Aguarde alguns minutos antes de solicitar outro e-mail de redefinição.',
+        };
+      }
+      return {
+        success: false,
+        error: resetError.message || 'Não foi possível enviar redefinição pelo Supabase Auth.',
+      };
     }
     return { success: true, sentResetEmail: true };
   } catch (err: any) {
