@@ -16,6 +16,7 @@ interface DriverLoginScreenProps {
   onRegisterDriverSuccess: (user: AppUser, newDriver: Driver) => void;
   onRegisterMotoboySuccess?: (user: AppUser, newMotoboy: Driver) => void;
   onRegisterPassengerSuccess: (user: AppUser) => void;
+  onOpenPrivacyPage?: () => void;
 }
 
 type RegistrationRole = 'passenger' | 'driver' | 'motoboy';
@@ -27,6 +28,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   onRegisterDriverSuccess,
   onRegisterMotoboySuccess,
   onRegisterPassengerSuccess,
+  onOpenPrivacyPage,
 }) => {
   // Tela inicial: 'selection', 'login', 'admin_login', 'admin_register', 'register'
   const [viewMode, setViewMode] = useState<'selection' | 'login' | 'admin_login' | 'admin_register' | 'register'>('selection');
@@ -55,6 +57,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [adminAcceptedContract, setAdminAcceptedContract] = useState(false);
   const [adminAcceptedTerms, setAdminAcceptedTerms] = useState(false);
   const [adminAcceptedLgpd, setAdminAcceptedLgpd] = useState(false);
+  const [adminAcceptedPrivacyLgpdBottom, setAdminAcceptedPrivacyLgpdBottom] = useState(false);
 
   // Estados do cadastro com 5 campos: Nome, E-mail, WhatsApp, Login, Senha
   const [regName, setRegName] = useState('');
@@ -70,6 +73,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [acceptedContract, setAcceptedContract] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState(false);
+  const [acceptedPrivacyLgpdBottom, setAcceptedPrivacyLgpdBottom] = useState(false);
 
   // Foto de perfil do cadastro (Galeria do Celular ou Câmera)
   const [regAvatar, setRegAvatar] = useState<string | null>(null);
@@ -98,6 +102,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setAcceptedContract(false);
     setAcceptedTerms(false);
     setAcceptedLgpd(false);
+    setAcceptedPrivacyLgpdBottom(false);
     setViewMode('register');
   };
 
@@ -118,6 +123,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setAdminAcceptedContract(false);
     setAdminAcceptedTerms(false);
     setAdminAcceptedLgpd(false);
+    setAdminAcceptedPrivacyLgpdBottom(false);
     setViewMode('admin_register');
   };
 
@@ -156,8 +162,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    if (!adminAcceptedContract || !adminAcceptedTerms || !adminAcceptedLgpd) {
-      setAdminRegErrorMessage('Marque os 3 aceites obrigatórios (Contrato de Parceria RACE, Termos de Uso e LGPD) antes de salvar.');
+    if (!adminAcceptedContract || !adminAcceptedTerms || !adminAcceptedLgpd || !adminAcceptedPrivacyLgpdBottom) {
+      setAdminRegErrorMessage('Marque os 3 aceites obrigatórios e a Política de Privacidade (LGPD) abaixo do botão antes de cadastrar.');
       return;
     }
 
@@ -451,8 +457,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
-      setRegErrorMessage('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
+    if (!acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacyLgpdBottom) {
+      setRegErrorMessage('Você deve ler e marcar o aceite da Política de Privacidade (LGPD) e os documentos obrigatórios antes de cadastrar.');
       return;
     }
 
@@ -1012,9 +1018,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
               <button
                 type="submit"
-                disabled={isCreatingAdmin || !adminAcceptedContract || !adminAcceptedTerms || !adminAcceptedLgpd}
+                disabled={isCreatingAdmin || !adminAcceptedContract || !adminAcceptedTerms || !adminAcceptedLgpd || !adminAcceptedPrivacyLgpdBottom}
                 className={`w-full font-heading font-black text-base py-4 px-6 rounded-2xl transition-all uppercase tracking-wider flex items-center justify-center gap-2 mt-4 ${
-                  !isCreatingAdmin && adminAcceptedContract && adminAcceptedTerms && adminAcceptedLgpd
+                  !isCreatingAdmin && adminAcceptedContract && adminAcceptedTerms && adminAcceptedLgpd && adminAcceptedPrivacyLgpdBottom
                     ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
                     : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
                 }`}
@@ -1022,6 +1028,38 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 <ShieldCheck className="w-5 h-5" />
                 <span>{isCreatingAdmin ? 'CRIANDO CONTA DE ADM...' : 'CRIAR CONTA DE ADM'}</span>
               </button>
+
+              <div className={`p-3.5 rounded-2xl border transition-colors ${
+                adminAcceptedPrivacyLgpdBottom
+                  ? 'bg-emerald-950/25 border-emerald-500/50'
+                  : 'bg-[#121212] border-zinc-700'
+              }`}>
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs leading-relaxed text-zinc-200">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={adminAcceptedPrivacyLgpdBottom}
+                    onChange={(e) => setAdminAcceptedPrivacyLgpdBottom(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-[#ff6a00] rounded cursor-pointer shrink-0"
+                  />
+                  <span>
+                    Li e concordo com a{' '}
+                    <a
+                      href={`${import.meta.env.BASE_URL}privacidade`}
+                      onClick={(e) => {
+                        if (onOpenPrivacyPage) {
+                          e.preventDefault();
+                          onOpenPrivacyPage();
+                        }
+                      }}
+                      className="text-blue-400 hover:text-blue-300 underline font-bold"
+                    >
+                      Política de Privacidade (/privacidade)
+                    </a>{' '}
+                    e uso dos meus dados para corridas e segurança, conforme a LGPD *
+                  </span>
+                </label>
+              </div>
             </form>
           </div>
         )}
@@ -1450,9 +1488,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
               <button
                 type="submit"
-                disabled={!regAvatar || !acceptedContract || !acceptedTerms || !acceptedLgpd || isRegistering}
+                disabled={!regAvatar || !acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacyLgpdBottom || isRegistering}
                 className={`w-full font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl transition-all uppercase tracking-wider block mt-3 ${
-                  regAvatar && acceptedContract && acceptedTerms && acceptedLgpd && !isRegistering
+                  regAvatar && acceptedContract && acceptedTerms && acceptedLgpd && acceptedPrivacyLgpdBottom && !isRegistering
                     ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
                     : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
                 }`}
@@ -1461,10 +1499,44 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                   ? 'CRIANDO CONTA NA NUVEM...'
                   : !regAvatar
                   ? '📸 ADICIONE SUA FOTO PARA CONTINUAR'
-                  : !acceptedContract || !acceptedTerms || !acceptedLgpd
-                  ? 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'
-                  : 'CRIAR CONTA E ENTRAR'}
+                  : !acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacyLgpdBottom
+                  ? 'MARQUE A POLÍTICA DE PRIVACIDADE (LGPD) PARA CADASTRAR'
+                  : 'CADASTRAR E ENTRAR'}
               </button>
+
+              {/* Checkbox obrigatório LGPD abaixo do botão Cadastrar */}
+              <div className={`p-3.5 rounded-2xl border transition-colors ${
+                acceptedPrivacyLgpdBottom
+                  ? 'bg-emerald-950/25 border-emerald-500/50'
+                  : 'bg-[#121212] border-zinc-700'
+              }`}>
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs leading-relaxed text-zinc-200">
+                  <input
+                    id="register-lgpd-bottom-checkbox"
+                    type="checkbox"
+                    required
+                    checked={acceptedPrivacyLgpdBottom}
+                    onChange={(e) => setAcceptedPrivacyLgpdBottom(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-[#ff6a00] rounded cursor-pointer shrink-0"
+                  />
+                  <span>
+                    Li e concordo com a{' '}
+                    <a
+                      href={`${import.meta.env.BASE_URL}privacidade`}
+                      onClick={(e) => {
+                        if (onOpenPrivacyPage) {
+                          e.preventDefault();
+                          onOpenPrivacyPage();
+                        }
+                      }}
+                      className="text-blue-400 hover:text-blue-300 underline font-bold"
+                    >
+                      Política de Privacidade (/privacidade)
+                    </a>{' '}
+                    e uso dos meus dados para corridas e segurança, conforme a LGPD *
+                  </span>
+                </label>
+              </div>
 
               <div className="text-center pt-2">
                 <button

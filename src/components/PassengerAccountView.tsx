@@ -19,7 +19,8 @@ import {
   Pencil,
   Loader2,
   X,
-  Check
+  Check,
+  MessageCircle
 } from 'lucide-react';
 import { requestCurrentLocationFast } from '../services/addressSearchService';
 import { saveSessionUser } from '../services/userService';
@@ -37,6 +38,7 @@ interface PassengerAccountViewProps {
   onOpenShare?: () => void;
   onUpdateAvatar?: (avatarBase64: string) => void;
   onUpdateProfile?: (updatedUser: AppUser) => void;
+  onOpenPrivacyPage?: () => void;
 }
 
 export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
@@ -50,6 +52,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   onOpenShare,
   onUpdateAvatar,
   onUpdateProfile,
+  onOpenPrivacyPage,
 }) => {
   const [gpsStatus, setGpsStatus] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
@@ -683,8 +686,37 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         )}
       </div>
 
-      {/* 5. BOTÃO SAIR DA CONTA */}
-      <div className="pt-2">
+      {/* 5. SUPORTE NO WHATSAPP & PRIVACIDADE LGPD */}
+      <div className="space-y-3 pt-1">
+        <a
+          href="https://wa.me/5519920032074?text=Preciso%20de%20ajuda%20no%20RACE"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full py-4 px-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-heading font-black text-sm sm:text-base rounded-2xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2.5 uppercase tracking-wider"
+        >
+          <MessageCircle className="w-5 h-5" />
+          <span>Falar com suporte no WhatsApp</span>
+        </a>
+
+        <div className="flex justify-center">
+          <a
+            href={`${import.meta.env.BASE_URL}privacidade`}
+            onClick={(e) => {
+              if (onOpenPrivacyPage) {
+                e.preventDefault();
+                onOpenPrivacyPage();
+              }
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 underline underline-offset-4 py-1"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Política de Privacidade (LGPD)</span>
+          </a>
+        </div>
+      </div>
+
+      {/* 6. BOTÃO SAIR DA CONTA */}
+      <div className="pt-1">
         <button
           type="button"
           onClick={onLogout}

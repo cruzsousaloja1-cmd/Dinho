@@ -31,6 +31,7 @@ import { SplashScreen } from './components/SplashScreen';
 import { FullMapView } from './components/FullMapView';
 import { PassengerOptionsView } from './components/PassengerOptionsView';
 import { PassengerAccountView } from './components/PassengerAccountView';
+import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { RatingModal } from './components/RatingModal';
 import { saveDriverReview, clearReviewsCache } from './services/reviewService';
 import { AppUser } from './types';
@@ -157,6 +158,43 @@ export default function App() {
   const [isNotifCenterOpen, setIsNotifCenterOpen] = useState(false);
   const [notifications, setNotifications] = useState<PushNotification[]>(INITIAL_NOTIFICATIONS);
   const [currentToast, setCurrentToast] = useState<PushNotification | null>(null);
+
+  const isPrivacyPath = () => {
+    if (typeof window === 'undefined') return false;
+    const p = window.location.pathname.toLowerCase();
+    const h = window.location.hash.toLowerCase();
+    return p.endsWith('/privacidade') || p.endsWith('/privacidade/') || h.includes('/privacidade');
+  };
+  const [isPrivacyPageOpen, setIsPrivacyPageOpen] = useState<boolean>(() => isPrivacyPath());
+
+  useEffect(() => {
+    const syncPrivacyRoute = () => setIsPrivacyPageOpen(isPrivacyPath());
+    window.addEventListener('popstate', syncPrivacyRoute);
+    window.addEventListener('hashchange', syncPrivacyRoute);
+    return () => {
+      window.removeEventListener('popstate', syncPrivacyRoute);
+      window.removeEventListener('hashchange', syncPrivacyRoute);
+    };
+  }, []);
+
+  const openPrivacyPage = () => {
+    try {
+      const targetUrl = `${import.meta.env.BASE_URL}privacidade`;
+      if (!window.location.pathname.endsWith('/privacidade')) {
+        window.history.pushState({ privacy: true }, '', targetUrl);
+      }
+    } catch {}
+    setIsPrivacyPageOpen(true);
+  };
+
+  const closePrivacyPage = () => {
+    try {
+      if (window.location.pathname.toLowerCase().includes('/privacidade')) {
+        window.history.pushState({}, '', import.meta.env.BASE_URL);
+      }
+    } catch {}
+    setIsPrivacyPageOpen(false);
+  };
 
   // 2. Startup: limpar resquícios antigos de localStorage e validar sessão ativa diretamente no Supabase
   useEffect(() => {
@@ -1362,6 +1400,10 @@ export default function App() {
     />
   );
 
+  if (isPrivacyPageOpen) {
+    return <PrivacyPolicyPage onBack={closePrivacyPage} />;
+  }
+
   // Tela preta Splash com logo RACE vermelho/laranja grande (90px) por 3 segundos toda vez que entrar no app
   if (showStartupSplash || showPostAuthSplash) {
     return (
@@ -1382,6 +1424,7 @@ export default function App() {
       <DriverLoginScreen
         drivers={drivers}
         passengers={passengers}
+        onOpenPrivacyPage={openPrivacyPage}
         onLoginSuccess={(user, driver) => {
           setCurrentUser(user);
           saveSessionUser(user);
@@ -1791,6 +1834,7 @@ export default function App() {
               setCurrentUser(updatedUser);
               saveSessionUser(updatedUser);
             }}
+            onOpenPrivacyPage={openPrivacyPage}
           />
         )}
 
