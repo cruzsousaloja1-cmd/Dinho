@@ -132,7 +132,12 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
 
     const driversToShow = isAccepted && activeDriver
       ? [activeDriver]
-      : drivers.filter((d) => d.status === 'online');
+      : drivers.filter(
+          (d) =>
+            d.status === 'online' &&
+            d.approvalStatus === 'aprovado' &&
+            d.documentosAceitos !== false
+        );
 
     // Clear old driver markers
     Object.keys(markersRef.current).forEach((id) => {
@@ -222,15 +227,19 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         iconAnchor: [22, 22],
       });
 
+      const publicDriverDisplayName = isAccepted
+        ? drv.name
+        : (drv.name || 'Condutor').trim().split(/\s+/)[0] || 'Condutor';
+
       if (markersRef.current[markerKey]) {
         markersRef.current[markerKey].setLatLng(pos);
       } else {
         const marker = L.marker(pos, { icon: customIcon }).addTo(map);
         marker.bindPopup(`
           <div style="color: #0f172a; font-family: sans-serif; padding: 6px;">
-            <b style="font-size: 14px; font-weight: bold;">${drv.name}</b><br/>
+            <b style="font-size: 14px; font-weight: bold;">${publicDriverDisplayName}</b><br/>
             <span style="font-size: 12px; color: #475569;">${drv.vehicleModel} (${drv.vehiclePlate})</span><br/>
-            <span style="font-size: 12px; color: #16a34a; font-weight: bold;">⭐ ${drv.rating.toFixed(2)} • Parceiro Oficial RACE</span>
+            <span style="font-size: 12px; color: #16a34a; font-weight: bold;">⭐ ${Number(drv.rating || 0).toFixed(2)} • Parceiro Oficial RACE</span>
           </div>
         `);
         markersRef.current[markerKey] = marker;

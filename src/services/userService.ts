@@ -416,7 +416,7 @@ export async function verifyUserLoginAsync(
     let { user: userPayload, driver: driverObj } = mapSupabaseRowToAppUser(authRes.data);
     if (driverObj && driverObj.email) {
       try {
-        const appsMap = await fetchDriverApplicationsSupabase();
+        const appsMap = await fetchDriverApplicationsSupabase(driverObj.email);
         const appRec = appsMap[driverObj.email.toLowerCase()];
         if (appRec) {
           driverObj = mergeDriverWithApplication(driverObj, appRec);

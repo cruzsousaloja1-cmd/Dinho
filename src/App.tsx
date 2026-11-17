@@ -81,6 +81,7 @@ import {
   clearPassengerDebtSupabase,
   hydrateRidesWithUserPhotosSupabase,
   fetchUsuarioPhotoByIdentity,
+  fetchRideCounterpartProfileSupabase,
   signOutSupabase,
   fetchDriverApplicationsSupabase,
   mergeDriverWithApplication,
@@ -242,75 +243,44 @@ export default function App() {
     setIsPrivacyPageOpen(false);
   };
 
-  // 2. Startup: limpar resquícios antigos de localStorage e validar sessão ativa diretamente no Supabase
+  // 2. Startup: limpar resquícios antigos de localStorage e validar sessão ativa diretamente no Supabase (com isolamento por login)
   useEffect(() => {
     purgeLegacyTestLocalStorage(true);
 
     let active = true;
     const initFromSupabase = async () => {
-      let appsMap: Record<string, any> = {};
-      try {
-        const [cloudDrivers, onlineRpcDrivers, cloudPassengers, fetchedApps] = await Promise.all([
-          getAllDriversFromSupabase(),
-          getOnlineDriversFromSupabase(),
-          getAllPassengersFromSupabase(),
-          fetchDriverApplicationsSupabase().catch(() => ({})),
-        ]);
-        appsMap = fetchedApps || {};
-        const mergedDriversMap = new Map<string, Driver>();
-        [...cloudDrivers, ...onlineRpcDrivers].forEach((drv) => {
-          const emailKey = (drv.email || '').trim().toLowerCase();
-          const hydratedWithApp = mergeDriverWithApplication(drv, emailKey ? appsMap[emailKey] : undefined);
-          const key = hydratedWithApp.id || hydratedWithApp.email || `${hydratedWithApp.name}-${hydratedWithApp.vehiclePlate}`;
-          if (!key) return;
-          const prev = mergedDriversMap.get(key);
-          if (!prev) {
-            mergedDriversMap.set(key, hydratedWithApp);
-          } else {
-            const combined = {
-              ...prev,
-              ...hydratedWithApp,
-              avatar: hydratedWithApp.avatar || prev.avatar,
-            };
-            mergedDriversMap.set(key, {
-              ...combined,
-              status:
-                combined.approvalStatus === 'aprovado' &&
-                (prev.status === 'online' || hydratedWithApp.status === 'online')
-                  ? 'online'
-                  : combined.approvalStatus === 'aprovado'
-                  ? 'offline'
-                  : combined.approvalStatus === 'reprovado'
-                  ? 'offline'
-                  : 'pending_approval',
-            });
-          }
-        });
-        const mergedDrivers = Array.from(mergedDriversMap.values());
-        if (active) {
-          setDrivers(mergedDrivers);
-          setPassengers(cloudPassengers);
-        }
-      } catch {}
-
       const session = getSessionUser();
       const sessionIdentifier = session?.email || session?.login || '';
-      if (!session || !sessionIdentifier) return;
+      if (!session || !sessionIdentifier) {
+        if (active) {
+          setDrivers([]);
+          setPassengers([]);
+          setRidesHistory([]);
+        }
+        return;
+      }
 
       try {
         const cloudRow = await getUsuarioSupabase(sessionIdentifier);
         if (!active) return;
 
         if (cloudRow && cloudRow.status === 'bloqueado') {
-          // Conta explicitamente bloqueada pela administração
           saveSessionUser(null);
           setCurrentUser(null);
           setCurrentDriver(DEFAULT_NEW_DRIVER);
+          setDrivers([]);
+          setPassengers([]);
+          setRidesHistory([]);
           return;
         }
 
         if (!cloudRow) {
-          // Mantém o race_usuario_logado salvo no dispositivo até clicar em Sair
+          // Mesmo com sessão local, carrega apenas marcadores públicos online se passageiro/motorista
+          const publicOnline = await getOnlineDriversFromSupabase().catch(() => []);
+          if (active) {
+            setDrivers(publicOnline.filter((d) => d.status === 'online' && d.approvalStatus === 'aprovado'));
+            setPassengers([]);
+          }
           return;
         }
 
@@ -350,21 +320,67 @@ export default function App() {
         setCurrentUser(mergedUser);
         saveSessionUser(mergedUser);
 
-        if (isAppUserAdmin(hydratedUser)) {
+        if (isAppUserAdmin(mergedUser)) {
           setActiveTab('admin');
+          try {
+            const [cloudDrivers, onlineRpcDrivers, cloudPassengers, fetchedApps] = await Promise.all([
+              getAllDriversFromSupabase(),
+              getOnlineDriversFromSupabase(),
+              getAllPassengersFromSupabase(),
+              fetchDriverApplicationsSupabase().catch(() => ({} as Record<string, any>)),
+            ]);
+            if (!active) return;
+            const appsMap: Record<string, any> = fetchedApps || {};
+            const mergedDriversMap = new Map<string, Driver>();
+            [...cloudDrivers, ...onlineRpcDrivers].forEach((drv) => {
+              const emailKey = (drv.email || '').trim().toLowerCase();
+              const hydratedWithApp = mergeDriverWithApplication(drv, emailKey ? appsMap[emailKey] : undefined);
+              const key = hydratedWithApp.id || hydratedWithApp.email || `${hydratedWithApp.name}-${hydratedWithApp.vehiclePlate}`;
+              if (!key) return;
+              const prev = mergedDriversMap.get(key);
+              if (!prev) {
+                mergedDriversMap.set(key, hydratedWithApp);
+              } else {
+                const combined = {
+                  ...prev,
+                  ...hydratedWithApp,
+                  avatar: hydratedWithApp.avatar || prev.avatar,
+                };
+                mergedDriversMap.set(key, {
+                  ...combined,
+                  status:
+                    combined.approvalStatus === 'aprovado' &&
+                    (prev.status === 'online' || hydratedWithApp.status === 'online')
+                      ? 'online'
+                      : combined.approvalStatus === 'aprovado'
+                      ? 'offline'
+                      : combined.approvalStatus === 'reprovado'
+                      ? 'offline'
+                      : 'pending_approval',
+                });
+              }
+            });
+            setDrivers(Array.from(mergedDriversMap.values()));
+            setPassengers(cloudPassengers);
+          } catch {}
           return;
         }
 
-        const isDriverOrMotoboy = isAppUserDriver(hydratedUser);
+        const isDriverOrMotoboy = isAppUserDriver(mergedUser);
+        const onlineRpcDrivers = await getOnlineDriversFromSupabase().catch(() => []);
+        if (!active) return;
+
+        setPassengers([]);
 
         if (isDriverOrMotoboy && hydratedDriver) {
           const emailKey = (hydratedDriver.email || mergedUser.email || '').trim().toLowerCase();
-          if (Object.keys(appsMap).length === 0) {
-            appsMap = await fetchDriverApplicationsSupabase().catch(() => ({}));
-          }
+          const appsMap = emailKey
+            ? await fetchDriverApplicationsSupabase(emailKey).catch(() => ({}))
+            : {};
+          if (!active) return;
           const appMergedDriver = mergeDriverWithApplication(
             hydratedDriver,
-            emailKey ? appsMap[emailKey] : undefined
+            emailKey ? (appsMap as Record<string, any>)[emailKey] : undefined
           );
           const isConfigured =
             appMergedDriver.categoryConfigured !== false &&
@@ -391,11 +407,17 @@ export default function App() {
                 : 'pending_approval',
           };
           setCurrentDriver(updatedMatched);
+          setDrivers(
+            onlineRpcDrivers.filter((d) => d.status === 'online' && d.approvalStatus === 'aprovado')
+          );
           setActiveTab('driver_portal');
           if (isConfigured && isApproved && updatedMatched.status === 'online') {
             captureAndSyncDriverGps(updatedMatched, 'online');
           }
         } else {
+          setDrivers(
+            onlineRpcDrivers.filter((d) => d.status === 'online' && d.approvalStatus === 'aprovado')
+          );
           setActiveTab('rides');
         }
       } catch {
@@ -530,50 +552,70 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     let active = true;
+    const isAdmin = isAppUserAdmin(currentUser);
+    const isDriver = !isAdmin && isAppUserDriver(currentUser);
+    const ownDriverEmail = (currentDriver?.email || currentUser?.email || '').trim().toLowerCase();
 
     const syncOnlineDrivers = async () => {
       try {
-        const [onlineListRaw, appsMap] = await Promise.all([
+        if (isAdmin) {
+          const [cloudDrivers, onlineListRaw, appsMap] = await Promise.all([
+            getAllDriversFromSupabase(),
+            getOnlineDriversFromSupabase(),
+            fetchDriverApplicationsSupabase().catch(() => ({})),
+          ]);
+          if (!active) return;
+
+          const mergedMap = new Map<string, Driver>();
+          [...cloudDrivers, ...onlineListRaw].forEach((drv) => {
+            const emailKey = (drv.email || '').trim().toLowerCase();
+            const hydrated = mergeDriverWithApplication(drv, emailKey ? (appsMap as Record<string, any>)[emailKey] : undefined);
+            const k = hydrated.id || hydrated.email || `${hydrated.name}-${hydrated.vehiclePlate}`;
+            if (!k) return;
+            const prev = mergedMap.get(k);
+            if (!prev) {
+              mergedMap.set(k, hydrated);
+            } else {
+              mergedMap.set(k, {
+                ...prev,
+                ...hydrated,
+                avatar: hydrated.avatar || prev.avatar,
+                status:
+                  hydrated.approvalStatus === 'aprovado' && (prev.status === 'online' || hydrated.status === 'online')
+                    ? 'online'
+                    : hydrated.approvalStatus === 'aprovado'
+                    ? 'offline'
+                    : hydrated.approvalStatus === 'reprovado'
+                    ? 'offline'
+                    : 'pending_approval',
+              });
+            }
+          });
+          setDrivers(Array.from(mergedMap.values()));
+          return;
+        }
+
+        const [onlineListRaw, ownAppsMap] = await Promise.all([
           getOnlineDriversFromSupabase(),
-          currentUser?.driverData || currentDriver?.email
-            ? fetchDriverApplicationsSupabase().catch(() => ({}))
+          isDriver && ownDriverEmail
+            ? fetchDriverApplicationsSupabase(ownDriverEmail).catch(() => ({}))
             : Promise.resolve({}),
         ]);
         if (!active) return;
 
-        const onlineList = onlineListRaw.filter((d) => d.approvalStatus === 'aprovado');
+        const onlineList = onlineListRaw.filter(
+          (d) => d.status === 'online' && d.approvalStatus === 'aprovado'
+        );
 
-        if (currentDriver?.email) {
-          const emailKey = currentDriver.email.trim().toLowerCase();
-          const myApp = (appsMap as Record<string, any>)[emailKey];
+        if (isDriver && ownDriverEmail) {
+          const myApp = (ownAppsMap as Record<string, any>)[ownDriverEmail];
           if (myApp && myApp.approvalStatus && myApp.approvalStatus !== currentDriver.approvalStatus) {
-            setCurrentDriver((prev) =>
-              mergeDriverWithApplication(prev, myApp)
-            );
+            setCurrentDriver((prev) => mergeDriverWithApplication(prev, myApp));
           }
         }
 
-        setDrivers((prev) => {
-          const onlineByKey = new Map<string, Driver>();
-          onlineList.forEach((d) => {
-            const k = (d.email || d.id || '').toLowerCase();
-            if (k) onlineByKey.set(k, d);
-          });
-
-          const merged: Driver[] = [...onlineList];
-          prev.forEach((existing) => {
-            const k = (existing.email || existing.id || '').toLowerCase();
-            if (k && !onlineByKey.has(k)) {
-              const appRec = (appsMap as Record<string, any>)[k];
-              const hydrated = appRec ? mergeDriverWithApplication(existing, appRec) : existing;
-              merged.push({
-                ...hydrated,
-                status: hydrated.approvalStatus === 'pendente' ? 'pending_approval' : 'offline',
-              });
-            }
-          });
-          return merged;
-        });
+        // Passageiros e motoristas comuns só enxergam condutores online aprovados no mapa
+        setDrivers(onlineList);
       } catch {}
     };
 
@@ -631,6 +673,12 @@ export default function App() {
 
     const applyLatestRideUpdate = async (latestRide: Ride) => {
       if (!isMounted || !latestRide) return;
+      const matchesOwnEmail =
+        !latestRide.passengerEmail ||
+        !currentUser?.email ||
+        normalizeEmail(latestRide.passengerEmail) === normalizeEmail(currentUser.email);
+      if (!matchesOwnEmail) return;
+
       const st = String(latestRide.status || '').toLowerCase();
 
       if (st === 'cancelled' || st === 'cancelada') {
@@ -658,16 +706,15 @@ export default function App() {
           let matched = drivers.find(
             (d) =>
               (fullDriver?.id && d.id === fullDriver.id) ||
-              (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
+              (fullDriver?.email && d.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
           );
           if (!matched || !matched.avatar) {
-            const refreshedDrivers = await getAllDriversFromSupabase().catch(() => []);
+            const refreshedDrivers = await getOnlineDriversFromSupabase().catch(() => []);
             if (!isMounted) return;
-            if (refreshedDrivers.length > 0) setDrivers(refreshedDrivers);
             const foundInRefreshed = refreshedDrivers.find(
               (d) =>
                 (fullDriver?.id && d.id === fullDriver.id) ||
-                (fullDriver?.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
+                (fullDriver?.email && d.email && d.email.toLowerCase() === fullDriver.email.toLowerCase())
             );
             if (foundInRefreshed) matched = foundInRefreshed;
           }
@@ -684,19 +731,21 @@ export default function App() {
               rating: fullDriver.rating || matched.rating || 0,
             };
           }
-          if (!fullDriver.avatar && (fullDriver.email || fullDriver.id)) {
-            const drvProfile = await fetchUsuarioPhotoByIdentity({
-              id: fullDriver.id,
-              email: fullDriver.email,
-            }).catch(() => null);
+          const targetCorridaId = resolvedRide.id || activeRide.id;
+          if ((!fullDriver.avatar || !fullDriver.phone || !fullDriver.vehiclePlate) && targetCorridaId && /^\d+$/.test(String(targetCorridaId))) {
+            const cp = await fetchRideCounterpartProfileSupabase(targetCorridaId).catch(() => null);
             if (!isMounted) return;
-            if (drvProfile?.avatar) {
+            if (cp) {
               fullDriver = {
                 ...fullDriver,
-                avatar: drvProfile.avatar,
-                vehiclePlate: fullDriver.vehiclePlate || drvProfile.vehiclePlate || '',
-                vehicleModel: fullDriver.vehicleModel || drvProfile.vehicleModel || '',
-                phone: fullDriver.phone || drvProfile.phone || '',
+                avatar: fullDriver.avatar || cp.avatar || '',
+                name: fullDriver.name || cp.name || 'Motorista',
+                vehiclePlate: fullDriver.vehiclePlate || cp.vehiclePlate || '',
+                vehicleModel: fullDriver.vehicleModel || cp.vehicleModel || '',
+                vehicleColor: fullDriver.vehicleColor || cp.vehicleColor || '',
+                vehicleYear: fullDriver.vehicleYear || cp.vehicleYear || 2023,
+                phone: fullDriver.phone || cp.phone || '',
+                rating: fullDriver.rating || cp.rating || 0,
               };
             }
           }
@@ -725,13 +774,16 @@ export default function App() {
       onUpdate: (updRide) => {
         if (!isMounted) return;
         const matchesId =
-          !activeRide.id ||
-          !updRide.id ||
+          Boolean(activeRide.id && updRide.id) &&
           String(updRide.id) === String(activeRide.id);
         const matchesCode =
           Boolean(activeRide.confirmationCode && updRide.confirmationCode) &&
           updRide.confirmationCode === activeRide.confirmationCode;
-        if (matchesId || matchesCode) {
+        const matchesPassenger =
+          !updRide.passengerEmail ||
+          !currentUser?.email ||
+          normalizeEmail(updRide.passengerEmail) === normalizeEmail(currentUser.email);
+        if ((matchesId || matchesCode) && matchesPassenger) {
           applyLatestRideUpdate(updRide);
         }
       },
@@ -744,7 +796,12 @@ export default function App() {
           latestRide = await getCorridaByIdSupabase(activeRide.id);
         } else if (currentUser) {
           const allUserRides = await getCorridasSupabase(currentUser);
-          latestRide = allUserRides[0] || null;
+          latestRide =
+            (activeRide.confirmationCode
+              ? allUserRides.find((r) => r.confirmationCode === activeRide.confirmationCode)
+              : null) ||
+            allUserRides[0] ||
+            null;
         }
         if (latestRide) {
           await applyLatestRideUpdate(latestRide);
@@ -1552,8 +1609,50 @@ export default function App() {
     );
   };
 
-  // Auth success handler: direciona cada perfil direto para sua tela oficial
+  const loadRoleScopedDataAfterLogin = async (user: AppUser) => {
+    try {
+      if (isAppUserAdmin(user)) {
+        const [allDrivers, onlineRpcDrivers, allPassengers, appsMap] = await Promise.all([
+          getAllDriversFromSupabase().catch(() => []),
+          getOnlineDriversFromSupabase().catch(() => []),
+          getAllPassengersFromSupabase().catch(() => []),
+          fetchDriverApplicationsSupabase().catch(() => ({})),
+        ]);
+        const mergedMap = new Map<string, Driver>();
+        [...allDrivers, ...onlineRpcDrivers].forEach((drv) => {
+          const emailKey = (drv.email || '').trim().toLowerCase();
+          const hydrated = mergeDriverWithApplication(drv, emailKey ? (appsMap as Record<string, any>)[emailKey] : undefined);
+          const k = hydrated.id || hydrated.email || `${hydrated.name}-${hydrated.vehiclePlate}`;
+          if (k) mergedMap.set(k, hydrated);
+        });
+        setDrivers(Array.from(mergedMap.values()));
+        setPassengers(allPassengers);
+      } else {
+        setPassengers([]);
+        const onlineDrivers = await getOnlineDriversFromSupabase().catch(() => []);
+        setDrivers(
+          onlineDrivers.filter((d) => d.status === 'online' && d.approvalStatus === 'aprovado')
+        );
+      }
+    } catch {}
+  };
+
+  // Auth success handler: direciona cada perfil direto para sua tela oficial com isolamento por login
   const handleAuthSuccess = (user: AppUser, driver?: Driver) => {
+    clearWalletMemoryCache();
+    clearReviewsCache();
+    setRidesHistory([]);
+    setActiveRide(null);
+    setCompletedRideForRating(null);
+    setIsRatingModalOpen(false);
+    setIsFullMapOpen(false);
+    setDriverPosition(undefined);
+    setPickup(null);
+    setDestination(null);
+    setPassengers([]);
+    setDrivers([]);
+    setPassengerDebt({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
+
     setCurrentUser(user);
     saveSessionUser(user);
     setHasSearchedRoute(false);
@@ -1578,20 +1677,19 @@ export default function App() {
             ? 'offline'
             : 'pending_approval',
       };
-      setDrivers((prev) => [
-        nextDrv,
-        ...prev.filter((d) => d.id !== nextDrv.id && normalizeEmail(d.email) !== normalizeEmail(nextDrv.email)),
-      ]);
       setCurrentDriver(nextDrv);
       if (isConfigured && isApproved && nextDrv.status === 'online') {
         captureAndSyncDriverGps(nextDrv, 'online');
       }
+    } else {
+      setCurrentDriver(DEFAULT_NEW_DRIVER);
     }
     const isAdminUser = isAppUserAdmin(user);
     const isDriverUser =
       !isAdminUser &&
       (isAppUserDriver(user) || Boolean(driver) || Boolean(user.driverData));
     setActiveTab(isAdminUser ? 'admin' : isDriverUser ? 'driver_portal' : 'rides');
+    loadRoleScopedDataAfterLogin(user);
     const roleName = isAdminUser
       ? 'Administrador ADM'
       : user.role === 'driver' || user.role === 'motoboy'
@@ -1626,8 +1724,15 @@ export default function App() {
     setPickup(null);
     setDestination(null);
     setCurrentDriver(DEFAULT_NEW_DRIVER);
+    setDrivers([]);
+    setPassengers([]);
     setRidesHistory([]);
     setActiveRide(null);
+    setCompletedRideForRating(null);
+    setIsRatingModalOpen(false);
+    setIsFullMapOpen(false);
+    setDriverPosition(undefined);
+    setPassengerDebt({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
     setActiveTab('rides');
     triggerPush('Sessão Encerrada', 'Você saiu da sua conta RACE.', 'system');
   };
@@ -1703,17 +1808,33 @@ export default function App() {
   if (!currentUser) {
     return (
       <DriverLoginScreen
-        drivers={drivers}
-        passengers={passengers}
+        drivers={[]}
+        passengers={[]}
         onOpenPrivacyPage={openPrivacyPage}
         onLoginSuccess={(user, driver) => {
+          clearWalletMemoryCache();
+          clearReviewsCache();
+          setRidesHistory([]);
+          setActiveRide(null);
+          setCompletedRideForRating(null);
+          setIsRatingModalOpen(false);
+          setIsFullMapOpen(false);
+          setDriverPosition(undefined);
+          setPickup(null);
+          setDestination(null);
+          setPassengers([]);
+          setDrivers([]);
+          setPassengerDebt({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
+
           setCurrentUser(user);
           saveSessionUser(user);
           setHasSearchedRoute(false);
           setShowPostAuthSplash(true);
+          loadRoleScopedDataAfterLogin(user);
 
           // Se for Administrador (tipo = ADM / admin / Administrador ou admin@race.com.br)
           if (isAppUserAdmin(user)) {
+            setCurrentDriver(DEFAULT_NEW_DRIVER);
             setActiveTab('admin');
             setLoginSuccessBanner(
               'Bem-vindo, Administrador Geral! Painel de controle e auditoria liberados.'
@@ -1762,10 +1883,6 @@ export default function App() {
                   : 'pending_approval',
             };
             setCurrentDriver(driverWithBal);
-            setDrivers((prev) => [
-              driverWithBal,
-              ...prev.filter((d) => d.id !== driverWithBal.id && normalizeEmail(d.email) !== normalizeEmail(driverWithBal.email)),
-            ]);
             if (isConfigured && isApproved && driverWithBal.status === 'online') {
               captureAndSyncDriverGps(driverWithBal, 'online');
             }
@@ -1779,6 +1896,7 @@ export default function App() {
             );
           } else {
             // Passageiro: vai direto para tela de pedir corrida com mapa
+            setCurrentDriver(DEFAULT_NEW_DRIVER);
             setActiveTab('rides');
             setLoginSuccessBanner(
               `Olá, ${user.name}! Escolha seu ponto de embarque e destino para solicitar sua corrida ou entrega.`
@@ -2175,6 +2293,7 @@ export default function App() {
         <div {...getTabPanelProps('admin')}>
           {isAppUserAdmin(currentUser) ? (
             <AdminDashboard
+              currentUser={currentUser}
               drivers={drivers}
               rides={ridesHistory}
               passengers={passengers}

@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   data_aceite TIMESTAMP WITH TIME ZONE
 );
 
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS auth_uid UUID;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS documentos_aceitos BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_contrato BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_termos BOOLEAN DEFAULT false;
@@ -348,24 +349,48 @@ END $$;
 -- ============================================================================
 
 -- 1A. RLS em public.usuarios:
--- RLS ativado com usuarios_tudo_autenticado + usuarios_cadastro_anon_insert + usuarios_login_anon_select
+-- Isolamento estrito: usuário autenticado só vê/edita/apaga a própria linha (auth.uid() / auth_uid ou JWT email). ADM vê tudo.
 ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "usuarios_tudo_autenticado" ON public.usuarios
   FOR ALL
   TO authenticated
-  USING (true)
-  WITH CHECK (true);
+  USING (
+    public.is_race_admin()
+    OR auth.uid()::text = id::text
+    OR auth.uid()::text = coalesce(auth_uid::text, '')
+    OR (
+      coalesce(auth.jwt() ->> 'email', '') <> ''
+      AND (
+        lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
+        OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
+        OR lower(coalesce(login, '')) = lower(auth.jwt() ->> 'email')
+      )
+    )
+  )
+  WITH CHECK (
+    public.is_race_admin()
+    OR (
+      (
+        auth.uid()::text = id::text
+        OR auth.uid()::text = coalesce(auth_uid::text, '')
+        OR (
+          coalesce(auth.jwt() ->> 'email', '') <> ''
+          AND (
+            lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
+            OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
+            OR lower(coalesce(login, '')) = lower(auth.jwt() ->> 'email')
+          )
+        )
+      )
+      AND lower(coalesce(tipo, 'passenger')) NOT IN ('adm', 'admin', 'administrador')
+    )
+  );
 
 CREATE POLICY "usuarios_cadastro_anon_insert" ON public.usuarios
   FOR INSERT
   TO anon
-  WITH CHECK (true);
-
-CREATE POLICY "usuarios_login_anon_select" ON public.usuarios
-  FOR SELECT
-  TO anon
-  USING (true);
+  WITH CHECK (lower(coalesce(tipo, 'passenger')) NOT IN ('adm', 'admin', 'administrador'));
 
 -- 2A. RLS em public.corridas:
 -- Passageiro só vê as próprias corridas; Motorista só vê corridas disponíveis em Indaiatuba ou que ele aceitou; ADM vê tudo.
@@ -745,6 +770,7 @@ RETURNS TABLE (
   lat double precision,
   lng double precision,
   status_aprovacao text,
+  documentos_aceitos boolean,
   online boolean,
   status text
 )
@@ -754,7 +780,7 @@ SET search_path = public
 AS $$
   SELECT
     u.id,
-    u.nome,
+    split_part(coalesce(u.nome, 'Condutor'), ' ', 1) AS nome,
     u.tipo,
     coalesce(nullif(m.categoria, ''), u.categoria) AS categoria,
     coalesce(nullif(m.placa, ''), u.placa) AS placa,
@@ -766,6 +792,7 @@ AS $$
     coalesce(m.lat, -23.0842) AS lat,
     coalesce(m.lng, -47.2118) AS lng,
     'aprovado'::text AS status_aprovacao,
+    coalesce(m.documentos_aceitos, u.documentos_aceitos, true) AS documentos_aceitos,
     true AS online,
     'online'::text AS status
   FROM public.usuarios u
@@ -776,7 +803,97 @@ AS $$
     AND coalesce(nullif(m.placa, ''), u.placa, '') <> ''
     AND coalesce(nullif(m.modelo, ''), u.modelo, '') <> ''
     AND lower(coalesce(m.status_aprovacao, 'pendente')) = 'aprovado'
+    AND coalesce(m.documentos_aceitos, u.documentos_aceitos, true) = true
     AND (m.online = true OR lower(coalesce(m.status, '')) = 'online');
+$$;
+
+DROP FUNCTION IF EXISTS public.rpc_get_ride_counterpart_profile(bigint);
+
+CREATE OR REPLACE FUNCTION public.rpc_get_ride_counterpart_profile(p_corrida_id bigint)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_ride public.corridas%ROWTYPE;
+  v_caller_email text := lower(trim(coalesce(auth.jwt() ->> 'email', '')));
+  v_caller_uid text := coalesce(auth.uid()::text, '');
+  v_caller_id bigint := public.current_usuario_id();
+  v_is_admin boolean := public.is_race_admin();
+  v_is_passenger boolean := false;
+  v_is_driver boolean := false;
+  v_target_email text := '';
+  v_target_id bigint := NULL;
+  v_target_user public.usuarios%ROWTYPE;
+  v_target_moto public.motoristas%ROWTYPE;
+BEGIN
+  IF p_corrida_id IS NULL OR auth.role() <> 'authenticated' THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT * INTO v_ride FROM public.corridas WHERE id = p_corrida_id LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  v_is_passenger := (
+    (v_caller_email <> '' AND lower(coalesce(v_ride.email_passageiro, '')) = v_caller_email)
+    OR (v_caller_uid <> '' AND (v_caller_uid = coalesce(v_ride.passageiro_id::text, '') OR v_caller_uid = coalesce(v_ride.id_passageiro::text, '')))
+    OR (v_caller_id IS NOT NULL AND (v_ride.passageiro_id = v_caller_id OR v_ride.id_passageiro = v_caller_id))
+  );
+
+  v_is_driver := (
+    (v_caller_email <> '' AND lower(coalesce(v_ride.email_motorista, '')) = v_caller_email)
+    OR (v_caller_uid <> '' AND (v_caller_uid = coalesce(v_ride.motorista_id::text, '') OR v_caller_uid = coalesce(v_ride.id_motorista::text, '')))
+    OR (v_caller_id IS NOT NULL AND (v_ride.motorista_id = v_caller_id OR v_ride.id_motorista = v_caller_id))
+  );
+
+  IF NOT (v_is_admin OR v_is_passenger OR v_is_driver) THEN
+    RETURN NULL;
+  END IF;
+
+  IF v_is_passenger AND lower(coalesce(v_ride.email_motorista, '')) <> '' THEN
+    v_target_email := lower(trim(v_ride.email_motorista));
+    v_target_id := coalesce(v_ride.motorista_id, v_ride.id_motorista);
+  ELSIF v_is_driver AND lower(coalesce(v_ride.status, '')) NOT IN ('procurando', 'searching', 'procurando_motorista') THEN
+    v_target_email := lower(trim(coalesce(v_ride.email_passageiro, '')));
+    v_target_id := coalesce(v_ride.passageiro_id, v_ride.id_passageiro);
+  ELSE
+    RETURN NULL;
+  END IF;
+
+  IF v_target_email <> '' THEN
+    SELECT * INTO v_target_user
+    FROM public.usuarios
+    WHERE lower(coalesce(email, '')) = v_target_email
+       OR lower(coalesce("e-mail", '')) = v_target_email
+       OR lower(coalesce(login, '')) = v_target_email
+    LIMIT 1;
+  ELSIF v_target_id IS NOT NULL THEN
+    SELECT * INTO v_target_user FROM public.usuarios WHERE id = v_target_id LIMIT 1;
+  END IF;
+
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  IF v_is_passenger AND v_target_email <> '' THEN
+    SELECT * INTO v_target_moto FROM public.motoristas WHERE lower(coalesce(email, '')) = v_target_email LIMIT 1;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'id', v_target_user.id,
+    'nome', v_target_user.nome,
+    'avatar', coalesce(nullif(v_target_moto.foto_perfil, ''), v_target_user.foto, ''),
+    'phone', coalesce(nullif(v_target_moto.whatsapp, ''), v_target_user.celular, v_target_user.whatsapp, ''),
+    'modelo', coalesce(nullif(v_target_moto.modelo, ''), v_target_user.modelo, ''),
+    'placa', coalesce(nullif(v_target_moto.placa, ''), v_target_user.placa, ''),
+    'cor', coalesce(v_target_moto.cor, ''),
+    'ano', coalesce(v_target_moto.ano, v_target_user.ano, 2023),
+    'rating', v_target_user.rating
+  );
+END;
 $$;
 
 -- ============================================================================
@@ -2440,40 +2557,134 @@ function phonesDigitsMatch(a: string, b: string): boolean {
   return daNo55 === dbNo55;
 }
 
+async function getCallerSessionIdentity(): Promise<{
+  email: string;
+  id: string;
+  isAdmin: boolean;
+  isDriver: boolean;
+  isAuthenticated: boolean;
+}> {
+  let email = '';
+  let id = '';
+  let isAdmin = false;
+  let isDriver = false;
+  let isAuthenticated = false;
+
+  try {
+    const { data } = await supabase.auth.getUser();
+    const u = data?.user;
+    if (u) {
+      isAuthenticated = true;
+      email = String(u.email || '').trim().toLowerCase();
+      id = String(u.id || '').trim();
+      const metaRole = String(
+        u.app_metadata?.role || u.user_metadata?.role || u.user_metadata?.tipo || ''
+      ).trim().toLowerCase();
+      if (
+        metaRole === 'admin' ||
+        metaRole === 'adm' ||
+        metaRole === 'administrador' ||
+        email === 'admin@race.com.br'
+      ) {
+        isAdmin = true;
+      }
+      if (
+        !isAdmin &&
+        (metaRole.includes('driver') || metaRole.includes('motorista') || metaRole.includes('moto'))
+      ) {
+        isDriver = true;
+      }
+    }
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('race_usuario_logado') || localStorage.getItem('race_current_user');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const parsedEmail = String(parsed?.email || parsed?.login || '').trim().toLowerCase();
+        const parsedTipo = String(parsed?.tipo || parsed?.role || '').trim().toLowerCase();
+        if (!email && parsedEmail) email = parsedEmail;
+        if (parsed?.id && /^\d+$/.test(String(parsed.id))) id = String(parsed.id);
+        if (
+          !isAdmin &&
+          (!isAuthenticated || !email || email === parsedEmail) &&
+          (parsed?.isAdmin ||
+            parsedTipo === 'admin' ||
+            parsedTipo === 'adm' ||
+            parsedTipo === 'administrador' ||
+            parsedEmail === 'admin@race.com.br')
+        ) {
+          isAdmin = true;
+        }
+        if (
+          !isAdmin &&
+          !isDriver &&
+          (!isAuthenticated || !email || email === parsedEmail) &&
+          (parsedTipo === 'driver' ||
+            parsedTipo === 'motorista' ||
+            parsedTipo === 'motorista_economico' ||
+            parsedTipo === 'motorista_confort' ||
+            parsedTipo.includes('motoboy'))
+        ) {
+          isDriver = true;
+        }
+      }
+    } catch {}
+  }
+
+  return { email, id, isAdmin, isDriver, isAuthenticated };
+}
+
+async function isCurrentCallerAdmin(explicitUser?: AppUser | null): Promise<boolean> {
+  if (explicitUser) {
+    const t = String(explicitUser.tipo || explicitUser.role || '').trim().toLowerCase();
+    const em = String(explicitUser.email || '').trim().toLowerCase();
+    const explicitAdmin = Boolean(
+      explicitUser.isAdmin ||
+        explicitUser.role === 'admin' ||
+        t === 'adm' ||
+        t === 'admin' ||
+        t === 'administrador' ||
+        em === 'admin@race.com.br'
+    );
+    if (!explicitAdmin) return false;
+  }
+  const caller = await getCallerSessionIdentity();
+  if (caller.isAdmin) return true;
+  if (caller.email) {
+    try {
+      const res = await selectSafeUsuariosRows((q) => q.eq('email', caller.email).limit(1));
+      const rowTipo = String(res.data?.[0]?.tipo || '').trim().toLowerCase();
+      if (rowTipo === 'admin' || rowTipo === 'adm' || rowTipo === 'administrador') {
+        return true;
+      }
+    } catch {}
+  }
+  return false;
+}
+
 /**
- * Verifica se e-mail ou login já está cadastrado no Supabase (sem diferenciar maiúscula/minúscula e sem espaço)
+ * Verifica se e-mail ou login já está cadastrado no Supabase via RPC segura (nunca lista usuarios)
  */
 export async function checkEmailExistsSupabase(emailOrLogin: string): Promise<boolean> {
   const clean = normalizeEmailNoSpaces(emailOrLogin);
   if (!clean) return false;
   try {
     const rpcRes = await supabase.rpc('rpc_check_email_exists', { p_email: clean });
-    if (!rpcRes.error && rpcRes.data === true) {
-      return true;
+    if (!rpcRes.error && typeof rpcRes.data === 'boolean') {
+      return rpcRes.data;
     }
   } catch {}
 
   const existing = await getUsuarioSupabase(clean);
   if (existing) return true;
 
-  try {
-    const allRes = await selectSafeUsuariosRows();
-    if (Array.isArray(allRes.data)) {
-      const matched = allRes.data.some((row) => {
-        const em1 = normalizeEmailNoSpaces(row.email || '');
-        const em2 = normalizeEmailNoSpaces(row['e-mail'] || '');
-        const lg = normalizeEmailNoSpaces(row.login || '');
-        return em1 === clean || em2 === clean || lg === clean;
-      });
-      if (matched) return true;
-    }
-  } catch {}
-
   return false;
 }
 
 /**
- * Verifica se WhatsApp/celular já está cadastrado no Supabase (apenas números)
+ * Verifica se WhatsApp/celular já está cadastrado no Supabase via RPC segura (nunca lista usuarios)
  */
 export async function checkWhatsAppExistsSupabase(whatsapp: string): Promise<boolean> {
   const cleanDigits = normalizePhoneDigitsOnly(whatsapp);
@@ -2481,33 +2692,8 @@ export async function checkWhatsAppExistsSupabase(whatsapp: string): Promise<boo
 
   try {
     const rpcRes = await supabase.rpc('rpc_check_whatsapp_exists', { p_whatsapp: cleanDigits });
-    if (!rpcRes.error && rpcRes.data === true) {
-      return true;
-    }
-  } catch {}
-
-  try {
-    const allRes = await selectSafeUsuariosRows();
-    if (Array.isArray(allRes.data)) {
-      const matched = allRes.data.some(
-        (row) =>
-          phonesDigitsMatch(row.celular || '', cleanDigits) ||
-          phonesDigitsMatch(row.whatsapp || '', cleanDigits) ||
-          phonesDigitsMatch(row.telefone || '', cleanDigits)
-      );
-      if (matched) return true;
-    }
-  } catch {}
-
-  try {
-    const rpcDrivers = await supabase.rpc('rpc_get_online_drivers');
-    if (!rpcDrivers.error && Array.isArray(rpcDrivers.data)) {
-      const matched = rpcDrivers.data.some(
-        (row: any) =>
-          phonesDigitsMatch(row.celular || '', cleanDigits) ||
-          phonesDigitsMatch(row.whatsapp || '', cleanDigits)
-      );
-      if (matched) return true;
+    if (!rpcRes.error && typeof rpcRes.data === 'boolean') {
+      return rpcRes.data;
     }
   } catch {}
 
@@ -2693,10 +2879,15 @@ export async function signOutSupabase(): Promise<void> {
 }
 
 /**
- * Busca todos os usuários do Supabase SEM retornar a coluna `senha`
+ * Busca todos os usuários do Supabase (EXCLUSIVO PARA ADMIN) SEM retornar a coluna `senha`
  */
 export async function getAllUsuariosSupabase(): Promise<any[]> {
   try {
+    const isAdmin = await isCurrentCallerAdmin();
+    if (!isAdmin) {
+      return [];
+    }
+
     const { data, error } = await selectSafeUsuariosRows();
 
     if (error) {
@@ -3088,24 +3279,51 @@ export async function saveDriverApplicationSupabase(params: {
 }
 
 /**
- * Busca todos os cadastros de documentos/aprovação de motoristas no Supabase + cache local
- * (Lê public.motoristas e public.pagamentos tipo='cadastro_motorista').
+ * Busca cadastros de documentos/aprovação de motoristas no Supabase com isolamento:
+ * - ADM: vê todos os motoristas pendentes/aprovados/reprovados
+ * - Motorista (ou emailFilter): vê apenas o próprio registro
+ * - Passageiro: nunca recebe documentos/dados privados de motoristas
  */
-export async function fetchDriverApplicationsSupabase(): Promise<Record<string, DriverApplicationRecord>> {
-  const result: Record<string, DriverApplicationRecord> = { ...getLocalDriverApprovalsMap() };
+export async function fetchDriverApplicationsSupabase(
+  emailFilter?: string
+): Promise<Record<string, DriverApplicationRecord>> {
+  const caller = await getCallerSessionIdentity();
+  const isAdmin = await isCurrentCallerAdmin();
+  const cleanTargetEmail = String(emailFilter || (!isAdmin ? caller.email : '') || '')
+    .trim()
+    .toLowerCase();
 
-  // 1. Lê public.pagamentos (tipo = 'cadastro_motorista') em ordem cronológica crescente para o mais recente prevalecer preservando fotos
+  if (!isAdmin && !caller.isDriver && !emailFilter) {
+    return {};
+  }
+  if (!isAdmin && !cleanTargetEmail) {
+    return {};
+  }
+
+  const localMap = getLocalDriverApprovalsMap();
+  const result: Record<string, DriverApplicationRecord> = {};
+  if (isAdmin && !emailFilter) {
+    Object.assign(result, localMap);
+  } else if (cleanTargetEmail && localMap[cleanTargetEmail]) {
+    result[cleanTargetEmail] = localMap[cleanTargetEmail];
+  }
+
+  // 1. Lê public.pagamentos (tipo = 'cadastro_motorista') com filtro estrito por e-mail quando não ADM
   try {
-    const { data: payRows, error: payErr } = await supabase
+    let payQuery = supabase
       .from('pagamentos')
       .select('*')
-      .eq('tipo', 'cadastro_motorista')
-      .order('id', { ascending: true });
+      .eq('tipo', 'cadastro_motorista');
+    if (cleanTargetEmail) {
+      payQuery = payQuery.eq('email_motorista', cleanTargetEmail);
+    }
+    const { data: payRows, error: payErr } = await payQuery.order('id', { ascending: true });
 
     if (!payErr && Array.isArray(payRows)) {
       for (const row of payRows as any[]) {
         const email = String(row.email_motorista || '').trim().toLowerCase();
         if (!email) continue;
+        if (cleanTargetEmail && email !== cleanTargetEmail) continue;
         const meta = safeJsonParseObject(row.chave_pix) || {};
         const photos = safeJsonParseObject(row.comprovante_url) || {};
         const prev = result[email];
@@ -3146,13 +3364,18 @@ export async function fetchDriverApplicationsSupabase(): Promise<Record<string, 
     }
   } catch {}
 
-  // 2. Lê public.motoristas e mescla status_aprovacao, fotos e online
+  // 2. Lê public.motoristas com filtro estrito por e-mail quando não ADM
   try {
-    const { data: motoRows, error: motoErr } = await supabase.from('motoristas').select('*');
+    let motoQuery = supabase.from('motoristas').select('*');
+    if (cleanTargetEmail) {
+      motoQuery = motoQuery.eq('email', cleanTargetEmail);
+    }
+    const { data: motoRows, error: motoErr } = await motoQuery;
     if (!motoErr && Array.isArray(motoRows)) {
       for (const m of motoRows as any[]) {
         const email = String(m.email || '').trim().toLowerCase();
         if (!email) continue;
+        if (cleanTargetEmail && email !== cleanTargetEmail) continue;
         const prev = result[email];
         const status = m.status_aprovacao
           ? normalizeDriverApprovalStatus(m.status_aprovacao)
@@ -3407,11 +3630,16 @@ export function mapSupabaseRowToDriver(u: any): Driver {
       ? localApp.documentosAceitos
       : undefined;
 
+  const isPublicApprovedOnlineSnapshot =
+    explicitRowApproval === 'aprovado' &&
+    (u.online === true || String(u.status || '').toLowerCase().trim() === 'online');
+
   const docsConfirmed =
     explicitRowDocs === false
       ? false
       : explicitRowDocs === true ||
         u.exigencias_confirmadas === true ||
+        isPublicApprovedOnlineSnapshot ||
         (u.exigencias_confirmadas !== false && getDriverRequirementsConfirmedLocal(email));
 
   const rawStatus = String(u.status || '').toLowerCase().trim();
@@ -3493,6 +3721,10 @@ function isSupabaseDriverRow(u: any): boolean {
 }
 
 export async function getAllDriversFromSupabase(): Promise<Driver[]> {
+  if (!(await isCurrentCallerAdmin())) {
+    return [];
+  }
+
   const [rows, appsMap] = await Promise.all([
     getAllUsuariosSupabase(),
     fetchDriverApplicationsSupabase().catch(() => getLocalDriverApprovalsMap()),
@@ -3504,7 +3736,7 @@ export async function getAllDriversFromSupabase(): Promise<Driver[]> {
     return app ? mergeDriverWithApplication(base, app) : base;
   });
 
-  // Inclui motoristas pendentes/aprovados que existam nas aplicações mas não apareceram em usuarios (ex: por RLS)
+  // Inclui motoristas pendentes/aprovados que existam nas aplicações mas não apareceram em usuarios
   const existingEmails = new Set(drivers.map((d) => d.email.toLowerCase()).filter(Boolean));
   for (const [emailKey, app] of Object.entries(appsMap)) {
     if (!emailKey || existingEmails.has(emailKey)) continue;
@@ -3545,18 +3777,29 @@ export async function getAllDriversFromSupabase(): Promise<Driver[]> {
   return drivers;
 }
 
+function sanitizePublicOnlineDriverMarker(d: Driver): Driver {
+  return {
+    ...d,
+    name: String(d.name || 'Condutor').trim().split(/\s+/)[0] || 'Condutor',
+    phone: '',
+    email: '',
+    cpf: '',
+    cnh: '',
+    cnhPhoto: '',
+    cnhFrontPhoto: '',
+    cnhBackPhoto: '',
+    crlvPhoto: '',
+    pixKey: '',
+  };
+}
+
 export async function getOnlineDriversFromSupabase(): Promise<Driver[]> {
   try {
-    const appsMap = await fetchDriverApplicationsSupabase().catch(() => getLocalDriverApprovalsMap());
     const rpcRes = await supabase.rpc('rpc_get_online_drivers');
     if (!rpcRes.error && Array.isArray(rpcRes.data)) {
       return rpcRes.data
         .filter(isSupabaseDriverRow)
-        .map((row: any) => {
-          const base = mapSupabaseRowToDriver(row);
-          const app = base.email ? appsMap[base.email.toLowerCase()] : undefined;
-          return app ? mergeDriverWithApplication(base, app) : base;
-        })
+        .map((row: any) => sanitizePublicOnlineDriverMarker(mapSupabaseRowToDriver(row)))
         .filter(
           (d) =>
             d.approvalStatus === 'aprovado' &&
@@ -3565,70 +3808,35 @@ export async function getOnlineDriversFromSupabase(): Promise<Driver[]> {
         );
     }
 
+    // Fallback estrito sem expor CPF/CNH/WhatsApp/e-mail ou outros passageiros
     const knownCols = await getUsuariosTableColumns();
-    const { data, error } = await selectSafeUsuariosRows((q) => {
-      if (knownCols?.has('status')) return q.eq('status', 'online');
-      if (knownCols?.has('online')) return q.eq('online', true);
-      return q;
-    });
-
-    if (error || !data) {
-      // Fallback usando motoristas aprovados e online do mapa de aplicações
-      return Object.values(appsMap)
-        .filter((app) => app.approvalStatus === 'aprovado' && app.online === true)
-        .map((app) =>
-          mergeDriverWithApplication(
-            {
-              id: app.id || `drv-${app.email}`,
-              name: app.name,
-              avatar: app.avatar || '',
-              phone: app.phone || app.whatsapp || '',
-              email: app.email,
-              cpf: '',
-              cnh: app.cnh || '',
-              category: app.category,
-              vehicleModel: app.vehicleModel,
-              vehiclePlate: app.vehiclePlate,
-              vehicleColor: app.vehicleColor,
-              vehicleYear: app.vehicleYear,
-              rating: 0,
-              totalRides: 0,
-              status: 'online',
-              lat: app.lat || -23.0842,
-              lng: app.lng || -47.2118,
-              weeklyPlanActive: true,
-              earningsToday: 0,
-              earningsWeek: 0,
-              cnhVerified: true,
-              vehicleVerified: true,
-              criminalRecordClear: true,
-              registrationDate: app.submittedAt || '',
-              categoryConfigured: true,
-            },
-            app
-          )
-        );
+    if (knownCols?.has('status') || knownCols?.has('online')) {
+      const { data, error } = await selectSafeUsuariosRows((q) =>
+        knownCols?.has('status') ? q.eq('status', 'online') : q.eq('online', true)
+      );
+      if (!error && Array.isArray(data)) {
+        return data
+          .filter(isSupabaseDriverRow)
+          .map((row) => sanitizePublicOnlineDriverMarker(mapSupabaseRowToDriver(row)))
+          .filter(
+            (d) =>
+              d.approvalStatus === 'aprovado' &&
+              d.status === 'online' &&
+              d.categoryConfigured !== false
+          );
+      }
     }
 
-    return data
-      .filter(isSupabaseDriverRow)
-      .map((row) => {
-        const base = mapSupabaseRowToDriver(row);
-        const app = base.email ? appsMap[base.email.toLowerCase()] : undefined;
-        return app ? mergeDriverWithApplication(base, app) : base;
-      })
-      .filter(
-        (d) =>
-          d.approvalStatus === 'aprovado' &&
-          d.status === 'online' &&
-          d.categoryConfigured !== false
-      );
+    return [];
   } catch {
     return [];
   }
 }
 
 export async function getAllPassengersFromSupabase(): Promise<AppUser[]> {
+  if (!(await isCurrentCallerAdmin())) {
+    return [];
+  }
   const rows = await getAllUsuariosSupabase();
   return rows
     .filter((u) => String(u.tipo || '').toLowerCase() === 'passenger')
@@ -3934,14 +4142,22 @@ async function getUsuariosHydrationLookupMap(forceRefresh: boolean = false): Pro
   }
 
   const map = new Map<string, any>();
-  try {
-    const { data } = await selectSafeUsuariosRows();
-    if (Array.isArray(data)) {
-      data.forEach((row) => indexUsuarioRowIntoMap(map, row));
+  const isAdmin = await isCurrentCallerAdmin();
+  if (isAdmin) {
+    try {
+      const { data } = await selectSafeUsuariosRows();
+      if (Array.isArray(data)) {
+        data.forEach((row) => indexUsuarioRowIntoMap(map, row));
+      }
+    } catch {}
+  } else {
+    const caller = await getCallerSessionIdentity();
+    if (caller.email) {
+      try {
+        const ownRow = await getUsuarioSupabase(caller.email);
+        if (ownRow) indexUsuarioRowIntoMap(map, ownRow);
+      } catch {}
     }
-  } catch {}
-
-  if (map.size === 0) {
     try {
       const rpcRes = await supabase.rpc('rpc_get_online_drivers');
       if (!rpcRes.error && Array.isArray(rpcRes.data)) {
@@ -3953,6 +4169,38 @@ async function getUsuariosHydrationLookupMap(forceRefresh: boolean = false): Pro
   userProfileHydrationCache = map;
   userProfileHydrationCacheAt = Date.now();
   return map;
+}
+
+export async function fetchRideCounterpartProfileSupabase(corridaId: string | number): Promise<{
+  avatar: string;
+  name?: string;
+  phone?: string;
+  vehicleModel?: string;
+  vehiclePlate?: string;
+  vehicleYear?: number;
+  vehicleColor?: string;
+  rating?: number;
+} | null> {
+  if (!corridaId || !/^\d+$/.test(String(corridaId))) return null;
+  try {
+    const res = await supabase.rpc('rpc_get_ride_counterpart_profile', {
+      p_corrida_id: Number(corridaId),
+    });
+    if (!res.error && res.data && typeof res.data === 'object') {
+      const d = res.data as any;
+      return {
+        avatar: extractPhotoFromRow(d),
+        name: d.nome || undefined,
+        phone: d.phone || undefined,
+        vehicleModel: d.modelo || undefined,
+        vehiclePlate: d.placa || undefined,
+        vehicleYear: d.ano ? Number(d.ano) : undefined,
+        vehicleColor: d.cor || undefined,
+        rating: typeof d.rating === 'number' ? d.rating : undefined,
+      };
+    }
+  } catch {}
+  return null;
 }
 
 export async function fetchUsuarioPhotoByIdentity(params: {
@@ -4012,14 +4260,36 @@ export async function fetchUsuarioPhotoByIdentity(params: {
   };
 }
 
+function isSearchingStatusValue(status?: string): boolean {
+  const s = String(status || '').toLowerCase().trim();
+  return s === 'procurando' || s === 'searching' || s === 'procurando_motorista';
+}
+
+export function maskUnacceptedRidePassengerData(ride: Ride): Ride {
+  return {
+    ...ride,
+    passengerId: '',
+    passengerEmail: undefined,
+    passengerName: 'Passageiro RACE',
+    passengerPhone: '',
+    passengerAvatar: '',
+    modalityDetails: ride.modalityDetails
+      ? {
+          ...ride.modalityDetails,
+          recipientPhone: '',
+        }
+      : undefined,
+  };
+}
+
 /**
- * Hidrata corridas com a foto real (colunas `foto` OU `avatar`) e dados do motorista/passageiro direto do Supabase
- * sem precisar recarregar a página.
+ * Hidrata corridas com a foto real (colunas `foto` OU `avatar`) apenas para corridas do próprio usuário ou já aceitas.
  */
 export async function hydrateRidesWithUserPhotosSupabase(rides: Ride[]): Promise<Ride[]> {
   if (!Array.isArray(rides) || rides.length === 0) return rides;
 
   const needsHydration = rides.some((r) => {
+    if (isSearchingStatusValue(r.status)) return false;
     const missingPassenger = !r.passengerAvatar || !r.passengerPhone;
     const missingDriver = Boolean(
       r.driver && (!r.driver.avatar || !r.driver.vehiclePlate || !r.driver.vehicleModel || !r.driver.phone)
@@ -4030,45 +4300,74 @@ export async function hydrateRidesWithUserPhotosSupabase(rides: Ride[]): Promise
   if (!needsHydration) return rides;
 
   try {
+    const caller = await getCallerSessionIdentity();
+    const isAdmin = await isCurrentCallerAdmin();
     const lookupMap = await getUsuariosHydrationLookupMap(false);
 
-    // Garante busca individual por RPC caso RLS restrinja a listagem completa
-    const individualFetches: Promise<void>[] = [];
-    const checkedEmails = new Set<string>();
-
-    const ensureEmailLookup = (email?: string, id?: string) => {
-      const cleanEmail = String(email || '').trim().toLowerCase();
-      const cleanId = String(id || '').trim();
-      const alreadyHas =
-        (cleanId && lookupMap.has(`id:${cleanId}`)) ||
-        (cleanEmail && lookupMap.has(`email:${cleanEmail}`));
-      if (alreadyHas) return;
-      if (cleanEmail && !checkedEmails.has(cleanEmail)) {
-        checkedEmails.add(cleanEmail);
-        individualFetches.push(
-          getUsuarioSupabase(cleanEmail)
-            .then((u) => {
-              if (u) indexUsuarioRowIntoMap(lookupMap, u);
-            })
-            .catch(() => {})
-        );
-      }
-    };
+    const counterpartResults = new Map<string, Awaited<ReturnType<typeof fetchRideCounterpartProfileSupabase>>>();
+    const fetches: Promise<void>[] = [];
 
     for (const r of rides) {
-      if (!r.passengerAvatar) {
-        ensureEmailLookup(r.passengerEmail, r.passengerId);
+      if (isSearchingStatusValue(r.status)) continue;
+      if (r.id && /^\d+$/.test(String(r.id))) {
+        const rid = String(r.id);
+        if (!counterpartResults.has(rid)) {
+          counterpartResults.set(rid, null);
+          fetches.push(
+            fetchRideCounterpartProfileSupabase(rid)
+              .then((prof) => {
+                if (prof) counterpartResults.set(rid, prof);
+              })
+              .catch(() => {})
+          );
+        }
       }
-      if (r.driver && (!r.driver.avatar || !r.driver.vehiclePlate)) {
-        ensureEmailLookup(r.driver.email, r.driver.id);
+      if (isAdmin || (caller.email && String(r.passengerEmail || '').toLowerCase() === caller.email)) {
+        const pEmail = String(r.passengerEmail || '').trim().toLowerCase();
+        if (pEmail && !lookupMap.has(`email:${pEmail}`)) {
+          fetches.push(
+            getUsuarioSupabase(pEmail)
+              .then((u) => {
+                if (u) indexUsuarioRowIntoMap(lookupMap, u);
+              })
+              .catch(() => {})
+          );
+        }
+      }
+      if (isAdmin || (caller.email && r.driver?.email && r.driver.email.toLowerCase() === caller.email)) {
+        const dEmail = String(r.driver?.email || '').trim().toLowerCase();
+        if (dEmail && !lookupMap.has(`email:${dEmail}`)) {
+          fetches.push(
+            getUsuarioSupabase(dEmail)
+              .then((u) => {
+                if (u) indexUsuarioRowIntoMap(lookupMap, u);
+              })
+              .catch(() => {})
+          );
+        }
       }
     }
 
-    if (individualFetches.length > 0) {
-      await Promise.all(individualFetches);
+    if (fetches.length > 0) {
+      await Promise.all(fetches);
     }
 
     return rides.map((r) => {
+      if (isSearchingStatusValue(r.status)) {
+        return r;
+      }
+
+      const cp = r.id ? counterpartResults.get(String(r.id)) : null;
+      const isCallerPassenger =
+        Boolean(caller.email) &&
+        (String(r.passengerEmail || '').trim().toLowerCase() === caller.email ||
+          (caller.id && String(r.passengerId || '') === caller.id));
+      const isCallerDriver =
+        Boolean(caller.email) &&
+        Boolean(r.driver) &&
+        (String(r.driver?.email || '').trim().toLowerCase() === caller.email ||
+          (caller.id && String(r.driver?.id || '') === caller.id));
+
       const pRow =
         (r.passengerId && lookupMap.get(`id:${String(r.passengerId)}`)) ||
         (r.passengerEmail && lookupMap.get(`email:${String(r.passengerEmail).trim().toLowerCase()}`)) ||
@@ -4080,33 +4379,33 @@ export async function hydrateRidesWithUserPhotosSupabase(rides: Ride[]): Promise
           null
         : null;
 
-      const pPhoto = pRow ? extractPhotoFromRow(pRow) : '';
-      const dPhoto = dRow ? extractPhotoFromRow(dRow) : '';
+      const pPhoto = (pRow ? extractPhotoFromRow(pRow) : '') || (isCallerDriver && cp ? cp.avatar : '');
+      const dPhoto = (dRow ? extractPhotoFromRow(dRow) : '') || (isCallerPassenger && cp ? cp.avatar : '');
 
       const hydratedDriver = r.driver
         ? {
             ...r.driver,
             avatar: r.driver.avatar || dPhoto || '',
-            name: r.driver.name || dRow?.nome || 'Motorista',
-            phone: r.driver.phone || dRow?.celular || dRow?.whatsapp || '',
-            vehicleModel: r.driver.vehicleModel || dRow?.modelo || '',
-            vehiclePlate: r.driver.vehiclePlate || dRow?.placa || '',
-            vehicleColor: r.driver.vehicleColor || dRow?.cor || '',
-            vehicleYear: r.driver.vehicleYear || Number(dRow?.ano) || 2023,
-            rating: r.driver.rating || (typeof dRow?.rating === 'number' ? dRow.rating : 0),
+            name: r.driver.name || dRow?.nome || (isCallerPassenger && cp?.name) || 'Motorista',
+            phone: r.driver.phone || dRow?.celular || dRow?.whatsapp || (isCallerPassenger && cp?.phone) || '',
+            vehicleModel: r.driver.vehicleModel || dRow?.modelo || (isCallerPassenger && cp?.vehicleModel) || '',
+            vehiclePlate: r.driver.vehiclePlate || dRow?.placa || (isCallerPassenger && cp?.vehiclePlate) || '',
+            vehicleColor: r.driver.vehicleColor || dRow?.cor || (isCallerPassenger && cp?.vehicleColor) || '',
+            vehicleYear: r.driver.vehicleYear || Number(dRow?.ano) || (isCallerPassenger && cp?.vehicleYear) || 2023,
+            rating: r.driver.rating || (typeof dRow?.rating === 'number' ? dRow.rating : 0) || (isCallerPassenger && cp?.rating) || 0,
           }
         : undefined;
 
       return {
         ...r,
         passengerAvatar: r.passengerAvatar || pPhoto || '',
-        passengerPhone: r.passengerPhone || pRow?.celular || pRow?.whatsapp || '',
+        passengerPhone: r.passengerPhone || pRow?.celular || pRow?.whatsapp || (isCallerDriver && cp?.phone) || '',
         passengerName:
           r.passengerName && r.passengerName !== 'Passageiro'
             ? r.passengerName
-            : pRow?.nome || r.passengerName || 'Passageiro',
+            : pRow?.nome || (isCallerDriver && cp?.name) || r.passengerName || 'Passageiro',
         passengerRating:
-          r.passengerRating || (typeof pRow?.rating === 'number' ? pRow.rating : 0),
+          r.passengerRating || (typeof pRow?.rating === 'number' ? pRow.rating : 0) || (isCallerDriver && cp?.rating) || 0,
         driver: hydratedDriver,
       };
     });
@@ -4129,19 +4428,23 @@ function ensureSharedCorridasChannel() {
   if (sharedCorridasChannel) return sharedCorridasChannel;
 
   const notifyHydratedInsert = async (ride: Ride, raw: any) => {
-    const [hydrated] = await hydrateRidesWithUserPhotosSupabase([ride]).catch(() => [ride]);
+    const safeRide = isSearchingStatusValue(ride.status)
+      ? maskUnacceptedRidePassengerData(ride)
+      : (await hydrateRidesWithUserPhotosSupabase([ride]).catch(() => [ride]))[0] || ride;
     corridasRealtimeListeners.forEach((l) => {
       try {
-        l.onInsert?.(hydrated || ride, raw);
+        l.onInsert?.(safeRide, raw);
       } catch {}
     });
   };
 
   const notifyHydratedUpdate = async (ride: Ride, raw: any) => {
-    const [hydrated] = await hydrateRidesWithUserPhotosSupabase([ride]).catch(() => [ride]);
+    const safeRide = isSearchingStatusValue(ride.status)
+      ? maskUnacceptedRidePassengerData(ride)
+      : (await hydrateRidesWithUserPhotosSupabase([ride]).catch(() => [ride]))[0] || ride;
     corridasRealtimeListeners.forEach((l) => {
       try {
-        l.onUpdate?.(hydrated || ride, raw);
+        l.onUpdate?.(safeRide, raw);
       } catch {}
     });
   };
@@ -4360,13 +4663,13 @@ export async function saveCorridaSupabase(
         const insertedRow = data?.[0];
         const insertedId = insertedRow?.id !== undefined ? String(insertedRow.id) : undefined;
         if (normalizedStatus === 'procurando') {
-          broadcastCorridaEvent('nova_corrida', {
+          broadcastCorridaEvent('nova_corrida', maskUnacceptedRidePassengerData({
             ...ride,
             id: insertedId || ride.id,
             status: 'procurando',
             driverEarnings,
             platformFee: raceFee,
-          });
+          }));
         }
         return { success: true, id: insertedId };
       }
@@ -4408,12 +4711,12 @@ export async function saveCorridaSupabase(
 
       console.warn('Aviso Supabase ao salvar corrida:', msg);
       if (normalizedStatus === 'procurando') {
-        broadcastCorridaEvent('nova_corrida', {
+        broadcastCorridaEvent('nova_corrida', maskUnacceptedRidePassengerData({
           ...ride,
           status: 'procurando',
           driverEarnings,
           platformFee: raceFee,
-        });
+        }));
       }
       return { success: false, error: msg };
     }
@@ -4427,6 +4730,9 @@ export async function saveCorridaSupabase(
 
 export async function getAllCorridasForAdminSupabase(): Promise<Ride[]> {
   try {
+    if (!(await isCurrentCallerAdmin())) {
+      return [];
+    }
     const { data, error } = await supabase
       .from('corridas')
       .select('*')
@@ -4449,6 +4755,11 @@ export async function getAllCorridasForAdminSupabase(): Promise<Ride[]> {
 
 export async function getSearchingCorridasSupabase(): Promise<Ride[]> {
   try {
+    const caller = await getCallerSessionIdentity();
+    if (!caller.isDriver && !caller.isAdmin) {
+      return [];
+    }
+
     const { data, error } = await supabase
       .from('corridas')
       .select('*')
@@ -4456,23 +4767,21 @@ export async function getSearchingCorridasSupabase(): Promise<Ride[]> {
       .order('id', { ascending: false })
       .limit(20);
 
-    if (error) {
-      const retry = await supabase
-        .from('corridas')
-        .select('*')
-        .in('status', ['procurando', 'searching', 'procurando_motorista'])
-        .limit(20);
-      if (retry.error || !retry.data) return [];
-      const mapped = (retry.data as SupabaseCorridaRow[])
-        .map(mapSupabaseCorridaToRide)
-        .filter((r) => isRidePaidOrConfirmedCash(r));
-      return hydrateRidesWithUserPhotosSupabase(mapped);
-    }
-    if (!data) return [];
-    const mapped = (data as SupabaseCorridaRow[])
+    const rows = !error && Array.isArray(data)
+      ? data
+      : (
+          await supabase
+            .from('corridas')
+            .select('*')
+            .in('status', ['procurando', 'searching', 'procurando_motorista'])
+            .limit(20)
+        ).data;
+
+    if (!rows || !Array.isArray(rows)) return [];
+    return (rows as SupabaseCorridaRow[])
       .map(mapSupabaseCorridaToRide)
-      .filter((r) => isRidePaidOrConfirmedCash(r));
-    return hydrateRidesWithUserPhotosSupabase(mapped);
+      .filter((r) => isRidePaidOrConfirmedCash(r))
+      .map(maskUnacceptedRidePassengerData);
   } catch {
     return [];
   }
@@ -4481,6 +4790,10 @@ export async function getSearchingCorridasSupabase(): Promise<Ride[]> {
 export async function getCorridaByIdSupabase(rideId: string | number): Promise<Ride | null> {
   if (!rideId || !/^\d+$/.test(String(rideId))) return null;
   try {
+    const caller = await getCallerSessionIdentity();
+    const isAdmin = await isCurrentCallerAdmin();
+    if (!caller.email && !caller.id && !isAdmin) return null;
+
     const { data, error } = await supabase
       .from('corridas')
       .select('*')
@@ -4489,6 +4802,22 @@ export async function getCorridaByIdSupabase(rideId: string | number): Promise<R
 
     if (error || !data || data.length === 0) return null;
     const mapped = mapSupabaseCorridaToRide(data[0] as SupabaseCorridaRow);
+
+    const isOwnerPassenger =
+      (caller.email && String(mapped.passengerEmail || '').toLowerCase() === caller.email) ||
+      (caller.id && String(mapped.passengerId || '') === caller.id);
+    const isAssignedDriver =
+      Boolean(mapped.driver) &&
+      ((caller.email && String(mapped.driver?.email || '').toLowerCase() === caller.email) ||
+        (caller.id && String(mapped.driver?.id || '') === caller.id));
+
+    if (!isAdmin && !isOwnerPassenger && !isAssignedDriver) {
+      if (caller.isDriver && isSearchingStatusValue(mapped.status)) {
+        return maskUnacceptedRidePassengerData(mapped);
+      }
+      return null;
+    }
+
     const [hydrated] = await hydrateRidesWithUserPhotosSupabase([mapped]);
     return hydrated || mapped;
   } catch {
@@ -4599,64 +4928,93 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
 
   const cleanEmail = (currentUser.email || '').toLowerCase().trim();
   const tipoLower = String(currentUser.tipo || '').trim().toLowerCase();
-  const isAdmin =
+  const isAdminClaim =
     currentUser.role === 'admin' ||
     currentUser.isAdmin ||
     tipoLower === 'adm' ||
     tipoLower === 'admin' ||
     tipoLower === 'administrador' ||
     cleanEmail === 'admin@race.com.br';
+  const isAdmin = isAdminClaim ? await isCurrentCallerAdmin(currentUser) : false;
 
   const hasNumericId = /^\d+$/.test(String(currentUser.id || ''));
+  if (!isAdmin && !hasNumericId && !cleanEmail) {
+    return [];
+  }
+
+  const isDriverOrMotoboy =
+    currentUser.role === 'driver' ||
+    currentUser.role === 'motoboy' ||
+    tipoLower === 'driver' ||
+    tipoLower === 'motorista' ||
+    tipoLower === 'motorista_economico' ||
+    tipoLower === 'motorista_confort' ||
+    tipoLower.includes('motoboy');
+
+  const filterRowsForCaller = (rows: SupabaseCorridaRow[]): Ride[] => {
+    const mapped = rows.map(mapSupabaseCorridaToRide);
+    if (isAdmin) return mapped;
+    return mapped.filter((r) => {
+      if (isDriverOrMotoboy) {
+        const dEmail = String(r.driver?.email || '').trim().toLowerCase();
+        const dId = String(r.driver?.id || '').trim();
+        return (
+          (cleanEmail && dEmail === cleanEmail) ||
+          (hasNumericId && dId === String(currentUser.id))
+        );
+      }
+      const pEmail = String(r.passengerEmail || '').trim().toLowerCase();
+      const pId = String(r.passengerId || '').trim();
+      return (
+        (cleanEmail && pEmail === cleanEmail) ||
+        (hasNumericId && pId === String(currentUser.id))
+      );
+    });
+  };
 
   try {
     let query = supabase.from('corridas').select('*').order('id', { ascending: false });
 
     if (!isAdmin) {
-      const isDriverOrMotoboy =
-        currentUser.role === 'driver' ||
-        currentUser.role === 'motoboy' ||
-        currentUser.tipo === 'driver' ||
-        currentUser.tipo === 'motoboy' ||
-        currentUser.tipo === 'motorista_economico' ||
-        currentUser.tipo === 'motorista_confort' ||
-        currentUser.tipo === 'motoboy_passageiro' ||
-        currentUser.tipo === 'motoboy_entregas';
-
       if (isDriverOrMotoboy) {
-        query = hasNumericId
-          ? query.or(`id_motorista.eq.${currentUser.id},email_motorista.eq.${cleanEmail}`)
-          : query.eq('email_motorista', cleanEmail);
+        query =
+          hasNumericId && cleanEmail
+            ? query.or(`id_motorista.eq.${currentUser.id},email_motorista.eq.${cleanEmail}`)
+            : hasNumericId
+            ? query.eq('id_motorista', Number(currentUser.id))
+            : query.eq('email_motorista', cleanEmail);
       } else {
-        query = hasNumericId
-          ? query.or(`id_passageiro.eq.${currentUser.id},email_passageiro.eq.${cleanEmail}`)
-          : query.eq('email_passageiro', cleanEmail);
+        query =
+          hasNumericId && cleanEmail
+            ? query.or(`id_passageiro.eq.${currentUser.id},email_passageiro.eq.${cleanEmail}`)
+            : hasNumericId
+            ? query.eq('id_passageiro', Number(currentUser.id))
+            : query.eq('email_passageiro', cleanEmail);
       }
     }
 
     const { data, error } = await query;
     if (error) {
-      // Fallback caso a tabela use passageiro_id / motorista_id sem id_passageiro / id_motorista
+      // Fallback estritamente filtrado (NUNCA busca sem filtro para não-ADM)
       let fallbackQuery = supabase.from('corridas').select('*').order('id', { ascending: false });
-      if (!isAdmin && hasNumericId) {
-        const isDriverOrMotoboy =
-          currentUser.role === 'driver' ||
-          currentUser.role === 'motoboy' ||
-          currentUser.tipo === 'driver' ||
-          currentUser.tipo === 'motoboy' ||
-          currentUser.tipo === 'motorista_economico' ||
-          currentUser.tipo === 'motorista_confort' ||
-          currentUser.tipo === 'motoboy_passageiro' ||
-          currentUser.tipo === 'motoboy_entregas';
-        fallbackQuery = isDriverOrMotoboy
-          ? fallbackQuery.eq('motorista_id', Number(currentUser.id))
-          : fallbackQuery.eq('passageiro_id', Number(currentUser.id));
-        const fb = await fallbackQuery;
-        if (!fb.error && fb.data) {
-          return hydrateRidesWithUserPhotosSupabase(
-            (fb.data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide)
-          );
+      if (!isAdmin) {
+        if (hasNumericId) {
+          fallbackQuery = isDriverOrMotoboy
+            ? fallbackQuery.eq('motorista_id', Number(currentUser.id))
+            : fallbackQuery.eq('passageiro_id', Number(currentUser.id));
+        } else if (cleanEmail) {
+          fallbackQuery = isDriverOrMotoboy
+            ? fallbackQuery.eq('email_motorista', cleanEmail)
+            : fallbackQuery.eq('email_passageiro', cleanEmail);
+        } else {
+          return [];
         }
+      }
+      const fb = await fallbackQuery;
+      if (!fb.error && fb.data) {
+        return hydrateRidesWithUserPhotosSupabase(
+          filterRowsForCaller(fb.data as SupabaseCorridaRow[])
+        );
       }
       console.warn('Aviso ao consultar corridas no Supabase:', error.message);
       return [];
@@ -4664,7 +5022,7 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
 
     if (!data || data.length === 0) return [];
     return hydrateRidesWithUserPhotosSupabase(
-      (data as SupabaseCorridaRow[]).map(mapSupabaseCorridaToRide)
+      filterRowsForCaller(data as SupabaseCorridaRow[])
     );
   } catch (err) {
     console.warn('Erro ao consultar corridas no Supabase:', err);
@@ -4743,6 +5101,9 @@ export async function savePagamentoSupabase(pagamento: {
 
 export async function getAllPagamentosSupabase(): Promise<SupabasePagamentoRow[]> {
   try {
+    if (!(await isCurrentCallerAdmin())) {
+      return [];
+    }
     const { data, error } = await supabase
       .from('pagamentos')
       .select('*')
@@ -4761,14 +5122,14 @@ export async function getAllPagamentosSupabase(): Promise<SupabasePagamentoRow[]
 }
 
 /**
- * Busca pagamentos no Supabase
+ * Busca pagamentos filtrados estritamente pelo usuário logado (ou tudo somente para ADM)
  */
 export async function getPagamentosSupabase(currentUser: AppUser | null): Promise<SupabasePagamentoRow[]> {
   if (!currentUser) return [];
 
   const cleanEmail = (currentUser.email || '').toLowerCase().trim();
   const tipoLower = String(currentUser.tipo || '').trim().toLowerCase();
-  const isAdmin =
+  const isAdminClaim =
     currentUser.role === 'admin' ||
     currentUser.isAdmin ||
     tipoLower === 'adm' ||
@@ -4776,17 +5137,23 @@ export async function getPagamentosSupabase(currentUser: AppUser | null): Promis
     tipoLower === 'administrador' ||
     cleanEmail === 'admin@race.com.br';
 
-  if (isAdmin) {
+  if (isAdminClaim && (await isCurrentCallerAdmin(currentUser))) {
     return getAllPagamentosSupabase();
   }
 
   const hasNumericId = /^\d+$/.test(String(currentUser.id || ''));
+  if (!hasNumericId && !cleanEmail) {
+    return [];
+  }
 
   try {
     const baseQuery = supabase.from('pagamentos').select('*');
-    const filtered = hasNumericId
-      ? baseQuery.or(`id_motorista.eq.${currentUser.id},email_motorista.eq.${cleanEmail}`)
-      : baseQuery.eq('email_motorista', cleanEmail);
+    const filtered =
+      hasNumericId && cleanEmail
+        ? baseQuery.or(`id_motorista.eq.${currentUser.id},email_motorista.eq.${cleanEmail}`)
+        : hasNumericId
+        ? baseQuery.eq('id_motorista', Number(currentUser.id))
+        : baseQuery.eq('email_motorista', cleanEmail);
 
     const { data, error } = await filtered.order('data', { ascending: false });
 
@@ -4795,7 +5162,11 @@ export async function getPagamentosSupabase(currentUser: AppUser | null): Promis
       return [];
     }
 
-    return (data || []) as SupabasePagamentoRow[];
+    return ((data || []) as SupabasePagamentoRow[]).filter(
+      (row) =>
+        (cleanEmail && String(row.email_motorista || '').trim().toLowerCase() === cleanEmail) ||
+        (hasNumericId && String(row.id_motorista || '') === String(currentUser.id))
+    );
   } catch {
     return [];
   }
@@ -4911,6 +5282,9 @@ export async function getPassengerDebtSupabase(user: AppUser | null): Promise<{
 
   const cleanEmail = String(user.email || '').toLowerCase().trim();
   const hasNumericId = /^\d+$/.test(String(user.id || ''));
+  if (!cleanEmail && !hasNumericId) {
+    return { debtAmount: 0, isBlocked: false, unpaidRideIds: [] };
+  }
 
   try {
     let userDebt = Number(user.debtAmount || 0);
@@ -4922,13 +5296,13 @@ export async function getPassengerDebtSupabase(user: AppUser | null): Promise<{
       userBlocked = Boolean(cloudUser.bloqueado_divida || userDebt > 0);
     }
 
-    // Também confere na tabela corridas por corridas em dinheiro marcadas como NÃO pagas
+    // Também confere na tabela corridas por corridas em dinheiro marcadas como NÃO pagas (SEMPRE filtrado)
     let query = supabase.from('corridas').select('*');
     if (hasNumericId && cleanEmail) {
       query = query.or(`id_passageiro.eq.${user.id},email_passageiro.eq.${cleanEmail}`);
     } else if (hasNumericId) {
       query = query.eq('id_passageiro', Number(user.id));
-    } else if (cleanEmail) {
+    } else {
       query = query.eq('email_passageiro', cleanEmail);
     }
 

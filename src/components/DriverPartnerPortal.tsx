@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow, getUsuarioSupabase, supabase, withPhotoCacheBuster } from '../supabase';
+import { savePagamentoSupabase, getPagamentosSupabase, getSearchingCorridasSupabase, getCorridaByIdSupabase, fetchRideCounterpartProfileSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow, getUsuarioSupabase, supabase, withPhotoCacheBuster } from '../supabase';
 import { compressImageToMax200KB, validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
@@ -423,24 +423,39 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
   }, [currentDriver.id, currentDriver.email, currentDriver.avatar]);
 
+  // Reset isolado de chamadas quando troca o motorista logado
   useEffect(() => {
-    const targetRide = acceptedDriverRide || cloudSearchingRide;
-    if (!targetRide || targetRide.passengerAvatar) return;
+    setAcceptedDriverRide(null);
+    setCloudSearchingRide(null);
+    setAcceptedRideNotice(null);
+    setIsDriverGpsOpen(false);
+    dismissedRideIdsRef.current.clear();
+    announcedRideIdsRef.current.clear();
+  }, [currentDriver.id, currentDriver.email]);
+
+  // Hidrata foto do passageiro SOMENTE depois que o motorista aceitou a corrida (nunca antes do aceite)
+  useEffect(() => {
+    if (!acceptedDriverRide || acceptedDriverRide.passengerAvatar) return;
     let mounted = true;
-    hydrateRidesWithUserPhotosSupabase([targetRide])
+    hydrateRidesWithUserPhotosSupabase([acceptedDriverRide])
       .then(([hydrated]) => {
         if (!mounted || !hydrated?.passengerAvatar) return;
-        if (acceptedDriverRide && acceptedDriverRide === targetRide) {
-          setAcceptedDriverRide({ ...acceptedDriverRide, passengerAvatar: hydrated.passengerAvatar });
-        } else if (cloudSearchingRide && cloudSearchingRide === targetRide) {
-          setCloudSearchingRide({ ...cloudSearchingRide, passengerAvatar: hydrated.passengerAvatar });
-        }
+        setAcceptedDriverRide((curr) =>
+          curr && curr.id === acceptedDriverRide.id
+            ? {
+                ...curr,
+                passengerAvatar: hydrated.passengerAvatar,
+                passengerName: hydrated.passengerName || curr.passengerName,
+                passengerPhone: hydrated.passengerPhone || curr.passengerPhone,
+              }
+            : curr
+        );
       })
       .catch(() => {});
     return () => {
       mounted = false;
     };
-  }, [acceptedDriverRide, cloudSearchingRide]);
+  }, [acceptedDriverRide]);
 
   // Galeria de Fotos: Perfil, CNH e Foto do Veículo
   const driverAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -771,8 +786,62 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [withdrawalSuccessMessage, setWithdrawalSuccessMessage] = useState<string | null>(null);
   const [withdrawalErrorMessage, setWithdrawalErrorMessage] = useState<string | null>(null);
   const [driverWithdrawals, setDriverWithdrawals] = useState<WithdrawalRequest[]>(() => {
-    return getWithdrawals().filter((w) => w.driverId === currentDriver.id);
+    const drvEmail = (currentDriver.email || '').trim().toLowerCase();
+    return getWithdrawals().filter(
+      (w) =>
+        (currentDriver.id && w.driverId === currentDriver.id) ||
+        (drvEmail && (w.driverEmail || '').trim().toLowerCase() === drvEmail)
+    );
   });
+
+  // Carrega exclusivamente os saques do motorista logado direto do Supabase
+  useEffect(() => {
+    const drvId = currentDriver?.id || currentUser?.id || '';
+    const drvEmail = (currentDriver?.email || currentUser?.email || '').trim().toLowerCase();
+    if (!drvId && !drvEmail) {
+      setDriverWithdrawals([]);
+      return;
+    }
+
+    let mounted = true;
+    const callerForPayments: AppUser = currentUser || {
+      id: drvId,
+      name: currentDriver.name,
+      email: drvEmail,
+      phone: currentDriver.phone || '',
+      role: 'driver',
+      tipo: 'motorista',
+      rating: currentDriver.rating || 0,
+    };
+
+    getPagamentosSupabase(callerForPayments)
+      .then((rows) => {
+        if (!mounted) return;
+        const ownWithdrawals: WithdrawalRequest[] = rows
+          .filter((p) => p.tipo === 'saque')
+          .map((p) => ({
+            id: p.id !== undefined && p.id !== null ? String(p.id) : '',
+            driverId: p.id_motorista !== undefined && p.id_motorista !== null ? String(p.id_motorista) : drvId,
+            driverName: p.nome_motorista || currentDriver.name || 'Condutor',
+            driverEmail: (p.email_motorista || drvEmail).toLowerCase(),
+            driverPhone: currentDriver.phone || '',
+            pixKey: p.chave_pix || '',
+            grossAmount: Number(((Number(p.valor || 0)) / 0.85).toFixed(2)),
+            platformFee15: Number((((Number(p.valor || 0)) / 0.85) * 0.15).toFixed(2)),
+            weeklyFeeDeducted: 0,
+            netAmount: Number(p.valor || 0),
+            status: (p.status === 'paid' || p.status === 'pago' || p.status === 'approved') ? 'paid' : 'pending',
+            requestedAt: p.data || new Date().toISOString(),
+            paidAt: (p.status === 'paid' || p.status === 'pago' || p.status === 'approved') ? p.data : undefined,
+          }));
+        setDriverWithdrawals(ownWithdrawals);
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentUser?.id, currentUser?.email, currentDriver?.id, currentDriver?.email]);
 
   useEffect(() => {
     if (currentDriver && currentDriver.id) {
@@ -811,7 +880,14 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     setWithdrawalSuccessMessage(
       `Saque de ${formatBRL(res.withdrawal!.netAmount)} solicitado - Admin vai enviar em até 24h`
     );
-    setDriverWithdrawals(getWithdrawals().filter((w) => w.driverId === currentDriver.id));
+    const drvEmail = (currentDriver.email || '').trim().toLowerCase();
+    setDriverWithdrawals(
+      getWithdrawals().filter(
+        (w) =>
+          (currentDriver.id && w.driverId === currentDriver.id) ||
+          (drvEmail && (w.driverEmail || '').trim().toLowerCase() === drvEmail)
+      )
+    );
 
     // Atualiza o motorista com o novo saldo e chave PIX
     const updated: Driver = {
@@ -1020,7 +1096,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
 
     const rawDriver = verification.driver || loggedUser.driverData;
-    const appsMap = await fetchDriverApplicationsSupabase().catch(() => ({} as Record<string, any>));
+    const appsMap = await fetchDriverApplicationsSupabase(loggedUser.email).catch(() => ({} as Record<string, any>));
     const appRec = appsMap[loggedUser.email.toLowerCase()];
     const resolvedDriver = rawDriver ? mergeDriverWithApplication(rawDriver, appRec) : rawDriver;
     if (resolvedDriver) {
@@ -1342,9 +1418,36 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       }
     }
 
+    if (rideToAccept.id && /^\d+$/.test(String(rideToAccept.id))) {
+      await acceptCorridaSupabase(rideToAccept.id, driverForRide).catch(() => {});
+    }
+
     let hydratedRideToAccept = rideToAccept;
+    if (rideToAccept.id && /^\d+$/.test(String(rideToAccept.id))) {
+      const [fullRide, counterpart] = await Promise.all([
+        getCorridaByIdSupabase(rideToAccept.id).catch(() => null),
+        fetchRideCounterpartProfileSupabase(rideToAccept.id).catch(() => null),
+      ]);
+      if (fullRide) {
+        hydratedRideToAccept = { ...rideToAccept, ...fullRide };
+      }
+      if (counterpart) {
+        hydratedRideToAccept = {
+          ...hydratedRideToAccept,
+          passengerAvatar: hydratedRideToAccept.passengerAvatar || counterpart.avatar || '',
+          passengerName:
+            hydratedRideToAccept.passengerName && hydratedRideToAccept.passengerName !== 'Passageiro RACE'
+              ? hydratedRideToAccept.passengerName
+              : counterpart.name || hydratedRideToAccept.passengerName || 'Passageiro',
+          passengerPhone: hydratedRideToAccept.passengerPhone || counterpart.phone || '',
+        };
+      }
+    }
+
     if (!hydratedRideToAccept.passengerAvatar) {
-      const [hydrated] = await hydrateRidesWithUserPhotosSupabase([rideToAccept]).catch(() => [rideToAccept]);
+      const [hydrated] = await hydrateRidesWithUserPhotosSupabase([hydratedRideToAccept]).catch(() => [
+        hydratedRideToAccept,
+      ]);
       if (hydrated) hydratedRideToAccept = hydrated;
     }
 
@@ -1355,9 +1458,6 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     };
     setAcceptedDriverRide(acceptedRideObj);
     setCloudSearchingRide(null);
-    if (hydratedRideToAccept.id) {
-      acceptCorridaSupabase(hydratedRideToAccept.id, driverForRide).catch(() => {});
-    }
     if (onAcceptIncomingRide) {
       onAcceptIncomingRide(acceptedRideObj);
     }
@@ -1414,35 +1514,22 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             )}
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-sm space-y-3">
-              {/* Foto grande redonda do PASSAGEIRO e do MOTORISTA na chamada */}
+              {/* Dados pessoais do passageiro ficam ocultos até o motorista ACEITAR a corrida */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
                 <div className="flex items-center gap-3.5 min-w-0">
-                  {openIncomingRide.passengerAvatar ? (
-                    <img
-                      src={openIncomingRide.passengerAvatar}
-                      alt={openIncomingRide.passengerName || 'Passageiro'}
-                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-3 border-emerald-400 shadow-lg shrink-0"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-500/20 text-emerald-300 border-3 border-emerald-400 shadow-lg shrink-0 flex flex-col items-center justify-center font-heading font-black">
-                      <span className="text-2xl leading-none">
-                        {(openIncomingRide.passengerName || 'P').trim().charAt(0).toUpperCase()}
-                      </span>
-                      <User className="w-3.5 h-3.5 opacity-80 mt-0.5" />
-                    </div>
-                  )}
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-500/20 text-emerald-300 border-3 border-emerald-400 shadow-lg shrink-0 flex flex-col items-center justify-center font-heading font-black">
+                    <User className="w-7 h-7 opacity-90" />
+                  </div>
                   <div className="min-w-0">
                     <span className="text-[10px] font-mono font-bold uppercase text-emerald-400 tracking-wider block">
-                      Passageiro Chamando
+                      Novo Chamado Próximo
                     </span>
                     <p className="font-heading font-black text-lg sm:text-xl text-amber-400 truncate">
-                      {openIncomingRide.passengerName || 'Passageiro'}
+                      Passageiro RACE
                     </p>
-                    {openIncomingRide.passengerPhone && (
-                      <p className="text-xs text-zinc-400 font-mono truncate">
-                        {openIncomingRide.passengerPhone}
-                      </p>
-                    )}
+                    <p className="text-xs text-zinc-400 font-mono truncate">
+                      Nome e contato liberados após aceitar
+                    </p>
                   </div>
                 </div>
 
@@ -1487,7 +1574,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       </p>
                       <p>
                         <strong className="text-amber-400">Destinatário:</strong>{' '}
-                        {openIncomingRide.modalityDetails.recipientName} • {openIncomingRide.modalityDetails.recipientPhone}
+                        {openIncomingRide.modalityDetails.recipientName} (contato liberado após aceitar)
                       </p>
                       <p>
                         <strong className="text-amber-400">Quem paga:</strong>{' '}
@@ -1894,9 +1981,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   (acceptedDriverRide || openIncomingRide) ? (
                     (() => {
                       const incomingRideSnapshot: Ride = (acceptedDriverRide || openIncomingRide)!;
-                      const incomingPassengerAvatar = incomingRideSnapshot.passengerAvatar || '';
-                      const incomingPassengerName = incomingRideSnapshot.passengerName || 'Passageiro';
-                      const incomingPassengerPhone = incomingRideSnapshot.passengerPhone || '';
+                      const isAcceptedCall = Boolean(acceptedDriverRide);
+                      const incomingPassengerAvatar = isAcceptedCall ? (incomingRideSnapshot.passengerAvatar || '') : '';
+                      const incomingPassengerName = isAcceptedCall ? (incomingRideSnapshot.passengerName || 'Passageiro') : 'Passageiro RACE';
+                      const incomingPassengerPhone = isAcceptedCall ? (incomingRideSnapshot.passengerPhone || '') : '';
                       const incomingPickupAddress = incomingRideSnapshot.pickup?.address || '';
                       const incomingDestAddress = incomingRideSnapshot.destination?.address || '';
                       const incomingPrice = incomingRideSnapshot.price || 0;
@@ -1925,7 +2013,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                               <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 radar-pulse" />
                               <div>
                                 <span className="bg-emerald-600 text-white font-heading font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
-                                  Nova corrida! {formatBRL(incomingDriverEarns)} para você
+                                  {isAcceptedCall ? 'Corrida Aceita! ' : 'Nova corrida! '}
+                                  {formatBRL(incomingDriverEarns)} para você
                                 </span>
                                 <p className="text-xs text-slate-500 font-mono font-bold mt-0.5">
                                   {isCashCall ? 'PAGAMENTO: DINHEIRO • Chamado em tempo real' : 'Chamado em tempo real'}
@@ -1945,7 +2034,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                             </div>
                           </div>
 
-                          {/* Card do Passageiro + Motorista na Chamada */}
+                          {/* Card do Passageiro (dados pessoais só após aceitar) + Motorista na Chamada */}
                           <div className="bg-white rounded-2xl p-4 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
                             <div className="flex items-center gap-3.5 min-w-0">
                               <div className="relative shrink-0">
@@ -1957,25 +2046,31 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                                   />
                                 ) : (
                                   <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-100 text-emerald-800 flex flex-col items-center justify-center font-heading font-black border-3 border-emerald-500 shadow-md">
-                                    <span className="text-2xl leading-none">
-                                      {incomingPassengerName.trim().charAt(0).toUpperCase()}
-                                    </span>
-                                    <User className="w-4 h-4 opacity-75 mt-0.5" />
+                                    {isAcceptedCall ? (
+                                      <span className="text-2xl leading-none">
+                                        {incomingPassengerName.trim().charAt(0).toUpperCase()}
+                                      </span>
+                                    ) : null}
+                                    <User className="w-6 h-6 opacity-80" />
                                   </div>
                                 )}
                               </div>
                               <div className="min-w-0">
                                 <span className="text-[10px] font-mono font-bold text-emerald-700 uppercase tracking-wider block">
-                                  Passageiro Solicitante
+                                  {isAcceptedCall ? 'Passageiro da Corrida' : 'Chamado na Região'}
                                 </span>
                                 <h5 className="font-heading font-black text-slate-950 text-base sm:text-xl truncate">
                                   {incomingPassengerName}
                                 </h5>
-                                {incomingPassengerPhone && (
+                                {isAcceptedCall && incomingPassengerPhone ? (
                                   <p className="text-xs text-slate-600 font-mono mt-0.5">
                                     Contato: <span className="font-bold text-slate-900">{incomingPassengerPhone}</span>
                                   </p>
-                                )}
+                                ) : !isAcceptedCall ? (
+                                  <p className="text-xs text-slate-500 font-mono mt-0.5">
+                                    Dados completos liberados ao aceitar
+                                  </p>
+                                ) : null}
                               </div>
                             </div>
 
@@ -2003,7 +2098,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                                 </div>
                               </div>
 
-                              {incomingPassengerPhone && (
+                              {isAcceptedCall && incomingPassengerPhone && (
                                 <a
                                   href={`https://wa.me/55${incomingPassengerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
                                     `Olá ${incomingPassengerName}! Sou seu condutor da RACE. Recebi sua chamada de corrida e estou a caminho!`
@@ -2067,7 +2162,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                                     <strong>Peso aproximado:</strong> {incomingRideSnapshot.modalityDetails.deliveryWeight}
                                   </p>
                                   <p>
-                                    <strong>Quem recebe:</strong> {incomingRideSnapshot.modalityDetails.recipientName} ({incomingRideSnapshot.modalityDetails.recipientPhone})
+                                    <strong>Quem recebe:</strong> {incomingRideSnapshot.modalityDetails.recipientName}
+                                    {isAcceptedCall && incomingRideSnapshot.modalityDetails.recipientPhone
+                                      ? ` (${incomingRideSnapshot.modalityDetails.recipientPhone})`
+                                      : ' (contato liberado após aceitar)'}
                                   </p>
                                   <p>
                                     <strong>Quem paga:</strong>{' '}
@@ -2202,7 +2300,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </span>
                 </div>
 
-                {rides.filter((r) => r.driver?.id === currentDriver.id || r.driver?.email?.toLowerCase() === currentDriver.email?.toLowerCase()).length === 0 ? (
+                {rides.filter((r) => (currentDriver.id && r.driver?.id === currentDriver.id) || (currentDriver.email && r.driver?.email?.toLowerCase() === currentDriver.email.toLowerCase())).length === 0 ? (
                   <div className="text-center py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-300 p-6">
                     <Car className="w-10 h-10 text-slate-400 mx-auto mb-2" />
                     <p className="text-sm font-bold text-slate-700">Nenhuma corrida finalizada ainda</p>
@@ -2213,7 +2311,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 ) : (
                   <div className="space-y-3">
                     {rides
-                      .filter((r) => r.driver?.id === currentDriver.id || r.driver?.email?.toLowerCase() === currentDriver.email?.toLowerCase())
+                      .filter((r) => (currentDriver.id && r.driver?.id === currentDriver.id) || (currentDriver.email && r.driver?.email?.toLowerCase() === currentDriver.email.toLowerCase()))
                       .map((ride) => {
                         const driverEarns = ride.driverEarnings || Number((ride.price * 0.85).toFixed(2));
                         const raceCommission = ride.platformFee || Number((ride.price * 0.15).toFixed(2));

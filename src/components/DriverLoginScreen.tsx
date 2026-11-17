@@ -359,7 +359,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         : undefined;
       if (driverObj && driverObj.email) {
         try {
-          const appsMap = await fetchDriverApplicationsSupabase();
+          const appsMap = await fetchDriverApplicationsSupabase(driverObj.email);
           const appRec = appsMap[driverObj.email.toLowerCase()];
           if (appRec) {
             driverObj = mergeDriverWithApplication(driverObj, appRec);

@@ -70,8 +70,10 @@ import {
 } from '../services/asaasService';
 import { maskLast4Digits } from '../utils/security';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
+import { isAppUserAdmin } from '../services/userService';
 
 interface AdminDashboardProps {
+  currentUser?: AppUser | null;
   drivers: Driver[];
   rides: Ride[];
   onApproveDriver: (driverId: string) => void;
@@ -89,6 +91,7 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  currentUser,
   drivers,
   rides,
   onApproveDriver,
@@ -127,8 +130,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSupabaseCorridas(rides);
   }, [rides]);
 
-  // Busca de usuarios, corridas, pagamentos e cadastros de motoristas diretamente do Supabase
+  // Busca de usuarios, corridas, pagamentos e cadastros de motoristas diretamente do Supabase (somente ADM)
   const fetchSupabaseUsuarios = async () => {
+    if (!isAppUserAdmin(currentUser)) {
+      setSupabaseUsers([]);
+      setSupabaseCorridas([]);
+      setSupabasePagamentos([]);
+      setDriverApplicationsMap({});
+      setIsLoadingUsers(false);
+      return;
+    }
     setIsLoadingUsers(true);
     setSupabaseUsersError(null);
     try {
