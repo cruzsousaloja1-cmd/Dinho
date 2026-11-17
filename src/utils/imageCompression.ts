@@ -1,4 +1,38 @@
-const DEFAULT_MAX_PHOTO_BYTES = 195 * 1024; // <= 200KB limit for safe Supabase storage
+const DEFAULT_MAX_PHOTO_BYTES = 195 * 1024; // <= 200KB limit for safe compression before upload
+export const MAX_PHOTO_FILE_BYTES = 2 * 1024 * 1024; // 2MB hard limit on selected photo
+
+export function validatePhotoMax2MB(file: File | null | undefined): string | null {
+  if (!file) return 'Nenhuma imagem selecionada.';
+  if (file.type && !file.type.startsWith('image/')) {
+    return 'Selecione um arquivo de imagem válido (JPG, PNG ou WEBP).';
+  }
+  if (file.size > MAX_PHOTO_FILE_BYTES) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1).replace('.', ',');
+    return `A foto selecionada tem ${sizeMb}MB e excede o limite de 2MB. Escolha uma imagem menor.`;
+  }
+  return null;
+}
+
+export function dataUrlToJpegBlob(dataUrl: string): Blob | null {
+  try {
+    if (!dataUrl || !dataUrl.startsWith('data:')) return null;
+    const parts = dataUrl.split(',');
+    if (parts.length < 2) return null;
+    const header = parts[0];
+    const base64 = parts[1];
+    const mimeMatch = header.match(/data:([^;]+);base64/i);
+    const mime = mimeMatch?.[1] || 'image/jpeg';
+    const binaryStr = atob(base64);
+    const len = binaryStr.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mime });
+  } catch {
+    return null;
+  }
+}
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -40,6 +74,10 @@ export async function compressImageToMax200KB(
     }
     rawDataUrl = trimmed;
   } else {
+    const sizeErr = validatePhotoMax2MB(input);
+    if (sizeErr) {
+      throw new Error(sizeErr);
+    }
     rawDataUrl = await readFileAsDataUrl(input);
     if (!rawDataUrl || !rawDataUrl.startsWith('data:image')) {
       return rawDataUrl;
@@ -92,3 +130,22 @@ export async function compressImageToMax200KB(
     return rawDataUrl;
   }
 }
+
+export async function validateAndCompressPhotoFile(
+  file: File,
+  maxBytes: number = DEFAULT_MAX_PHOTO_BYTES
+): Promise<{ dataUrl: string; blob: Blob | null }> {
+  const err = validatePhotoMax2MB(file);
+  if (err) {
+    throw new Error(err);
+  }
+  const dataUrl = await compressImageToMax200KB(file, maxBytes);
+  if (!dataUrl || !dataUrl.startsWith('data:image')) {
+    throw new Error('Não foi possível processar a foto selecionada.');
+  }
+  return {
+    dataUrl,
+    blob: dataUrlToJpegBlob(dataUrl),
+  };
+}
+

@@ -84,8 +84,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (!file) return;
     try {
       const compressed = await compressImageToMax200KB(file);
-      if (compressed) setAvatar(compressed);
-    } catch {}
+      if (compressed) {
+        setAvatar(compressed);
+        setErrorMessage(null);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao processar foto selecionada (máx 2MB).');
+    }
   };
 
   const handleDocUpload = async (
@@ -96,8 +101,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (!file) return;
     try {
       const compressed = await compressImageToMax200KB(file);
-      if (compressed) setter(compressed);
-    } catch {}
+      if (compressed) {
+        setter(compressed);
+        setErrorMessage(null);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Erro ao processar documento selecionado (máx 2MB).');
+    }
   };
 
   if (!isOpen) return null;

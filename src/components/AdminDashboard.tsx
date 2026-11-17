@@ -59,6 +59,8 @@ import {
   getAllPagamentosSupabase,
   fetchDriverApplicationsSupabase,
   approveOrRejectDriverSupabase,
+  uploadProfilePhotoSupabase,
+  extractPhotoFromRow,
   DriverApplicationRecord,
   SupabasePagamentoRow
 } from '../supabase';
@@ -67,7 +69,7 @@ import {
   AsaasBalanceInfo
 } from '../services/asaasService';
 import { maskLast4Digits } from '../utils/security';
-import { compressImageToMax200KB } from '../utils/imageCompression';
+import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 
 interface AdminDashboardProps {
   drivers: Driver[];
@@ -255,6 +257,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editUserAvatar, setEditUserAvatar] = useState('');
   const [editUserModel, setEditUserModel] = useState('');
   const [editUserPlate, setEditUserPlate] = useState('');
+  const [editUserPhotoFile, setEditUserPhotoFile] = useState<File | null>(null);
   const [hasPendingEditAvatar, setHasPendingEditAvatar] = useState(false);
   const [isSavingAdminUser, setIsSavingAdminUser] = useState(false);
   const [editUserError, setEditUserError] = useState<string | null>(null);
@@ -270,9 +273,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditUserName(u.name || '');
     setEditUserEmail(u.email === 'Sem e-mail' ? '' : (u.email || ''));
     setEditUserPhone(u.phone === 'Não informado' ? '' : (u.phone || ''));
-    setEditUserAvatar(u.avatar || u.raw?.foto || u.raw?.avatar || '');
+    setEditUserAvatar(u.avatar || extractPhotoFromRow(u.raw) || '');
     setEditUserModel(u.model || '');
     setEditUserPlate(u.plate || '');
+    setEditUserPhotoFile(null);
     setHasPendingEditAvatar(false);
     setEditUserError(null);
   };
@@ -280,15 +284,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleAdminEditAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const sizeErr = validatePhotoMax2MB(file);
+    if (sizeErr) {
+      setEditUserError(sizeErr);
+      if (e.target) e.target.value = '';
+      return;
+    }
     try {
-      const base64 = await compressImageToMax200KB(file);
-      if (base64) {
-        setEditUserAvatar(base64);
+      const { dataUrl } = await validateAndCompressPhotoFile(file);
+      if (dataUrl) {
+        setEditUserAvatar(dataUrl);
+        setEditUserPhotoFile(file);
         setHasPendingEditAvatar(true);
         setEditUserError(null);
       }
-    } catch {
-      setEditUserError('Não foi possível processar a imagem escolhida.');
+    } catch (err: any) {
+      setEditUserError(err?.message || 'Não foi possível processar a imagem escolhida.');
     } finally {
       if (e.target) e.target.value = '';
     }
@@ -314,6 +325,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditUserError(null);
 
     try {
+      const isChangingPhoto = Boolean(hasPendingEditAvatar || editUserPhotoFile);
+      let photoToSave = editUserAvatar || '';
+      let storageErrorDetail = '';
+
+      if (photoToSave && (editUserPhotoFile || photoToSave.startsWith('data:image'))) {
+        const uploadRes = await uploadProfilePhotoSupabase({
+          photo: editUserPhotoFile || photoToSave,
+          identifier: cleanEmail || String(editingAdminUser.id || 'usuario'),
+        });
+        if (!uploadRes.url && uploadRes.error) {
+          setEditUserError(uploadRes.error);
+          return;
+        }
+        if (!uploadRes.storageUploaded && uploadRes.error) {
+          storageErrorDetail = uploadRes.error;
+        }
+        photoToSave = uploadRes.url || uploadRes.compressedDataUrl || photoToSave;
+      }
+
       const res = await saveUsuarioSupabase({
         id: editingAdminUser.id,
         previousEmail: editingAdminUser.email,
@@ -326,16 +356,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         categoria: editingAdminUser.raw?.categoria,
         modelo: !editingAdminUser.isPassenger && editUserModel.trim() ? editUserModel.trim() : undefined,
         placa: !editingAdminUser.isPassenger && editUserPlate.trim() ? editUserPlate.trim().toUpperCase() : undefined,
-        foto: editUserAvatar || undefined,
-        avatar: editUserAvatar || undefined,
+        foto: photoToSave || undefined,
+        avatar: photoToSave || undefined,
       });
 
       if (!res.success) {
-        setEditUserError(res.error || 'Erro ao salvar alterações no Supabase.');
+        setEditUserError(
+          storageErrorDetail
+            ? `Storage: ${storageErrorDetail} | Banco: ${res.error || 'Erro ao salvar no Supabase.'}`
+            : res.error || 'Erro ao salvar alterações no Supabase.'
+        );
         return;
       }
 
-      const returnedPhoto = String(res.data?.foto || res.data?.avatar || editUserAvatar || '').trim();
+      const returnedPhoto = extractPhotoFromRow(res.data) || photoToSave || '';
       setSupabaseUsers((prev) =>
         prev.map((row) =>
           String(row.id) === String(editingAdminUser.id)
@@ -356,8 +390,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
 
       setEditingAdminUser(null);
+      setEditUserPhotoFile(null);
       setHasPendingEditAvatar(false);
-      showToast('Perfil atualizado com sucesso!');
+      showToast(isChangingPhoto ? 'Foto salva!' : 'Perfil atualizado com sucesso!');
       fetchSupabaseUsuarios().catch(() => {});
     } catch (err: any) {
       setEditUserError(err?.message || 'Falha ao salvar alterações no Supabase.');

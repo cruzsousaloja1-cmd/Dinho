@@ -12,6 +12,7 @@ import {
   getWorkCategoryFullTitle,
   fetchDriverApplicationsSupabase,
   mergeDriverWithApplication,
+  extractPhotoFromRow,
 } from '../supabase';
 
 export interface StoredUserAccount {
@@ -73,7 +74,7 @@ export function saveSessionUser(user: AppUser | null): void {
 
     const cleanEmail = normalizeEmail(user.email || existingSaved?.email || '');
     const resolvedLogin = (user.login || existingSaved?.login || cleanEmail).trim().toLowerCase();
-    const resolvedFoto = user.avatar || existingSaved?.foto || existingSaved?.avatar || '';
+    const resolvedFoto = user.avatar !== undefined ? user.avatar : (existingSaved?.foto || existingSaved?.avatar || '');
     const resolvedDriverData = user.driverData || existingSaved?.driverData;
     const sanitizedDriverData = resolvedDriverData
       ? (() => {
@@ -238,7 +239,7 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
     tipo: (cloudUser.tipo as UserTipo) || role,
     isAdmin: isCloudAdmin || undefined,
     placa: cloudUser.placa || '',
-    avatar: cloudUser.foto || cloudUser.avatar || '',
+    avatar: extractPhotoFromRow(cloudUser),
     rating: Number(cloudUser.rating || 0),
     driverData: driverObj,
     debtAmount: Number(cloudUser.divida || 0),

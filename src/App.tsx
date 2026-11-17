@@ -2043,16 +2043,55 @@ export default function App() {
             onNavigateToHistory={() => setActiveTab('history')}
             onOpenSupport={() => setIsSupportOpen(true)}
             onOpenShare={() => setIsShareOpen(true)}
-            onUpdateAvatar={(avatarBase64) => {
+            onUpdateAvatar={(avatarUrlOrBase64) => {
               setCurrentUser((prev) => {
-                const next = prev ? { ...prev, avatar: avatarBase64 } : null;
-                if (next) saveSessionUser(next);
+                if (!prev) return null;
+                const next: AppUser = {
+                  ...prev,
+                  avatar: avatarUrlOrBase64,
+                  driverData: prev.driverData
+                    ? { ...prev.driverData, avatar: avatarUrlOrBase64 }
+                    : prev.driverData,
+                };
+                saveSessionUser(next);
                 return next;
               });
+              setCurrentDriver((prev) =>
+                prev && currentUser && normalizeEmail(prev.email) === normalizeEmail(currentUser.email)
+                  ? { ...prev, avatar: avatarUrlOrBase64 }
+                  : prev
+              );
+              setDrivers((prev) =>
+                prev.map((d) =>
+                  currentUser &&
+                  (d.id === currentUser.id || normalizeEmail(d.email) === normalizeEmail(currentUser.email))
+                    ? { ...d, avatar: avatarUrlOrBase64 }
+                    : d
+                )
+              );
             }}
             onUpdateProfile={(updatedUser) => {
               setCurrentUser(updatedUser);
               saveSessionUser(updatedUser);
+              if (updatedUser.avatar) {
+                setCurrentDriver((prev) =>
+                  prev && normalizeEmail(prev.email) === normalizeEmail(updatedUser.email)
+                    ? {
+                        ...prev,
+                        name: updatedUser.name,
+                        phone: updatedUser.phone || prev.phone,
+                        avatar: updatedUser.avatar || prev.avatar,
+                      }
+                    : prev
+                );
+                setDrivers((prev) =>
+                  prev.map((d) =>
+                    d.id === updatedUser.id || normalizeEmail(d.email) === normalizeEmail(updatedUser.email)
+                      ? { ...d, name: updatedUser.name, avatar: updatedUser.avatar || d.avatar }
+                      : d
+                  )
+                );
+              }
             }}
             onOpenPrivacyPage={openPrivacyPage}
             onWantToBeDriver={() => setActiveTab('driver_portal')}

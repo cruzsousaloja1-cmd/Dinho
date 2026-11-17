@@ -25,8 +25,8 @@ import {
 } from 'lucide-react';
 import { requestCurrentLocationFast } from '../services/addressSearchService';
 import { saveSessionUser } from '../services/userService';
-import { saveUsuarioSupabase } from '../supabase';
-import { compressImageToMax200KB } from '../utils/imageCompression';
+import { extractPhotoFromRow, saveUsuarioSupabase, uploadProfilePhotoSupabase } from '../supabase';
+import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 
 interface PassengerAccountViewProps {
   currentUser: AppUser | null;
@@ -68,6 +68,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
     currentUser?.whatsapp || currentUser?.phone || ''
   );
   const [draftAvatar, setDraftAvatar] = useState<string>(currentUser?.avatar || '');
+  const [pendingPhotoFile, setPendingPhotoFile] = useState<File | null>(null);
   const [hasPendingAvatarPreview, setHasPendingAvatarPreview] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileSuccessMsg, setProfileSuccessMsg] = useState<string | null>(null);
@@ -79,6 +80,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
     if (!isEditingProfile && !hasPendingAvatarPreview) {
       setUserAvatar(currentUser?.avatar || '');
       setDraftAvatar(currentUser?.avatar || '');
+      setPendingPhotoFile(null);
       setDraftName(currentUser?.name || '');
       setDraftEmail(currentUser?.email || '');
       setDraftPhone(currentUser?.whatsapp || currentUser?.phone || '');
@@ -90,6 +92,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
     setDraftEmail(currentUser?.email || '');
     setDraftPhone(currentUser?.whatsapp || currentUser?.phone || '');
     setDraftAvatar(userAvatar || currentUser?.avatar || '');
+    setPendingPhotoFile(null);
     setHasPendingAvatarPreview(false);
     setProfileErrorMsg(null);
     setProfileSuccessMsg(null);
@@ -101,6 +104,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
     setDraftEmail(currentUser?.email || '');
     setDraftPhone(currentUser?.whatsapp || currentUser?.phone || '');
     setDraftAvatar(currentUser?.avatar || userAvatar || '');
+    setPendingPhotoFile(null);
     setHasPendingAvatarPreview(false);
     setProfileErrorMsg(null);
     setIsEditingProfile(false);
@@ -110,19 +114,28 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const sizeErr = validatePhotoMax2MB(file);
+    if (sizeErr) {
+      setProfileErrorMsg(sizeErr);
+      setProfileSuccessMsg(null);
+      if (e.target) e.target.value = '';
+      return;
+    }
+
     try {
-      const base64 = await compressImageToMax200KB(file);
-      if (base64) {
-        // Mostra prévia da nova foto imediatamente e só salva após clicar em SALVAR ALTERAÇÕES
-        setDraftAvatar(base64);
+      const { dataUrl } = await validateAndCompressPhotoFile(file);
+      if (dataUrl) {
+        // Mostra prévia da nova foto na hora no círculo e no formulário antes de salvar
+        setDraftAvatar(dataUrl);
+        setPendingPhotoFile(file);
         setHasPendingAvatarPreview(true);
         setProfileErrorMsg(null);
         setProfileSuccessMsg(null);
         setIsEditingProfile(true);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.log('Erro ao processar foto do passageiro:', err);
-      setProfileErrorMsg('Não foi possível processar a imagem escolhida. Tente outra foto.');
+      setProfileErrorMsg(err?.message || 'Não foi possível processar a imagem escolhida. Tente outra foto.');
     } finally {
       if (e.target) {
         e.target.value = '';
@@ -150,7 +163,25 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
     setProfileSuccessMsg(null);
 
     try {
-      const finalAvatar = draftAvatar || userAvatar || currentUser?.avatar || '';
+      const isChangingPhoto = Boolean(hasPendingAvatarPreview || pendingPhotoFile);
+      let photoToSave = draftAvatar || userAvatar || currentUser?.avatar || '';
+      let storageErrorDetail = '';
+
+      if (photoToSave && (pendingPhotoFile || photoToSave.startsWith('data:image'))) {
+        const uploadRes = await uploadProfilePhotoSupabase({
+          photo: pendingPhotoFile || photoToSave,
+          identifier: cleanEmail || currentUser?.id || 'usuario',
+        });
+        if (!uploadRes.url && uploadRes.error) {
+          setProfileErrorMsg(uploadRes.error);
+          return;
+        }
+        if (!uploadRes.storageUploaded && uploadRes.error) {
+          storageErrorDetail = uploadRes.error;
+        }
+        photoToSave = uploadRes.url || uploadRes.compressedDataUrl || photoToSave;
+      }
+
       const res = await saveUsuarioSupabase({
         id: currentUser?.id,
         previousEmail: currentUser?.email,
@@ -160,17 +191,29 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         whatsapp: cleanPhone,
         login: currentUser?.login || currentUser?.email || cleanEmail,
         tipo: currentUser?.tipo || 'passenger',
-        foto: finalAvatar || undefined,
-        avatar: finalAvatar || undefined,
+        foto: photoToSave || undefined,
+        avatar: photoToSave || undefined,
         rating: currentUser?.rating || 0,
       });
 
       if (!res.success) {
-        setProfileErrorMsg(res.error || 'Erro ao salvar alterações no Supabase. Tente novamente.');
+        const combinedError = storageErrorDetail
+          ? `Storage: ${storageErrorDetail} | Banco: ${res.error || 'Erro ao salvar alterações.'}`
+          : res.error || 'Erro ao salvar alterações no Supabase. Tente novamente.';
+        setProfileErrorMsg(combinedError);
         return;
       }
 
-      const returnedPhoto = String(res.data?.foto || res.data?.avatar || finalAvatar || '').trim();
+      const returnedPhoto = extractPhotoFromRow(res.data) || photoToSave || '';
+      if (isChangingPhoto && !returnedPhoto) {
+        setProfileErrorMsg(
+          storageErrorDetail
+            ? `Erro no upload da foto (${storageErrorDetail}). Verifique as políticas do Storage e tente novamente.`
+            : 'A foto não pôde ser salva no servidor. Verifique as permissões de Storage e RLS.'
+        );
+        return;
+      }
+
       const updatedUser: AppUser = {
         ...(currentUser || {
           id: res.data?.id ? String(res.data.id) : 'local',
@@ -190,6 +233,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
 
       setUserAvatar(returnedPhoto);
       setDraftAvatar(returnedPhoto);
+      setPendingPhotoFile(null);
       setHasPendingAvatarPreview(false);
       saveSessionUser(updatedUser);
       if (onUpdateAvatar && returnedPhoto) {
@@ -200,7 +244,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       }
 
       setIsEditingProfile(false);
-      setProfileSuccessMsg('Perfil atualizado com sucesso!');
+      setProfileSuccessMsg(isChangingPhoto ? 'Foto salva!' : 'Perfil atualizado com sucesso!');
       setTimeout(() => setProfileSuccessMsg(null), 6000);
     } catch (err: any) {
       setProfileErrorMsg(err?.message || 'Falha ao salvar perfil. Tente novamente.');
@@ -217,7 +261,10 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   const displayEmail = currentUser?.email || '';
   const displayPhone = currentUser?.whatsapp || currentUser?.phone || 'Não informado';
   const displayLogin = currentUser?.login || currentUser?.email || '';
-  const visibleAvatar = isEditingProfile ? draftAvatar : userAvatar;
+  const visibleAvatar =
+    isEditingProfile || hasPendingAvatarPreview
+      ? draftAvatar || userAvatar
+      : userAvatar || currentUser?.avatar || '';
 
   // Atualizar endereço com GPS Real em Indaiatuba-SP (máx 5s, sem loop, fallback última localização salva)
   const handleUpdateGps = async () => {
@@ -279,6 +326,19 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             type="button"
             onClick={() => setProfileSuccessMsg(null)}
             className="text-emerald-700 hover:text-emerald-950 p-1 rounded-lg cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {profileErrorMsg && (
+        <div className="bg-rose-50 border-2 border-rose-500 text-rose-950 rounded-2xl p-4 shadow-md flex items-center justify-between gap-3 animate-fade-in">
+          <div className="text-xs sm:text-sm font-bold leading-snug">{profileErrorMsg}</div>
+          <button
+            type="button"
+            onClick={() => setProfileErrorMsg(null)}
+            className="text-rose-700 hover:text-rose-950 p-1 rounded-lg cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>

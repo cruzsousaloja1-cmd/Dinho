@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication } from '../supabase';
-import { compressImageToMax200KB } from '../utils/imageCompression';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow } from '../supabase';
+import { compressImageToMax200KB, validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
@@ -450,6 +450,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [draftDriverAvatar, setDraftDriverAvatar] = useState<string>(
     currentDriver.avatar || currentUser?.avatar || ''
   );
+  const [pendingDriverPhotoFile, setPendingDriverPhotoFile] = useState<File | null>(null);
   const [hasPendingDriverAvatar, setHasPendingDriverAvatar] = useState(false);
   const [isSavingDriverProfile, setIsSavingDriverProfile] = useState(false);
   const [driverProfileSuccessMsg, setDriverProfileSuccessMsg] = useState<string | null>(null);
@@ -461,6 +462,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       setDraftDriverEmail(currentDriver.email || '');
       setDraftDriverPhone(currentDriver.phone || '');
       setDraftDriverAvatar(currentDriver.avatar || currentUser?.avatar || '');
+      setPendingDriverPhotoFile(null);
     }
   }, [
     currentDriver.name,
@@ -477,6 +479,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     setDraftDriverEmail(currentDriver.email || '');
     setDraftDriverPhone(currentDriver.phone || '');
     setDraftDriverAvatar(currentDriver.avatar || currentUser?.avatar || '');
+    setPendingDriverPhotoFile(null);
     setHasPendingDriverAvatar(false);
     setDriverProfileErrorMsg(null);
     setDriverProfileSuccessMsg(null);
@@ -489,6 +492,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     setDraftDriverEmail(currentDriver.email || '');
     setDraftDriverPhone(currentDriver.phone || '');
     setDraftDriverAvatar(currentDriver.avatar || currentUser?.avatar || '');
+    setPendingDriverPhotoFile(null);
     setHasPendingDriverAvatar(false);
     setDriverProfileErrorMsg(null);
     setIsEditingDriverProfile(false);
@@ -498,20 +502,30 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const sizeErr = validatePhotoMax2MB(file);
+    if (sizeErr) {
+      setDriverProfileErrorMsg(sizeErr);
+      setDriverProfileSuccessMsg(null);
+      setDashboardSection('perfil');
+      if (e.target) e.target.value = '';
+      return;
+    }
+
     try {
-      const base64 = await compressImageToMax200KB(file);
-      if (base64) {
-        // Mostra prévia da foto nova e só salva ao clicar em SALVAR ALTERAÇÕES
-        setDraftDriverAvatar(base64);
+      const { dataUrl } = await validateAndCompressPhotoFile(file);
+      if (dataUrl) {
+        // Mostra prévia da foto nova na hora no círculo e no editor antes de salvar
+        setDraftDriverAvatar(dataUrl);
+        setPendingDriverPhotoFile(file);
         setHasPendingDriverAvatar(true);
         setDriverProfileErrorMsg(null);
         setDriverProfileSuccessMsg(null);
         setDashboardSection('perfil');
         setIsEditingDriverProfile(true);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.log('Erro ao comprimir foto do motorista:', err);
-      setDriverProfileErrorMsg('Não foi possível processar a imagem escolhida.');
+      setDriverProfileErrorMsg(err?.message || 'Não foi possível processar a imagem escolhida.');
     } finally {
       if (e.target) {
         e.target.value = '';
@@ -539,7 +553,25 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     setDriverProfileSuccessMsg(null);
 
     try {
-      const finalAvatar = draftDriverAvatar || currentDriver.avatar || currentUser?.avatar || '';
+      const isChangingPhoto = Boolean(hasPendingDriverAvatar || pendingDriverPhotoFile);
+      let photoToSave = draftDriverAvatar || currentDriver.avatar || currentUser?.avatar || '';
+      let storageErrorDetail = '';
+
+      if (photoToSave && (pendingDriverPhotoFile || photoToSave.startsWith('data:image'))) {
+        const uploadRes = await uploadProfilePhotoSupabase({
+          photo: pendingDriverPhotoFile || photoToSave,
+          identifier: cleanEmail || currentDriver.id || currentUser?.id || 'motorista',
+        });
+        if (!uploadRes.url && uploadRes.error) {
+          setDriverProfileErrorMsg(uploadRes.error);
+          return;
+        }
+        if (!uploadRes.storageUploaded && uploadRes.error) {
+          storageErrorDetail = uploadRes.error;
+        }
+        photoToSave = uploadRes.url || uploadRes.compressedDataUrl || photoToSave;
+      }
+
       const res = await saveUsuarioSupabase({
         id: currentDriver.id || currentUser?.id,
         previousEmail: currentDriver.email || currentUser?.email,
@@ -554,16 +586,28 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         modelo: currentDriver.vehicleModel,
         ano: currentDriver.vehicleYear,
         cnh: currentDriver.cnh,
-        foto: finalAvatar || undefined,
-        avatar: finalAvatar || undefined,
+        foto: photoToSave || undefined,
+        avatar: photoToSave || undefined,
       });
 
       if (!res.success) {
-        setDriverProfileErrorMsg(res.error || 'Erro ao salvar alterações no Supabase. Tente novamente.');
+        const combinedError = storageErrorDetail
+          ? `Storage: ${storageErrorDetail} | Banco: ${res.error || 'Erro ao salvar alterações.'}`
+          : res.error || 'Erro ao salvar alterações no Supabase. Tente novamente.';
+        setDriverProfileErrorMsg(combinedError);
         return;
       }
 
-      const returnedPhoto = String(res.data?.foto || res.data?.avatar || finalAvatar || '').trim();
+      const returnedPhoto = extractPhotoFromRow(res.data) || photoToSave || '';
+      if (isChangingPhoto && !returnedPhoto) {
+        setDriverProfileErrorMsg(
+          storageErrorDetail
+            ? `Erro no upload da foto (${storageErrorDetail}). Verifique as políticas do Storage e tente novamente.`
+            : 'A foto não pôde ser salva no servidor. Verifique as permissões de Storage e RLS.'
+        );
+        return;
+      }
+
       const updatedDriver: Driver = {
         ...currentDriver,
         name: cleanName,
@@ -590,9 +634,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         }
       }
 
+      setDraftDriverAvatar(returnedPhoto);
+      setPendingDriverPhotoFile(null);
       setHasPendingDriverAvatar(false);
       setIsEditingDriverProfile(false);
-      setDriverProfileSuccessMsg('Perfil atualizado com sucesso!');
+      setDriverProfileSuccessMsg(isChangingPhoto ? 'Foto salva!' : 'Perfil atualizado com sucesso!');
       setTimeout(() => setDriverProfileSuccessMsg(null), 6000);
     } catch (err: any) {
       setDriverProfileErrorMsg(err?.message || 'Falha ao salvar perfil. Tente novamente.');
@@ -2374,15 +2420,28 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </div>
                 )}
 
+                {driverProfileErrorMsg && !isEditingDriverProfile && (
+                  <div className="bg-rose-50 border-2 border-rose-500 text-rose-950 rounded-2xl p-3.5 shadow-sm flex items-center justify-between gap-2">
+                    <span className="text-xs sm:text-sm font-bold">{driverProfileErrorMsg}</span>
+                    <button
+                      type="button"
+                      onClick={() => setDriverProfileErrorMsg(null)}
+                      className="text-rose-700 hover:text-rose-950 p-1 rounded-lg cursor-pointer shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
                   <div className="flex items-center gap-4">
                     <div 
                       onClick={() => driverAvatarInputRef.current?.click()}
                       className="relative group cursor-pointer shrink-0"
                     >
-                      {((isEditingDriverProfile ? draftDriverAvatar : (currentDriver.avatar || currentUser?.avatar))) ? (
+                      {((isEditingDriverProfile || hasPendingDriverAvatar ? (draftDriverAvatar || currentDriver.avatar || currentUser?.avatar) : (currentDriver.avatar || currentUser?.avatar))) ? (
                         <img
-                          src={isEditingDriverProfile ? draftDriverAvatar : (currentDriver.avatar || currentUser?.avatar)}
+                          src={(isEditingDriverProfile || hasPendingDriverAvatar ? (draftDriverAvatar || currentDriver.avatar || currentUser?.avatar) : (currentDriver.avatar || currentUser?.avatar)) || ''}
                           alt={currentDriver.name}
                           className="w-20 h-20 rounded-full object-cover border-4 border-amber-500 shadow-md group-hover:opacity-90 transition-opacity"
                         />

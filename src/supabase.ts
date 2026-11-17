@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { AppUser, Driver, DriverApprovalStatus, Ride, VehicleCategory } from './types';
 import { RACE_PIX_KEY } from './config/pricing';
-import { compressImageToMax200KB } from './utils/imageCompression';
+import {
+  MAX_PHOTO_FILE_BYTES,
+  compressImageToMax200KB,
+  dataUrlToJpegBlob,
+  validatePhotoMax2MB,
+} from './utils/imageCompression';
 
 export const SUPABASE_URL = 'https://catljaosibqsqexzkrrv.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_FLS7sl0xEJ2StmxWfsJQ3Q_y_GiYKoM';
@@ -30,6 +35,8 @@ const SAFE_USUARIO_COLS_LIST = [
   'ano',
   'cnh',
   'foto',
+  'foto_url',
+  'avatar_url',
   'avatar',
   'rating',
   'saldo',
@@ -49,6 +56,8 @@ const SAFE_USUARIO_COLS_LIST = [
 
 const FORBIDDEN_INVENTED_COLS = new Set([
   'avatar',
+  'avatar_url',
+  'foto_url',
   'bau',
   'cor',
   'cpf',
@@ -58,6 +67,11 @@ const FORBIDDEN_INVENTED_COLS = new Set([
   'plano_ativo',
   'status',
 ]);
+
+export function extractPhotoFromRow(row: any): string {
+  if (!row || typeof row !== 'object') return '';
+  return String(row.foto || row.foto_url || row.avatar_url || row.avatar || '').trim();
+}
 
 export function stripSensitiveUserFields<T extends Record<string, any> | null | undefined>(row: T): T {
   if (!row || typeof row !== 'object') return row;
@@ -314,76 +328,19 @@ END $$;
 -- ============================================================================
 
 -- 1A. RLS em public.usuarios:
--- Usuário autenticado só vê e edita o próprio perfil (auth.uid() = id ou e-mail do JWT). Ninguém lista todos os usuários. ADM (tipo = admin) vê tudo.
+-- RLS ativado com usuarios_tudo_autenticado (ALL para authenticated) + usuarios_cadastro_anon_insert (INSERT para anon)
 ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "usuarios_select_proprio_ou_adm" ON public.usuarios
-  FOR SELECT
-  USING (
-    public.is_race_admin()
-    OR (coalesce(auth.uid()::text, '') <> '' AND auth.uid()::text = coalesce(id::text, ''))
-    OR (
-      auth.role() = 'authenticated'
-      AND coalesce(auth.jwt() ->> 'email', '') <> ''
-      AND (
-        lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
-        OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
-        OR lower(coalesce(login, '')) = lower(auth.jwt() ->> 'email')
-      )
-    )
-  );
+CREATE POLICY "usuarios_tudo_autenticado" ON public.usuarios
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
 
-CREATE POLICY "usuarios_insert_autenticado" ON public.usuarios
+CREATE POLICY "usuarios_cadastro_anon_insert" ON public.usuarios
   FOR INSERT
-  WITH CHECK (
-    public.is_race_admin()
-    OR (
-      auth.role() = 'authenticated'
-      AND coalesce(auth.jwt() ->> 'email', '') <> ''
-      AND (
-        lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
-        OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
-      )
-    )
-  );
-
-CREATE POLICY "usuarios_update_proprio_ou_adm" ON public.usuarios
-  FOR UPDATE
-  USING (
-    public.is_race_admin()
-    OR (coalesce(auth.uid()::text, '') <> '' AND auth.uid()::text = coalesce(id::text, ''))
-    OR (
-      auth.role() = 'authenticated'
-      AND coalesce(auth.jwt() ->> 'email', '') <> ''
-      AND (
-        lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
-        OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
-        OR lower(coalesce(login, '')) = lower(auth.jwt() ->> 'email')
-      )
-    )
-  )
-  WITH CHECK (
-    public.is_race_admin()
-    OR (
-      (
-        (coalesce(auth.uid()::text, '') <> '' AND auth.uid()::text = coalesce(id::text, ''))
-        OR (
-          auth.role() = 'authenticated'
-          AND coalesce(auth.jwt() ->> 'email', '') <> ''
-          AND (
-            lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
-            OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
-            OR lower(coalesce(login, '')) = lower(auth.jwt() ->> 'email')
-          )
-        )
-      )
-      AND lower(coalesce(tipo, '')) NOT IN ('adm', 'admin')
-    )
-  );
-
-CREATE POLICY "usuarios_delete_adm" ON public.usuarios
-  FOR DELETE
-  USING (public.is_race_admin());
+  TO anon
+  WITH CHECK (true);
 
 -- 2A. RLS em public.corridas:
 -- Passageiro só vê as próprias corridas; Motorista só vê corridas disponíveis em Indaiatuba ou que ele aceitou; ADM vê tudo.
@@ -763,6 +720,34 @@ AS $$
     AND (m.online = true OR lower(coalesce(m.status, '')) = 'online');
 $$;
 
+-- ============================================================================
+-- STORAGE BUCKETS PÚBLICOS ('avatars' e 'fotos') + POLÍTICAS DE UPLOAD E LEITURA
+-- Permite INSERT, UPDATE, SELECT para authenticated e anon (fotos de perfil e cadastro)
+-- ============================================================================
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true), ('fotos', 'fotos', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "avatars_fotos_select_anon_auth" ON storage.objects;
+DROP POLICY IF EXISTS "avatars_fotos_insert_anon_auth" ON storage.objects;
+DROP POLICY IF EXISTS "avatars_fotos_update_anon_auth" ON storage.objects;
+
+CREATE POLICY "avatars_fotos_select_anon_auth" ON storage.objects
+  FOR SELECT
+  TO anon, authenticated
+  USING (bucket_id IN ('avatars', 'fotos'));
+
+CREATE POLICY "avatars_fotos_insert_anon_auth" ON storage.objects
+  FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (bucket_id IN ('avatars', 'fotos'));
+
+CREATE POLICY "avatars_fotos_update_anon_auth" ON storage.objects
+  FOR UPDATE
+  TO anon, authenticated
+  USING (bucket_id IN ('avatars', 'fotos'))
+  WITH CHECK (bucket_id IN ('avatars', 'fotos'));
+
 -- BACKUP AUTOMÁTICO DIÁRIO NO SUPABASE:
 -- No Painel do Supabase -> Settings -> Database -> Backups -> Ative Daily Backups (ou Point-in-Time Recovery).
 `;
@@ -1022,6 +1007,8 @@ function buildSafeReturnCols(knownCols: Set<string> | null): string[] {
     'ano',
     'cnh',
     'foto',
+    'foto_url',
+    'avatar_url',
     'avatar',
     'rating',
     'saldo',
@@ -1032,6 +1019,138 @@ function buildSafeReturnCols(knownCols: Set<string> | null): string[] {
     return filtered.length > 0 ? filtered : ['id'];
   }
   return ['id', 'nome', 'tipo', 'email', 'celular', 'whatsapp', 'login', 'foto'];
+}
+
+/**
+ * Faz upload da foto de perfil para o Supabase Storage (buckets 'avatars' / 'fotos') com compressão e limite de 2MB.
+ * Retorna a URL pública (com cache-buster) quando o Storage aceitar, ou a imagem comprimida + erro real caso o Storage falhe.
+ */
+export async function uploadProfilePhotoSupabase(params: {
+  photo: File | string;
+  identifier?: string;
+}): Promise<{
+  url: string;
+  compressedDataUrl: string;
+  storageUploaded: boolean;
+  error?: string;
+}> {
+  const { photo, identifier } = params;
+  if (!photo) {
+    return { url: '', compressedDataUrl: '', storageUploaded: false, error: 'Nenhuma foto selecionada.' };
+  }
+
+  if (typeof photo === 'string') {
+    const trimmed = photo.trim();
+    if (!trimmed) {
+      return { url: '', compressedDataUrl: '', storageUploaded: false, error: 'Foto vazia.' };
+    }
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return { url: trimmed, compressedDataUrl: trimmed, storageUploaded: true };
+    }
+  } else {
+    const sizeErr = validatePhotoMax2MB(photo);
+    if (sizeErr) {
+      return { url: '', compressedDataUrl: '', storageUploaded: false, error: sizeErr };
+    }
+  }
+
+  let compressedDataUrl = '';
+  try {
+    compressedDataUrl = await compressImageToMax200KB(photo);
+  } catch (err: any) {
+    return {
+      url: '',
+      compressedDataUrl: '',
+      storageUploaded: false,
+      error: err?.message || 'Falha ao comprimir a foto selecionada.',
+    };
+  }
+
+  if (!compressedDataUrl || !compressedDataUrl.startsWith('data:image')) {
+    return {
+      url: '',
+      compressedDataUrl: '',
+      storageUploaded: false,
+      error: 'Formato de imagem inválido.',
+    };
+  }
+
+  if (compressedDataUrl.length > MAX_PHOTO_FILE_BYTES) {
+    return {
+      url: '',
+      compressedDataUrl: '',
+      storageUploaded: false,
+      error: 'A imagem comprimida ainda ultrapassa 2MB. Escolha outra foto.',
+    };
+  }
+
+  const blob = dataUrlToJpegBlob(compressedDataUrl);
+  if (!blob) {
+    return {
+      url: compressedDataUrl,
+      compressedDataUrl,
+      storageUploaded: false,
+      error: 'Não foi possível preparar a imagem para upload.',
+    };
+  }
+
+  const safeSlug = String(identifier || 'usuario')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 40) || 'usuario';
+  const filePath = `perfis/${safeSlug}_${Date.now()}.jpg`;
+  const candidateBuckets = ['avatars', 'fotos'];
+  let lastStorageError = '';
+
+  for (const bucket of candidateBuckets) {
+    let uploadRes = await supabase.storage
+      .from(bucket)
+      .upload(filePath, blob, {
+        contentType: 'image/jpeg',
+        cacheControl: '3600',
+        upsert: true,
+      });
+
+    if (uploadRes.error) {
+      const msgLower = (uploadRes.error.message || '').toLowerCase();
+      if (msgLower.includes('bucket') && msgLower.includes('not found')) {
+        try {
+          await supabase.storage.createBucket(bucket, { public: true });
+          uploadRes = await supabase.storage
+            .from(bucket)
+            .upload(filePath, blob, {
+              contentType: 'image/jpeg',
+              cacheControl: '3600',
+              upsert: true,
+            });
+        } catch {}
+      }
+    }
+
+    if (!uploadRes.error) {
+      const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(filePath);
+      const publicUrl = pubData?.publicUrl
+        ? `${pubData.publicUrl}${pubData.publicUrl.includes('?') ? '&' : '?'}v=${Date.now()}`
+        : '';
+      if (publicUrl) {
+        return {
+          url: publicUrl,
+          compressedDataUrl,
+          storageUploaded: true,
+        };
+      }
+    } else {
+      lastStorageError = uploadRes.error.message || `Falha ao enviar para bucket "${bucket}"`;
+    }
+  }
+
+  return {
+    url: compressedDataUrl,
+    compressedDataUrl,
+    storageUploaded: false,
+    error: lastStorageError || 'Falha no upload para o Storage do Supabase.',
+  };
 }
 
 function filterPayloadToExistingColumns(
@@ -1159,9 +1278,16 @@ export async function insertUsuarioSupabase(params: {
       setDriverRequirementsConfirmedLocal(cleanEmail, true);
     }
 
-    // Comprime apenas fotos realmente enviadas para no máximo 200KB
+    // Comprime fotos enviadas para no máximo 200KB e sobe foto de perfil ao Storage quando disponível
     const rawPhoto = params.foto || params.avatar || '';
-    const compressedPhoto = rawPhoto ? await compressImageToMax200KB(rawPhoto) : '';
+    let finalSignupPhoto = '';
+    if (rawPhoto) {
+      const uploadedSignupPhoto = await uploadProfilePhotoSupabase({
+        photo: rawPhoto,
+        identifier: cleanEmail,
+      });
+      finalSignupPhoto = uploadedSignupPhoto.url || uploadedSignupPhoto.compressedDataUrl || (await compressImageToMax200KB(rawPhoto));
+    }
     const compressedVehiclePhoto = params.foto_veiculo
       ? await compressImageToMax200KB(params.foto_veiculo)
       : '';
@@ -1256,12 +1382,18 @@ export async function insertUsuarioSupabase(params: {
     if (cleanCelular) row.celular = cleanCelular;
     if (cleanWhatsapp) row.whatsapp = cleanWhatsapp;
     if (cleanLogin) row.login = cleanLogin;
-    if (compressedPhoto) {
+    if (finalSignupPhoto) {
       if (!knownCols || knownCols.size === 0 || knownCols.has('foto')) {
-        row.foto = compressedPhoto;
+        row.foto = finalSignupPhoto;
+      }
+      if (knownCols && knownCols.has('foto_url')) {
+        row.foto_url = finalSignupPhoto;
+      }
+      if (knownCols && knownCols.has('avatar_url')) {
+        row.avatar_url = finalSignupPhoto;
       }
       if (knownCols && knownCols.has('avatar')) {
-        row.avatar = compressedPhoto;
+        row.avatar = finalSignupPhoto;
       }
     }
 
@@ -1337,7 +1469,7 @@ export async function insertUsuarioSupabase(params: {
             p_modelo: row.modelo || '',
             p_ano: Number(row.ano) || 2023,
             p_cnh: row.cnh || '',
-            p_foto: compressedPhoto || null,
+            p_foto: finalSignupPhoto || null,
           });
           if (!rpcProfile.error && rpcProfile.data) {
             return { success: true, data: stripSensitiveUserFields(rpcProfile.data) };
@@ -1724,6 +1856,9 @@ export async function saveUsuarioSupabase(user: {
       setDriverRequirementsConfirmedLocal(cleanEmail, true);
     }
 
+    const { data: authSessionRes } = await supabase.auth.getSession();
+    const hasAuthSession = Boolean(authSessionRes?.session?.access_token);
+
     // Verifica se já existe na nuvem (priorizando id numérico, e-mail anterior, e-mail atual ou login)
     let existing: any = null;
     if (user.id !== undefined && user.id !== null && /^\d+$/.test(String(user.id).trim())) {
@@ -1744,6 +1879,15 @@ export async function saveUsuarioSupabase(user: {
     }
     if (!existing && user.login) {
       existing = await getUsuarioSupabase(user.login);
+    }
+
+    if (!existing && (user.id || prevEmail) && !user.senha) {
+      return {
+        success: false,
+        error: hasAuthSession
+          ? 'Usuário não localizado para atualização no Supabase (verifique permissões de leitura/RLS na tabela usuarios).'
+          : 'Sessão Supabase Auth ausente ou expirada. Saia e entre novamente com seu e-mail e senha para salvar alterações.',
+      };
     }
 
     if (existing) {
@@ -1790,38 +1934,105 @@ export async function saveUsuarioSupabase(user: {
         updateData.data_aceite = user.data_aceite;
       }
 
-      const rawProfilePhoto = user.foto || user.avatar || '';
-      const compressedProfilePhoto = rawProfilePhoto
-        ? await compressImageToMax200KB(rawProfilePhoto)
-        : '';
-      if (compressedProfilePhoto) {
-        if (allowedCols.has('foto')) updateData.foto = compressedProfilePhoto;
-        if (allowedCols.has('avatar')) updateData.avatar = compressedProfilePhoto;
+      const rawProfilePhoto = String(user.foto || user.avatar || '').trim();
+      let finalProfilePhoto = '';
+      if (rawProfilePhoto) {
+        if (rawProfilePhoto.startsWith('http://') || rawProfilePhoto.startsWith('https://')) {
+          finalProfilePhoto = rawProfilePhoto;
+        } else {
+          const uploadRes = await uploadProfilePhotoSupabase({
+            photo: rawProfilePhoto,
+            identifier: cleanEmail || prevEmail || String(existing.id || ''),
+          });
+          if (!uploadRes.url && uploadRes.error) {
+            return { success: false, error: uploadRes.error };
+          }
+          finalProfilePhoto = uploadRes.url || uploadRes.compressedDataUrl || (await compressImageToMax200KB(rawProfilePhoto));
+        }
+      }
+
+      if (finalProfilePhoto) {
+        if (allowedCols.has('foto')) updateData.foto = finalProfilePhoto;
+        if (allowedCols.has('foto_url')) updateData.foto_url = finalProfilePhoto;
+        if (allowedCols.has('avatar_url')) updateData.avatar_url = finalProfilePhoto;
+        if (allowedCols.has('avatar')) updateData.avatar = finalProfilePhoto;
       }
 
       filterPayloadToExistingColumns(updateData, allowedCols, new Set());
       if (Object.keys(updateData).length === 0) {
+        if (finalProfilePhoto) {
+          return {
+            success: false,
+            error: 'Nenhuma coluna de foto (foto, foto_url, avatar_url) foi encontrada na tabela usuarios.',
+          };
+        }
         return { success: true, data: stripSensitiveUserFields(existing) };
       }
 
       let returnCols = buildSafeReturnCols(allowedCols);
       let lastSupabaseError = 'Erro ao atualizar usuário no Supabase.';
 
+      const performEmailFallbackUpdate = async (selectClause: string) => {
+        const emailMatchCol = allowedCols.has('email')
+          ? 'email'
+          : allowedCols.has('e-mail')
+          ? 'e-mail'
+          : null;
+        const targetMatchEmail = prevEmail || cleanEmail;
+        if (!emailMatchCol || !targetMatchEmail) return { data: null, error: null };
+        return supabase
+          .from('usuarios')
+          .update(updateData)
+          .eq(emailMatchCol, targetMatchEmail)
+          .select(selectClause);
+      };
+
       for (let attempt = 0; attempt < 25; attempt++) {
         const selectClause = returnCols.length > 0
           ? returnCols.map((c) => (c.includes('-') ? `"${c}"` : c)).join(',')
           : 'id';
 
-        const { data, error } = await supabase
-          .from('usuarios')
-          .update(updateData)
-          .eq('id', existing.id)
-          .select(selectClause);
+        const updateQuery = existing.id !== undefined && existing.id !== null
+          ? supabase
+              .from('usuarios')
+              .update(updateData)
+              .eq('id', existing.id)
+              .select(selectClause)
+          : performEmailFallbackUpdate(selectClause);
+
+        let { data, error } = await updateQuery;
+
+        if (!error && (!Array.isArray(data) || data.length === 0)) {
+          const emailRetry = await performEmailFallbackUpdate(selectClause);
+          if (!emailRetry.error && Array.isArray(emailRetry.data) && emailRetry.data.length > 0) {
+            data = emailRetry.data;
+          } else if (emailRetry.error) {
+            error = emailRetry.error;
+          }
+        }
 
         if (!error) {
+          if (!Array.isArray(data) || data.length === 0) {
+            return {
+              success: false,
+              error: hasAuthSession
+                ? 'O RLS da tabela usuarios bloqueou a atualização (0 linhas alteradas). Verifique a política usuarios_tudo_autenticado (ALL para authenticated).'
+                : 'Sessão Supabase Auth não autenticada para atualizar seu perfil com RLS ativo. Saia e entre novamente com e-mail e senha.',
+            };
+          }
+
+          if (finalProfilePhoto && (cleanEmail || prevEmail)) {
+            try {
+              await supabase
+                .from('motoristas')
+                .update({ foto_perfil: finalProfilePhoto })
+                .eq('email', cleanEmail || prevEmail);
+            } catch {}
+          }
+
           userProfileHydrationCache = null;
           userProfileHydrationCacheAt = 0;
-          return { success: true, data: stripSensitiveUserFields(data?.[0] || { ...existing, ...updateData }) };
+          return { success: true, data: stripSensitiveUserFields(data[0]) };
         }
 
         const msg = error.message || '';
@@ -1851,12 +2062,28 @@ export async function saveUsuarioSupabase(user: {
             }
           }
           if (Object.keys(updateData).length === 0) {
-            return { success: true, data: stripSensitiveUserFields(existing) };
+            return {
+              success: false,
+              error: 'As colunas informadas não existem na tabela usuarios do Supabase.',
+            };
           }
           if (stripped) continue;
 
-          await supabase.from('usuarios').update(updateData).eq('id', existing.id);
-          return { success: true, data: stripSensitiveUserFields(existing) };
+          const { data: plainData, error: plainErr } = await supabase
+            .from('usuarios')
+            .update(updateData)
+            .eq('id', existing.id)
+            .select('id');
+          if (plainErr) {
+            return { success: false, error: formatSupabaseError(plainErr) };
+          }
+          if (!Array.isArray(plainData) || plainData.length === 0) {
+            return {
+              success: false,
+              error: 'O RLS bloqueou a atualização em usuarios (0 linhas alteradas).',
+            };
+          }
+          return { success: true, data: stripSensitiveUserFields({ ...existing, ...updateData }) };
         }
 
         console.log('Erro Supabase saveUsuarioSupabase update:', error);
@@ -2924,7 +3151,7 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     name: u.nome || '',
     phone: u.celular || u.whatsapp || '',
     email,
-    avatar: u.foto || u.avatar || '',
+    avatar: extractPhotoFromRow(u),
     rating: typeof u.rating === 'number' ? u.rating : 0,
     totalRides: 0,
     vehicleModel: u.modelo || '',
@@ -3130,7 +3357,7 @@ export async function getAllPassengersFromSupabase(): Promise<AppUser[]> {
       login: u.login || (u['e-mail'] || u.email || ''),
       role: 'passenger' as const,
       tipo: 'passenger' as const,
-      avatar: u.foto || u.avatar || '',
+      avatar: extractPhotoFromRow(u),
       rating: typeof u.rating === 'number' ? u.rating : 0,
     }));
 }
@@ -3488,7 +3715,7 @@ export async function fetchUsuarioPhotoByIdentity(params: {
   } catch {}
 
   if (!row) return null;
-  const resolvedAvatar = String(row.foto || row.avatar || '').trim();
+  const resolvedAvatar = extractPhotoFromRow(row);
   return {
     avatar: resolvedAvatar,
     name: row.nome || undefined,
@@ -3569,8 +3796,8 @@ export async function hydrateRidesWithUserPhotosSupabase(rides: Ride[]): Promise
           null
         : null;
 
-      const pPhoto = pRow ? String(pRow.foto || pRow.avatar || '').trim() : '';
-      const dPhoto = dRow ? String(dRow.foto || dRow.avatar || '').trim() : '';
+      const pPhoto = pRow ? extractPhotoFromRow(pRow) : '';
+      const dPhoto = dRow ? extractPhotoFromRow(dRow) : '';
 
       const hydratedDriver = r.driver
         ? {
