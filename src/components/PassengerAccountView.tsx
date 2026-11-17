@@ -25,7 +25,14 @@ import {
 } from 'lucide-react';
 import { requestCurrentLocationFast } from '../services/addressSearchService';
 import { saveSessionUser } from '../services/userService';
-import { extractPhotoFromRow, saveUsuarioSupabase, uploadProfilePhotoSupabase } from '../supabase';
+import {
+  extractPhotoFromRow,
+  getUsuarioSupabase,
+  saveUsuarioSupabase,
+  supabase,
+  uploadProfilePhotoSupabase,
+  withPhotoCacheBuster,
+} from '../supabase';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 
 interface PassengerAccountViewProps {
@@ -78,14 +85,71 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
 
   useEffect(() => {
     if (!isEditingProfile && !hasPendingAvatarPreview) {
-      setUserAvatar(currentUser?.avatar || '');
-      setDraftAvatar(currentUser?.avatar || '');
+      setUserAvatar((prev) => currentUser?.avatar || prev || '');
+      setDraftAvatar((prev) => currentUser?.avatar || prev || '');
       setPendingPhotoFile(null);
       setDraftName(currentUser?.name || '');
       setDraftEmail(currentUser?.email || '');
       setDraftPhone(currentUser?.whatsapp || currentUser?.phone || '');
     }
   }, [currentUser, isEditingProfile, hasPendingAvatarPreview]);
+
+  useEffect(() => {
+    let active = true;
+    const loadProfilePhotoFromSupabase = async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const authUser = authData?.user;
+        const targetEmail = String(currentUser?.email || authUser?.email || '').trim().toLowerCase();
+        if (!targetEmail) return;
+
+        let row: any = null;
+        try {
+          const { data } = await supabase
+            .from('usuarios')
+            .select('foto, avatar')
+            .eq('email', targetEmail)
+            .single();
+          row = data;
+        } catch {}
+
+        if (!row) {
+          try {
+            row = await getUsuarioSupabase(targetEmail);
+          } catch {}
+        }
+
+        const rawFoto = String(
+          row?.avatar ||
+            row?.foto ||
+            authUser?.user_metadata?.avatar_url ||
+            authUser?.user_metadata?.foto ||
+            currentUser?.avatar ||
+            ''
+        ).trim();
+
+        const fotoUrl = rawFoto ? withPhotoCacheBuster(rawFoto) : '';
+        console.log('fotoUrl carregada:', fotoUrl);
+
+        if (!active || !fotoUrl || hasPendingAvatarPreview) return;
+
+        setUserAvatar(fotoUrl);
+        if (!isEditingProfile) {
+          setDraftAvatar(fotoUrl);
+        }
+        if (onUpdateAvatar && fotoUrl !== currentUser?.avatar) {
+          onUpdateAvatar(fotoUrl);
+        }
+      } catch (err) {
+        console.log('fotoUrl carregada: erro ao consultar usuarios', err);
+      }
+    };
+
+    loadProfilePhotoFromSupabase();
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.email]);
 
   const handleOpenEditProfile = () => {
     setDraftName(currentUser?.name || '');
@@ -204,8 +268,8 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         return;
       }
 
-      const returnedPhoto = extractPhotoFromRow(res.data) || photoToSave || '';
-      if (isChangingPhoto && !returnedPhoto) {
+      const returnedPhotoRaw = extractPhotoFromRow(res.data) || photoToSave || '';
+      if (isChangingPhoto && !returnedPhotoRaw) {
         setProfileErrorMsg(
           storageErrorDetail
             ? `Erro no upload da foto (${storageErrorDetail}). Verifique as políticas do Storage e tente novamente.`
@@ -213,6 +277,20 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         );
         return;
       }
+
+      if (returnedPhotoRaw) {
+        try {
+          await supabase.auth.updateUser({
+            data: {
+              avatar_url: returnedPhotoRaw,
+              foto: returnedPhotoRaw,
+            },
+          });
+        } catch {}
+      }
+
+      const fotoUrlBusted = returnedPhotoRaw ? withPhotoCacheBuster(returnedPhotoRaw) : '';
+      console.log('fotoUrl carregada:', fotoUrlBusted);
 
       const updatedUser: AppUser = {
         ...(currentUser || {
@@ -228,16 +306,16 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         email: cleanEmail,
         phone: cleanPhone,
         whatsapp: cleanPhone,
-        avatar: returnedPhoto,
+        avatar: fotoUrlBusted,
       };
 
-      setUserAvatar(returnedPhoto);
-      setDraftAvatar(returnedPhoto);
+      setUserAvatar(fotoUrlBusted);
+      setDraftAvatar(fotoUrlBusted);
       setPendingPhotoFile(null);
       setHasPendingAvatarPreview(false);
       saveSessionUser(updatedUser);
-      if (onUpdateAvatar && returnedPhoto) {
-        onUpdateAvatar(returnedPhoto);
+      if (onUpdateAvatar && fotoUrlBusted) {
+        onUpdateAvatar(fotoUrlBusted);
       }
       if (onUpdateProfile) {
         onUpdateProfile(updatedUser);

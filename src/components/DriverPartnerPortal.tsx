@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow } from '../supabase';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow, getUsuarioSupabase, supabase, withPhotoCacheBuster } from '../supabase';
 import { compressImageToMax200KB, validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
@@ -474,6 +474,74 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     hasPendingDriverAvatar,
   ]);
 
+  useEffect(() => {
+    let active = true;
+    const loadDriverPhotoFromSupabase = async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const authUser = authData?.user;
+        const targetEmail = String(currentDriver.email || currentUser?.email || authUser?.email || '')
+          .trim()
+          .toLowerCase();
+        if (!targetEmail) return;
+
+        let row: any = null;
+        try {
+          const { data } = await supabase
+            .from('usuarios')
+            .select('foto, avatar')
+            .eq('email', targetEmail)
+            .single();
+          row = data;
+        } catch {}
+
+        if (!row) {
+          try {
+            row = await getUsuarioSupabase(targetEmail);
+          } catch {}
+        }
+
+        const rawFoto = String(
+          row?.avatar ||
+            row?.foto ||
+            authUser?.user_metadata?.avatar_url ||
+            authUser?.user_metadata?.foto ||
+            currentDriver.avatar ||
+            currentUser?.avatar ||
+            ''
+        ).trim();
+
+        const fotoUrl = rawFoto ? withPhotoCacheBuster(rawFoto) : '';
+        console.log('fotoUrl carregada:', fotoUrl);
+
+        if (!active || !fotoUrl || hasPendingDriverAvatar) return;
+
+        if (!isEditingDriverProfile) {
+          setDraftDriverAvatar(fotoUrl);
+        }
+        if (fotoUrl !== currentDriver.avatar) {
+          onUpdateDriver({ ...currentDriver, avatar: fotoUrl });
+        }
+        if (currentUser && fotoUrl !== currentUser.avatar && onUpdateUserProfile) {
+          const syncedUser: AppUser = {
+            ...currentUser,
+            avatar: fotoUrl,
+            driverData: { ...currentDriver, avatar: fotoUrl },
+          };
+          saveSessionUser(syncedUser);
+          onUpdateUserProfile(syncedUser);
+        }
+      } catch (err) {
+        console.log('fotoUrl carregada (motorista): erro ao consultar usuarios', err);
+      }
+    };
+
+    loadDriverPhotoFromSupabase();
+    return () => {
+      active = false;
+    };
+  }, [currentDriver.email, currentUser?.email]);
+
   const handleOpenDriverProfileEdit = () => {
     setDraftDriverName(currentDriver.name || '');
     setDraftDriverEmail(currentDriver.email || '');
@@ -598,8 +666,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         return;
       }
 
-      const returnedPhoto = extractPhotoFromRow(res.data) || photoToSave || '';
-      if (isChangingPhoto && !returnedPhoto) {
+      const returnedPhotoRaw = extractPhotoFromRow(res.data) || photoToSave || '';
+      if (isChangingPhoto && !returnedPhotoRaw) {
         setDriverProfileErrorMsg(
           storageErrorDetail
             ? `Erro no upload da foto (${storageErrorDetail}). Verifique as políticas do Storage e tente novamente.`
@@ -608,12 +676,26 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         return;
       }
 
+      if (returnedPhotoRaw) {
+        try {
+          await supabase.auth.updateUser({
+            data: {
+              avatar_url: returnedPhotoRaw,
+              foto: returnedPhotoRaw,
+            },
+          });
+        } catch {}
+      }
+
+      const fotoUrlBusted = returnedPhotoRaw ? withPhotoCacheBuster(returnedPhotoRaw) : '';
+      console.log('fotoUrl carregada:', fotoUrlBusted);
+
       const updatedDriver: Driver = {
         ...currentDriver,
         name: cleanName,
         email: cleanEmail,
         phone: cleanPhone,
-        avatar: returnedPhoto,
+        avatar: fotoUrlBusted,
       };
       onUpdateDriver(updatedDriver);
 
@@ -625,7 +707,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           email: cleanEmail,
           phone: cleanPhone,
           whatsapp: cleanPhone,
-          avatar: returnedPhoto,
+          avatar: fotoUrlBusted,
           driverData: updatedDriver,
         };
         saveSessionUser(updatedUser);
@@ -634,7 +716,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         }
       }
 
-      setDraftDriverAvatar(returnedPhoto);
+      setDraftDriverAvatar(fotoUrlBusted);
       setPendingDriverPhotoFile(null);
       setHasPendingDriverAvatar(false);
       setIsEditingDriverProfile(false);

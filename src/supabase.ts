@@ -70,7 +70,16 @@ const FORBIDDEN_INVENTED_COLS = new Set([
 
 export function extractPhotoFromRow(row: any): string {
   if (!row || typeof row !== 'object') return '';
-  return String(row.foto || row.foto_url || row.avatar_url || row.avatar || '').trim();
+  return String(row.avatar || row.foto || row.foto_url || row.avatar_url || '').trim();
+}
+
+export function withPhotoCacheBuster(url: string): string {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('data:')) return trimmed;
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return trimmed;
+  const base = trimmed.replace(/([?&])(t|v)=\d+(&|$)/g, (_, p1, _p2, p3) => (p3 === '&' ? p1 : '')).replace(/[?&]$/, '');
+  return `${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}`;
 }
 
 export function stripSensitiveUserFields<T extends Record<string, any> | null | undefined>(row: T): T {
@@ -1045,7 +1054,8 @@ export async function uploadProfilePhotoSupabase(params: {
       return { url: '', compressedDataUrl: '', storageUploaded: false, error: 'Foto vazia.' };
     }
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return { url: trimmed, compressedDataUrl: trimmed, storageUploaded: true };
+      const cleanHttp = trimmed.replace(/([?&])(t|v)=\d+(&|$)/g, (_, p1, _p2, p3) => (p3 === '&' ? p1 : '')).replace(/[?&]$/, '');
+      return { url: cleanHttp, compressedDataUrl: cleanHttp, storageUploaded: true };
     }
   } else {
     const sizeErr = validatePhotoMax2MB(photo);
@@ -1130,9 +1140,7 @@ export async function uploadProfilePhotoSupabase(params: {
 
     if (!uploadRes.error) {
       const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(filePath);
-      const publicUrl = pubData?.publicUrl
-        ? `${pubData.publicUrl}${pubData.publicUrl.includes('?') ? '&' : '?'}v=${Date.now()}`
-        : '';
+      const publicUrl = pubData?.publicUrl ? String(pubData.publicUrl).trim() : '';
       if (publicUrl) {
         return {
           url: publicUrl,
@@ -1178,7 +1186,7 @@ export async function selectSafeUsuariosRows(applyFilter?: (q: any) => any): Pro
   const knownCols = await getUsuariosTableColumns();
   let cols = knownCols && knownCols.size > 0
     ? SAFE_USUARIO_COLS_LIST.filter((c) => knownCols.has(c))
-    : ['id', 'created_at', 'nome', 'email', 'e-mail', 'celular', 'whatsapp', 'login', 'tipo', 'categoria', 'placa', 'modelo', 'ano', 'cnh', 'foto', 'rating', 'saldo', 'divida'];
+    : ['id', 'created_at', 'nome', 'email', 'e-mail', 'celular', 'whatsapp', 'login', 'tipo', 'categoria', 'placa', 'modelo', 'ano', 'cnh', 'foto', 'avatar', 'rating', 'saldo', 'divida'];
 
   if (cols.length === 0) cols = ['id', 'nome', 'tipo'];
   let useFilter = Boolean(applyFilter);
@@ -1630,13 +1638,33 @@ export async function loginUsuarioSupabase(
 
     if (!foundRow) {
       const meta: any = authData.user.user_metadata || {};
+      const metaPhoto = String(meta.avatar_url || meta.foto || meta.avatar || '').trim();
       foundRow = {
         id: authData.user.id,
         nome: meta.nome || authEmail.split('@')[0],
         email: authEmail,
         login: authEmail,
         tipo: meta.tipo || (meta.role === 'admin' ? 'ADM' : 'passenger'),
+        foto: metaPhoto,
+        avatar: metaPhoto,
       };
+    } else if (!extractPhotoFromRow(foundRow)) {
+      try {
+        const { data: photoRow } = await supabase
+          .from('usuarios')
+          .select('foto, avatar')
+          .eq('email', authEmail)
+          .single();
+        const resolvedFoto =
+          photoRow?.avatar ||
+          photoRow?.foto ||
+          authData.user.user_metadata?.avatar_url ||
+          authData.user.user_metadata?.foto ||
+          '';
+        if (resolvedFoto) {
+          foundRow = { ...foundRow, foto: resolvedFoto, avatar: resolvedFoto };
+        }
+      } catch {}
     }
 
     return { success: true, data: stripSensitiveUserFields(foundRow) };
@@ -2027,6 +2055,18 @@ export async function saveUsuarioSupabase(user: {
                 .from('motoristas')
                 .update({ foto_perfil: finalProfilePhoto })
                 .eq('email', cleanEmail || prevEmail);
+            } catch {}
+
+            try {
+              const activeAuthEmail = String(authSessionRes?.session?.user?.email || '').trim().toLowerCase();
+              if (activeAuthEmail && (activeAuthEmail === cleanEmail || activeAuthEmail === prevEmail)) {
+                await supabase.auth.updateUser({
+                  data: {
+                    avatar_url: finalProfilePhoto,
+                    foto: finalProfilePhoto,
+                  },
+                });
+              }
             } catch {}
           }
 

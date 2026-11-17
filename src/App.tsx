@@ -80,7 +80,9 @@ import {
   fetchUsuarioPhotoByIdentity,
   signOutSupabase,
   fetchDriverApplicationsSupabase,
-  mergeDriverWithApplication
+  mergeDriverWithApplication,
+  supabase,
+  withPhotoCacheBuster
 } from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
 
@@ -271,9 +273,37 @@ export default function App() {
         }
 
         const { user: hydratedUser, driver: hydratedDriver } = mapSupabaseRowToAppUser(cloudRow);
+        let directPhoto = hydratedUser.avatar || '';
+        if (!directPhoto && sessionIdentifier.includes('@')) {
+          try {
+            const { data: photoRow } = await supabase
+              .from('usuarios')
+              .select('foto, avatar')
+              .eq('email', sessionIdentifier.trim().toLowerCase())
+              .single();
+            directPhoto = String(photoRow?.avatar || photoRow?.foto || '').trim();
+          } catch {}
+        }
+        if (!directPhoto) {
+          try {
+            const { data: authUserRes } = await supabase.auth.getUser();
+            directPhoto = String(
+              authUserRes?.user?.user_metadata?.avatar_url ||
+                authUserRes?.user?.user_metadata?.foto ||
+                ''
+            ).trim();
+          } catch {}
+        }
+        const resolvedAvatar = withPhotoCacheBuster(directPhoto || session.avatar || '');
+        if (resolvedAvatar) {
+          console.log('fotoUrl carregada:', resolvedAvatar);
+        }
         const mergedUser: AppUser = {
           ...hydratedUser,
-          avatar: hydratedUser.avatar || session.avatar || '',
+          avatar: resolvedAvatar,
+          driverData: hydratedDriver
+            ? { ...hydratedDriver, avatar: resolvedAvatar || hydratedDriver.avatar }
+            : hydratedUser.driverData,
         };
         setCurrentUser(mergedUser);
         saveSessionUser(mergedUser);
