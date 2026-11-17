@@ -34,6 +34,7 @@ export interface StoredUserAccount {
   aceitou_contrato?: boolean;
   aceitou_termos?: boolean;
   aceitou_lgpd?: boolean;
+  documentos_aceitos?: boolean;
   data_aceite?: string;
 }
 
@@ -347,6 +348,7 @@ export async function saveUserAccount(
       aceitou_contrato: account.aceitou_contrato,
       aceitou_termos: account.aceitou_termos,
       aceitou_lgpd: account.aceitou_lgpd,
+      documentos_aceitos: account.documentos_aceitos,
       data_aceite: account.data_aceite,
     });
 

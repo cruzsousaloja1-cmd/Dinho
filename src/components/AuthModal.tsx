@@ -35,6 +35,7 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAuthSuccess: (user: AppUser, driver?: Driver) => void;
+  onOpenPrivacyPage?: () => void;
   initialMode?: 'login' | 'register';
   initialRole?: 'passenger' | 'driver';
 }
@@ -43,6 +44,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   onAuthSuccess,
+  onOpenPrivacyPage,
   initialMode = 'login',
   initialRole = 'passenger',
 }) => {
@@ -78,6 +80,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [acceptedContract, setAcceptedContract] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -181,8 +184,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorMessage('A confirmação de senha não confere com a senha digitada.');
         return;
       }
-      if (role !== 'passenger' && (!acceptedContract || !acceptedTerms || !acceptedLgpd)) {
-        setErrorMessage('Marque os documentos obrigatórios para continuar.');
+      if (role !== 'passenger' && (!acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacy)) {
+        setErrorMessage('Marque os 4 documentos para trabalhar');
         return;
       }
       if (role === 'driver') {
@@ -231,6 +234,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             }
           }
 
+          const confirmedNow = new Date().toISOString();
           createdDriver = {
             id: '',
             name: name.trim() || (cleanEmail.split('@')[0].toUpperCase()),
@@ -250,6 +254,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             crlvPhoto,
             approvalStatus: 'pendente',
             categoryConfigured: true,
+            requirementsConfirmed: true,
+            requirementsConfirmedAt: confirmedNow,
+            documentosAceitos: true,
+            dataAceite: confirmedNow,
             rating: 0,
             totalRides: 0,
             status: 'pending_approval',
@@ -263,12 +271,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             cnhVerified: false,
             vehicleVerified: false,
             criminalRecordClear: true,
-            registrationDate: new Date().toISOString().split('T')[0],
+            registrationDate: confirmedNow.split('T')[0],
             comfortEligible,
             comfortEligibilityReason: reason,
           };
         }
 
+        const confirmedAt = new Date().toISOString();
         const userTipo = role === 'driver' ? 'driver' : 'passenger';
         const appUser: AppUser = {
           id: '',
@@ -297,11 +306,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           avatar: avatar || '',
           rating: 0,
           driverData: createdDriver,
-          createdAt: new Date().toISOString(),
+          createdAt: confirmedAt,
+          documentos_aceitos: true,
           aceitou_contrato: true,
           aceitou_termos: true,
           aceitou_lgpd: true,
-          data_aceite: new Date().toISOString(),
+          data_aceite: confirmedAt,
         }, true);
 
         if (!saveRes.success) {
@@ -334,6 +344,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             approvalStatus: 'pendente',
             online: false,
             driverStatus: 'pending_approval',
+            documentosAceitos: true,
+            dataAceite: confirmedAt,
           }).catch(() => {});
         }
 
@@ -707,9 +719,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 acceptedContract={acceptedContract}
                 acceptedTerms={acceptedTerms}
                 acceptedLgpd={acceptedLgpd}
+                acceptedPrivacy={acceptedPrivacy}
                 onChangeContract={setAcceptedContract}
                 onChangeTerms={setAcceptedTerms}
                 onChangeLgpd={setAcceptedLgpd}
+                onChangePrivacy={setAcceptedPrivacy}
+                onOpenPrivacyPage={onOpenPrivacyPage}
                 theme="light"
               />
             </div>
@@ -747,24 +762,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           {/* Submit Action */}
           {(() => {
-            const needsLegalDocs = mode === 'register' && role !== 'passenger' && (!acceptedContract || !acceptedTerms || !acceptedLgpd);
+            const needsLegalDocs =
+              mode === 'register' &&
+              role !== 'passenger' &&
+              (!acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacy);
             return (
               <button
                 type="submit"
-                disabled={isSubmitting || needsLegalDocs}
+                disabled={isSubmitting}
                 className={`w-full font-heading font-black py-4 rounded-xl transition-all text-sm sm:text-base flex items-center justify-center gap-2 mt-4 uppercase tracking-wider ${
-                  needsLegalDocs
+                  isSubmitting
                     ? 'bg-slate-300 text-slate-600 cursor-not-allowed opacity-80'
+                    : needsLegalDocs
+                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border-2 border-amber-500 cursor-pointer'
                     : mode === 'register'
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/25 active:scale-98 disabled:opacity-50'
-                    : 'bg-[#ff6a00] hover:bg-[#e05e00] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/20 active:scale-98 disabled:opacity-50'
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/25 active:scale-98'
+                    : 'bg-[#ff6a00] hover:bg-[#e05e00] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/20 active:scale-98'
                 }`}
               >
                 <span>
                   {mode === 'login'
                     ? 'ENTRAR DIRETO NA CENTRAL DE ATENDIMENTO'
                     : needsLegalDocs
-                    ? 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'
+                    ? 'Marque os 4 documentos para trabalhar'
                     : 'CONCLUIR CADASTRO E ENTRAR NA CENTRAL DE CORRIDAS'}
                 </span>
                 <ArrowRight className="w-5 h-5" />

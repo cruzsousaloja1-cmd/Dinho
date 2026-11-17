@@ -15,8 +15,6 @@ import {
   Loader2,
   Camera,
   LogOut,
-  CheckSquare,
-  Square,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveUserAccount } from '../services/userService';
@@ -218,6 +216,7 @@ interface DriverWorkSelectionViewProps {
   onBackToRides?: () => void;
   onRenewWeeklyPlan?: (driver?: Driver) => void;
   onLogout?: () => void;
+  onOpenPrivacyPage?: () => void;
   isMandatorySetup?: boolean;
   hideLockedOnlineButton?: boolean;
 }
@@ -237,6 +236,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   onCompleteDriverRegister,
   onBackToRides,
   onLogout,
+  onOpenPrivacyPage,
   isMandatorySetup = false,
   hideLockedOnlineButton = false,
 }) => {
@@ -283,10 +283,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   );
   const [cnhBackPhoto, setCnhBackPhoto] = useState(currentUser.driverData?.cnhBackPhoto || '');
   const [crlvPhoto, setCrlvPhoto] = useState(currentUser.driverData?.crlvPhoto || '');
-  const [requirementsChecked, setRequirementsChecked] = useState<boolean>(false);
   const [acceptedContract, setAcceptedContract] = useState<boolean>(false);
   const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState<boolean>(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -309,10 +309,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     } else if (key === 'motoboy_passageiro') {
       setHasTrunk('Não');
     }
-    setRequirementsChecked(false);
     setAcceptedContract(false);
     setAcceptedTerms(false);
     setAcceptedLgpd(false);
+    setAcceptedPrivacy(false);
     setErrorMessage(null);
     setStage('fill_details');
   };
@@ -402,13 +402,13 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       return;
     }
 
-    if (!requirementsChecked) {
-      setErrorMessage('Marque a caixa obrigatória: "Li e confirmo que meu veículo atende a todas as exigências acima".');
+    if (!isCarCategory && !vehiclePhoto) {
+      setErrorMessage('Envie a foto da moto obrigatória para concluir o cadastro de Motoboy.');
       return;
     }
 
-    if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
-      setErrorMessage('Marque os 3 aceites obrigatórios (Contrato de Parceria RACE, Termos de Uso e LGPD) antes de salvar.');
+    if (!acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacy) {
+      setErrorMessage('Marque os 4 documentos para trabalhar');
       return;
     }
 
@@ -433,6 +433,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         categoryConfigured: true,
         requirementsConfirmed: true,
         requirementsConfirmedAt: confirmedTimestamp,
+        documentosAceitos: true,
+        dataAceite: confirmedTimestamp,
         vehicleModel: cleanModel,
         vehiclePlate: cleanPlate,
         vehicleColor: cleanColor,
@@ -489,6 +491,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
       saveUserAccount({
         ...updatedAccount,
+        documentos_aceitos: true,
         aceitou_contrato: true,
         aceitou_termos: true,
         aceitou_lgpd: true,
@@ -515,6 +518,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         approvalStatus: nextApprovalStatus,
         online: false,
         driverStatus: nextApprovalStatus === 'aprovado' ? 'offline' : 'pending_approval',
+        documentosAceitos: true,
+        dataAceite: confirmedTimestamp,
         preserveExistingApproval: keepApproved,
       }).catch(() => {});
 
@@ -525,6 +530,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         ano: yearNum,
         cnh: cleanCnh,
         tipo: selectedCategory.userTipo,
+        documentos_aceitos: true,
+        aceitou_contrato: true,
+        aceitou_termos: true,
+        aceitou_lgpd: true,
+        data_aceite: confirmedTimestamp,
       }).catch(() => ({ success: false, data: null }));
 
       if (!updRes.success || !updRes.data) {
@@ -542,6 +552,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           ano: yearNum,
           cnh: cleanCnh,
           foto: newDriver.avatar,
+          documentos_aceitos: true,
+          aceitou_contrato: true,
+          aceitou_termos: true,
+          aceitou_lgpd: true,
+          data_aceite: confirmedTimestamp,
         }).catch(() => {});
       }
 
@@ -605,18 +620,27 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             Olá, <strong className="text-white">{currentUser.name}</strong>! Selecione uma das 4 modalidades abaixo para ver os requisitos obrigatórios, informar os dados do veículo e confirmar suas exigências.
           </p>
 
-          {!hideLockedOnlineButton && (
-            <div className="pt-1">
+          <div className="pt-1 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => handleSelectCategory(initialKey)}
+              className="w-full py-3.5 px-5 rounded-2xl bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#ff6a00]/25 transition-all"
+            >
+              <span>Completar cadastro para trabalhar</span>
+              <ArrowRight className="w-4 h-4 shrink-0" />
+            </button>
+
+            {!hideLockedOnlineButton && (
               <button
                 type="button"
                 disabled
-                className="w-full py-3.5 px-5 rounded-2xl bg-zinc-800 text-zinc-400 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed border border-zinc-700"
+                className="w-full py-3 px-5 rounded-2xl bg-zinc-800 text-zinc-400 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed border border-zinc-700"
               >
                 <Lock className="w-4 h-4 shrink-0" />
                 <span>Escolha sua categoria para ficar ONLINE</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* 4 Cards Grandes Clicáveis com Prévia dos Requisitos */}
@@ -676,14 +700,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     );
   }
 
-  // ESTÁGIO 2: EXIGÊNCIAS DA MODALIDADE + FORMULÁRIO + CHECKBOX OBRIGATÓRIO
+  // ESTÁGIO 2: CADASTRO COMPLETO + EXIGÊNCIAS DA MODALIDADE + 4 CHECKBOXES OBRIGATÓRIOS
   if (stage === 'fill_details') {
     const isCarCategory = selectedCategory.role === 'driver';
     const isDeliveryMoto = selectedCategory.key === 'motoboy_entregas';
     const all4CheckboxesMarked =
-      requirementsChecked && acceptedContract && acceptedTerms && acceptedLgpd;
-    const isSaveBlocked =
-      isSaving || !all4CheckboxesMarked || Boolean(liveBlockingAlert);
+      acceptedContract && acceptedTerms && acceptedLgpd && acceptedPrivacy;
 
     return (
       <div className="space-y-5 max-w-2xl mx-auto py-2 animate-fade-in">
@@ -702,12 +724,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           </span>
         </div>
 
-        {/* Aviso para cadastros já existentes confirmarem exigências */}
-        {hasExistingVehicleSetup && !currentUser.driverData?.requirementsConfirmed && (
+        {/* Aviso para cadastros já existentes confirmarem documentos */}
+        {hasExistingVehicleSetup && !currentUser.driverData?.documentosAceitos && (
           <div className="bg-amber-50 border-2 border-amber-400 text-amber-950 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
             <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
             <div className="text-xs sm:text-sm font-bold">
-              Cadastro já existente localizado! Seus dados foram mantidos abaixo — revise os requisitos da modalidade e marque a confirmação obrigatória para voltar a ficar ONLINE.
+              Complete os dados do veículo, envie as fotos obrigatórias e marque os 4 documentos abaixo para liberar seu cadastro para aprovação e trabalho.
             </div>
           </div>
         )}
@@ -715,10 +737,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         {/* Cabeçalho do Formulário */}
         <div className="space-y-1">
           <h2 className="text-xl sm:text-2xl font-heading font-black tracking-tight">
-            Cadastro: {selectedCategory.title}
+            {isCarCategory ? 'Cadastro Completo Motorista' : 'Cadastro Completo Motoboy'}
           </h2>
           <p className="text-xs sm:text-sm opacity-80 font-medium">
-            Confira as exigências, preencha os dados do seu {isCarCategory ? 'carro' : 'veículo'} e confirme os requisitos para salvar e ficar ONLINE.
+            {selectedCategory.title} — Preencha os dados do seu {isCarCategory ? 'carro' : 'moto'}, envie as fotos e marque os 4 documentos obrigatórios para trabalhar.
           </p>
         </div>
 
@@ -1128,9 +1150,9 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                 )}
               </div>
 
-              {/* Fotos: Moto, CNH (Frente), CNH (Verso) e CRLV */}
+              {/* Fotos: Moto (Obrigatória), CNH (Frente), CNH (Verso) e CRLV */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                <label className="flex flex-col items-center justify-center p-3.5 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${vehiclePhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
                   <input
                     type="file"
                     accept="image/*"
@@ -1148,8 +1170,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   ) : (
                     <>
                       <Camera className="w-5 h-5 text-[#ff6a00]" />
-                      <span className="text-[11px] font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel}</span>
-                      <span className="text-[10px] text-slate-500">Opcional</span>
+                      <span className="text-[11px] font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel} *</span>
+                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
                     </>
                   )}
                 </label>
@@ -1243,47 +1265,28 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             />
           </div>
 
-          {/* CHECKBOX OBRIGATÓRIO ANTES DE "Salvar e ficar ONLINE" */}
-          <label
-            className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all select-none ${
-              requirementsChecked
-                ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
-                : 'bg-amber-50 border-amber-400 text-slate-900 hover:border-[#ff6a00]'
-            }`}
-          >
-            <input
-              type="checkbox"
-              checked={requirementsChecked}
-              onChange={(e) => setRequirementsChecked(e.target.checked)}
-              className="sr-only"
-            />
-            {requirementsChecked ? (
-              <CheckSquare className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
-            ) : (
-              <Square className="w-6 h-6 text-amber-700 shrink-0 mt-0.5" />
-            )}
-            <span className="text-xs sm:text-sm font-black leading-snug">
-              Li e confirmo que meu veículo atende a todas as exigências acima
-            </span>
-          </label>
-
-          {/* 3 CHECKBOXES OBRIGATÓRIOS: CONTRATO, TERMOS E LGPD */}
+          {/* 4 CHECKBOXES OBRIGATÓRIOS: 1) CONTRATO, 2) TERMOS, 3) LGPD, 4) POLÍTICA DE PRIVACIDADE */}
           <LegalConsentSection
             acceptedContract={acceptedContract}
             acceptedTerms={acceptedTerms}
             acceptedLgpd={acceptedLgpd}
+            acceptedPrivacy={acceptedPrivacy}
             onChangeContract={setAcceptedContract}
             onChangeTerms={setAcceptedTerms}
             onChangeLgpd={setAcceptedLgpd}
+            onChangePrivacy={setAcceptedPrivacy}
+            onOpenPrivacyPage={onOpenPrivacyPage}
             theme="light"
           />
 
           <button
             type="submit"
-            disabled={isSaveBlocked}
+            disabled={isSaving || Boolean(liveBlockingAlert)}
             className={`w-full py-4 px-6 rounded-2xl font-heading font-black text-base sm:text-lg transition-all shadow-lg flex items-center justify-center gap-2 ${
-              isSaveBlocked
+              isSaving || Boolean(liveBlockingAlert)
                 ? 'bg-slate-300 text-slate-600 border-2 border-slate-400 cursor-not-allowed opacity-85'
+                : !all4CheckboxesMarked
+                ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border-2 border-amber-500 cursor-pointer'
                 : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer active:scale-[0.99]'
             }`}
           >
@@ -1291,6 +1294,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
                 <span>Salvando no Supabase...</span>
+              </>
+            ) : !all4CheckboxesMarked ? (
+              <>
+                <Lock className="w-5 h-5" />
+                <span>Marque os 4 documentos para trabalhar</span>
               </>
             ) : (
               <>

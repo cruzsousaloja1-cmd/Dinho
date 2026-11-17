@@ -52,6 +52,7 @@ const SAFE_USUARIO_COLS_LIST = [
   'aceitou_contrato',
   'aceitou_termos',
   'aceitou_lgpd',
+  'documentos_aceitos',
   'data_aceite',
 ];
 
@@ -115,8 +116,19 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   foto TEXT,
   rating NUMERIC DEFAULT 0.0,
   saldo NUMERIC DEFAULT 0.0,
-  divida NUMERIC DEFAULT 0.00
+  divida NUMERIC DEFAULT 0.00,
+  documentos_aceitos BOOLEAN DEFAULT false,
+  aceitou_contrato BOOLEAN DEFAULT false,
+  aceitou_termos BOOLEAN DEFAULT false,
+  aceitou_lgpd BOOLEAN DEFAULT false,
+  data_aceite TIMESTAMP WITH TIME ZONE
 );
+
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS documentos_aceitos BOOLEAN DEFAULT false;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_contrato BOOLEAN DEFAULT false;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_termos BOOLEAN DEFAULT false;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_lgpd BOOLEAN DEFAULT false;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS data_aceite TIMESTAMP WITH TIME ZONE;
 
 -- 2. TABELA DE CORRIDAS (Tempo Real via Supabase Realtime)
 CREATE TABLE IF NOT EXISTS public.corridas (
@@ -215,6 +227,8 @@ ALTER TABLE public.motoristas ADD COLUMN IF NOT EXISTS foto_veiculo TEXT;
 ALTER TABLE public.motoristas ADD COLUMN IF NOT EXISTS status_aprovacao TEXT DEFAULT 'pendente';
 ALTER TABLE public.motoristas ADD COLUMN IF NOT EXISTS motivo_reprovacao TEXT DEFAULT '';
 ALTER TABLE public.motoristas ADD COLUMN IF NOT EXISTS aprovado_em TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.motoristas ADD COLUMN IF NOT EXISTS documentos_aceitos BOOLEAN DEFAULT false;
+ALTER TABLE public.motoristas ADD COLUMN IF NOT EXISTS data_aceite TIMESTAMP WITH TIME ZONE;
 
 -- 4. TABELA DE PAGAMENTOS (Repasses 85% Motorista e Saques)
 CREATE TABLE IF NOT EXISTS public.pagamentos (
@@ -1301,6 +1315,7 @@ export async function insertUsuarioSupabase(params: {
   aceitou_contrato?: boolean;
   aceitou_termos?: boolean;
   aceitou_lgpd?: boolean;
+  documentos_aceitos?: boolean;
   data_aceite?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
@@ -1521,6 +1536,9 @@ export async function insertUsuarioSupabase(params: {
       }
       if (typeof params.aceitou_lgpd === 'boolean' && knownCols.has('aceitou_lgpd')) {
         row.aceitou_lgpd = params.aceitou_lgpd;
+      }
+      if (typeof params.documentos_aceitos === 'boolean' && knownCols.has('documentos_aceitos')) {
+        row.documentos_aceitos = params.documentos_aceitos;
       }
       if (params.data_aceite && knownCols.has('data_aceite')) {
         row.data_aceite = params.data_aceite;
@@ -1816,6 +1834,7 @@ export async function updateMotoristaSupabase(
     aceitou_contrato?: boolean;
     aceitou_termos?: boolean;
     aceitou_lgpd?: boolean;
+    documentos_aceitos?: boolean;
     data_aceite?: string;
   }
 ): Promise<{ success: boolean; data?: any; error?: string }> {
@@ -1855,6 +1874,9 @@ export async function updateMotoristaSupabase(
       }
       if (typeof params.aceitou_lgpd === 'boolean' && knownCols.has('aceitou_lgpd')) {
         updatePayload.aceitou_lgpd = params.aceitou_lgpd;
+      }
+      if (typeof params.documentos_aceitos === 'boolean' && knownCols.has('documentos_aceitos')) {
+        updatePayload.documentos_aceitos = params.documentos_aceitos;
       }
       if (params.data_aceite && knownCols.has('data_aceite')) {
         updatePayload.data_aceite = params.data_aceite;
@@ -1992,6 +2014,7 @@ export async function saveUsuarioSupabase(user: {
   aceitou_contrato?: boolean;
   aceitou_termos?: boolean;
   aceitou_lgpd?: boolean;
+  documentos_aceitos?: boolean;
   data_aceite?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
@@ -2074,6 +2097,9 @@ export async function saveUsuarioSupabase(user: {
       }
       if (typeof user.aceitou_lgpd === 'boolean' && allowedCols.has('aceitou_lgpd')) {
         updateData.aceitou_lgpd = user.aceitou_lgpd;
+      }
+      if (typeof user.documentos_aceitos === 'boolean' && allowedCols.has('documentos_aceitos')) {
+        updateData.documentos_aceitos = user.documentos_aceitos;
       }
       if (user.data_aceite && allowedCols.has('data_aceite')) {
         updateData.data_aceite = user.data_aceite;
@@ -2273,6 +2299,7 @@ export async function saveUsuarioSupabase(user: {
         aceitou_contrato: user.aceitou_contrato,
         aceitou_termos: user.aceitou_termos,
         aceitou_lgpd: user.aceitou_lgpd,
+        documentos_aceitos: user.documentos_aceitos,
         data_aceite: user.data_aceite,
       });
     }
@@ -2292,10 +2319,12 @@ export async function updateDriverOnlineStatusSupabase(params: {
   lat?: number;
   lng?: number;
   approvalStatus?: DriverApprovalStatus;
+  documentosAceitos?: boolean;
 }): Promise<boolean> {
   try {
     const cleanEmail = String(params.email || '').trim().toLowerCase();
     let effectiveApproval: DriverApprovalStatus = params.approvalStatus || 'pendente';
+    let effectiveDocsAccepted: boolean | undefined = params.documentosAceitos;
 
     if (cleanEmail) {
       const localMap = getLocalDriverApprovalsMap();
@@ -2303,11 +2332,16 @@ export async function updateDriverOnlineStatusSupabase(params: {
       if (localRec?.approvalStatus && !params.approvalStatus) {
         effectiveApproval = localRec.approvalStatus;
       }
+      if (typeof effectiveDocsAccepted !== 'boolean' && typeof localRec?.documentosAceitos === 'boolean') {
+        effectiveDocsAccepted = localRec.documentosAceitos;
+      }
     }
 
-    // Motorista NÃO aprovado jamais pode ficar ONLINE
+    // Motorista NÃO aprovado ou sem os 4 documentos aceitos jamais pode ficar ONLINE
     const safeStatus: 'online' | 'offline' =
-      params.status === 'online' && effectiveApproval !== 'aprovado' ? 'offline' : params.status;
+      params.status === 'online' && (effectiveApproval !== 'aprovado' || effectiveDocsAccepted === false)
+        ? 'offline'
+        : params.status;
 
     if (cleanEmail) {
       const localMap = getLocalDriverApprovalsMap();
@@ -2725,6 +2759,8 @@ export interface DriverApplicationRecord {
   lng?: number;
   submittedAt?: string;
   pagamentoId?: string;
+  documentosAceitos?: boolean;
+  dataAceite?: string;
 }
 
 function normalizeDriverApprovalStatus(raw?: any): DriverApprovalStatus {
@@ -2840,6 +2876,15 @@ export function mergeDriverWithApplication(
     lat: typeof app.lat === 'number' && app.lat !== 0 ? app.lat : driver.lat,
     lng: typeof app.lng === 'number' && app.lng !== 0 ? app.lng : driver.lng,
     registrationDate: app.submittedAt || driver.registrationDate,
+    documentosAceitos:
+      typeof app.documentosAceitos === 'boolean'
+        ? app.documentosAceitos
+        : driver.documentosAceitos,
+    dataAceite: app.dataAceite || driver.dataAceite,
+    requirementsConfirmed:
+      typeof app.documentosAceitos === 'boolean'
+        ? app.documentosAceitos
+        : driver.requirementsConfirmed,
   };
 }
 
@@ -2873,6 +2918,8 @@ export async function saveDriverApplicationSupabase(params: {
   lat?: number;
   lng?: number;
   preserveExistingApproval?: boolean;
+  documentosAceitos?: boolean;
+  dataAceite?: string;
 }): Promise<{ success: boolean; record: DriverApplicationRecord }> {
   const cleanEmail = String(params.email || '').trim().toLowerCase();
   const localMap = cleanEmail ? getLocalDriverApprovalsMap() : {};
@@ -2889,8 +2936,14 @@ export async function saveDriverApplicationSupabase(params: {
       ? prevLocal.approvalStatus
       : params.approvalStatus || 'pendente';
 
+  const resolvedDocsAceitos =
+    typeof params.documentosAceitos === 'boolean'
+      ? params.documentosAceitos
+      : prevLocal?.documentosAceitos;
+  const resolvedDataAceite = params.dataAceite || prevLocal?.dataAceite;
+
   const isApproved = resolvedApproval === 'aprovado';
-  const resolvedOnline = isApproved ? Boolean(params.online ?? prevLocal?.online ?? false) : false;
+  const resolvedOnline = isApproved && resolvedDocsAceitos !== false ? Boolean(params.online ?? prevLocal?.online ?? false) : false;
   const resolvedStatus: DriverApplicationRecord['driverStatus'] = isApproved
     ? (params.driverStatus === 'in_ride' ? 'in_ride' : resolvedOnline ? 'online' : 'offline')
     : resolvedApproval === 'reprovado'
@@ -2922,6 +2975,8 @@ export async function saveDriverApplicationSupabase(params: {
     lat: typeof params.lat === 'number' ? params.lat : prevLocal?.lat,
     lng: typeof params.lng === 'number' ? params.lng : prevLocal?.lng,
     submittedAt: prevLocal?.submittedAt || new Date().toISOString(),
+    documentosAceitos: resolvedDocsAceitos,
+    dataAceite: resolvedDataAceite,
   };
 
   if (cleanEmail) {
@@ -2951,6 +3006,8 @@ export async function saveDriverApplicationSupabase(params: {
         motivo_reprovacao: record.rejectionReason || '',
         aprovado_em: record.approvedAt || null,
         online: record.online === true,
+        documentos_aceitos: record.documentosAceitos === true,
+        data_aceite: record.dataAceite || null,
       };
       if (typeof record.lat === 'number') motoPayload.lat = record.lat;
       if (typeof record.lng === 'number') motoPayload.lng = record.lng;
@@ -3135,6 +3192,11 @@ export async function fetchDriverApplicationsSupabase(): Promise<Record<string, 
           lat: typeof m.lat === 'number' ? m.lat : prev?.lat,
           lng: typeof m.lng === 'number' ? m.lng : prev?.lng,
           submittedAt: String(m.created_at || prev?.submittedAt || ''),
+          documentosAceitos:
+            typeof m.documentos_aceitos === 'boolean'
+              ? m.documentos_aceitos
+              : prev?.documentosAceitos,
+          dataAceite: String(m.data_aceite || prev?.dataAceite || ''),
         };
       }
     }
@@ -3336,13 +3398,29 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     explicitRowApproval || localApp?.approvalStatus || 'pendente';
   const isApproved = approvalStatus === 'aprovado';
 
+  const explicitRowDocs =
+    typeof u.documentos_aceitos === 'boolean'
+      ? u.documentos_aceitos
+      : u.aceitou_contrato === true && u.aceitou_termos === true && u.aceitou_lgpd === true
+      ? true
+      : typeof localApp?.documentosAceitos === 'boolean'
+      ? localApp.documentosAceitos
+      : undefined;
+
+  const docsConfirmed =
+    explicitRowDocs === false
+      ? false
+      : explicitRowDocs === true ||
+        u.exigencias_confirmadas === true ||
+        (u.exigencias_confirmadas !== false && getDriverRequirementsConfirmedLocal(email));
+
   const rawStatus = String(u.status || '').toLowerCase().trim();
-  const isRowOnline = isApproved && (rawStatus === 'online' || u.online === true);
+  const isRowOnline = isApproved && docsConfirmed && (rawStatus === 'online' || u.online === true);
   const driverStatus: Driver['status'] = !isApproved
     ? approvalStatus === 'reprovado'
       ? 'offline'
       : 'pending_approval'
-    : !categoryConfigured
+    : !categoryConfigured || !docsConfirmed
     ? 'offline'
     : isRowOnline
     ? 'online'
@@ -3379,12 +3457,9 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     cnh: u.cnh || '',
     trunkType: u.bau || undefined,
     hasTrunk: Boolean(u.bau && !String(u.bau).toLowerCase().includes('não') && !String(u.bau).toLowerCase().includes('sem')),
-    requirementsConfirmed:
-      u.exigencias_confirmadas === true
-        ? true
-        : u.exigencias_confirmadas === false
-        ? false
-        : getDriverRequirementsConfirmedLocal(email),
+    requirementsConfirmed: docsConfirmed,
+    documentosAceitos: explicitRowDocs === true ? true : explicitRowDocs === false ? false : docsConfirmed,
+    dataAceite: String(u.data_aceite || localApp?.dataAceite || ''),
     category,
     categoryConfigured,
     weeklyPlanActive: Boolean(u.plano_ativo ?? true),

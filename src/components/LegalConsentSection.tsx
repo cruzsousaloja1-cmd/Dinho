@@ -56,9 +56,12 @@ interface LegalConsentSectionProps {
   acceptedContract: boolean;
   acceptedTerms: boolean;
   acceptedLgpd: boolean;
+  acceptedPrivacy?: boolean;
   onChangeContract: (checked: boolean) => void;
   onChangeTerms: (checked: boolean) => void;
   onChangeLgpd: (checked: boolean) => void;
+  onChangePrivacy?: (checked: boolean) => void;
+  onOpenPrivacyPage?: () => void;
   theme?: 'dark' | 'light';
 }
 
@@ -66,14 +69,22 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
   acceptedContract,
   acceptedTerms,
   acceptedLgpd,
+  acceptedPrivacy,
   onChangeContract,
   onChangeTerms,
   onChangeLgpd,
+  onChangePrivacy,
+  onOpenPrivacyPage,
   theme = 'dark',
 }) => {
   const [openDoc, setOpenDoc] = useState<LegalDocKey | null>(null);
 
-  const allAccepted = acceptedContract && acceptedTerms && acceptedLgpd;
+  const hasFourthPrivacy = typeof onChangePrivacy === 'function';
+  const allAccepted =
+    acceptedContract &&
+    acceptedTerms &&
+    acceptedLgpd &&
+    (!hasFourthPrivacy || Boolean(acceptedPrivacy));
   const isDark = theme === 'dark';
 
   const items: Array<{
@@ -140,7 +151,7 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
               isDark ? 'text-zinc-200' : 'text-slate-900'
             }`}
           >
-            Documentos Obrigatórios antes de Salvar *
+            Documentos Obrigatórios ({hasFourthPrivacy ? '4 aceites' : '3 aceites'}) *
           </span>
           <span
             className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
@@ -153,7 +164,7 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
                 : 'bg-amber-100 text-amber-900 border border-amber-300'
             }`}
           >
-            {allAccepted ? '3/3 Marcados' : 'Obrigatório'}
+            {allAccepted ? (hasFourthPrivacy ? '4/4 Marcados' : '3/3 Marcados') : 'Obrigatório'}
           </span>
         </div>
 
@@ -202,10 +213,59 @@ export const LegalConsentSection: React.FC<LegalConsentSectionProps> = ({
               </div>
             </div>
           ))}
+
+          {hasFourthPrivacy && (
+            <div
+              className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-colors ${
+                isDark
+                  ? acceptedPrivacy
+                    ? 'bg-emerald-950/20 border-emerald-500/40'
+                    : 'bg-[#181818] border-zinc-800'
+                  : acceptedPrivacy
+                  ? 'bg-white border-emerald-400'
+                  : 'bg-white border-slate-200'
+              }`}
+            >
+              <input
+                id={`legal-check-privacidade-${theme}`}
+                type="checkbox"
+                checked={Boolean(acceptedPrivacy)}
+                onChange={(e) => onChangePrivacy?.(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-blue-600 rounded cursor-pointer shrink-0"
+              />
+              <div className="flex-1 min-w-0 text-xs sm:text-sm leading-snug">
+                <label
+                  htmlFor={`legal-check-privacidade-${theme}`}
+                  className={`cursor-pointer font-semibold ${
+                    isDark ? 'text-zinc-200' : 'text-slate-800'
+                  }`}
+                >
+                  4) Li e concordo com a{' '}
+                </label>
+                <a
+                  href={`${import.meta.env.BASE_URL}privacidade`}
+                  onClick={(e) => {
+                    if (onOpenPrivacyPage) {
+                      e.preventDefault();
+                      onOpenPrivacyPage();
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1 font-bold underline underline-offset-2 cursor-pointer text-left ${
+                    isDark
+                      ? 'text-blue-400 hover:text-blue-300'
+                      : 'text-blue-600 hover:text-blue-800'
+                  }`}
+                >
+                  <span>Política de Privacidade (/privacidade)</span>
+                  <ExternalLink className="w-3 h-3 shrink-0 inline" />
+                </a>
+              </div>
+            </div>
+          )}
         </div>
 
         <p className={`text-[11px] ${isDark ? 'text-zinc-400' : 'text-slate-600'}`}>
-          Clique em cada link azul acima para abrir a tela do documento completo antes de marcar.
+          Clique em cada link azul acima para ler o documento completo antes de marcar.
         </p>
       </div>
 

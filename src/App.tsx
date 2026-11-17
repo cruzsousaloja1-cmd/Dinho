@@ -342,7 +342,8 @@ export default function App() {
           const isConfigured =
             appMergedDriver.categoryConfigured !== false &&
             Boolean(appMergedDriver.vehiclePlate?.trim() && appMergedDriver.vehicleModel?.trim()) &&
-            appMergedDriver.requirementsConfirmed === true;
+            appMergedDriver.requirementsConfirmed === true &&
+            appMergedDriver.documentosAceitos !== false;
           const isApproved = appMergedDriver.approvalStatus === 'aprovado';
           const currentBalance = getDriverBalance(appMergedDriver.id, appMergedDriver.walletBalance || 0);
           const updatedMatched: Driver = {
@@ -384,7 +385,11 @@ export default function App() {
   // Helper para capturar GPS real do condutor e gravar status ONLINE/OFFLINE no Supabase
   const captureAndSyncDriverGps = (driverTarget: Driver, status: 'online' | 'offline') => {
     if (!driverTarget?.email && !driverTarget?.id) return;
-    if (status === 'offline' || driverTarget.approvalStatus !== 'aprovado') {
+    if (
+      status === 'offline' ||
+      driverTarget.approvalStatus !== 'aprovado' ||
+      driverTarget.documentosAceitos === false
+    ) {
       updateDriverOnlineStatusSupabase({
         id: driverTarget.id,
         email: driverTarget.email,
@@ -1529,7 +1534,9 @@ export default function App() {
     if (driver) {
       const isConfigured =
         driver.categoryConfigured !== false &&
-        Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim());
+        Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim()) &&
+        driver.requirementsConfirmed === true &&
+        driver.documentosAceitos !== false;
       const isApproved = driver.approvalStatus === 'aprovado';
       const nextDrv: Driver = {
         ...driver,
@@ -1603,7 +1610,13 @@ export default function App() {
   // Reusable real-time GPS map component instance (SOMENTE motoristas APROVADOS e ONLINE com categoria configurada)
   const mapElement = (
     <MapRealtime
-      drivers={drivers.filter((d) => d.status === 'online' && d.approvalStatus === 'aprovado' && d.categoryConfigured !== false)}
+      drivers={drivers.filter(
+        (d) =>
+          d.status === 'online' &&
+          d.approvalStatus === 'aprovado' &&
+          d.categoryConfigured !== false &&
+          d.documentosAceitos !== false
+      )}
       pickup={pickup}
       destination={destination}
       activeDriver={activeRide?.driver || null}
@@ -1699,7 +1712,10 @@ export default function App() {
             const hasVehicleFields =
               targetDriver.categoryConfigured !== false &&
               Boolean(targetDriver.vehiclePlate?.trim() && targetDriver.vehicleModel?.trim());
-            const isConfigured = hasVehicleFields && targetDriver.requirementsConfirmed === true;
+            const isConfigured =
+              hasVehicleFields &&
+              targetDriver.requirementsConfirmed === true &&
+              targetDriver.documentosAceitos !== false;
             const isApproved = targetDriver.approvalStatus === 'aprovado';
             const currentBal = getDriverBalance(targetDriver.id, targetDriver.walletBalance || 0);
             const driverWithBal: Driver = {
@@ -1763,7 +1779,8 @@ export default function App() {
     currentDriver.categoryConfigured !== false &&
     currentDriver.vehiclePlate?.trim() &&
     currentDriver.vehicleModel?.trim() &&
-    currentDriver.requirementsConfirmed === true
+    currentDriver.requirementsConfirmed === true &&
+    currentDriver.documentosAceitos !== false
   );
 
   // TELA FULLSCREEN OBRIGATÓRIA DE ESCOLHA DE MODALIDADE E CONFIRMAÇÃO DE EXIGÊNCIAS
@@ -1775,13 +1792,17 @@ export default function App() {
           currentUser={currentUser}
           isMandatorySetup={true}
           onLogout={handleLogout}
+          onOpenPrivacyPage={openPrivacyPage}
           onCompleteDriverRegister={(newDriver) => {
             const isApproved = newDriver.approvalStatus === 'aprovado';
+            const acceptedAt = newDriver.dataAceite || new Date().toISOString();
             const configuredDriver: Driver = {
               ...newDriver,
               approvalStatus: newDriver.approvalStatus || 'pendente',
               categoryConfigured: true,
               requirementsConfirmed: true,
+              documentosAceitos: true,
+              dataAceite: acceptedAt,
               status: isApproved ? 'offline' : 'pending_approval',
               weeklyPlanActive: true,
             };
@@ -1947,7 +1968,9 @@ export default function App() {
                 if (driver) {
                   const isConfigured =
                     driver.categoryConfigured !== false &&
-                    Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim());
+                    Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim()) &&
+                    driver.requirementsConfirmed === true &&
+                    driver.documentosAceitos !== false;
                   const isApproved = driver.approvalStatus === 'aprovado';
                   const nextDrv: Driver = {
                     ...driver,
@@ -1980,17 +2003,22 @@ export default function App() {
               }}
               onOpenSupport={() => setIsSupportOpen(true)}
               onOpenShare={() => setIsShareOpen(true)}
+              onOpenPrivacyPage={openPrivacyPage}
               onRenewWeeklyPlan={handleRenewWeeklyPlan}
               onTriggerToast={(title, msg, type) => triggerPush(title, msg, type || 'financial')}
             />
           ) : (
             <DriverWorkSelectionView
               currentUser={currentUser!}
+              onOpenPrivacyPage={openPrivacyPage}
               onCompleteDriverRegister={(newDriver) => {
                 const isApproved = newDriver.approvalStatus === 'aprovado';
+                const acceptedAt = newDriver.dataAceite || new Date().toISOString();
                 const pendingDriver: Driver = {
                   ...newDriver,
                   approvalStatus: newDriver.approvalStatus || 'pendente',
+                  documentosAceitos: true,
+                  dataAceite: acceptedAt,
                   status: isApproved ? newDriver.status : 'pending_approval',
                 };
                 handleRegisterDriver(pendingDriver);
@@ -2203,6 +2231,7 @@ export default function App() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         onAuthSuccess={handleAuthSuccess}
+        onOpenPrivacyPage={openPrivacyPage}
         initialRole={activeTab === 'driver_portal' ? 'driver' : 'passenger'}
       />
 
@@ -2229,7 +2258,13 @@ export default function App() {
           activeRide.paymentMethod === 'dinheiro') && (() => {
           const targetRideCat = normalizeRideCategory(activeRide.category);
           const matchingOnlineDrivers = drivers.filter((d) => {
-            if (d.status !== 'online' || d.approvalStatus !== 'aprovado' || d.categoryConfigured === false) return false;
+            if (
+              d.status !== 'online' ||
+              d.approvalStatus !== 'aprovado' ||
+              d.categoryConfigured === false ||
+              d.documentosAceitos === false
+            )
+              return false;
             return normalizeRideCategory(d.category) === targetRideCat;
           });
           return (

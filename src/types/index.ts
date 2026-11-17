@@ -84,6 +84,8 @@ export interface Driver {
   hasTrunk?: boolean;
   requirementsConfirmed?: boolean;
   requirementsConfirmedAt?: string;
+  documentosAceitos?: boolean;
+  dataAceite?: string;
   rating: number;
   totalRides: number;
   status: 'online' | 'offline' | 'in_ride' | 'pending_approval';

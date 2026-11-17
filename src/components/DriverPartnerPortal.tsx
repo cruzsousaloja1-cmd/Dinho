@@ -258,6 +258,7 @@ interface DriverPartnerPortalProps {
   onAcceptIncomingRide?: (ride: Ride) => void;
   onOpenSupport: () => void;
   onOpenShare?: () => void;
+  onOpenPrivacyPage?: () => void;
   onNavigateToRides?: () => void;
   onShowSubscriptionExpiredModal?: () => void;
   onRenewWeeklyPlan?: (driver?: Driver) => void;
@@ -276,6 +277,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   onAcceptIncomingRide,
   onOpenSupport,
   onOpenShare,
+  onOpenPrivacyPage,
   onNavigateToRides,
   onShowSubscriptionExpiredModal,
   onRenewWeeklyPlan,
@@ -297,11 +299,16 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const isApprovedDriver = approvalStatus === 'aprovado';
   const [onlineBlockNotice, setOnlineBlockNotice] = useState<string | null>(null);
 
+  const isDocumentsAccepted =
+    currentDriver.documentosAceitos === true ||
+    (currentDriver.documentosAceitos !== false && currentDriver.requirementsConfirmed === true);
+
   const isCategoryConfigured = Boolean(
     currentDriver.categoryConfigured !== false &&
     currentDriver.vehiclePlate?.trim() &&
     currentDriver.vehicleModel?.trim() &&
-    currentDriver.requirementsConfirmed === true
+    currentDriver.requirementsConfirmed === true &&
+    isDocumentsAccepted
   );
 
   const [dismissedTick, setDismissedTick] = useState(0);
@@ -309,11 +316,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const announcedRideIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    setIsOnline(isCategoryConfigured && isApprovedDriver && currentDriver.status === 'online');
-    if (isApprovedDriver) {
+    setIsOnline(isCategoryConfigured && isDocumentsAccepted && isApprovedDriver && currentDriver.status === 'online');
+    if (isApprovedDriver && isDocumentsAccepted) {
       setOnlineBlockNotice(null);
     }
-  }, [currentDriver.status, isCategoryConfigured, isApprovedDriver]);
+  }, [currentDriver.status, isCategoryConfigured, isDocumentsAccepted, isApprovedDriver]);
 
   // Ouvindo em tempo real via Supabase Realtime ('corridas') + fallback polling 3s enquanto o condutor está ONLINE
   const isSearchingRideStatus = (st?: string) => {
@@ -857,6 +864,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [acceptedContract, setAcceptedContract] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [registeredSuccess, setRegisteredSuccess] = useState(false);
@@ -919,8 +927,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const driverSavingsVsUber99 = Math.max(0, uberCut - raceFee);
 
   const toggleOnline = () => {
-    if (!isCategoryConfigured) {
+    if (!isCategoryConfigured || !isDocumentsAccepted) {
       setIsOnline(false);
+      setOnlineBlockNotice('Marque os 4 documentos para trabalhar');
+      setIsEditingCategory(true);
       return;
     }
     if (!isApprovedDriver) {
@@ -1019,6 +1029,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     const canStartOnline = Boolean(
       resolvedDriver?.approvalStatus === 'aprovado' &&
       resolvedDriver?.requirementsConfirmed === true &&
+      resolvedDriver?.documentosAceitos !== false &&
       resolvedDriver?.vehiclePlate?.trim() &&
       resolvedDriver?.vehicleModel?.trim()
     );
@@ -1117,8 +1128,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       return;
     }
 
-    if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
-      setRegError('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
+    if (!acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacy) {
+      setRegError('Marque os 4 documentos para trabalhar');
       return;
     }
 
@@ -1137,6 +1148,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       const comfortEligible = finalCategory === 'confort';
       const reason = comfortEligible ? 'Aprovado para Confort (2020+).' : '';
 
+      const confirmedNow = new Date().toISOString();
       const newDriver: Driver = {
         id: '',
         name: regName.trim(),
@@ -1148,7 +1160,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         category: finalCategory,
         categoryConfigured: true,
         requirementsConfirmed: true,
-        requirementsConfirmedAt: new Date().toISOString(),
+        requirementsConfirmedAt: confirmedNow,
+        documentosAceitos: true,
+        dataAceite: confirmedNow,
         vehicleModel: regModel,
         vehiclePlate: regPlate.toUpperCase(),
         vehicleColor: regColor.trim(),
@@ -1164,7 +1178,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         lat: -23.0903,
         lng: -47.2180,
         weeklyPlanActive: true,
-        weeklyFeePaidAt: new Date().toISOString(),
+        weeklyFeePaidAt: confirmedNow,
         weeklyFeeExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         weeklyPlanExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         weeklyPlanPrice: WEEKLY_FEE,
@@ -1175,7 +1189,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         cnhVerified: false,
         vehicleVerified: false,
         criminalRecordClear: true,
-        registrationDate: new Date().toISOString().split('T')[0],
+        registrationDate: confirmedNow.split('T')[0],
         comfortEligible,
         comfortEligibilityReason: reason,
       };
@@ -1201,11 +1215,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         avatar: newDriver.avatar || '',
         rating: newDriver.rating,
         driverData: newDriver,
-        createdAt: new Date().toISOString(),
+        createdAt: confirmedNow,
+        documentos_aceitos: true,
         aceitou_contrato: true,
         aceitou_termos: true,
         aceitou_lgpd: true,
-        data_aceite: new Date().toISOString(),
+        data_aceite: confirmedNow,
       }, false);
 
       if (!saveRes.success) {
@@ -1236,6 +1251,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         approvalStatus: 'pendente',
         online: false,
         driverStatus: 'pending_approval',
+        documentosAceitos: true,
+        dataAceite: confirmedNow,
       }).catch(() => {});
 
       onRegisterDriver(newDriver);
@@ -1655,11 +1672,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               {!isCategoryConfigured ? (
                 <button
                   type="button"
-                  disabled
-                  className="flex items-center gap-2 px-4 sm:px-5 py-3 rounded-2xl font-heading font-black text-xs sm:text-sm bg-slate-200 text-slate-500 border border-slate-300 cursor-not-allowed shrink-0"
+                  onClick={() => setIsEditingCategory(true)}
+                  className="flex items-center gap-2 px-4 sm:px-5 py-3 rounded-2xl font-heading font-black text-xs sm:text-sm bg-[#ff6a00] hover:bg-[#e05e00] text-white border border-[#ff6a00] cursor-pointer shrink-0 shadow-md transition-all"
                 >
-                  <Lock className="w-4 h-4 shrink-0" />
-                  <span>Escolha sua categoria para ficar ONLINE</span>
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span>Completar cadastro para trabalhar</span>
                 </button>
               ) : !isApprovedDriver ? (
                 <button
@@ -1761,6 +1778,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               }
               isMandatorySetup={!isCategoryConfigured}
               hideLockedOnlineButton={!isCategoryConfigured}
+              onOpenPrivacyPage={onOpenPrivacyPage}
               onBackToRides={isEditingCategory ? () => setIsEditingCategory(false) : undefined}
               onCompleteDriverRegister={(updatedDriver) => {
                 const approved = updatedDriver.approvalStatus === 'aprovado';
@@ -3851,9 +3869,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   acceptedContract={acceptedContract}
                   acceptedTerms={acceptedTerms}
                   acceptedLgpd={acceptedLgpd}
+                  acceptedPrivacy={acceptedPrivacy}
                   onChangeContract={setAcceptedContract}
                   onChangeTerms={setAcceptedTerms}
                   onChangeLgpd={setAcceptedLgpd}
+                  onChangePrivacy={setAcceptedPrivacy}
+                  onOpenPrivacyPage={onOpenPrivacyPage}
                   theme="light"
                 />
 
@@ -3891,18 +3912,20 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 {/* Botão de Finalização com Categoria Específica */}
                 <button
                   type="submit"
-                  disabled={isRegistering || !regRequirementsConfirmed || !acceptedContract || !acceptedTerms || !acceptedLgpd}
+                  disabled={isRegistering}
                   className={`w-full font-heading font-black py-4 px-6 rounded-2xl transition-all text-sm sm:text-base border uppercase tracking-wider ${
-                    !isRegistering && regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
-                      ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/25 border-blue-500 active:scale-[0.99]'
-                      : 'bg-slate-300 text-slate-600 border-slate-400 cursor-not-allowed opacity-80'
+                    isRegistering
+                      ? 'bg-slate-300 text-slate-600 border-slate-400 cursor-not-allowed opacity-80'
+                      : !regRequirementsConfirmed || !acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacy
+                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-500 cursor-pointer'
+                      : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/25 border-blue-500 active:scale-[0.99]'
                   }`}
                 >
                   {isRegistering
                     ? 'VERIFICANDO E ENVIANDO PARA APROVAÇÃO...'
-                    : regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
+                    : regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd && acceptedPrivacy
                     ? `Enviar cadastro para aprovação (${selectedGuide.title})`
-                    : 'Aceite Exigências, Contrato, Termos e LGPD para Enviar'}
+                    : 'Marque os 4 documentos para trabalhar'}
                 </button>
               </form>
             )}
