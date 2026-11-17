@@ -219,7 +219,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     }
 
     if (!adminAcceptedContract || !adminAcceptedTerms || !adminAcceptedLgpd || !adminAcceptedPrivacyLgpdBottom) {
-      setAdminRegErrorMessage('Marque os 3 aceites obrigatórios e a Política de Privacidade (LGPD) abaixo do botão antes de cadastrar.');
+      setAdminRegErrorMessage('Marque os 4 documentos para continuar');
       return;
     }
 
@@ -463,13 +463,19 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
+    const isPassengerRole = regRole === 'passenger';
     const cleanName = regName.trim();
     const cleanEmail = regEmail.replace(/\s+/g, '').trim().toLowerCase();
     const cleanWhatsApp = regWhatsApp.replace(/\D/g, '').trim();
-    const cleanLogin = regLogin.replace(/\s+/g, '').trim().toLowerCase();
+    const rawCleanLogin = regLogin.replace(/\s+/g, '').trim().toLowerCase();
+    const cleanLogin = rawCleanLogin || (isPassengerRole ? cleanEmail : '');
 
-    if (!cleanName || !cleanEmail || !cleanWhatsApp || !cleanLogin || !regPassword) {
-      setRegErrorMessage('Por favor, preencha todos os 5 campos obrigatórios (*).');
+    if (!cleanName || !cleanEmail || !cleanWhatsApp || (!isPassengerRole && !cleanLogin) || !regPassword) {
+      setRegErrorMessage(
+        isPassengerRole
+          ? 'Por favor, preencha Nome, E-mail, WhatsApp e Senha.'
+          : 'Por favor, preencha todos os 5 campos obrigatórios (*).'
+      );
       return;
     }
 
@@ -493,8 +499,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       return;
     }
 
-    if (!acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacyLgpdBottom) {
-      setRegErrorMessage('Você deve ler e marcar o aceite da Política de Privacidade (LGPD) e os documentos obrigatórios antes de cadastrar.');
+    if (!isPassengerRole && (!acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacyLgpdBottom)) {
+      setRegErrorMessage('Marque os 4 documentos para continuar');
       return;
     }
 
@@ -1138,7 +1144,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 }`}
               >
                 <ShieldCheck className="w-5 h-5" />
-                <span>{isCreatingAdmin ? 'CRIANDO CONTA DE ADM...' : 'CRIAR CONTA DE ADM'}</span>
+                <span>
+                  {isCreatingAdmin
+                    ? 'CRIANDO CONTA DE ADM...'
+                    : !adminAcceptedContract || !adminAcceptedTerms || !adminAcceptedLgpd || !adminAcceptedPrivacyLgpdBottom
+                    ? 'MARQUE OS 4 DOCUMENTOS PARA CONTINUAR'
+                    : 'CRIAR CONTA DE ADM'}
+                </span>
               </button>
 
               <div className={`p-3.5 rounded-2xl border transition-colors ${
@@ -1474,11 +1486,11 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
               {/* 4. Login */}
               <div className="space-y-1">
                 <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
-                  4. Login (Nome de Usuário) *
+                  4. Login (Nome de Usuário) {regRole === 'passenger' ? '(Opcional)' : '*'}
                 </label>
                 <input
                   type="text"
-                  required
+                  required={regRole !== 'passenger'}
                   value={regLogin}
                   onChange={(e) => setRegLogin(e.target.value)}
                   placeholder="Ex: joao.indaiatuba"
@@ -1772,15 +1784,17 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </div>
               )}
 
-              <LegalConsentSection
-                acceptedContract={acceptedContract}
-                acceptedTerms={acceptedTerms}
-                acceptedLgpd={acceptedLgpd}
-                onChangeContract={setAcceptedContract}
-                onChangeTerms={setAcceptedTerms}
-                onChangeLgpd={setAcceptedLgpd}
-                theme="dark"
-              />
+              <div style={{ display: regRole === 'passenger' ? 'none' : undefined }}>
+                <LegalConsentSection
+                  acceptedContract={acceptedContract}
+                  acceptedTerms={acceptedTerms}
+                  acceptedLgpd={acceptedLgpd}
+                  onChangeContract={setAcceptedContract}
+                  onChangeTerms={setAcceptedTerms}
+                  onChangeLgpd={setAcceptedLgpd}
+                  theme="dark"
+                />
+              </div>
 
               {!regAvatar && (
                 <div className="p-3 bg-amber-950/60 border border-amber-500/70 rounded-2xl text-xs text-amber-200 flex items-center gap-2.5 font-bold">
@@ -1824,37 +1838,49 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={!regAvatar || !acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacyLgpdBottom || isRegistering}
-                className={`w-full font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl transition-all uppercase tracking-wider block mt-3 ${
-                  regAvatar && acceptedContract && acceptedTerms && acceptedLgpd && acceptedPrivacyLgpdBottom && !isRegistering
-                    ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
-                    : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
+              {(() => {
+                const isPassengerReg = regRole === 'passenger';
+                const allFourDocsChecked =
+                  acceptedContract && acceptedTerms && acceptedLgpd && acceptedPrivacyLgpdBottom;
+                const canSaveNow =
+                  Boolean(regAvatar) && (isPassengerReg || allFourDocsChecked) && !isRegistering;
+                return (
+                  <button
+                    type="submit"
+                    disabled={!canSaveNow}
+                    className={`w-full font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl transition-all uppercase tracking-wider block mt-3 ${
+                      canSaveNow
+                        ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
+                        : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
+                    }`}
+                  >
+                    {isRegistering
+                      ? 'CRIANDO CONTA NA NUVEM...'
+                      : !regAvatar
+                      ? '📸 ADICIONE SUA FOTO PARA CONTINUAR'
+                      : !isPassengerReg && !allFourDocsChecked
+                      ? 'MARQUE OS 4 DOCUMENTOS PARA CONTINUAR'
+                      : !isPassengerReg
+                      ? 'ENVIAR CADASTRO PARA APROVAÇÃO'
+                      : 'CADASTRAR E ENTRAR'}
+                  </button>
+                );
+              })()}
+
+              {/* Checkbox obrigatório LGPD abaixo do botão Cadastrar (oculto com display: none para passageiro) */}
+              <div
+                style={{ display: regRole === 'passenger' ? 'none' : undefined }}
+                className={`p-3.5 rounded-2xl border transition-colors ${
+                  acceptedPrivacyLgpdBottom
+                    ? 'bg-emerald-950/25 border-emerald-500/50'
+                    : 'bg-[#121212] border-zinc-700'
                 }`}
               >
-                {isRegistering
-                  ? 'CRIANDO CONTA NA NUVEM...'
-                  : !regAvatar
-                  ? '📸 ADICIONE SUA FOTO PARA CONTINUAR'
-                  : !acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacyLgpdBottom
-                  ? 'MARQUE A POLÍTICA DE PRIVACIDADE (LGPD) PARA CADASTRAR'
-                  : regRole === 'driver' || regRole === 'motoboy'
-                  ? 'ENVIAR CADASTRO PARA APROVAÇÃO'
-                  : 'CADASTRAR E ENTRAR'}
-              </button>
-
-              {/* Checkbox obrigatório LGPD abaixo do botão Cadastrar */}
-              <div className={`p-3.5 rounded-2xl border transition-colors ${
-                acceptedPrivacyLgpdBottom
-                  ? 'bg-emerald-950/25 border-emerald-500/50'
-                  : 'bg-[#121212] border-zinc-700'
-              }`}>
                 <label className="flex items-start gap-2.5 cursor-pointer text-xs leading-relaxed text-zinc-200">
                   <input
                     id="register-lgpd-bottom-checkbox"
                     type="checkbox"
-                    required
+                    required={regRole !== 'passenger'}
                     checked={acceptedPrivacyLgpdBottom}
                     onChange={(e) => setAcceptedPrivacyLgpdBottom(e.target.checked)}
                     className="mt-0.5 w-4 h-4 accent-[#ff6a00] rounded cursor-pointer shrink-0"

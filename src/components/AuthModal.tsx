@@ -181,8 +181,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorMessage('A confirmação de senha não confere com a senha digitada.');
         return;
       }
-      if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
-        setErrorMessage('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
+      if (role !== 'passenger' && (!acceptedContract || !acceptedTerms || !acceptedLgpd)) {
+        setErrorMessage('Marque os documentos obrigatórios para continuar.');
         return;
       }
       if (role === 'driver') {
@@ -702,15 +702,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           )}
 
           {mode === 'register' && (
-            <LegalConsentSection
-              acceptedContract={acceptedContract}
-              acceptedTerms={acceptedTerms}
-              acceptedLgpd={acceptedLgpd}
-              onChangeContract={setAcceptedContract}
-              onChangeTerms={setAcceptedTerms}
-              onChangeLgpd={setAcceptedLgpd}
-              theme="light"
-            />
+            <div style={{ display: role === 'passenger' ? 'none' : undefined }}>
+              <LegalConsentSection
+                acceptedContract={acceptedContract}
+                acceptedTerms={acceptedTerms}
+                acceptedLgpd={acceptedLgpd}
+                onChangeContract={setAcceptedContract}
+                onChangeTerms={setAcceptedTerms}
+                onChangeLgpd={setAcceptedLgpd}
+                theme="light"
+              />
+            </div>
           )}
 
           {errorMessage && mode === 'register' && (
@@ -744,26 +746,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           )}
 
           {/* Submit Action */}
-          <button
-            type="submit"
-            disabled={isSubmitting || (mode === 'register' && (!acceptedContract || !acceptedTerms || !acceptedLgpd))}
-            className={`w-full font-heading font-black py-4 rounded-xl transition-all text-sm sm:text-base flex items-center justify-center gap-2 mt-4 uppercase tracking-wider ${
-              mode === 'register' && (!acceptedContract || !acceptedTerms || !acceptedLgpd)
-                ? 'bg-slate-300 text-slate-600 cursor-not-allowed opacity-80'
-                : mode === 'register'
-                ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/25 active:scale-98 disabled:opacity-50'
-                : 'bg-[#ff6a00] hover:bg-[#e05e00] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/20 active:scale-98 disabled:opacity-50'
-            }`}
-          >
-            <span>
-              {mode === 'login'
-                ? 'ENTRAR DIRETO NA CENTRAL DE ATENDIMENTO'
-                : !acceptedContract || !acceptedTerms || !acceptedLgpd
-                ? 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'
-                : 'CONCLUIR CADASTRO E ENTRAR NA CENTRAL DE CORRIDAS'}
-            </span>
-            <ArrowRight className="w-5 h-5" />
-          </button>
+          {(() => {
+            const needsLegalDocs = mode === 'register' && role !== 'passenger' && (!acceptedContract || !acceptedTerms || !acceptedLgpd);
+            return (
+              <button
+                type="submit"
+                disabled={isSubmitting || needsLegalDocs}
+                className={`w-full font-heading font-black py-4 rounded-xl transition-all text-sm sm:text-base flex items-center justify-center gap-2 mt-4 uppercase tracking-wider ${
+                  needsLegalDocs
+                    ? 'bg-slate-300 text-slate-600 cursor-not-allowed opacity-80'
+                    : mode === 'register'
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/25 active:scale-98 disabled:opacity-50'
+                    : 'bg-[#ff6a00] hover:bg-[#e05e00] text-white cursor-pointer shadow-lg shadow-[#ff6a00]/20 active:scale-98 disabled:opacity-50'
+                }`}
+              >
+                <span>
+                  {mode === 'login'
+                    ? 'ENTRAR DIRETO NA CENTRAL DE ATENDIMENTO'
+                    : needsLegalDocs
+                    ? 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'
+                    : 'CONCLUIR CADASTRO E ENTRAR NA CENTRAL DE CORRIDAS'}
+                </span>
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            );
+          })()}
 
           {mode === 'login' && (
             <div className="pt-1 text-center">

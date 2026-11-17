@@ -79,10 +79,7 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
       return;
     }
 
-    if (!acceptedContract || !acceptedTerms || !acceptedLgpd) {
-      setErrorMessage('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
-      return;
-    }
+    // Documentos obrigatórios ocultados e dispensados para cadastro exclusivo de passageiro
 
     if (existingPassengers.some((p) => p.email.replace(/\s+/g, '').trim().toLowerCase() === cleanEmail)) {
       setErrorMessage('Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.');
@@ -260,15 +257,17 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
             />
           </div>
 
-          <LegalConsentSection
-            acceptedContract={acceptedContract}
-            acceptedTerms={acceptedTerms}
-            acceptedLgpd={acceptedLgpd}
-            onChangeContract={setAcceptedContract}
-            onChangeTerms={setAcceptedTerms}
-            onChangeLgpd={setAcceptedLgpd}
-            theme="dark"
-          />
+          <div style={{ display: 'none' }}>
+            <LegalConsentSection
+              acceptedContract={acceptedContract}
+              acceptedTerms={acceptedTerms}
+              acceptedLgpd={acceptedLgpd}
+              onChangeContract={setAcceptedContract}
+              onChangeTerms={setAcceptedTerms}
+              onChangeLgpd={setAcceptedLgpd}
+              theme="dark"
+            />
+          </div>
 
           {errorMessage && (
             <div className="bg-red-950/90 border border-red-500 text-red-200 text-xs sm:text-sm p-3.5 rounded-xl flex items-center gap-2 font-bold">
@@ -280,18 +279,18 @@ export const PassengerRegisterView: React.FC<PassengerRegisterViewProps> = ({
           {/* BOTÃO CADASTRAR */}
           <button
             type="submit"
-            disabled={isSubmitting || !acceptedContract || !acceptedTerms || !acceptedLgpd}
+            disabled={isSubmitting || !avatar}
             className={`w-full font-heading font-black text-base py-3.5 px-6 rounded-xl transition-all uppercase tracking-wider block mt-6 ${
-              !isSubmitting && acceptedContract && acceptedTerms && acceptedLgpd
+              !isSubmitting && avatar
                 ? 'bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white cursor-pointer shadow-lg shadow-blue-600/25'
                 : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700 opacity-60'
             }`}
           >
             {isSubmitting
               ? 'VERIFICANDO CADASTRO...'
-              : acceptedContract && acceptedTerms && acceptedLgpd
-              ? 'CADASTRAR E PEDIR CORRIDA'
-              : 'ACEITE CONTRATO, TERMOS E LGPD PARA SALVAR'}
+              : !avatar
+              ? 'ADICIONE SUA FOTO PARA CONTINUAR'
+              : 'CADASTRAR E PEDIR CORRIDA'}
           </button>
 
           {/* Voltar para login */}
