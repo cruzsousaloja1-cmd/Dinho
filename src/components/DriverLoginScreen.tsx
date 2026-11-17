@@ -1,9 +1,19 @@
 import React, { useState, useRef } from 'react';
 import { Driver, AppUser, VehicleCategory } from '../types';
-import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera, FileText, Upload } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveSessionUser, verifyUserLogin, mapSupabaseRowToAppUser } from '../services/userService';
-import { insertUsuarioSupabase, loginUsuarioSupabase, getUsuarioSupabase, checkEmailExistsSupabase, checkDuplicateRegistrationSupabase } from '../supabase';
+import {
+  insertUsuarioSupabase,
+  loginUsuarioSupabase,
+  getUsuarioSupabase,
+  checkEmailExistsSupabase,
+  checkDuplicateRegistrationSupabase,
+  saveDriverApplicationSupabase,
+  fetchDriverApplicationsSupabase,
+  mergeDriverWithApplication,
+  getWorkCategoryFullTitle,
+} from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
@@ -79,6 +89,19 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [regAvatar, setRegAvatar] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Documentos e dados do veículo obrigatórios quando escolher Motorista / Motoboy
+  const [regCategory, setRegCategory] = useState<VehicleCategory>('economica');
+  const [regVehiclePlate, setRegVehiclePlate] = useState('');
+  const [regVehicleModel, setRegVehicleModel] = useState('');
+  const [regVehicleColor, setRegVehicleColor] = useState('');
+  const [regVehicleYear, setRegVehicleYear] = useState('2023');
+  const [regCnhFrontPhoto, setRegCnhFrontPhoto] = useState<string | null>(null);
+  const [regCnhBackPhoto, setRegCnhBackPhoto] = useState<string | null>(null);
+  const [regCrlvPhoto, setRegCrlvPhoto] = useState<string | null>(null);
+  const cnhFrontInputRef = useRef<HTMLInputElement>(null);
+  const cnhBackInputRef = useRef<HTMLInputElement>(null);
+  const crlvInputRef = useRef<HTMLInputElement>(null);
+
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -94,9 +117,36 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     }
   };
 
+  const handleDriverDocSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: React.Dispatch<React.SetStateAction<string | null>>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageToMax200KB(file);
+      if (compressed) {
+        setter(compressed);
+        setRegErrorMessage(null);
+      }
+    } catch (error: any) {
+      setRegErrorMessage(`Erro ao processar documento: ${error?.message || String(error)}`);
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
+
   // Iniciar fluxo de cadastro para a categoria escolhida
   const handleStartRegister = (role: RegistrationRole) => {
     setRegRole(role);
+    setRegCategory(role === 'motoboy' ? 'moto_passageiro' : 'economica');
+    setRegVehiclePlate('');
+    setRegVehicleModel('');
+    setRegVehicleColor('');
+    setRegVehicleYear('2023');
+    setRegCnhFrontPhoto(null);
+    setRegCnhBackPhoto(null);
+    setRegCrlvPhoto(null);
     setRegErrorMessage(null);
     setRegSuccessMessage(null);
     setAcceptedContract(false);
@@ -389,16 +439,26 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       // Sucesso no Supabase
       const row = cloudRes.data;
       const { user: mappedUser, driver: mappedDriver } = mapSupabaseRowToAppUser(row);
-      const userPayload: AppUser = {
-        ...mappedUser,
-        avatar: regAvatar || mappedUser.avatar || undefined,
-      };
-      const driverObj: Driver | undefined = mappedDriver
+      let driverObj: Driver | undefined = mappedDriver
         ? {
             ...mappedDriver,
             avatar: regAvatar || mappedDriver.avatar || '',
           }
         : undefined;
+      if (driverObj && driverObj.email) {
+        try {
+          const appsMap = await fetchDriverApplicationsSupabase();
+          const appRec = appsMap[driverObj.email.toLowerCase()];
+          if (appRec) {
+            driverObj = mergeDriverWithApplication(driverObj, appRec);
+          }
+        } catch {}
+      }
+      const userPayload: AppUser = {
+        ...mappedUser,
+        avatar: regAvatar || mappedUser.avatar || driverObj?.avatar || undefined,
+        driverData: driverObj,
+      };
       saveSessionUser(userPayload);
 
       setLoginSuccessMessage('Acesso autorizado!');
@@ -480,11 +540,55 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const isMotoboyRole = regRole === 'motoboy';
       const chosenAvatar = await compressImageToMax200KB(regAvatar);
 
-      // Criação dos dados iniciais do condutor (sem categoria escolhida ainda: permanece OFFLINE até escolher categoria no app)
+      const cleanPlate = regVehiclePlate.trim().toUpperCase();
+      const cleanModel = regVehicleModel.trim();
+      const cleanColor = regVehicleColor.trim();
+      const parsedYear = Number(regVehicleYear) || 2023;
+
+      if (isDriverRole || isMotoboyRole) {
+        if (!cleanPlate || cleanPlate.length < 7) {
+          setRegErrorMessage('Informe a placa do veículo corretamente (mínimo 7 caracteres).');
+          setIsRegistering(false);
+          return;
+        }
+        if (!cleanModel) {
+          setRegErrorMessage('Informe o modelo do veículo.');
+          setIsRegistering(false);
+          return;
+        }
+        if (!cleanColor) {
+          setRegErrorMessage('Informe a cor do veículo.');
+          setIsRegistering(false);
+          return;
+        }
+        if (!regCnhFrontPhoto) {
+          setRegErrorMessage('Envie a foto da CNH (Frente) para análise do ADM.');
+          setIsRegistering(false);
+          return;
+        }
+        if (!regCnhBackPhoto) {
+          setRegErrorMessage('Envie a foto da CNH (Verso) para análise do ADM.');
+          setIsRegistering(false);
+          return;
+        }
+        if (!regCrlvPhoto) {
+          setRegErrorMessage('Envie a foto do CRLV do veículo para análise do ADM.');
+          setIsRegistering(false);
+          return;
+        }
+      }
+
+      const chosenCategory: VehicleCategory = isMotoboyRole
+        ? regCategory === 'moto_entrega'
+          ? 'moto_entrega'
+          : 'moto_passageiro'
+        : regCategory === 'confort'
+        ? 'confort'
+        : 'economica';
+
+      // Criação dos dados do condutor: status OBRIGATORIAMENTE "pendente" até o ADM aprovar
       let newDriverObj: Driver | undefined = undefined;
       if (isDriverRole || isMotoboyRole) {
-        const defaultVisualCategory: VehicleCategory = isMotoboyRole ? 'moto_passageiro' : 'economica';
-
         newDriverObj = {
           id: '',
           name: cleanName,
@@ -493,20 +597,25 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           avatar: chosenAvatar,
           rating: 0,
           totalRides: 0,
-          vehicleModel: '',
-          vehiclePlate: '',
-          vehicleColor: '',
-          vehicleYear: 2023,
+          vehicleModel: cleanModel,
+          vehiclePlate: cleanPlate,
+          vehicleColor: cleanColor,
+          vehicleYear: parsedYear,
           vehiclePhoto: '',
+          cnhPhoto: regCnhFrontPhoto || '',
+          cnhFrontPhoto: regCnhFrontPhoto || '',
+          cnhBackPhoto: regCnhBackPhoto || '',
+          crlvPhoto: regCrlvPhoto || '',
+          approvalStatus: 'pendente',
           cpf: '',
           cnh: '',
-          category: defaultVisualCategory,
-          categoryConfigured: false,
+          category: chosenCategory,
+          categoryConfigured: true,
           weeklyPlanActive: false,
           weeklyPlanPrice: 0,
           weeklyPlanExpiresAt: null,
           weeklyFeeExpiresAt: null,
-          status: 'offline',
+          status: 'pending_approval',
           earningsToday: 0,
           earningsWeek: 0,
           cnhVerified: false,
@@ -528,6 +637,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         login: cleanLogin,
         senha: regPassword,
         tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
+        categoria: !isPassengerRole ? getWorkCategoryFullTitle(chosenCategory) : undefined,
+        placa: !isPassengerRole ? cleanPlate : undefined,
+        modelo: !isPassengerRole ? cleanModel : undefined,
+        ano: !isPassengerRole ? parsedYear : undefined,
         foto: chosenAvatar || undefined,
         avatar: chosenAvatar || undefined,
       });
@@ -554,10 +667,33 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
       if (newDriverObj) {
         newDriverObj.id = supabaseGeneratedId;
+        await saveDriverApplicationSupabase({
+          id: supabaseGeneratedId,
+          email: cleanEmail,
+          name: cleanName,
+          phone: cleanWhatsApp,
+          whatsapp: cleanWhatsApp,
+          category: chosenCategory,
+          vehicleModel: cleanModel,
+          vehicleColor: cleanColor,
+          vehiclePlate: cleanPlate,
+          vehicleYear: parsedYear,
+          avatar: chosenAvatar,
+          cnhFrontPhoto: regCnhFrontPhoto || '',
+          cnhBackPhoto: regCnhBackPhoto || '',
+          crlvPhoto: regCrlvPhoto || '',
+          approvalStatus: 'pendente',
+          online: false,
+          driverStatus: 'pending_approval',
+        }).catch(() => {});
       }
 
       // Alerta de sucesso: Salvo no Supabase
-      setRegSuccessMessage('Salvo no Supabase');
+      setRegSuccessMessage(
+        isPassengerRole
+          ? 'Salvo no Supabase'
+          : 'Cadastro enviado! Aguardando aprovação do ADM para ficar online.'
+      );
 
       const newUser: AppUser = {
         id: supabaseGeneratedId,
@@ -568,7 +704,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         login: cleanLogin,
         role: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
         tipo: isPassengerRole ? 'passenger' : isMotoboyRole ? 'motoboy' : 'driver',
-        placa: '',
+        placa: !isPassengerRole ? cleanPlate : '',
         avatar: chosenAvatar,
         rating: 0,
         driverData: newDriverObj,
@@ -659,7 +795,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </span>
               </button>
 
-              {/* 2. Cadastro de Motorista */}
+              {/* 2. Cadastro de Motorista (Quero ser motorista) */}
               <button
                 type="button"
                 onClick={() => handleStartRegister('driver')}
@@ -671,10 +807,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                   </div>
                   <div>
                     <h3 className="font-heading font-black text-white text-base sm:text-lg group-hover:text-[#ff8533] transition-colors">
-                      Cadastro de Motorista
+                      Quero ser motorista
                     </h3>
                     <p className="text-xs text-zinc-400 font-medium">
-                      Carro próprio &bull; 85% para você &bull; Sem mensalidade
+                      CNH + CRLV + placa/modelo/cor &bull; 85% para você &bull; Aprovação ADM
                     </p>
                   </div>
                 </div>
@@ -1216,13 +1352,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             <div className="space-y-1">
               <h2 className="text-2xl font-heading font-black text-white tracking-tight">
                 {regRole === 'passenger' && 'CADASTRO DE PASSAGEIRO'}
-                {regRole === 'driver' && 'CADASTRO DE MOTORISTA'}
+                {regRole === 'driver' && 'QUERO SER MOTORISTA'}
                 {regRole === 'motoboy' && 'CADASTRO DE MOTOBOY'}
               </h2>
               <p className="text-xs text-zinc-400 font-medium">
                 {regRole === 'passenger' && 'Preencha os 5 campos abaixo para entrar direto na busca de corridas:'}
-                {regRole === 'driver' && 'Preencha os 5 campos para liberar sua conta (85% para você, 15% Race - sem mensalidade):'}
-                {regRole === 'motoboy' && 'Preencha os 5 campos para rodar como motoboy em passageiro ou entregas:'}
+                {regRole === 'driver' && 'Envie seus dados, CNH (frente e verso), CRLV e veículo para aprovação do ADM:'}
+                {regRole === 'motoboy' && 'Envie seus dados, CNH (frente e verso), CRLV e moto para aprovação do ADM:'}
               </p>
             </div>
 
@@ -1414,16 +1550,242 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </div>
               </div>
 
-              {/* Aviso do Modelo de Repasse para Motorista/Motoboy */}
+              {/* Dados do Veículo + Documentos Obrigatórios (CNH frente/verso e CRLV) para Motorista/Motoboy */}
               {(regRole === 'driver' || regRole === 'motoboy') && (
-                <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/50 rounded-2xl text-xs text-emerald-200 space-y-1">
-                  <div className="flex items-center gap-1.5 font-bold text-emerald-400">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>85% para Você • 15% Race</span>
+                <div className="space-y-3.5 pt-2 border-t border-zinc-800">
+                  <div className="p-3.5 bg-amber-950/35 border border-amber-500/40 rounded-2xl text-xs text-amber-200 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Validação Obrigatória pelo ADM (Status Inicial: Pendente)</span>
+                    </div>
+                    <p className="text-[11px] text-zinc-300 font-medium leading-relaxed">
+                      Seu cadastro ficará como <strong>pendente</strong> e só poderá ficar online após o ADM conferir sua CNH (frente e verso), CRLV e veículo. 85% para você • 15% Race.
+                    </p>
                   </div>
-                  <p className="text-[11px] text-zinc-300 font-medium">
-                    Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.
-                  </p>
+
+                  {/* Categoria */}
+                  <div className="space-y-1">
+                    <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                      Categoria *
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {regRole === 'driver' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setRegCategory('economica')}
+                            className={`p-2.5 rounded-xl border text-xs font-heading font-black cursor-pointer transition-all ${
+                              regCategory === 'economica'
+                                ? 'bg-[#ff6a00]/20 border-[#ff6a00] text-white'
+                                : 'bg-[#121212] border-[#2a2a2a] text-zinc-400'
+                            }`}
+                          >
+                            Motorista Econômico
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRegCategory('confort')}
+                            className={`p-2.5 rounded-xl border text-xs font-heading font-black cursor-pointer transition-all ${
+                              regCategory === 'confort'
+                                ? 'bg-purple-500/20 border-purple-400 text-white'
+                                : 'bg-[#121212] border-[#2a2a2a] text-zinc-400'
+                            }`}
+                          >
+                            Motorista Confort
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setRegCategory('moto_passageiro')}
+                            className={`p-2.5 rounded-xl border text-xs font-heading font-black cursor-pointer transition-all ${
+                              regCategory === 'moto_passageiro'
+                                ? 'bg-cyan-500/20 border-cyan-400 text-white'
+                                : 'bg-[#121212] border-[#2a2a2a] text-zinc-400'
+                            }`}
+                          >
+                            Motoboy Passageiro
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRegCategory('moto_entrega')}
+                            className={`p-2.5 rounded-xl border text-xs font-heading font-black cursor-pointer transition-all ${
+                              regCategory === 'moto_entrega'
+                                ? 'bg-amber-500/20 border-amber-400 text-white'
+                                : 'bg-[#121212] border-[#2a2a2a] text-zinc-400'
+                            }`}
+                          >
+                            Motoboy Entregas
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Placa e Ano */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                        Placa do Veículo *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={8}
+                        value={regVehiclePlate}
+                        onChange={(e) => setRegVehiclePlate(e.target.value.toUpperCase())}
+                        placeholder="Ex: ABC1D23"
+                        className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-3.5 py-2.5 text-sm font-mono font-bold uppercase focus:outline-none focus:border-[#ff6a00]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                        Ano *
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        min={2005}
+                        max={2027}
+                        value={regVehicleYear}
+                        onChange={(e) => setRegVehicleYear(e.target.value)}
+                        placeholder="2023"
+                        className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-3.5 py-2.5 text-sm font-mono font-bold focus:outline-none focus:border-[#ff6a00]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Modelo e Cor */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                        Modelo do {regRole === 'motoboy' ? 'Moto' : 'Carro'} *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regVehicleModel}
+                        onChange={(e) => setRegVehicleModel(e.target.value)}
+                        placeholder={regRole === 'motoboy' ? 'Ex: Honda CG 160' : 'Ex: Chevrolet Onix Plus'}
+                        className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-[#ff6a00] font-medium"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider block">
+                        Cor do {regRole === 'motoboy' ? 'Moto' : 'Carro'} *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regVehicleColor}
+                        onChange={(e) => setRegVehicleColor(e.target.value)}
+                        placeholder="Ex: Prata, Preto, Branco"
+                        className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-[#ff6a00] font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Upload Obrigatório: CNH Frente, CNH Verso e CRLV */}
+                  <div className="space-y-2">
+                    <label className="text-zinc-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-[#ff6a00]" />
+                      <span>Documentos Obrigatórios (CNH Frente, Verso e CRLV) *</span>
+                    </label>
+
+                    <input
+                      ref={cnhFrontInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleDriverDocSelect(e, setRegCnhFrontPhoto)}
+                      className="hidden"
+                    />
+                    <input
+                      ref={cnhBackInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleDriverDocSelect(e, setRegCnhBackPhoto)}
+                      className="hidden"
+                    />
+                    <input
+                      ref={crlvInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleDriverDocSelect(e, setRegCrlvPhoto)}
+                      className="hidden"
+                    />
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* CNH Frente */}
+                      <button
+                        type="button"
+                        onClick={() => cnhFrontInputRef.current?.click()}
+                        className={`p-2 rounded-2xl border-2 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[92px] ${
+                          regCnhFrontPhoto
+                            ? 'bg-emerald-950/35 border-emerald-500 text-emerald-300'
+                            : 'bg-[#121212] border-dashed border-zinc-700 hover:border-[#ff6a00] text-zinc-300'
+                        }`}
+                      >
+                        {regCnhFrontPhoto ? (
+                          <>
+                            <img src={regCnhFrontPhoto} alt="CNH Frente" className="w-full h-12 object-cover rounded-lg mb-1" />
+                            <span className="text-[10px] font-bold">✓ CNH Frente</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-[#ff6a00] mb-1" />
+                            <span className="text-[10px] font-bold leading-tight">CNH (Frente)*</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* CNH Verso */}
+                      <button
+                        type="button"
+                        onClick={() => cnhBackInputRef.current?.click()}
+                        className={`p-2 rounded-2xl border-2 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[92px] ${
+                          regCnhBackPhoto
+                            ? 'bg-emerald-950/35 border-emerald-500 text-emerald-300'
+                            : 'bg-[#121212] border-dashed border-zinc-700 hover:border-[#ff6a00] text-zinc-300'
+                        }`}
+                      >
+                        {regCnhBackPhoto ? (
+                          <>
+                            <img src={regCnhBackPhoto} alt="CNH Verso" className="w-full h-12 object-cover rounded-lg mb-1" />
+                            <span className="text-[10px] font-bold">✓ CNH Verso</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-[#ff6a00] mb-1" />
+                            <span className="text-[10px] font-bold leading-tight">CNH (Verso)*</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* CRLV */}
+                      <button
+                        type="button"
+                        onClick={() => crlvInputRef.current?.click()}
+                        className={`p-2 rounded-2xl border-2 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[92px] ${
+                          regCrlvPhoto
+                            ? 'bg-emerald-950/35 border-emerald-500 text-emerald-300'
+                            : 'bg-[#121212] border-dashed border-zinc-700 hover:border-[#ff6a00] text-zinc-300'
+                        }`}
+                      >
+                        {regCrlvPhoto ? (
+                          <>
+                            <img src={regCrlvPhoto} alt="CRLV" className="w-full h-12 object-cover rounded-lg mb-1" />
+                            <span className="text-[10px] font-bold">✓ CRLV</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-[#ff6a00] mb-1" />
+                            <span className="text-[10px] font-bold leading-tight">Foto CRLV*</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1501,6 +1863,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                   ? '📸 ADICIONE SUA FOTO PARA CONTINUAR'
                   : !acceptedContract || !acceptedTerms || !acceptedLgpd || !acceptedPrivacyLgpdBottom
                   ? 'MARQUE A POLÍTICA DE PRIVACIDADE (LGPD) PARA CADASTRAR'
+                  : regRole === 'driver' || regRole === 'motoboy'
+                  ? 'ENVIAR CADASTRO PARA APROVAÇÃO'
                   : 'CADASTRAR E ENTRAR'}
               </button>
 

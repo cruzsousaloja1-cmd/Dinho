@@ -178,8 +178,8 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
 
   const handleCreateDelivery = () => {
     const motoboy = availableMotoboys.find(
-      (m) => m.category === 'moto_entrega' && m.status === 'online'
-    ) || availableMotoboys[0];
+      (m) => m.category === 'moto_entrega' && m.status === 'online' && m.approvalStatus === 'aprovado'
+    ) || availableMotoboys.find((m) => m.approvalStatus === 'aprovado') || availableMotoboys[0];
 
     const finalPickup: LocationPoint = pickup || {
       address: pickupInput || 'Parque Ecológico de Indaiatuba',

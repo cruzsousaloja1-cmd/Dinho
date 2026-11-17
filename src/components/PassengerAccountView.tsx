@@ -20,7 +20,8 @@ import {
   Loader2,
   X,
   Check,
-  MessageCircle
+  MessageCircle,
+  Car
 } from 'lucide-react';
 import { requestCurrentLocationFast } from '../services/addressSearchService';
 import { saveSessionUser } from '../services/userService';
@@ -39,6 +40,7 @@ interface PassengerAccountViewProps {
   onUpdateAvatar?: (avatarBase64: string) => void;
   onUpdateProfile?: (updatedUser: AppUser) => void;
   onOpenPrivacyPage?: () => void;
+  onWantToBeDriver?: () => void;
 }
 
 export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
@@ -53,6 +55,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   onUpdateAvatar,
   onUpdateProfile,
   onOpenPrivacyPage,
+  onWantToBeDriver,
 }) => {
   const [gpsStatus, setGpsStatus] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
@@ -686,8 +689,19 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         )}
       </div>
 
-      {/* 5. SUPORTE NO WHATSAPP & PRIVACIDADE LGPD */}
+      {/* 5. QUERO SER MOTORISTA, SUPORTE NO WHATSAPP & PRIVACIDADE LGPD */}
       <div className="space-y-3 pt-1">
+        {onWantToBeDriver && currentUser?.role === 'passenger' && (
+          <button
+            type="button"
+            onClick={onWantToBeDriver}
+            className="w-full py-4 px-5 bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.99] text-white font-heading font-black text-sm sm:text-base rounded-2xl shadow-lg shadow-[#ff6a00]/20 transition-all flex items-center justify-center gap-2.5 uppercase tracking-wider cursor-pointer"
+          >
+            <Car className="w-5 h-5 shrink-0" />
+            <span>Quero ser motorista RACE</span>
+          </button>
+        )}
+
         <a
           href="https://wa.me/5519920032074?text=Preciso%20de%20ajuda%20no%20RACE"
           target="_blank"

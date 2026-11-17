@@ -10,6 +10,8 @@ import {
   mapSupabaseRowToDriver,
   normalizeRideCategory,
   getWorkCategoryFullTitle,
+  fetchDriverApplicationsSupabase,
+  mergeDriverWithApplication,
 } from '../supabase';
 
 export interface StoredUserAccount {
@@ -111,6 +113,8 @@ export function saveSessionUser(user: AppUser | null): void {
               avatar: '',
               vehiclePhoto: '',
               cnhPhoto: '',
+              cnhFrontPhoto: '',
+              cnhBackPhoto: '',
               crlvPhoto: '',
             }
           : undefined,
@@ -360,7 +364,17 @@ export async function verifyUserLoginAsync(
       };
     }
 
-    const { user: userPayload, driver: driverObj } = mapSupabaseRowToAppUser(authRes.data);
+    let { user: userPayload, driver: driverObj } = mapSupabaseRowToAppUser(authRes.data);
+    if (driverObj && driverObj.email) {
+      try {
+        const appsMap = await fetchDriverApplicationsSupabase();
+        const appRec = appsMap[driverObj.email.toLowerCase()];
+        if (appRec) {
+          driverObj = mergeDriverWithApplication(driverObj, appRec);
+          userPayload = { ...userPayload, driverData: driverObj };
+        }
+      } catch {}
+    }
     saveSessionUser(userPayload);
 
     return { success: true, user: userPayload, driver: driverObj };
@@ -416,6 +430,7 @@ export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const updatedDrivers = currentDrivers.map((driver) => {
+    const isApproved = driver.approvalStatus === 'aprovado';
     const updated: Driver = {
       ...driver,
       weeklyFeePaidAt: now.toISOString(),
@@ -423,9 +438,9 @@ export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
       weeklyPlanExpiresAt: expiresAt.toISOString(),
       weeklyPlanActive: true,
       weeklyPlanPrice: 0,
-      status: 'online',
-      cnhVerified: true,
-      vehicleVerified: true,
+      status: isApproved ? 'online' : driver.approvalStatus === 'reprovado' ? 'offline' : 'pending_approval',
+      cnhVerified: isApproved,
+      vehicleVerified: isApproved,
       pendingPayment: driver.pendingPayment
         ? {
             ...driver.pendingPayment,
@@ -434,11 +449,12 @@ export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
         : null,
     };
 
-    if (driver.id || driver.email) {
+    if (isApproved && (driver.id || driver.email)) {
       updateDriverOnlineStatusSupabase({
         id: driver.id,
         email: driver.email,
         status: 'online',
+        approvalStatus: 'aprovado',
       }).catch(() => {});
     }
 

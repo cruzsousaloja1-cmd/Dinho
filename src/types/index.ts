@@ -55,6 +55,8 @@ export interface PendingPayment {
   driverPhone?: string;
 }
 
+export type DriverApprovalStatus = 'pendente' | 'aprovado' | 'reprovado';
+
 export interface Driver {
   id: string;
   name: string;
@@ -70,7 +72,12 @@ export interface Driver {
   vehicleYear: number;
   vehiclePhoto?: string;
   cnhPhoto?: string;
+  cnhFrontPhoto?: string;
+  cnhBackPhoto?: string;
   crlvPhoto?: string;
+  approvalStatus?: DriverApprovalStatus;
+  rejectionReason?: string;
+  approvedAt?: string;
   hasTrunk?: boolean;
   requirementsConfirmed?: boolean;
   requirementsConfirmedAt?: string;

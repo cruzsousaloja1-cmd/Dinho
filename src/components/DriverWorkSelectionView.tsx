@@ -24,6 +24,7 @@ import {
   updateMotoristaSupabase,
   saveUsuarioSupabase,
   setDriverRequirementsConfirmedLocal,
+  saveDriverApplicationSupabase,
 } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isBasicPopularOneLiterModel } from '../services/vehicleValidationService';
@@ -277,7 +278,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   });
   const [color, setColor] = useState(currentUser.driverData?.vehicleColor || '');
   const [vehiclePhoto, setVehiclePhoto] = useState(currentUser.driverData?.vehiclePhoto || '');
-  const [cnhPhoto, setCnhPhoto] = useState(currentUser.driverData?.cnhPhoto || '');
+  const [cnhFrontPhoto, setCnhFrontPhoto] = useState(
+    currentUser.driverData?.cnhFrontPhoto || currentUser.driverData?.cnhPhoto || ''
+  );
+  const [cnhBackPhoto, setCnhBackPhoto] = useState(currentUser.driverData?.cnhBackPhoto || '');
   const [crlvPhoto, setCrlvPhoto] = useState(currentUser.driverData?.crlvPhoto || '');
   const [requirementsChecked, setRequirementsChecked] = useState<boolean>(false);
   const [acceptedContract, setAcceptedContract] = useState<boolean>(false);
@@ -346,7 +350,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     const cleanPlate = plate.trim().toUpperCase();
     const cleanModel = model.trim();
     const cleanCnh = cnh.trim();
-    const cleanColor = color.trim() || (isDeliveryMoto ? 'Não informada' : '');
+    const cleanColor = color.trim();
     const cleanCpf = cpf.trim();
     const cleanBau = isCarCategory
       ? ''
@@ -387,10 +391,15 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         setErrorMessage('Motoboy Entregas exige baú fixo de no mínimo 90L.');
         return;
       }
-      if (!cleanCnh || !cleanCpf) {
-        setErrorMessage('Preencha CNH A válida e CPF para concluir seu cadastro.');
+      if (!cleanColor || !cleanCnh || !cleanCpf) {
+        setErrorMessage('Preencha Cor da moto, CNH A válida e CPF para concluir seu cadastro.');
         return;
       }
+    }
+
+    if (!cnhFrontPhoto || !cnhBackPhoto || !crlvPhoto) {
+      setErrorMessage('Envie as fotos obrigatórias da CNH (frente e verso) e do CRLV do veículo para aprovação do ADM.');
+      return;
     }
 
     if (!requirementsChecked) {
@@ -408,6 +417,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       const existingDriver = currentUser.driverData;
       const confirmedTimestamp = new Date().toISOString();
       setDriverRequirementsConfirmedLocal(currentUser.email, true);
+      const keepApproved = existingDriver?.approvalStatus === 'aprovado';
+      const nextApprovalStatus = keepApproved ? 'aprovado' : 'pendente';
 
       const newDriver: Driver = {
         ...(existingDriver || {}),
@@ -427,12 +438,16 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         vehicleColor: cleanColor,
         vehicleYear: yearNum,
         vehiclePhoto: vehiclePhoto || undefined,
-        cnhPhoto: cnhPhoto || undefined,
+        cnhPhoto: cnhFrontPhoto || undefined,
+        cnhFrontPhoto: cnhFrontPhoto || undefined,
+        cnhBackPhoto: cnhBackPhoto || undefined,
         crlvPhoto: crlvPhoto || undefined,
+        approvalStatus: nextApprovalStatus,
+        rejectionReason: nextApprovalStatus === 'pendente' ? '' : existingDriver?.rejectionReason,
         hasTrunk: !isCarCategory && hasTrunk === 'Sim',
         rating: existingDriver?.rating || currentUser.rating || 0,
         totalRides: existingDriver?.totalRides || 0,
-        status: 'online',
+        status: nextApprovalStatus === 'aprovado' ? 'offline' : 'pending_approval',
         lat: existingDriver?.lat || -23.0903,
         lng: existingDriver?.lng || -47.2180,
         weeklyPlanActive: true,
@@ -445,8 +460,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         earningsToday: existingDriver?.earningsToday || 0,
         earningsWeek: existingDriver?.earningsWeek || 0,
         walletBalance: existingDriver?.walletBalance || 0,
-        cnhVerified: true,
-        vehicleVerified: true,
+        cnhVerified: nextApprovalStatus === 'aprovado',
+        vehicleVerified: nextApprovalStatus === 'aprovado',
         criminalRecordClear: true,
         registrationDate: existingDriver?.registrationDate || confirmedTimestamp.split('T')[0],
         comfortEligible: selectedCategory.key === 'motorista_confort',
@@ -479,6 +494,29 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         aceitou_lgpd: true,
         data_aceite: confirmedTimestamp,
       }, true);
+
+      await saveDriverApplicationSupabase({
+        id: newDriver.id,
+        email: currentUser.email,
+        name: currentUser.name,
+        phone: currentUser.phone,
+        whatsapp: currentUser.whatsapp || currentUser.phone,
+        category: selectedCategory.vehicleCategory,
+        vehicleModel: cleanModel,
+        vehicleColor: cleanColor,
+        vehiclePlate: cleanPlate,
+        vehicleYear: yearNum,
+        cnh: cleanCnh,
+        avatar: newDriver.avatar,
+        cnhFrontPhoto,
+        cnhBackPhoto,
+        crlvPhoto,
+        vehiclePhoto,
+        approvalStatus: nextApprovalStatus,
+        online: false,
+        driverStatus: nextApprovalStatus === 'aprovado' ? 'offline' : 'pending_approval',
+        preserveExistingApproval: keepApproved,
+      }).catch(() => {});
 
       const updRes = await updateMotoristaSupabase(currentUser.email, {
         categoria: selectedCategory.title,
@@ -860,9 +898,9 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                 </div>
               </div>
 
-              {/* Fotos do Carro, CNH e CRLV */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
-                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+              {/* Fotos: Veículo, CNH (Frente), CNH (Verso) e CRLV */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                <label className="flex flex-col items-center justify-center p-3.5 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
                   <input
                     type="file"
                     accept="image/*"
@@ -874,43 +912,67 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   />
                   {vehiclePhoto ? (
                     <>
-                      <img src={vehiclePhoto} alt={selectedCategory.vehiclePhotoLabel} className="w-full h-24 object-cover rounded-xl" />
-                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.vehiclePhotoLabel} ✓</span>
+                      <img src={vehiclePhoto} alt={selectedCategory.vehiclePhotoLabel} className="w-full h-20 object-cover rounded-xl" />
+                      <span className="text-[11px] font-bold text-emerald-700">{selectedCategory.vehiclePhotoLabel} ✓</span>
                     </>
                   ) : (
                     <>
-                      <Camera className="w-6 h-6 text-[#ff6a00]" />
-                      <span className="text-xs font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel}</span>
-                      <span className="text-[11px] text-slate-500">Galeria ou câmera</span>
+                      <Camera className="w-5 h-5 text-[#ff6a00]" />
+                      <span className="text-[11px] font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel}</span>
+                      <span className="text-[10px] text-slate-500">Opcional</span>
                     </>
                   )}
                 </label>
 
-                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${cnhFrontPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
                   <input
                     type="file"
                     accept="image/*"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setCnhPhoto);
+                      if (f) compressUploadImage(f, setCnhFrontPhoto);
                     }}
                   />
-                  {cnhPhoto ? (
+                  {cnhFrontPhoto ? (
                     <>
-                      <img src={cnhPhoto} alt={selectedCategory.cnhPhotoLabel} className="w-full h-24 object-cover rounded-xl" />
-                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.cnhPhotoLabel} ✓</span>
+                      <img src={cnhFrontPhoto} alt="CNH Frente" className="w-full h-20 object-cover rounded-xl" />
+                      <span className="text-[11px] font-bold text-emerald-700">CNH (Frente) ✓</span>
                     </>
                   ) : (
                     <>
-                      <Camera className="w-6 h-6 text-[#ff6a00]" />
-                      <span className="text-xs font-bold text-slate-800">{selectedCategory.cnhPhotoLabel}</span>
-                      <span className="text-[11px] text-slate-500">Galeria ou câmera</span>
+                      <Camera className="w-5 h-5 text-[#ff6a00]" />
+                      <span className="text-[11px] font-bold text-slate-800">CNH (Frente) *</span>
+                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
                     </>
                   )}
                 </label>
 
-                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${cnhBackPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) compressUploadImage(f, setCnhBackPhoto);
+                    }}
+                  />
+                  {cnhBackPhoto ? (
+                    <>
+                      <img src={cnhBackPhoto} alt="CNH Verso" className="w-full h-20 object-cover rounded-xl" />
+                      <span className="text-[11px] font-bold text-emerald-700">CNH (Verso) ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-5 h-5 text-[#ff6a00]" />
+                      <span className="text-[11px] font-bold text-slate-800">CNH (Verso) *</span>
+                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
+                    </>
+                  )}
+                </label>
+
+                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${crlvPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
                   <input
                     type="file"
                     accept="image/*"
@@ -922,14 +984,14 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   />
                   {crlvPhoto ? (
                     <>
-                      <img src={crlvPhoto} alt={selectedCategory.crlvPhotoLabel} className="w-full h-24 object-cover rounded-xl" />
-                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.crlvPhotoLabel} ✓</span>
+                      <img src={crlvPhoto} alt="CRLV" className="w-full h-20 object-cover rounded-xl" />
+                      <span className="text-[11px] font-bold text-emerald-700">CRLV ✓</span>
                     </>
                   ) : (
                     <>
-                      <Camera className="w-6 h-6 text-[#ff6a00]" />
-                      <span className="text-xs font-bold text-slate-800">{selectedCategory.crlvPhotoLabel}</span>
-                      <span className="text-[11px] text-slate-500">Documento em dia</span>
+                      <Camera className="w-5 h-5 text-[#ff6a00]" />
+                      <span className="text-[11px] font-bold text-slate-800">Foto CRLV *</span>
+                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
                     </>
                   )}
                 </label>
@@ -993,11 +1055,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Cor {isDeliveryMoto ? '(Opcional)' : '*'}
+                    Cor *
                   </label>
                   <input
                     type="text"
-                    required={!isDeliveryMoto}
+                    required
                     value={color}
                     onChange={(e) => setColor(e.target.value)}
                     placeholder="Ex: Preta, Vermelha, Azul"
@@ -1066,9 +1128,9 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                 )}
               </div>
 
-              {/* Fotos: Moto (ou Moto com Baú), CNH A e CRLV */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
-                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+              {/* Fotos: Moto, CNH (Frente), CNH (Verso) e CRLV */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                <label className="flex flex-col items-center justify-center p-3.5 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
                   <input
                     type="file"
                     accept="image/*"
@@ -1080,43 +1142,67 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   />
                   {vehiclePhoto ? (
                     <>
-                      <img src={vehiclePhoto} alt={selectedCategory.vehiclePhotoLabel} className="w-full h-24 object-cover rounded-xl" />
-                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.vehiclePhotoLabel} ✓</span>
+                      <img src={vehiclePhoto} alt={selectedCategory.vehiclePhotoLabel} className="w-full h-20 object-cover rounded-xl" />
+                      <span className="text-[11px] font-bold text-emerald-700">{selectedCategory.vehiclePhotoLabel} ✓</span>
                     </>
                   ) : (
                     <>
-                      <Camera className="w-6 h-6 text-[#ff6a00]" />
-                      <span className="text-xs font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel}</span>
-                      <span className="text-[11px] text-slate-500">Galeria ou câmera</span>
+                      <Camera className="w-5 h-5 text-[#ff6a00]" />
+                      <span className="text-[11px] font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel}</span>
+                      <span className="text-[10px] text-slate-500">Opcional</span>
                     </>
                   )}
                 </label>
 
-                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${cnhFrontPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
                   <input
                     type="file"
                     accept="image/*"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setCnhPhoto);
+                      if (f) compressUploadImage(f, setCnhFrontPhoto);
                     }}
                   />
-                  {cnhPhoto ? (
+                  {cnhFrontPhoto ? (
                     <>
-                      <img src={cnhPhoto} alt={selectedCategory.cnhPhotoLabel} className="w-full h-24 object-cover rounded-xl" />
-                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.cnhPhotoLabel} ✓</span>
+                      <img src={cnhFrontPhoto} alt="CNH Frente" className="w-full h-20 object-cover rounded-xl" />
+                      <span className="text-[11px] font-bold text-emerald-700">CNH (Frente) ✓</span>
                     </>
                   ) : (
                     <>
-                      <Camera className="w-6 h-6 text-[#ff6a00]" />
-                      <span className="text-xs font-bold text-slate-800">{selectedCategory.cnhPhotoLabel}</span>
-                      <span className="text-[11px] text-slate-500">Galeria ou câmera</span>
+                      <Camera className="w-5 h-5 text-[#ff6a00]" />
+                      <span className="text-[11px] font-bold text-slate-800">CNH (Frente) *</span>
+                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
                     </>
                   )}
                 </label>
 
-                <label className="flex flex-col items-center justify-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
+                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${cnhBackPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) compressUploadImage(f, setCnhBackPhoto);
+                    }}
+                  />
+                  {cnhBackPhoto ? (
+                    <>
+                      <img src={cnhBackPhoto} alt="CNH Verso" className="w-full h-20 object-cover rounded-xl" />
+                      <span className="text-[11px] font-bold text-emerald-700">CNH (Verso) ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-5 h-5 text-[#ff6a00]" />
+                      <span className="text-[11px] font-bold text-slate-800">CNH (Verso) *</span>
+                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
+                    </>
+                  )}
+                </label>
+
+                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${crlvPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
                   <input
                     type="file"
                     accept="image/*"
@@ -1128,14 +1214,14 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                   />
                   {crlvPhoto ? (
                     <>
-                      <img src={crlvPhoto} alt={selectedCategory.crlvPhotoLabel} className="w-full h-24 object-cover rounded-xl" />
-                      <span className="text-xs font-bold text-emerald-700">{selectedCategory.crlvPhotoLabel} ✓</span>
+                      <img src={crlvPhoto} alt="CRLV" className="w-full h-20 object-cover rounded-xl" />
+                      <span className="text-[11px] font-bold text-emerald-700">CRLV ✓</span>
                     </>
                   ) : (
                     <>
-                      <Camera className="w-6 h-6 text-[#ff6a00]" />
-                      <span className="text-xs font-bold text-slate-800">{selectedCategory.crlvPhotoLabel}</span>
-                      <span className="text-[11px] text-slate-500">Documento em dia</span>
+                      <Camera className="w-5 h-5 text-[#ff6a00]" />
+                      <span className="text-[11px] font-bold text-slate-800">Foto CRLV *</span>
+                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
                     </>
                   )}
                 </label>
@@ -1209,7 +1295,11 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             ) : (
               <>
                 <CheckCircle2 className="w-5 h-5" />
-                <span>Salvar e ficar ONLINE</span>
+                <span>
+                  {currentUser.driverData?.approvalStatus === 'aprovado'
+                    ? 'Salvar alterações do veículo'
+                    : 'Enviar cadastro para aprovação do ADM'}
+                </span>
               </>
             )}
           </button>

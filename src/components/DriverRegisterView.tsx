@@ -7,7 +7,7 @@ import { saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { LegalConsentSection } from './LegalConsentSection';
-import { checkDuplicateRegistrationSupabase } from '../supabase';
+import { checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase } from '../supabase';
 
 interface DriverRegisterViewProps {
   onRegisterSuccess: (user: AppUser, newDriver: Driver) => void;
@@ -27,15 +27,31 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleColor, setVehicleColor] = useState('');
   const [vehicleYear, setVehicleYear] = useState('2024');
   const [cnh, setCnh] = useState('');
   const [category, setCategory] = useState<VehicleCategory>('economica');
   const [avatar, setAvatar] = useState('');
+  const [cnhFrontPhoto, setCnhFrontPhoto] = useState('');
+  const [cnhBackPhoto, setCnhBackPhoto] = useState('');
+  const [crlvPhoto, setCrlvPhoto] = useState('');
   const [acceptedContract, setAcceptedContract] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleDocUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: React.Dispatch<React.SetStateAction<string>>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageToMax200KB(file);
+      if (compressed) setter(compressed);
+    } catch {}
+  };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -60,10 +76,16 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
     const cleanPhone = phone.replace(/\D/g, '');
     const cleanPlate = vehiclePlate.trim().toUpperCase();
     const cleanModel = vehicleModel.trim();
+    const cleanColor = vehicleColor.trim();
     const cleanCnh = cnh.trim();
 
-    if (!cleanName || !cleanEmail || !cleanPhone || !password || !cleanPlate || !cleanModel || !cleanCnh) {
-      setErrorMessage('Por favor, preencha todos os campos obrigatórios.');
+    if (!cleanName || !cleanEmail || !cleanPhone || !password || !cleanPlate || !cleanModel || !cleanColor || !cleanCnh) {
+      setErrorMessage('Por favor, preencha todos os campos obrigatórios (incluindo cor, placa, modelo e CNH).');
+      return;
+    }
+
+    if (!cnhFrontPhoto || !cnhBackPhoto || !crlvPhoto) {
+      setErrorMessage('Envie as fotos obrigatórias da CNH (Frente), CNH (Verso) e do CRLV para análise do ADM.');
       return;
     }
 
@@ -103,7 +125,7 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
         return;
       }
 
-      // Cria motorista ativo sem mensalidade (85% motorista / 15% Race)
+      // Cria motorista com status pendente até o ADM aprovar
       const newDriver: Driver = {
         id: '',
         name: cleanName,
@@ -115,11 +137,16 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
         category,
         vehicleModel: cleanModel,
         vehiclePlate: cleanPlate,
-        vehicleColor: '',
+        vehicleColor: cleanColor,
         vehicleYear: parseInt(vehicleYear, 10) || 2024,
+        cnhPhoto: cnhFrontPhoto,
+        cnhFrontPhoto,
+        cnhBackPhoto,
+        crlvPhoto,
+        approvalStatus: 'pendente',
         rating: 0,
         totalRides: 0,
-        status: 'online',
+        status: 'pending_approval',
         lat: -23.0903,
         lng: -47.2180,
         weeklyPlanActive: true,
@@ -129,8 +156,8 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
         weeklyPlanPrice: 0,
         earningsToday: 0,
         earningsWeek: 0,
-        cnhVerified: true,
-        vehicleVerified: true,
+        cnhVerified: false,
+        vehicleVerified: false,
         criminalRecordClear: true,
         registrationDate: new Date().toISOString().split('T')[0],
       };
@@ -143,6 +170,7 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
         whatsapp: cleanPhone,
         role: 'driver',
         tipo: 'driver',
+        placa: cleanPlate,
         avatar: avatar,
         rating: 0,
         driverData: newDriver,
@@ -167,6 +195,26 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
         aceitou_lgpd: true,
         data_aceite: new Date().toISOString(),
       }, true);
+
+      await saveDriverApplicationSupabase({
+        email: cleanEmail,
+        name: cleanName,
+        phone: cleanPhone,
+        whatsapp: cleanPhone,
+        category,
+        vehicleModel: cleanModel,
+        vehicleColor: cleanColor,
+        vehiclePlate: cleanPlate,
+        vehicleYear: parseInt(vehicleYear, 10) || 2024,
+        cnh: cleanCnh,
+        avatar,
+        cnhFrontPhoto,
+        cnhBackPhoto,
+        crlvPhoto,
+        approvalStatus: 'pendente',
+        online: false,
+        driverStatus: 'pending_approval',
+      }).catch(() => {});
 
       try {
         confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });
@@ -281,25 +329,39 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
             </div>
           </div>
 
-          {/* MODELO DO CARRO & ANO */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* MODELO, COR & ANO */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                MODELO DO CARRO
+                MODELO DO CARRO *
               </label>
               <input
                 type="text"
                 required
                 value={vehicleModel}
                 onChange={(e) => setVehicleModel(e.target.value)}
-                placeholder="Ex: Chevrolet Onix Plus"
+                placeholder="Ex: Onix Plus"
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-[#ff6a00] transition-colors"
               />
             </div>
 
             <div className="space-y-1">
               <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                ANO
+                COR DO CARRO *
+              </label>
+              <input
+                type="text"
+                required
+                value={vehicleColor}
+                onChange={(e) => setVehicleColor(e.target.value)}
+                placeholder="Ex: Prata"
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-[#ff6a00] transition-colors"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-white text-xs font-bold uppercase tracking-wider block">
+                ANO *
               </label>
               <input
                 type="number"
@@ -318,13 +380,13 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                PLACA DO VEÍCULO
+                PLACA DO VEÍCULO *
               </label>
               <input
                 type="text"
                 required
                 value={vehiclePlate}
-                onChange={(e) => setVehiclePlate(e.target.value)}
+                onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
                 placeholder="BRA2E19"
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-[#ff6a00] transition-colors uppercase"
               />
@@ -332,7 +394,7 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
 
             <div className="space-y-1">
               <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                CNH (COM EAR)
+                CNH (COM EAR) *
               </label>
               <input
                 type="text"
@@ -343,6 +405,25 @@ export const DriverRegisterView: React.FC<DriverRegisterViewProps> = ({
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-[#ff6a00] transition-colors"
               />
             </div>
+          </div>
+
+          {/* FOTOS CNH FRENTE, CNH VERSO E CRLV */}
+          <div className="grid grid-cols-3 gap-2">
+            <label className={`p-2.5 rounded-xl border-2 text-center cursor-pointer flex flex-col items-center justify-center min-h-[82px] ${cnhFrontPhoto ? 'bg-emerald-950/30 border-emerald-500' : 'bg-[#1a1a1a] border-dashed border-[#2a2a2a] hover:border-[#ff6a00]'}`}>
+              <input type="file" accept="image/*" onChange={(e) => handleDocUpload(e, setCnhFrontPhoto)} className="hidden" />
+              {cnhFrontPhoto ? <img src={cnhFrontPhoto} alt="CNH Frente" className="w-full h-11 object-cover rounded mb-1" /> : <Camera className="w-4 h-4 text-[#ff6a00] mb-1" />}
+              <span className="text-[10px] font-bold">{cnhFrontPhoto ? 'CNH Frente ✓' : 'CNH Frente *'}</span>
+            </label>
+            <label className={`p-2.5 rounded-xl border-2 text-center cursor-pointer flex flex-col items-center justify-center min-h-[82px] ${cnhBackPhoto ? 'bg-emerald-950/30 border-emerald-500' : 'bg-[#1a1a1a] border-dashed border-[#2a2a2a] hover:border-[#ff6a00]'}`}>
+              <input type="file" accept="image/*" onChange={(e) => handleDocUpload(e, setCnhBackPhoto)} className="hidden" />
+              {cnhBackPhoto ? <img src={cnhBackPhoto} alt="CNH Verso" className="w-full h-11 object-cover rounded mb-1" /> : <Camera className="w-4 h-4 text-[#ff6a00] mb-1" />}
+              <span className="text-[10px] font-bold">{cnhBackPhoto ? 'CNH Verso ✓' : 'CNH Verso *'}</span>
+            </label>
+            <label className={`p-2.5 rounded-xl border-2 text-center cursor-pointer flex flex-col items-center justify-center min-h-[82px] ${crlvPhoto ? 'bg-emerald-950/30 border-emerald-500' : 'bg-[#1a1a1a] border-dashed border-[#2a2a2a] hover:border-[#ff6a00]'}`}>
+              <input type="file" accept="image/*" onChange={(e) => handleDocUpload(e, setCrlvPhoto)} className="hidden" />
+              {crlvPhoto ? <img src={crlvPhoto} alt="CRLV" className="w-full h-11 object-cover rounded mb-1" /> : <Camera className="w-4 h-4 text-[#ff6a00] mb-1" />}
+              <span className="text-[10px] font-bold">{crlvPhoto ? 'CRLV ✓' : 'Foto CRLV *'}</span>
+            </label>
           </div>
 
           {/* CATEGORIA */}

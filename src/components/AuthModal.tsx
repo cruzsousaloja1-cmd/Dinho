@@ -29,7 +29,7 @@ import { verifyUserLoginAsync, saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { LegalConsentSection } from './LegalConsentSection';
-import { checkDuplicateRegistrationSupabase } from '../supabase';
+import { checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase } from '../supabase';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -61,9 +61,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Driver-specific fields
   const [driverCategory, setDriverCategory] = useState<VehicleCategory>('confort');
   const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleColor, setVehicleColor] = useState('');
   const [vehicleYear, setVehicleYear] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [cnh, setCnh] = useState('');
+  const [cnhFrontPhoto, setCnhFrontPhoto] = useState('');
+  const [cnhBackPhoto, setCnhBackPhoto] = useState('');
+  const [crlvPhoto, setCrlvPhoto] = useState('');
 
   // Validation & Feedback
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -81,6 +85,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const compressed = await compressImageToMax200KB(file);
       if (compressed) setAvatar(compressed);
+    } catch {}
+  };
+
+  const handleDocUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: React.Dispatch<React.SetStateAction<string>>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageToMax200KB(file);
+      if (compressed) setter(compressed);
     } catch {}
   };
 
@@ -159,6 +175,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorMessage('Você deve ler e aceitar o Contrato de Parceria, os Termos de Uso e a Política de Privacidade (LGPD) antes de salvar.');
         return;
       }
+      if (role === 'driver') {
+        if (!vehiclePlate.trim() || !vehicleModel.trim() || !vehicleColor.trim()) {
+          setErrorMessage('Informe placa, modelo e cor do veículo para solicitar aprovação.');
+          return;
+        }
+        if (!cnhFrontPhoto || !cnhBackPhoto || !crlvPhoto) {
+          setErrorMessage('Envie as fotos da CNH (Frente), CNH (Verso) e CRLV para aprovação do ADM.');
+          return;
+        }
+      }
 
       setIsSubmitting(true);
       try {
@@ -204,13 +230,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             cpf: '',
             cnh: cnh ? `${cnh} (EAR Aprovado)` : '',
             category: finalCategory,
-            vehicleModel,
-            vehiclePlate: vehiclePlate.toUpperCase(),
-            vehicleColor: '',
+            vehicleModel: vehicleModel.trim(),
+            vehiclePlate: vehiclePlate.trim().toUpperCase(),
+            vehicleColor: vehicleColor.trim(),
             vehicleYear: parseInt(vehicleYear, 10) || 2023,
+            cnhPhoto: cnhFrontPhoto,
+            cnhFrontPhoto,
+            cnhBackPhoto,
+            crlvPhoto,
+            approvalStatus: 'pendente',
+            categoryConfigured: true,
             rating: 0,
             totalRides: 0,
-            status: 'online',
+            status: 'pending_approval',
             lat: -23.5615,
             lng: -46.6558,
             weeklyPlanActive: true,
@@ -218,8 +250,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             weeklyPlanPrice: WEEKLY_SUBSCRIPTION_PRICE,
             earningsToday: 0,
             earningsWeek: 0,
-            cnhVerified: true,
-            vehicleVerified: true,
+            cnhVerified: false,
+            vehicleVerified: false,
             criminalRecordClear: true,
             registrationDate: new Date().toISOString().split('T')[0],
             comfortEligible,
@@ -236,6 +268,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           whatsapp: cleanPhone,
           role,
           tipo: userTipo,
+          placa: createdDriver?.vehiclePlate || '',
           avatar: avatar,
           rating: 0,
           driverData: createdDriver,
@@ -260,6 +293,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           aceitou_lgpd: true,
           data_aceite: new Date().toISOString(),
         }, true);
+
+        if (createdDriver) {
+          await saveDriverApplicationSupabase({
+            email: cleanEmail,
+            name: appUser.name,
+            phone: cleanPhone,
+            whatsapp: cleanPhone,
+            category: createdDriver.category,
+            vehicleModel: createdDriver.vehicleModel,
+            vehicleColor: createdDriver.vehicleColor,
+            vehiclePlate: createdDriver.vehiclePlate,
+            vehicleYear: createdDriver.vehicleYear,
+            cnh,
+            avatar,
+            cnhFrontPhoto,
+            cnhBackPhoto,
+            crlvPhoto,
+            approvalStatus: 'pendente',
+            online: false,
+            driverStatus: 'pending_approval',
+          }).catch(() => {});
+        }
 
         setTimeout(() => {
           setIsSubmitting(false);
@@ -550,17 +605,64 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
-                  Modelo do Veículo
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
+                    Placa *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={vehiclePlate}
+                    onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
+                    placeholder="Ex: ABC1D23"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 font-mono font-bold uppercase focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
+                    Modelo *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={vehicleModel}
+                    onChange={(e) => setVehicleModel(e.target.value)}
+                    placeholder="Ex: Corolla / Argo"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 font-bold focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
+                    Cor *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={vehicleColor}
+                    onChange={(e) => setVehicleColor(e.target.value)}
+                    placeholder="Ex: Prata"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 font-bold focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <label className={`p-2 rounded-xl border-2 text-center cursor-pointer flex flex-col items-center justify-center min-h-[72px] ${cnhFrontPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-dashed border-slate-300 hover:border-amber-500'}`}>
+                  <input type="file" accept="image/*" onChange={(e) => handleDocUpload(e, setCnhFrontPhoto)} className="hidden" />
+                  {cnhFrontPhoto ? <img src={cnhFrontPhoto} alt="CNH Frente" className="w-full h-10 object-cover rounded mb-1" /> : <Camera className="w-4 h-4 text-amber-600 mb-1" />}
+                  <span className="text-[10px] font-bold text-slate-800">{cnhFrontPhoto ? 'CNH Frente ✓' : 'CNH Frente *'}</span>
                 </label>
-                <input
-                  type="text"
-                  value={vehicleModel}
-                  onChange={(e) => setVehicleModel(e.target.value)}
-                  placeholder="Ex: Toyota Corolla Sedã ou Argo"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 font-bold focus:outline-none focus:border-amber-500"
-                />
+                <label className={`p-2 rounded-xl border-2 text-center cursor-pointer flex flex-col items-center justify-center min-h-[72px] ${cnhBackPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-dashed border-slate-300 hover:border-amber-500'}`}>
+                  <input type="file" accept="image/*" onChange={(e) => handleDocUpload(e, setCnhBackPhoto)} className="hidden" />
+                  {cnhBackPhoto ? <img src={cnhBackPhoto} alt="CNH Verso" className="w-full h-10 object-cover rounded mb-1" /> : <Camera className="w-4 h-4 text-amber-600 mb-1" />}
+                  <span className="text-[10px] font-bold text-slate-800">{cnhBackPhoto ? 'CNH Verso ✓' : 'CNH Verso *'}</span>
+                </label>
+                <label className={`p-2 rounded-xl border-2 text-center cursor-pointer flex flex-col items-center justify-center min-h-[72px] ${crlvPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-dashed border-slate-300 hover:border-amber-500'}`}>
+                  <input type="file" accept="image/*" onChange={(e) => handleDocUpload(e, setCrlvPhoto)} className="hidden" />
+                  {crlvPhoto ? <img src={crlvPhoto} alt="CRLV" className="w-full h-10 object-cover rounded mb-1" /> : <Camera className="w-4 h-4 text-amber-600 mb-1" />}
+                  <span className="text-[10px] font-bold text-slate-800">{crlvPhoto ? 'CRLV ✓' : 'Foto CRLV *'}</span>
+                </label>
               </div>
 
               {driverCategory === 'confort' && (

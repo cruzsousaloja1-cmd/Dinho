@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser } from '../services/userService';
-import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase } from '../supabase';
+import { savePagamentoSupabase, getSearchingCorridasSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
@@ -293,6 +293,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
 
+  const approvalStatus = currentDriver.approvalStatus || 'pendente';
+  const isApprovedDriver = approvalStatus === 'aprovado';
+  const [onlineBlockNotice, setOnlineBlockNotice] = useState<string | null>(null);
+
   const isCategoryConfigured = Boolean(
     currentDriver.categoryConfigured !== false &&
     currentDriver.vehiclePlate?.trim() &&
@@ -305,8 +309,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const announcedRideIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    setIsOnline(isCategoryConfigured && currentDriver.status === 'online');
-  }, [currentDriver.status, isCategoryConfigured]);
+    setIsOnline(isCategoryConfigured && isApprovedDriver && currentDriver.status === 'online');
+    if (isApprovedDriver) {
+      setOnlineBlockNotice(null);
+    }
+  }, [currentDriver.status, isCategoryConfigured, isApprovedDriver]);
 
   // Ouvindo em tempo real via Supabase Realtime ('corridas') + fallback polling 3s enquanto o condutor está ONLINE
   const isSearchingRideStatus = (st?: string) => {
@@ -323,8 +330,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   };
 
   useEffect(() => {
-    if (!isOnline || !isCategoryConfigured || acceptedDriverRide) {
-      if (!isOnline || !isCategoryConfigured) setCloudSearchingRide(null);
+    if (!isOnline || !isCategoryConfigured || !isApprovedDriver || acceptedDriverRide) {
+      if (!isOnline || !isCategoryConfigured || !isApprovedDriver) setCloudSearchingRide(null);
       return;
     }
     let mounted = true;
@@ -394,7 +401,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       unsubscribeRealtime();
       clearInterval(timer);
     };
-  }, [isOnline, isCategoryConfigured, acceptedDriverRide, currentDriver.category, dismissedTick]);
+  }, [isOnline, isCategoryConfigured, isApprovedDriver, acceptedDriverRide, currentDriver.category, dismissedTick]);
 
   // Carrega automaticamente foto do motorista e do passageiro direto do Supabase se estiverem vazias na chamada
   useEffect(() => {
@@ -716,6 +723,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [regTrunkType, setRegTrunkType] = useState('Baú 90 Litros');
   const [regRequirementsConfirmed, setRegRequirementsConfirmed] = useState(false);
   const [regAvatar, setRegAvatar] = useState('');
+  const [regCnhFrontPhoto, setRegCnhFrontPhoto] = useState('');
+  const [regCnhBackPhoto, setRegCnhBackPhoto] = useState('');
+  const [regCrlvPhoto, setRegCrlvPhoto] = useState('');
   const [acceptedContract, setAcceptedContract] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState(false);
@@ -731,6 +741,22 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       if (typeof reader.result === 'string') {
         const compressed = await compressImageToMax200KB(reader.result);
         setRegAvatar(compressed);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRegDocPhotoUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: (v: string) => void
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      if (typeof reader.result === 'string') {
+        const compressed = await compressImageToMax200KB(reader.result);
+        setter(compressed);
       }
     };
     reader.readAsDataURL(file);
@@ -769,6 +795,17 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       setIsOnline(false);
       return;
     }
+    if (!isApprovedDriver) {
+      setIsOnline(false);
+      setOnlineBlockNotice(
+        approvalStatus === 'reprovado'
+          ? (currentDriver.rejectionReason ||
+            'Seu cadastro foi reprovado pelo ADM. Atualize e reenvie seus documentos (CNH frente/verso e CRLV).')
+          : 'Seu cadastro está com status PENDENTE. Só motoristas aprovados pelo ADM podem ficar ONLINE.'
+      );
+      return;
+    }
+    setOnlineBlockNotice(null);
     const nextStatus = !isOnline;
     const nextStatusStr: 'online' | 'offline' = nextStatus ? 'online' : 'offline';
     setIsOnline(nextStatus);
@@ -844,8 +881,15 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       });
     }
 
-    const resolvedDriver = verification.driver || loggedUser.driverData;
+    const rawDriver = verification.driver || loggedUser.driverData;
+    const appsMap = await fetchDriverApplicationsSupabase().catch(() => ({} as Record<string, any>));
+    const appRec = appsMap[loggedUser.email.toLowerCase()];
+    const resolvedDriver = rawDriver ? mergeDriverWithApplication(rawDriver, appRec) : rawDriver;
+    if (resolvedDriver) {
+      onUpdateDriver(resolvedDriver);
+    }
     const canStartOnline = Boolean(
+      resolvedDriver?.approvalStatus === 'aprovado' &&
       resolvedDriver?.requirementsConfirmed === true &&
       resolvedDriver?.vehiclePlate?.trim() &&
       resolvedDriver?.vehicleModel?.trim()
@@ -884,13 +928,18 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     const cleanEmail = regEmail.replace(/\s+/g, '').trim().toLowerCase();
     const cleanWhatsApp = regPhone.replace(/\D/g, '');
 
-    if (!regName || !cleanWhatsApp || !regCpf || !regModel || !regPlate || !cleanEmail || !regPassword) {
-      setRegError('Por favor, preencha todos os campos obrigatórios (*).');
+    if (!regName || !cleanWhatsApp || !regCpf || !regModel || !regPlate || !regColor.trim() || !regCnh.trim() || !cleanEmail || !regPassword) {
+      setRegError('Por favor, preencha todos os campos obrigatórios (*), incluindo CNH, Placa, Modelo e Cor do veículo.');
       return;
     }
 
     if (!regAvatar) {
       setRegError('Envie uma foto de perfil obrigatória para segurança nas corridas.');
+      return;
+    }
+
+    if (!regCnhFrontPhoto || !regCnhBackPhoto || !regCrlvPhoto) {
+      setRegError('Envie as fotos obrigatórias da CNH (frente e verso) e do CRLV do veículo para aprovação do ADM.');
       return;
     }
 
@@ -974,11 +1023,16 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         requirementsConfirmedAt: new Date().toISOString(),
         vehicleModel: regModel,
         vehiclePlate: regPlate.toUpperCase(),
-        vehicleColor: regColor || '',
+        vehicleColor: regColor.trim(),
         vehicleYear: yearNum,
+        cnhPhoto: regCnhFrontPhoto,
+        cnhFrontPhoto: regCnhFrontPhoto,
+        cnhBackPhoto: regCnhBackPhoto,
+        crlvPhoto: regCrlvPhoto,
+        approvalStatus: 'pendente',
         rating: 0,
         totalRides: 0,
-        status: 'online',
+        status: 'pending_approval',
         lat: -23.0903,
         lng: -47.2180,
         weeklyPlanActive: true,
@@ -990,8 +1044,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         trunkType: finalCategory === 'moto_entrega' ? regTrunkType : undefined,
         earningsToday: 0,
         earningsWeek: 0,
-        cnhVerified: true,
-        vehicleVerified: true,
+        cnhVerified: false,
+        vehicleVerified: false,
         criminalRecordClear: true,
         registrationDate: new Date().toISOString().split('T')[0],
         comfortEligible,
@@ -1026,6 +1080,27 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         data_aceite: new Date().toISOString(),
       }, false);
 
+      await saveDriverApplicationSupabase({
+        id: newDriver.id,
+        email: cleanEmail,
+        name: newDriver.name,
+        phone: cleanWhatsApp,
+        whatsapp: cleanWhatsApp,
+        category: finalCategory,
+        vehicleModel: newDriver.vehicleModel,
+        vehicleColor: newDriver.vehicleColor,
+        vehiclePlate: newDriver.vehiclePlate,
+        vehicleYear: newDriver.vehicleYear,
+        cnh: newDriver.cnh,
+        avatar: newDriver.avatar,
+        cnhFrontPhoto: regCnhFrontPhoto,
+        cnhBackPhoto: regCnhBackPhoto,
+        crlvPhoto: regCrlvPhoto,
+        approvalStatus: 'pendente',
+        online: false,
+        driverStatus: 'pending_approval',
+      }).catch(() => {});
+
       onRegisterDriver(newDriver);
       setRegisteredSuccess(false);
 
@@ -1034,7 +1109,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       setLoginPassword('');
       setLoginFeedback(null);
       setLoginSuccessNotice(
-        `Cadastro de condutor (${newDriver.name}) realizado com sucesso! Para sua segurança, digite sua senha para entrar na sua conta.`
+        `Cadastro de condutor (${newDriver.name}) enviado para análise do ADM! Assim que aprovado, você poderá ficar ONLINE.`
       );
       setActiveSubTab('login');
 
@@ -1086,7 +1161,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       : null;
 
   const openIncomingRide: Ride | null =
-    isOnline && !acceptedDriverRide
+    isOnline && isApprovedDriver && !acceptedDriverRide
       ? (activePropSearchingRide || cloudSearchingRide)
       : null;
 
@@ -1439,7 +1514,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 </div>
               </div>
 
-              {/* Online Button (Bloqueado em cinza enquanto não escolher categoria; liberado em verde depois) */}
+              {/* Online Button (Bloqueado em cinza enquanto não escolher categoria ou aguarda ADM) */}
               {!isCategoryConfigured ? (
                 <button
                   type="button"
@@ -1448,6 +1523,23 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 >
                   <Lock className="w-4 h-4 shrink-0" />
                   <span>Escolha sua categoria para ficar ONLINE</span>
+                </button>
+              ) : !isApprovedDriver ? (
+                <button
+                  type="button"
+                  onClick={toggleOnline}
+                  className={`flex items-center gap-2 px-4 sm:px-5 py-3 rounded-2xl font-heading font-black text-xs sm:text-sm border shrink-0 cursor-pointer ${
+                    approvalStatus === 'reprovado'
+                      ? 'bg-rose-100 text-rose-800 border-rose-300'
+                      : 'bg-amber-100 text-amber-900 border-amber-300'
+                  }`}
+                >
+                  <Lock className="w-4 h-4 shrink-0" />
+                  <span>
+                    {approvalStatus === 'reprovado'
+                      ? 'Cadastro Reprovado'
+                      : 'Aguardando Aprovação ADM'}
+                  </span>
                 </button>
               ) : (
                 <button
@@ -1464,6 +1556,51 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 </button>
               )}
             </div>
+
+            {onlineBlockNotice && (
+              <div className="mt-4 bg-rose-50 border border-rose-300 text-rose-900 rounded-2xl p-3 text-xs font-bold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{onlineBlockNotice}</span>
+              </div>
+            )}
+
+            {isCategoryConfigured && !isApprovedDriver && (
+              <div
+                className={`mt-4 rounded-2xl p-4 border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  approvalStatus === 'reprovado'
+                    ? 'bg-rose-50 border-rose-300 text-rose-950'
+                    : 'bg-amber-50 border-amber-300 text-amber-950'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <Clock
+                    className={`w-5 h-5 shrink-0 mt-0.5 ${
+                      approvalStatus === 'reprovado' ? 'text-rose-600' : 'text-amber-600'
+                    }`}
+                  />
+                  <div className="space-y-1 text-xs sm:text-sm">
+                    <strong className="font-heading font-black block uppercase tracking-wide">
+                      {approvalStatus === 'reprovado'
+                        ? 'Cadastro Reprovado pelo ADM'
+                        : 'Cadastro Pendente — Aguardando Aprovação do ADM'}
+                    </strong>
+                    <p className="font-medium leading-snug">
+                      {approvalStatus === 'reprovado'
+                        ? currentDriver.rejectionReason ||
+                          'Verifique as fotos da CNH (frente e verso), CRLV e dados do veículo e reenvie para nova análise.'
+                        : 'Seus documentos (CNH frente e verso, CRLV, placa, modelo e cor) estão em análise. Você não aparece como condutor online até o ADM aprovar.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingCategory(true)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs shrink-0 cursor-pointer"
+                >
+                  {approvalStatus === 'reprovado' ? 'Reenviar Documentos' : 'Editar Documentos'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* TELA OBRIGATÓRIA DE ESCOLHA DE CATEGORIA ANTES DE FICAR ONLINE */}
@@ -1489,13 +1626,16 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               hideLockedOnlineButton={!isCategoryConfigured}
               onBackToRides={isEditingCategory ? () => setIsEditingCategory(false) : undefined}
               onCompleteDriverRegister={(updatedDriver) => {
+                const approved = updatedDriver.approvalStatus === 'aprovado';
                 onUpdateDriver(updatedDriver);
-                setIsOnline(updatedDriver.status === 'online');
+                setIsOnline(approved && updatedDriver.status === 'online');
                 setIsEditingCategory(false);
                 if (onTriggerToast) {
                   onTriggerToast(
-                    'Modalidade atualizada!',
-                    'Sua modalidade e dados do veículo foram salvos no Supabase e você já está ONLINE.',
+                    approved ? 'Modalidade atualizada!' : 'Cadastro enviado para aprovação!',
+                    approved
+                      ? 'Sua modalidade e dados do veículo foram salvos no Supabase.'
+                      : 'Seus documentos (CNH e CRLV) estão com status PENDENTE aguardando aprovação do ADM.',
                     'system'
                   );
                 }
@@ -1870,6 +2010,17 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       </p>
                     </div>
                   )
+                ) : !isApprovedDriver ? (
+                  <div className="text-center py-8 text-amber-900 bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm space-y-1">
+                    <p className="font-heading font-black uppercase">
+                      {approvalStatus === 'reprovado'
+                        ? 'Cadastro Reprovado pelo ADM'
+                        : 'Aguardando Aprovação do Administrador'}
+                    </p>
+                    <p className="text-xs font-medium text-amber-800">
+                      Seu radar de chamados será liberado assim que o ADM conferir sua CNH (frente e verso), CRLV e dados do veículo.
+                    </p>
+                  </div>
                 ) : (
                   <div className="text-center py-8 text-slate-600 text-sm">
                     <p>Você está atualmente <strong className="text-rose-600">OFFLINE</strong>.</p>
@@ -3391,6 +3542,72 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     )}
                   </div>
 
+                  {/* Fotos Obrigatórias: CNH (Frente), CNH (Verso) e CRLV */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                    <label className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border-2 border-dashed cursor-pointer text-center gap-2 transition-colors ${regCnhFrontPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-slate-300 hover:border-amber-500'}`}>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleRegDocPhotoUpload(e, setRegCnhFrontPhoto)}
+                      />
+                      {regCnhFrontPhoto ? (
+                        <>
+                          <img src={regCnhFrontPhoto} alt="CNH Frente" className="w-full h-24 object-cover rounded-xl" />
+                          <span className="text-xs font-bold text-emerald-700">CNH (Frente) ✓</span>
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="w-5 h-5 text-amber-600" />
+                          <span className="text-xs font-bold text-slate-800">Foto da CNH (Frente) *</span>
+                          <span className="text-[11px] text-rose-600 font-bold">Obrigatória</span>
+                        </>
+                      )}
+                    </label>
+
+                    <label className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border-2 border-dashed cursor-pointer text-center gap-2 transition-colors ${regCnhBackPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-slate-300 hover:border-amber-500'}`}>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleRegDocPhotoUpload(e, setRegCnhBackPhoto)}
+                      />
+                      {regCnhBackPhoto ? (
+                        <>
+                          <img src={regCnhBackPhoto} alt="CNH Verso" className="w-full h-24 object-cover rounded-xl" />
+                          <span className="text-xs font-bold text-emerald-700">CNH (Verso) ✓</span>
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="w-5 h-5 text-amber-600" />
+                          <span className="text-xs font-bold text-slate-800">Foto da CNH (Verso) *</span>
+                          <span className="text-[11px] text-rose-600 font-bold">Obrigatória</span>
+                        </>
+                      )}
+                    </label>
+
+                    <label className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border-2 border-dashed cursor-pointer text-center gap-2 transition-colors ${regCrlvPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-slate-300 hover:border-amber-500'}`}>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleRegDocPhotoUpload(e, setRegCrlvPhoto)}
+                      />
+                      {regCrlvPhoto ? (
+                        <>
+                          <img src={regCrlvPhoto} alt="CRLV" className="w-full h-24 object-cover rounded-xl" />
+                          <span className="text-xs font-bold text-emerald-700">CRLV do Veículo ✓</span>
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="w-5 h-5 text-amber-600" />
+                          <span className="text-xs font-bold text-slate-800">Foto do CRLV *</span>
+                          <span className="text-[11px] text-rose-600 font-bold">Obrigatória</span>
+                        </>
+                      )}
+                    </label>
+                  </div>
+
                   {/* Alerta em tempo real de ano mínimo por modalidade */}
                   {(() => {
                     const y = parseInt(regYear, 10);
@@ -3532,10 +3749,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   }`}
                 >
                   {isRegistering
-                    ? 'VERIFICANDO E SALVANDO...'
+                    ? 'VERIFICANDO E ENVIANDO PARA APROVAÇÃO...'
                     : regRequirementsConfirmed && acceptedContract && acceptedTerms && acceptedLgpd
-                    ? `Salvar e ficar ONLINE (${selectedGuide.title})`
-                    : 'Aceite Exigências, Contrato, Termos e LGPD para Salvar'}
+                    ? `Enviar cadastro para aprovação (${selectedGuide.title})`
+                    : 'Aceite Exigências, Contrato, Termos e LGPD para Enviar'}
                 </button>
               </form>
             )}

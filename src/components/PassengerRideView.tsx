@@ -329,6 +329,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const onlineConfortDriversCount = availableDrivers.filter(
     (d) =>
       d.status === 'online' &&
+      d.approvalStatus === 'aprovado' &&
       d.categoryConfigured !== false &&
       normalizeRideCategory(d.category) === 'confort'
   ).length;
@@ -1653,7 +1654,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           </p>
           <div className="w-full">
             <span className="inline-flex items-center text-xs font-mono text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 font-extrabold">
-              {availableDrivers.filter((d) => d.status === 'online').length} condutores online
+              {availableDrivers.filter((d) => d.status === 'online' && d.approvalStatus === 'aprovado').length} condutores online
             </span>
           </div>
         </div>

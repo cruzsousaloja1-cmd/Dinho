@@ -78,7 +78,9 @@ import {
   clearPassengerDebtSupabase,
   hydrateRidesWithUserPhotosSupabase,
   fetchUsuarioPhotoByIdentity,
-  signOutSupabase
+  signOutSupabase,
+  fetchDriverApplicationsSupabase,
+  mergeDriverWithApplication
 } from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
 
@@ -202,25 +204,41 @@ export default function App() {
 
     let active = true;
     const initFromSupabase = async () => {
+      let appsMap: Record<string, any> = {};
       try {
-        const [cloudDrivers, onlineRpcDrivers, cloudPassengers] = await Promise.all([
+        const [cloudDrivers, onlineRpcDrivers, cloudPassengers, fetchedApps] = await Promise.all([
           getAllDriversFromSupabase(),
           getOnlineDriversFromSupabase(),
           getAllPassengersFromSupabase(),
+          fetchDriverApplicationsSupabase().catch(() => ({})),
         ]);
+        appsMap = fetchedApps || {};
         const mergedDriversMap = new Map<string, Driver>();
         [...cloudDrivers, ...onlineRpcDrivers].forEach((drv) => {
-          const key = drv.id || drv.email || `${drv.name}-${drv.vehiclePlate}`;
+          const emailKey = (drv.email || '').trim().toLowerCase();
+          const hydratedWithApp = mergeDriverWithApplication(drv, emailKey ? appsMap[emailKey] : undefined);
+          const key = hydratedWithApp.id || hydratedWithApp.email || `${hydratedWithApp.name}-${hydratedWithApp.vehiclePlate}`;
           if (!key) return;
           const prev = mergedDriversMap.get(key);
           if (!prev) {
-            mergedDriversMap.set(key, drv);
+            mergedDriversMap.set(key, hydratedWithApp);
           } else {
-            mergedDriversMap.set(key, {
+            const combined = {
               ...prev,
-              ...drv,
-              avatar: drv.avatar || prev.avatar,
-              status: prev.status === 'online' || drv.status === 'online' ? 'online' : drv.status,
+              ...hydratedWithApp,
+              avatar: hydratedWithApp.avatar || prev.avatar,
+            };
+            mergedDriversMap.set(key, {
+              ...combined,
+              status:
+                combined.approvalStatus === 'aprovado' &&
+                (prev.status === 'online' || hydratedWithApp.status === 'online')
+                  ? 'online'
+                  : combined.approvalStatus === 'aprovado'
+                  ? 'offline'
+                  : combined.approvalStatus === 'reprovado'
+                  ? 'offline'
+                  : 'pending_approval',
             });
           }
         });
@@ -283,24 +301,40 @@ export default function App() {
           hydratedTipoLower === 'motoboy_entregas';
 
         if (isDriverOrMotoboy && hydratedDriver) {
+          const emailKey = (hydratedDriver.email || mergedUser.email || '').trim().toLowerCase();
+          if (Object.keys(appsMap).length === 0) {
+            appsMap = await fetchDriverApplicationsSupabase().catch(() => ({}));
+          }
+          const appMergedDriver = mergeDriverWithApplication(
+            hydratedDriver,
+            emailKey ? appsMap[emailKey] : undefined
+          );
           const isConfigured =
-            hydratedDriver.categoryConfigured !== false &&
-            Boolean(hydratedDriver.vehiclePlate?.trim() && hydratedDriver.vehicleModel?.trim()) &&
-            hydratedDriver.requirementsConfirmed === true;
-          const currentBalance = getDriverBalance(hydratedDriver.id, hydratedDriver.walletBalance || 0);
+            appMergedDriver.categoryConfigured !== false &&
+            Boolean(appMergedDriver.vehiclePlate?.trim() && appMergedDriver.vehicleModel?.trim()) &&
+            appMergedDriver.requirementsConfirmed === true;
+          const isApproved = appMergedDriver.approvalStatus === 'aprovado';
+          const currentBalance = getDriverBalance(appMergedDriver.id, appMergedDriver.walletBalance || 0);
           const updatedMatched: Driver = {
-            ...hydratedDriver,
+            ...appMergedDriver,
             categoryConfigured:
-              hydratedDriver.categoryConfigured !== false &&
-              Boolean(hydratedDriver.vehiclePlate?.trim() && hydratedDriver.vehicleModel?.trim()),
-            requirementsConfirmed: hydratedDriver.requirementsConfirmed === true,
+              appMergedDriver.categoryConfigured !== false &&
+              Boolean(appMergedDriver.vehiclePlate?.trim() && appMergedDriver.vehicleModel?.trim()),
+            requirementsConfirmed: appMergedDriver.requirementsConfirmed === true,
             walletBalance: currentBalance,
             weeklyPlanActive: true,
-            status: isConfigured && hydratedDriver.status === 'online' ? 'online' : 'offline',
+            status:
+              isConfigured && isApproved && appMergedDriver.status === 'online'
+                ? 'online'
+                : isApproved
+                ? 'offline'
+                : appMergedDriver.approvalStatus === 'reprovado'
+                ? 'offline'
+                : 'pending_approval',
           };
           setCurrentDriver(updatedMatched);
           setActiveTab('driver_portal');
-          if (isConfigured && updatedMatched.status === 'online') {
+          if (isConfigured && isApproved && updatedMatched.status === 'online') {
             captureAndSyncDriverGps(updatedMatched, 'online');
           }
         } else {
@@ -320,7 +354,7 @@ export default function App() {
   // Helper para capturar GPS real do condutor e gravar status ONLINE/OFFLINE no Supabase
   const captureAndSyncDriverGps = (driverTarget: Driver, status: 'online' | 'offline') => {
     if (!driverTarget?.email && !driverTarget?.id) return;
-    if (status === 'offline') {
+    if (status === 'offline' || driverTarget.approvalStatus !== 'aprovado') {
       updateDriverOnlineStatusSupabase({
         id: driverTarget.id,
         email: driverTarget.email,
@@ -437,8 +471,25 @@ export default function App() {
 
     const syncOnlineDrivers = async () => {
       try {
-        const onlineList = await getOnlineDriversFromSupabase();
+        const [onlineListRaw, appsMap] = await Promise.all([
+          getOnlineDriversFromSupabase(),
+          currentUser?.driverData || currentDriver?.email
+            ? fetchDriverApplicationsSupabase().catch(() => ({}))
+            : Promise.resolve({}),
+        ]);
         if (!active) return;
+
+        const onlineList = onlineListRaw.filter((d) => d.approvalStatus === 'aprovado');
+
+        if (currentDriver?.email) {
+          const emailKey = currentDriver.email.trim().toLowerCase();
+          const myApp = (appsMap as Record<string, any>)[emailKey];
+          if (myApp && myApp.approvalStatus && myApp.approvalStatus !== currentDriver.approvalStatus) {
+            setCurrentDriver((prev) =>
+              mergeDriverWithApplication(prev, myApp)
+            );
+          }
+        }
 
         setDrivers((prev) => {
           const onlineByKey = new Map<string, Driver>();
@@ -451,7 +502,12 @@ export default function App() {
           prev.forEach((existing) => {
             const k = (existing.email || existing.id || '').toLowerCase();
             if (k && !onlineByKey.has(k)) {
-              merged.push({ ...existing, status: 'offline' });
+              const appRec = (appsMap as Record<string, any>)[k];
+              const hydrated = appRec ? mergeDriverWithApplication(existing, appRec) : existing;
+              merged.push({
+                ...hydrated,
+                status: hydrated.approvalStatus === 'pendente' ? 'pending_approval' : 'offline',
+              });
             }
           });
           return merged;
@@ -465,7 +521,7 @@ export default function App() {
       active = false;
       clearInterval(timer);
     };
-  }, [currentUser, isFullMapOpen, activeTab]);
+  }, [currentUser, isFullMapOpen, activeTab, currentDriver?.email, currentDriver?.approvalStatus]);
 
   // 3. Rota Secreta /admin: abre o AdminDashboard se o usuário for admin, senão volta para tela preta de login
   useEffect(() => {
@@ -1052,12 +1108,30 @@ export default function App() {
     const isConfigured =
       newDriver.categoryConfigured !== false &&
       Boolean(newDriver.vehiclePlate?.trim() && newDriver.vehicleModel?.trim());
+    const effectiveApproval = newDriver.approvalStatus || 'pendente';
+    const isApproved = effectiveApproval === 'aprovado';
     const normalizedDriver: Driver = {
       ...newDriver,
+      approvalStatus: effectiveApproval,
       categoryConfigured: isConfigured,
-      status: isConfigured ? newDriver.status : 'offline',
+      status: !isConfigured
+        ? 'offline'
+        : isApproved
+        ? newDriver.status === 'online'
+          ? 'online'
+          : 'offline'
+        : effectiveApproval === 'reprovado'
+        ? 'offline'
+        : 'pending_approval',
     };
-    setDrivers((prev) => [normalizedDriver, ...prev.filter((d) => d.id !== normalizedDriver.id)]);
+    setDrivers((prev) => [
+      normalizedDriver,
+      ...prev.filter(
+        (d) =>
+          d.id !== normalizedDriver.id &&
+          normalizeEmail(d.email) !== normalizeEmail(normalizedDriver.email)
+      ),
+    ]);
     setCurrentDriver(normalizedDriver);
 
     const isMoto =
@@ -1092,11 +1166,17 @@ export default function App() {
     });
 
     triggerPush(
-      isConfigured ? '🎉 Bem-vindo à RACE!' : 'Escolha sua categoria no app',
-      isConfigured
-        ? `Cadastro de ${normalizedDriver.name} concluído com sucesso! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade.`
-        : `Olá ${normalizedDriver.name}! Escolha sua categoria e informe os dados do veículo para liberar o botão verde ONLINE.`,
-      isConfigured ? 'financial' : 'system'
+      !isConfigured
+        ? 'Escolha sua categoria no app'
+        : isApproved
+        ? '🎉 Bem-vindo à RACE!'
+        : '⏳ Cadastro em análise pelo ADM',
+      !isConfigured
+        ? `Olá ${normalizedDriver.name}! Escolha sua categoria e informe os dados do veículo e documentos.`
+        : isApproved
+        ? `Cadastro de ${normalizedDriver.name} aprovado! Você fica com 85% de cada corrida, Race fica com 15%.`
+        : `Recebemos sua CNH (frente e verso), CRLV e dados do veículo. Assim que o ADM aprovar, você poderá ficar ONLINE.`,
+      isApproved ? 'financial' : 'system'
     );
   };
 
@@ -1104,13 +1184,29 @@ export default function App() {
     const isConfigured =
       updated.categoryConfigured !== false &&
       Boolean(updated.vehiclePlate?.trim() && updated.vehicleModel?.trim());
+    const effectiveApproval = updated.approvalStatus || 'pendente';
+    const isApproved = effectiveApproval === 'aprovado';
     const safeUpdated: Driver = {
       ...updated,
+      approvalStatus: effectiveApproval,
       categoryConfigured: isConfigured,
-      status: isConfigured ? updated.status : 'offline',
+      status: !isConfigured
+        ? 'offline'
+        : isApproved
+        ? updated.status
+        : effectiveApproval === 'reprovado'
+        ? 'offline'
+        : 'pending_approval',
     };
     setCurrentDriver(safeUpdated);
-    setDrivers((prev) => [safeUpdated, ...prev.filter((d) => d.id !== safeUpdated.id)]);
+    setDrivers((prev) => [
+      safeUpdated,
+      ...prev.filter(
+        (d) =>
+          d.id !== safeUpdated.id &&
+          normalizeEmail(d.email) !== normalizeEmail(safeUpdated.email)
+      ),
+    ]);
 
     if (safeUpdated.email) {
       const isMoto =
@@ -1149,6 +1245,12 @@ export default function App() {
     setDrivers((prev) =>
       prev.map((d) => {
         if (d.id !== driverId) return d;
+        if (d.approvalStatus !== 'aprovado') {
+          return {
+            ...d,
+            status: d.approvalStatus === 'reprovado' ? 'offline' : 'pending_approval',
+          };
+        }
         const nextStatus: 'online' | 'offline' = d.status === 'online' ? 'offline' : 'online';
         updateDriverOnlineStatusSupabase({
           id: d.id,
@@ -1194,11 +1296,85 @@ export default function App() {
     setDrivers((prev) =>
       prev.map((d) =>
         d.id === driverId
-          ? { ...d, cnhVerified: true, vehicleVerified: true, weeklyPlanActive: true }
+          ? {
+              ...d,
+              approvalStatus: 'aprovado',
+              rejectionReason: '',
+              approvedAt: new Date().toISOString(),
+              cnhVerified: true,
+              vehicleVerified: true,
+              weeklyPlanActive: true,
+              status: d.status === 'pending_approval' ? 'offline' : d.status,
+            }
           : d
       )
     );
-    triggerPush('🛡️ Auditoria Aprovada', 'Documentos de condutor validados com sucesso.', 'safety');
+    triggerPush('🛡️ Auditoria Aprovada', 'Motorista aprovado com sucesso! Já pode ficar ONLINE.', 'safety');
+  };
+
+  const handleApproveDriverApplication = (email: string, updatedDriver?: Driver) => {
+    const cleanEmail = normalizeEmail(email);
+    setDrivers((prev) => {
+      const exists = prev.some((d) => normalizeEmail(d.email) === cleanEmail);
+      if (!exists && updatedDriver) {
+        return [updatedDriver, ...prev];
+      }
+      return prev.map((d) =>
+        normalizeEmail(d.email) === cleanEmail
+          ? {
+              ...d,
+              ...(updatedDriver || {}),
+              approvalStatus: 'aprovado',
+              rejectionReason: '',
+              approvedAt: updatedDriver?.approvedAt || new Date().toISOString(),
+              cnhVerified: true,
+              vehicleVerified: true,
+              status: d.status === 'online' ? 'online' : 'offline',
+            }
+          : d
+      );
+    });
+    if (normalizeEmail(currentDriver.email) === cleanEmail) {
+      setCurrentDriver((prev) => ({
+        ...prev,
+        ...(updatedDriver || {}),
+        approvalStatus: 'aprovado',
+        rejectionReason: '',
+        cnhVerified: true,
+        vehicleVerified: true,
+        status: prev.status === 'online' ? 'online' : 'offline',
+      }));
+    }
+    triggerPush('🛡️ Motorista Aprovado', `Cadastro de ${email} aprovado! Condutor liberado para ficar ONLINE.`, 'safety');
+  };
+
+  const handleRejectDriverApplication = (email: string, reason: string) => {
+    const cleanEmail = normalizeEmail(email);
+    setDrivers((prev) =>
+      prev.map((d) =>
+        normalizeEmail(d.email) === cleanEmail
+          ? {
+              ...d,
+              approvalStatus: 'reprovado',
+              rejectionReason: reason,
+              cnhVerified: false,
+              vehicleVerified: false,
+              status: 'offline',
+            }
+          : d
+      )
+    );
+    if (normalizeEmail(currentDriver.email) === cleanEmail) {
+      setCurrentDriver((prev) => ({
+        ...prev,
+        approvalStatus: 'reprovado',
+        rejectionReason: reason,
+        cnhVerified: false,
+        vehicleVerified: false,
+        status: 'offline',
+      }));
+    }
+    triggerPush('Cadastro Reprovado', `O cadastro de ${email} foi marcado como reprovado.`, 'safety');
   };
 
   const handleApproveWeeklyPayment = (driver: Driver) => {
@@ -1330,14 +1506,26 @@ export default function App() {
       const isConfigured =
         driver.categoryConfigured !== false &&
         Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim());
+      const isApproved = driver.approvalStatus === 'aprovado';
       const nextDrv: Driver = {
         ...driver,
+        approvalStatus: driver.approvalStatus || 'pendente',
         categoryConfigured: isConfigured,
-        status: isConfigured ? 'online' : 'offline',
+        status:
+          isConfigured && isApproved && driver.status === 'online'
+            ? 'online'
+            : isApproved
+            ? 'offline'
+            : driver.approvalStatus === 'reprovado'
+            ? 'offline'
+            : 'pending_approval',
       };
-      setDrivers((prev) => [nextDrv, ...prev.filter((d) => d.id !== nextDrv.id)]);
+      setDrivers((prev) => [
+        nextDrv,
+        ...prev.filter((d) => d.id !== nextDrv.id && normalizeEmail(d.email) !== normalizeEmail(nextDrv.email)),
+      ]);
       setCurrentDriver(nextDrv);
-      if (isConfigured) {
+      if (isConfigured && isApproved && nextDrv.status === 'online') {
         captureAndSyncDriverGps(nextDrv, 'online');
       }
     }
@@ -1386,10 +1574,10 @@ export default function App() {
 
   const unreadNotifsCount = notifications.filter((n) => !n.read).length;
 
-  // Reusable real-time GPS map component instance (SOMENTE motoristas ONLINE com categoria configurada)
+  // Reusable real-time GPS map component instance (SOMENTE motoristas APROVADOS e ONLINE com categoria configurada)
   const mapElement = (
     <MapRealtime
-      drivers={drivers.filter((d) => d.status === 'online' && d.categoryConfigured !== false)}
+      drivers={drivers.filter((d) => d.status === 'online' && d.approvalStatus === 'aprovado' && d.categoryConfigured !== false)}
       pickup={pickup}
       destination={destination}
       activeDriver={activeRide?.driver || null}
@@ -1473,27 +1661,39 @@ export default function App() {
               targetDriver.categoryConfigured !== false &&
               Boolean(targetDriver.vehiclePlate?.trim() && targetDriver.vehicleModel?.trim());
             const isConfigured = hasVehicleFields && targetDriver.requirementsConfirmed === true;
+            const isApproved = targetDriver.approvalStatus === 'aprovado';
             const currentBal = getDriverBalance(targetDriver.id, targetDriver.walletBalance || 0);
             const driverWithBal: Driver = {
               ...targetDriver,
+              approvalStatus: targetDriver.approvalStatus || 'pendente',
               categoryConfigured: hasVehicleFields,
               requirementsConfirmed: targetDriver.requirementsConfirmed === true,
               walletBalance: currentBal,
               weeklyPlanActive: isConfigured,
-              status: isConfigured && targetDriver.status === 'online' ? 'online' : 'offline',
+              status:
+                isConfigured && isApproved && targetDriver.status === 'online'
+                  ? 'online'
+                  : isApproved
+                  ? 'offline'
+                  : targetDriver.approvalStatus === 'reprovado'
+                  ? 'offline'
+                  : 'pending_approval',
             };
             setCurrentDriver(driverWithBal);
-            setDrivers((prev) => [driverWithBal, ...prev.filter((d) => d.id !== driverWithBal.id)]);
-            if (isConfigured && driverWithBal.status === 'online') {
+            setDrivers((prev) => [
+              driverWithBal,
+              ...prev.filter((d) => d.id !== driverWithBal.id && normalizeEmail(d.email) !== normalizeEmail(driverWithBal.email)),
+            ]);
+            if (isConfigured && isApproved && driverWithBal.status === 'online') {
               captureAndSyncDriverGps(driverWithBal, 'online');
             }
             setActiveTab('driver_portal');
             setLoginSuccessBanner(
-              isConfigured
-                ? `Bem-vindo(a), ${targetDriver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
-                : hasVehicleFields
-                ? `Bem-vindo(a), ${targetDriver.name}! Confirme as exigências da sua modalidade para voltar a ficar ONLINE.`
-                : `Bem-vindo(a), ${targetDriver.name}! Escolha sua modalidade e preencha os dados do veículo para liberar o botão verde ONLINE.`
+              !isConfigured
+                ? `Bem-vindo(a), ${targetDriver.name}! Escolha sua modalidade, informe os dados do veículo e envie as fotos da CNH (frente e verso) e CRLV.`
+                : !isApproved
+                ? `Bem-vindo(a), ${targetDriver.name}! Seu cadastro está PENDENTE de aprovação do ADM. Assim que aprovado, você poderá ficar ONLINE.`
+                : `Bem-vindo(a), ${targetDriver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
             );
           } else {
             // Passageiro: vai direto para tela de pedir corrida com mapa
@@ -1549,11 +1749,13 @@ export default function App() {
           isMandatorySetup={true}
           onLogout={handleLogout}
           onCompleteDriverRegister={(newDriver) => {
+            const isApproved = newDriver.approvalStatus === 'aprovado';
             const configuredDriver: Driver = {
               ...newDriver,
+              approvalStatus: newDriver.approvalStatus || 'pendente',
               categoryConfigured: true,
               requirementsConfirmed: true,
-              status: 'online',
+              status: isApproved ? 'offline' : 'pending_approval',
               weeklyPlanActive: true,
             };
             const isMoto =
@@ -1577,10 +1779,11 @@ export default function App() {
             setCurrentUser(updatedUser);
             saveSessionUser(updatedUser);
             handleRegisterDriver(configuredDriver);
-            captureAndSyncDriverGps(configuredDriver, 'online');
             setActiveTab('driver_portal');
             setLoginSuccessBanner(
-              `Modalidade configurada! Você já está ONLINE e pronto para receber corridas na RACE.`
+              isApproved
+                ? `Modalidade configurada! Você já pode ficar ONLINE e receber corridas na RACE.`
+                : `Cadastro enviado! Seus documentos (CNH frente/verso e CRLV) estão com status PENDENTE aguardando aprovação do ADM.`
             );
           }}
         />
@@ -1727,13 +1930,22 @@ export default function App() {
                   const isConfigured =
                     driver.categoryConfigured !== false &&
                     Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim());
+                  const isApproved = driver.approvalStatus === 'aprovado';
                   const nextDrv: Driver = {
                     ...driver,
+                    approvalStatus: driver.approvalStatus || 'pendente',
                     categoryConfigured: isConfigured,
-                    status: isConfigured ? 'online' : 'offline',
+                    status:
+                      isConfigured && isApproved && driver.status === 'online'
+                        ? 'online'
+                        : isApproved
+                        ? 'offline'
+                        : driver.approvalStatus === 'reprovado'
+                        ? 'offline'
+                        : 'pending_approval',
                   };
                   setCurrentDriver(nextDrv);
-                  if (isConfigured) {
+                  if (isConfigured && isApproved && nextDrv.status === 'online') {
                     captureAndSyncDriverGps(nextDrv, 'online');
                   }
                 }
@@ -1757,22 +1969,30 @@ export default function App() {
             <DriverWorkSelectionView
               currentUser={currentUser!}
               onCompleteDriverRegister={(newDriver) => {
-                handleRegisterDriver(newDriver);
-                const isMoto = newDriver.category === 'moto_entrega' || newDriver.category === 'moto_passageiro';
+                const isApproved = newDriver.approvalStatus === 'aprovado';
+                const pendingDriver: Driver = {
+                  ...newDriver,
+                  approvalStatus: newDriver.approvalStatus || 'pendente',
+                  status: isApproved ? newDriver.status : 'pending_approval',
+                };
+                handleRegisterDriver(pendingDriver);
+                const isMoto = pendingDriver.category === 'moto_entrega' || pendingDriver.category === 'moto_passageiro';
                 const updatedUser: AppUser = {
                   ...currentUser!,
                   role: isMoto ? 'motoboy' : 'driver',
-                  tipo: newDriver.category === 'economica' ? 'motorista_economico' :
-                        newDriver.category === 'confort' ? 'motorista_confort' :
-                        newDriver.category === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas',
-                  placa: newDriver.vehiclePlate,
-                  driverData: newDriver,
+                  tipo: pendingDriver.category === 'economica' ? 'motorista_economico' :
+                        pendingDriver.category === 'confort' ? 'motorista_confort' :
+                        pendingDriver.category === 'moto_passageiro' ? 'motoboy_passageiro' : 'motoboy_entregas',
+                  placa: pendingDriver.vehiclePlate,
+                  driverData: pendingDriver,
                 };
                 setCurrentUser(updatedUser);
-                setCurrentDriver(newDriver);
+                setCurrentDriver(pendingDriver);
                 saveSessionUser(updatedUser);
                 setLoginSuccessBanner(
-                  `Parabéns, ${newDriver.name}! Cadastro de motorista homologado com sucesso!`
+                  isApproved
+                    ? `Parabéns, ${pendingDriver.name}! Cadastro de motorista aprovado!`
+                    : `Cadastro enviado! Seus documentos estão PENDENTES de aprovação do ADM. Você não ficará online até ser aprovado.`
                 );
               }}
               onBackToRides={() => setActiveTab('rides')}
@@ -1835,6 +2055,7 @@ export default function App() {
               saveSessionUser(updatedUser);
             }}
             onOpenPrivacyPage={openPrivacyPage}
+            onWantToBeDriver={() => setActiveTab('driver_portal')}
           />
         )}
 
@@ -1854,6 +2075,8 @@ export default function App() {
               onRemovePassenger={handleRemovePassenger}
               onActivateAllDrivers={handleActivateAllDrivers}
               onRemoveAllAccounts={handleRemoveAllAccounts}
+              onApproveDriverApplication={handleApproveDriverApplication}
+              onRejectDriverApplication={handleRejectDriverApplication}
             />
           ) : (
             <div className="text-center py-12 p-6 bg-zinc-950 border-2 border-[#ff6a00] rounded-3xl text-white space-y-3 shadow-xl">
@@ -1955,7 +2178,7 @@ export default function App() {
           activeRide.paymentMethod === 'dinheiro') && (() => {
           const targetRideCat = normalizeRideCategory(activeRide.category);
           const matchingOnlineDrivers = drivers.filter((d) => {
-            if (d.status !== 'online' || d.categoryConfigured === false) return false;
+            if (d.status !== 'online' || d.approvalStatus !== 'aprovado' || d.categoryConfigured === false) return false;
             return normalizeRideCategory(d.category) === targetRideCat;
           });
           return (

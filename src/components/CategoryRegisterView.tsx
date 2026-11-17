@@ -5,7 +5,7 @@ import { saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { LegalConsentSection } from './LegalConsentSection';
-import { checkDuplicateRegistrationSupabase } from '../supabase';
+import { checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase } from '../supabase';
 import { 
   Car, 
   Bike, 
@@ -131,9 +131,13 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleColor, setVehicleColor] = useState('');
   const [vehicleYear, setVehicleYear] = useState(config.minYear ? String(config.minYear) : '2022');
   const [trunkType, setTrunkType] = useState('Baú 80 Litros');
   const [avatar, setAvatar] = useState('');
+  const [cnhFrontPhoto, setCnhFrontPhoto] = useState('');
+  const [cnhBackPhoto, setCnhBackPhoto] = useState('');
+  const [crlvPhoto, setCrlvPhoto] = useState('');
   const [acceptedContract, setAcceptedContract] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState(false);
@@ -153,6 +157,18 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const handleDocUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: React.Dispatch<React.SetStateAction<string>>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageToMax200KB(file);
+      if (compressed) setter(compressed);
+    } catch {}
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -162,14 +178,20 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
     const cleanPhone = phone.replace(/\D/g, '');
     const cleanPlate = vehiclePlate.trim().toUpperCase();
     const cleanModel = vehicleModel.trim();
+    const cleanColor = vehicleColor.trim();
 
-    if (!cleanName || !cleanEmail || !cleanPhone || !password || !cleanPlate || !cleanModel) {
-      setErrorMessage('Por favor, preencha todos os campos obrigatórios.');
+    if (!cleanName || !cleanEmail || !cleanPhone || !password || !cleanPlate || !cleanModel || !cleanColor) {
+      setErrorMessage('Por favor, preencha todos os campos obrigatórios (incluindo cor, placa e modelo).');
       return;
     }
 
     if (!avatar) {
       setErrorMessage('Envie uma foto de perfil obrigatória antes de concluir o cadastro.');
+      return;
+    }
+
+    if (!cnhFrontPhoto || !cnhBackPhoto || !crlvPhoto) {
+      setErrorMessage('Envie as fotos obrigatórias da CNH (Frente), CNH (Verso) e do CRLV para análise do ADM.');
       return;
     }
 
@@ -220,7 +242,7 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
 
       const yearNum = config.hasYear ? (parseInt(vehicleYear, 10) || 2024) : 2023;
 
-      // Cria o motorista / motoboy vinculado à categoria escolhida
+      // Cria o motorista / motoboy vinculado à categoria escolhida com status pendente até aprovação do ADM
       const newDriver: Driver = {
         id: '',
         name: cleanName,
@@ -230,13 +252,19 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
         cpf: '',
         cnh: '',
         category: config.vehicleCategory,
+        categoryConfigured: true,
         vehicleModel: cleanModel,
         vehiclePlate: cleanPlate,
-        vehicleColor: '',
+        vehicleColor: cleanColor,
         vehicleYear: yearNum,
+        cnhPhoto: cnhFrontPhoto,
+        cnhFrontPhoto,
+        cnhBackPhoto,
+        crlvPhoto,
+        approvalStatus: 'pendente',
         rating: 0,
         totalRides: 0,
-        status: 'online', // Sem taxa para trabalhar, ativo imediatamente
+        status: 'pending_approval',
         lat: -23.0903,
         lng: -47.2180,
         weeklyPlanActive: true,
@@ -246,8 +274,8 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
         weeklyPlanPrice: 0,
         earningsToday: 0,
         earningsWeek: 0,
-        cnhVerified: true,
-        vehicleVerified: true,
+        cnhVerified: false,
+        vehicleVerified: false,
         criminalRecordClear: true,
         registrationDate: new Date().toISOString().split('T')[0],
         trunkType: config.hasTrunkType ? trunkType : undefined,
@@ -288,6 +316,25 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
         aceitou_lgpd: true,
         data_aceite: new Date().toISOString(),
       }, false);
+
+      await saveDriverApplicationSupabase({
+        email: cleanEmail,
+        name: cleanName,
+        phone: cleanPhone,
+        whatsapp: cleanPhone,
+        category: config.vehicleCategory,
+        vehicleModel: cleanModel,
+        vehicleColor: cleanColor,
+        vehiclePlate: cleanPlate,
+        vehicleYear: yearNum,
+        avatar,
+        cnhFrontPhoto,
+        cnhBackPhoto,
+        crlvPhoto,
+        approvalStatus: 'pendente',
+        online: false,
+        driverStatus: 'pending_approval',
+      }).catch(() => {});
 
       try {
         confetti({ particleCount: 75, spread: 80, origin: { y: 0.6 } });
@@ -428,17 +475,17 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
             </div>
           </div>
 
-          {/* PLACA & MODELO DO VEÍCULO */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* PLACA, MODELO & COR DO VEÍCULO */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                PLACA DO VEÍCULO
+                PLACA *
               </label>
               <input
                 type="text"
                 required
                 value={vehiclePlate}
-                onChange={(e) => setVehiclePlate(e.target.value)}
+                onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
                 placeholder="Ex: BRA2E19"
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors uppercase font-mono"
               />
@@ -446,7 +493,7 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
 
             <div className="space-y-1">
               <label className="text-white text-xs font-bold uppercase tracking-wider block">
-                {config.modelLabel}
+                {config.modelLabel} *
               </label>
               <input
                 type="text"
@@ -457,6 +504,39 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors"
               />
             </div>
+
+            <div className="space-y-1">
+              <label className="text-white text-xs font-bold uppercase tracking-wider block">
+                COR *
+              </label>
+              <input
+                type="text"
+                required
+                value={vehicleColor}
+                onChange={(e) => setVehicleColor(e.target.value)}
+                placeholder="Ex: Prata"
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* FOTOS OBRIGATÓRIAS: CNH FRENTE, CNH VERSO E CRLV */}
+          <div className="grid grid-cols-3 gap-2">
+            <label className={`p-2.5 rounded-xl border-2 text-center cursor-pointer flex flex-col items-center justify-center min-h-[82px] ${cnhFrontPhoto ? 'bg-emerald-950/30 border-emerald-500' : 'bg-[#1a1a1a] border-dashed border-[#2a2a2a] hover:border-[#ff6a00]'}`}>
+              <input type="file" accept="image/*" onChange={(e) => handleDocUpload(e, setCnhFrontPhoto)} className="hidden" />
+              {cnhFrontPhoto ? <img src={cnhFrontPhoto} alt="CNH Frente" className="w-full h-11 object-cover rounded mb-1" /> : <Camera className="w-4 h-4 text-[#ff6a00] mb-1" />}
+              <span className="text-[10px] font-bold">{cnhFrontPhoto ? 'CNH Frente ✓' : 'CNH Frente *'}</span>
+            </label>
+            <label className={`p-2.5 rounded-xl border-2 text-center cursor-pointer flex flex-col items-center justify-center min-h-[82px] ${cnhBackPhoto ? 'bg-emerald-950/30 border-emerald-500' : 'bg-[#1a1a1a] border-dashed border-[#2a2a2a] hover:border-[#ff6a00]'}`}>
+              <input type="file" accept="image/*" onChange={(e) => handleDocUpload(e, setCnhBackPhoto)} className="hidden" />
+              {cnhBackPhoto ? <img src={cnhBackPhoto} alt="CNH Verso" className="w-full h-11 object-cover rounded mb-1" /> : <Camera className="w-4 h-4 text-[#ff6a00] mb-1" />}
+              <span className="text-[10px] font-bold">{cnhBackPhoto ? 'CNH Verso ✓' : 'CNH Verso *'}</span>
+            </label>
+            <label className={`p-2.5 rounded-xl border-2 text-center cursor-pointer flex flex-col items-center justify-center min-h-[82px] ${crlvPhoto ? 'bg-emerald-950/30 border-emerald-500' : 'bg-[#1a1a1a] border-dashed border-[#2a2a2a] hover:border-[#ff6a00]'}`}>
+              <input type="file" accept="image/*" onChange={(e) => handleDocUpload(e, setCrlvPhoto)} className="hidden" />
+              {crlvPhoto ? <img src={crlvPhoto} alt="CRLV" className="w-full h-11 object-cover rounded mb-1" /> : <Camera className="w-4 h-4 text-[#ff6a00] mb-1" />}
+              <span className="text-[10px] font-bold">{crlvPhoto ? 'CRLV ✓' : 'Foto CRLV *'}</span>
+            </label>
           </div>
 
           {/* ANO DO CARRO (Apenas para Motorista Econômico e Confort) */}

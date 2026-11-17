@@ -47,6 +47,7 @@ export const PassengerOptionsView: React.FC<PassengerOptionsViewProps> = ({
   const onlineConfortDriversCount = availableDrivers.filter(
     (d) =>
       d.status === 'online' &&
+      d.approvalStatus === 'aprovado' &&
       d.categoryConfigured !== false &&
       normalizeRideCategory(d.category) === 'confort'
   ).length;

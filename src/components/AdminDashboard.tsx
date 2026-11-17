@@ -57,6 +57,9 @@ import {
   updateDriverOnlineStatusSupabase,
   getAllCorridasForAdminSupabase,
   getAllPagamentosSupabase,
+  fetchDriverApplicationsSupabase,
+  approveOrRejectDriverSupabase,
+  DriverApplicationRecord,
   SupabasePagamentoRow
 } from '../supabase';
 import { 
@@ -79,6 +82,8 @@ interface AdminDashboardProps {
   onRemovePassenger?: (passengerId: string, email: string) => void;
   onActivateAllDrivers?: () => void;
   onRemoveAllAccounts?: () => void;
+  onApproveDriverApplication?: (email: string, updatedDriver?: Driver) => void;
+  onRejectDriverApplication?: (email: string, reason: string) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -94,17 +99,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRemovePassenger,
   onActivateAllDrivers,
   onRemoveAllAccounts,
+  onApproveDriverApplication,
+  onRejectDriverApplication,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'reports' | 'reviews' | 'supabase'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'pending_drivers' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'reports' | 'reviews' | 'supabase'>('overview');
   const [cadastrosSubTab, setCadastrosSubTab] = useState<'all' | 'drivers' | 'passengers'>('all');
   const [driverFilterCategory, setDriverFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewProofImage, setPreviewProofImage] = useState<string | null>(null);
+  const [previewDocTitle, setPreviewDocTitle] = useState<string>('Comprovante PIX Anexado pelo Condutor');
 
-  // Leitura direta das tabelas do Supabase (usuarios, corridas, pagamentos)
+  // Leitura direta das tabelas do Supabase (usuarios, corridas, pagamentos, motoristas)
   const [supabaseUsers, setSupabaseUsers] = useState<any[]>([]);
   const [supabaseCorridas, setSupabaseCorridas] = useState<Ride[]>(rides);
   const [supabasePagamentos, setSupabasePagamentos] = useState<SupabasePagamentoRow[]>([]);
+  const [driverApplicationsMap, setDriverApplicationsMap] = useState<Record<string, DriverApplicationRecord>>({});
+  const [rejectionReasonInputs, setRejectionReasonInputs] = useState<Record<string, string>>({});
+  const [processingApprovalEmail, setProcessingApprovalEmail] = useState<string | null>(null);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [supabaseUsersError, setSupabaseUsersError] = useState<string | null>(null);
   const [userStatusMap, setUserStatusMap] = useState<Record<string, { status: 'liberado' | 'bloqueado' | 'pendente'; expiresAt?: string }>>({});
@@ -114,15 +125,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSupabaseCorridas(rides);
   }, [rides]);
 
-  // Busca de usuarios, corridas e pagamentos diretamente do Supabase
+  // Busca de usuarios, corridas, pagamentos e cadastros de motoristas diretamente do Supabase
   const fetchSupabaseUsuarios = async () => {
     setIsLoadingUsers(true);
     setSupabaseUsersError(null);
     try {
-      const [usersRes, corridasData, pagamentosData] = await Promise.all([
+      const [usersRes, corridasData, pagamentosData, appsMap] = await Promise.all([
         selectSafeUsuariosRows((q) => q.order('created_at', { ascending: false })),
         getAllCorridasForAdminSupabase(),
         getAllPagamentosSupabase(),
+        fetchDriverApplicationsSupabase().catch(() => ({} as Record<string, DriverApplicationRecord>)),
       ]);
 
       if (usersRes.error) {
@@ -134,6 +146,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       setSupabaseCorridas(corridasData);
       setSupabasePagamentos(pagamentosData);
+      setDriverApplicationsMap(appsMap);
 
       // Hidrata saques reais da tabela pagamentos
       const mappedWithdrawals: WithdrawalRequest[] = pagamentosData
@@ -535,12 +548,221 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     (d) => d.pendingPayment && d.pendingPayment.status === 'pending'
   );
 
+  // Lista consolidada de cadastros de motoristas para aprovação do ADM (Motoristas Pendentes)
+  const mergedDriverApplications: DriverApplicationRecord[] = (() => {
+    const byEmail = new Map<string, DriverApplicationRecord>();
+
+    Object.entries(driverApplicationsMap).forEach(([em, rec]) => {
+      const key = em.trim().toLowerCase();
+      if (key) byEmail.set(key, rec);
+    });
+
+    drivers.forEach((d) => {
+      const key = (d.email || '').trim().toLowerCase();
+      if (!key) return;
+      const existing = byEmail.get(key);
+      byEmail.set(key, {
+        ...(existing || {}),
+        id: d.id || existing?.id,
+        email: key,
+        name: d.name || existing?.name || 'Condutor',
+        phone: d.phone || existing?.phone || '',
+        whatsapp: d.phone || existing?.whatsapp || '',
+        category: d.category || existing?.category || 'economica',
+        vehicleModel: d.vehicleModel || existing?.vehicleModel || '',
+        vehicleColor: d.vehicleColor || existing?.vehicleColor || '',
+        vehiclePlate: (d.vehiclePlate || existing?.vehiclePlate || '').toUpperCase(),
+        vehicleYear: d.vehicleYear || existing?.vehicleYear || 2023,
+        cnh: d.cnh || existing?.cnh || '',
+        avatar: d.avatar || existing?.avatar || '',
+        cnhFrontPhoto: d.cnhFrontPhoto || d.cnhPhoto || existing?.cnhFrontPhoto || '',
+        cnhBackPhoto: d.cnhBackPhoto || existing?.cnhBackPhoto || '',
+        crlvPhoto: d.crlvPhoto || existing?.crlvPhoto || '',
+        vehiclePhoto: d.vehiclePhoto || existing?.vehiclePhoto || '',
+        approvalStatus: existing?.approvalStatus || d.approvalStatus || 'pendente',
+        rejectionReason: existing?.rejectionReason || d.rejectionReason || '',
+        approvedAt: existing?.approvedAt || d.approvedAt || '',
+        submittedAt: existing?.submittedAt || d.registrationDate || '',
+        online: (existing?.approvalStatus || d.approvalStatus) === 'aprovado' && (existing?.online || d.status === 'online'),
+        driverStatus: d.status,
+      });
+    });
+
+    overviewDrivers.forEach((u) => {
+      const key = (u.email || '').trim().toLowerCase();
+      if (!key || key === 'sem e-mail') return;
+      const existing = byEmail.get(key);
+      byEmail.set(key, {
+        ...(existing || {}),
+        id: existing?.id || u.id,
+        email: key,
+        name: existing?.name || u.name,
+        phone: existing?.phone || u.phone,
+        whatsapp: existing?.whatsapp || u.phone,
+        category: existing?.category || u.categoryKey,
+        vehicleModel: existing?.vehicleModel || u.model || '',
+        vehicleColor: existing?.vehicleColor || '',
+        vehiclePlate: (existing?.vehiclePlate || u.plate || '').toUpperCase(),
+        vehicleYear: existing?.vehicleYear || Number(u.year) || 2023,
+        cnh: existing?.cnh || u.raw?.cnh || '',
+        avatar: existing?.avatar || u.avatar || '',
+        cnhFrontPhoto: existing?.cnhFrontPhoto || '',
+        cnhBackPhoto: existing?.cnhBackPhoto || '',
+        crlvPhoto: existing?.crlvPhoto || '',
+        vehiclePhoto: existing?.vehiclePhoto || '',
+        approvalStatus: existing?.approvalStatus || 'pendente',
+        rejectionReason: existing?.rejectionReason || '',
+        approvedAt: existing?.approvedAt || '',
+        submittedAt: existing?.submittedAt || u.createdAt || '',
+      });
+    });
+
+    return Array.from(byEmail.values());
+  })();
+
+  const pendingApprovalsList = mergedDriverApplications.filter(
+    (app) => app.approvalStatus === 'pendente'
+  );
+  const rejectedApprovalsList = mergedDriverApplications.filter(
+    (app) => app.approvalStatus === 'reprovado'
+  );
+  const approvedApprovalsList = mergedDriverApplications.filter(
+    (app) => app.approvalStatus === 'aprovado'
+  );
+
+  const openDocumentPreview = (imageUrl: string, title: string) => {
+    setPreviewDocTitle(title);
+    setPreviewProofImage(imageUrl);
+  };
+
+  const handleApprovePendingDriver = async (app: DriverApplicationRecord) => {
+    setProcessingApprovalEmail(app.email);
+    try {
+      const matchedDriver = drivers.find(
+        (d) => (d.email || '').trim().toLowerCase() === app.email.toLowerCase()
+      );
+      const res = await approveOrRejectDriverSupabase({
+        email: app.email,
+        decision: 'aprovado',
+        driverSnapshot: {
+          ...matchedDriver,
+          id: app.id || matchedDriver?.id || '',
+          name: app.name || matchedDriver?.name || 'Condutor',
+          email: app.email,
+          phone: app.phone || matchedDriver?.phone || '',
+          category: (app.category as any) || matchedDriver?.category || 'economica',
+          vehicleModel: app.vehicleModel || matchedDriver?.vehicleModel || '',
+          vehicleColor: app.vehicleColor || matchedDriver?.vehicleColor || '',
+          vehiclePlate: app.vehiclePlate || matchedDriver?.vehiclePlate || '',
+          vehicleYear: app.vehicleYear || matchedDriver?.vehicleYear || 2023,
+          cnh: app.cnh || matchedDriver?.cnh || '',
+          avatar: app.avatar || matchedDriver?.avatar || '',
+          cnhFrontPhoto: app.cnhFrontPhoto || matchedDriver?.cnhFrontPhoto || '',
+          cnhBackPhoto: app.cnhBackPhoto || matchedDriver?.cnhBackPhoto || '',
+          crlvPhoto: app.crlvPhoto || matchedDriver?.crlvPhoto || '',
+          vehiclePhoto: app.vehiclePhoto || matchedDriver?.vehiclePhoto || '',
+        },
+      });
+      setDriverApplicationsMap((prev) => ({
+        ...prev,
+        [app.email.toLowerCase()]: {
+          ...app,
+          approvalStatus: 'aprovado',
+          rejectionReason: '',
+          approvedAt: res.approvedAt || new Date().toISOString(),
+          online: false,
+          driverStatus: 'offline',
+        },
+      }));
+      if (matchedDriver) {
+        onApproveDriver(matchedDriver.id);
+      }
+      const resolvedApprovedDriver: Driver = {
+        ...(matchedDriver || ({} as Driver)),
+        id: app.id || matchedDriver?.id || '',
+        name: app.name || matchedDriver?.name || 'Condutor',
+        avatar: app.avatar || matchedDriver?.avatar || '',
+        phone: app.phone || matchedDriver?.phone || '',
+        email: app.email,
+        cnh: app.cnh || matchedDriver?.cnh || '',
+        category: (app.category as any) || matchedDriver?.category || 'economica',
+        categoryConfigured: true,
+        requirementsConfirmed: true,
+        vehicleModel: app.vehicleModel || matchedDriver?.vehicleModel || '',
+        vehiclePlate: app.vehiclePlate || matchedDriver?.vehiclePlate || '',
+        vehicleColor: app.vehicleColor || matchedDriver?.vehicleColor || '',
+        vehicleYear: app.vehicleYear || matchedDriver?.vehicleYear || 2023,
+        cnhFrontPhoto: app.cnhFrontPhoto || matchedDriver?.cnhFrontPhoto || '',
+        cnhBackPhoto: app.cnhBackPhoto || matchedDriver?.cnhBackPhoto || '',
+        crlvPhoto: app.crlvPhoto || matchedDriver?.crlvPhoto || '',
+        vehiclePhoto: app.vehiclePhoto || matchedDriver?.vehiclePhoto || '',
+        approvalStatus: 'aprovado',
+        rejectionReason: '',
+        approvedAt: res.approvedAt || new Date().toISOString(),
+        cnhVerified: true,
+        vehicleVerified: true,
+        rating: matchedDriver?.rating || 0,
+        totalRides: matchedDriver?.totalRides || 0,
+        status: 'offline',
+        lat: matchedDriver?.lat || -23.0903,
+        lng: matchedDriver?.lng || -47.2180,
+        weeklyPlanActive: true,
+        weeklyFeePaidAt: matchedDriver?.weeklyFeePaidAt || new Date().toISOString(),
+        weeklyFeeExpiresAt: null,
+        earningsToday: matchedDriver?.earningsToday || 0,
+        earningsWeek: matchedDriver?.earningsWeek || 0,
+        criminalRecordClear: true,
+        registrationDate: matchedDriver?.registrationDate || new Date().toISOString().split('T')[0],
+      };
+      if (onApproveDriverApplication) {
+        onApproveDriverApplication(app.email, resolvedApprovedDriver);
+      }
+      showToast(`✅ Motorista ${app.name || app.email} APROVADO! Agora ele já pode ficar online.`);
+    } finally {
+      setProcessingApprovalEmail(null);
+    }
+  };
+
+  const handleRejectPendingDriver = async (app: DriverApplicationRecord) => {
+    const reason =
+      (rejectionReasonInputs[app.email] || '').trim() ||
+      'Documentação (CNH / CRLV / Dados do veículo) não aprovada pelo ADM. Reenvie fotos legíveis.';
+    setProcessingApprovalEmail(app.email);
+    try {
+      const matchedDriver = drivers.find(
+        (d) => (d.email || '').trim().toLowerCase() === app.email.toLowerCase()
+      );
+      await approveOrRejectDriverSupabase({
+        email: app.email,
+        decision: 'reprovado',
+        rejectionReason: reason,
+        driverSnapshot: matchedDriver,
+      });
+      setDriverApplicationsMap((prev) => ({
+        ...prev,
+        [app.email.toLowerCase()]: {
+          ...app,
+          approvalStatus: 'reprovado',
+          rejectionReason: reason,
+          online: false,
+          driverStatus: 'offline',
+        },
+      }));
+      if (onRejectDriverApplication) {
+        onRejectDriverApplication(app.email, reason);
+      }
+      showToast(`❌ Cadastro de ${app.name || app.email} reprovado. Ele não aparecerá online.`);
+    } finally {
+      setProcessingApprovalEmail(null);
+    }
+  };
+
   // Financial calculations - Soma EXCLUSIVA das tabelas pagamentos e corridas do Supabase (zero valores fixos)
-  const activeWeeklySubs = overviewDrivers.filter((d) => d.raw?.status === 'online' || d.statusInfo.status === 'liberado').length;
+  const activeWeeklySubs = approvedApprovalsList.filter((d) => d.online).length;
   const paidPaymentsTotal = supabasePagamentos
     .filter((p) => {
       const st = String(p.status || '').toLowerCase();
-      return p.tipo !== 'saque' && (st === 'pago' || st === 'paid' || st === 'confirmed' || st === 'received' || st === 'approved');
+      return p.tipo !== 'saque' && p.tipo !== 'cadastro_motorista' && (st === 'pago' || st === 'paid' || st === 'confirmed' || st === 'received' || st === 'approved');
     })
     .reduce((acc, p) => acc + Number(p.valor || 0), 0);
 
@@ -725,6 +947,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           Visão Geral & Métricas
+        </button>
+        <button
+          onClick={() => setActiveTab('pending_drivers')}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'pending_drivers'
+              ? 'bg-amber-500 text-slate-950 shadow'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <UserCheck className="w-4 h-4 text-[#ff6a00]" />
+          <span>Motoristas Pendentes ({pendingApprovalsList.length})</span>
+          {pendingApprovalsList.length > 0 && (
+            <span className="w-2.5 h-2.5 rounded-full bg-[#ff6a00] animate-pulse" />
+          )}
         </button>
         <button
           onClick={() => setActiveTab('withdrawals')}
@@ -1201,6 +1437,296 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* TAB MOTORISTAS PENDENTES: APROVAÇÃO COM FOTOS CNH FRENTE/VERSO, CRLV, PLACA E MODELO/COR */}
+      {activeTab === 'pending_drivers' && (
+        <div className="space-y-4">
+          {actionToast && (
+            <div className="bg-slate-950 text-white border-2 border-[#ff6a00] p-3.5 rounded-2xl flex items-center justify-between shadow-lg">
+              <span className="font-heading font-black text-xs sm:text-sm flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                {actionToast}
+              </span>
+              <button
+                type="button"
+                onClick={() => setActionToast(null)}
+                className="text-zinc-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-100 text-[#ff6a00] flex items-center justify-center font-bold border border-amber-300">
+                  <UserCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-slate-950 text-xl">
+                    Aprovação de Motoristas Pendentes
+                  </h3>
+                  <span className="text-xs font-mono font-bold text-slate-500">
+                    CNH (frente e verso), CRLV, Placa, Modelo e Cor • Somente aprovados ficam ONLINE
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-mono font-bold px-3 py-1.5 rounded-xl bg-amber-100 text-amber-900 border border-amber-300">
+                {pendingApprovalsList.length} Pendentes
+              </span>
+              <span className="text-xs font-mono font-bold px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300">
+                {approvedApprovalsList.length} Aprovados
+              </span>
+              <button
+                type="button"
+                onClick={fetchSupabaseUsuarios}
+                disabled={isLoadingUsers}
+                className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingUsers ? 'animate-spin text-[#ff6a00]' : ''}`} />
+                <span>Atualizar</span>
+              </button>
+            </div>
+          </div>
+
+          {pendingApprovalsList.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center space-y-3 shadow-sm">
+              <div className="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <h4 className="font-heading font-black text-slate-900 text-lg">
+                Nenhum Motorista Aguardando Aprovação
+              </h4>
+              <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto font-medium">
+                Quando um novo usuário escolher &ldquo;Quero ser motorista&rdquo; e enviar CNH (frente e verso), CRLV, placa, modelo e cor, o cadastro aparecerá aqui para sua aprovação.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {pendingApprovalsList.map((app) => {
+                const isBusy = processingApprovalEmail === app.email;
+                const docItems = [
+                  { label: 'CNH (Frente)', url: app.cnhFrontPhoto },
+                  { label: 'CNH (Verso)', url: app.cnhBackPhoto },
+                  { label: 'CRLV do Veículo', url: app.crlvPhoto },
+                  { label: 'Foto do Veículo', url: app.vehiclePhoto },
+                ];
+                return (
+                  <div
+                    key={app.email}
+                    className="bg-white border-2 border-amber-400 rounded-3xl p-5 sm:p-6 shadow-md space-y-4"
+                  >
+                    {/* Cabeçalho do Motorista */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-200">
+                      <div className="flex items-center gap-3.5">
+                        {app.avatar ? (
+                          <img
+                            src={app.avatar}
+                            alt={app.name}
+                            onClick={() => openDocumentPreview(app.avatar!, `Foto de Perfil — ${app.name}`)}
+                            className="w-14 h-14 rounded-full object-cover border-2 border-amber-500 cursor-pointer shrink-0"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-900 border-2 border-amber-500 flex items-center justify-center font-heading font-black text-xl shrink-0">
+                            {(app.name || 'M').charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-heading font-black text-slate-950 text-lg">
+                              {app.name || 'Condutor RACE'}
+                            </h4>
+                            <span className="text-xs font-mono font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 uppercase">
+                              PENDENTE ADM
+                            </span>
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-200 uppercase">
+                              {String(app.category || 'economica').replace('_', ' ')}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 font-mono mt-0.5">
+                            {app.email} &bull; WhatsApp: <strong className="text-slate-900">{app.whatsapp || app.phone || 'Não informado'}</strong>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-left sm:text-right text-xs font-mono text-slate-500">
+                        <span className="block font-bold">Enviado em:</span>
+                        <span>{app.submittedAt ? new Date(app.submittedAt).toLocaleString('pt-BR') : 'Recentemente'}</span>
+                      </div>
+                    </div>
+
+                    {/* Dados do Veículo e CNH */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <span className="text-slate-500 block font-bold uppercase text-[10px]">Modelo</span>
+                        <strong className="text-slate-950 text-sm">{app.vehicleModel || '—'}</strong>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <span className="text-slate-500 block font-bold uppercase text-[10px]">Cor</span>
+                        <strong className="text-slate-950 text-sm">{app.vehicleColor || '—'}</strong>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <span className="text-slate-500 block font-bold uppercase text-[10px]">Placa</span>
+                        <strong className="text-slate-950 font-mono text-sm uppercase">{app.vehiclePlate || '—'}</strong>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <span className="text-slate-500 block font-bold uppercase text-[10px]">Ano</span>
+                        <strong className="text-slate-950 font-mono text-sm">{app.vehicleYear || '—'}</strong>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 col-span-2 sm:col-span-1">
+                        <span className="text-slate-500 block font-bold uppercase text-[10px]">CNH</span>
+                        <strong className="text-slate-950 font-mono text-sm">{app.cnh || '—'}</strong>
+                      </div>
+                    </div>
+
+                    {/* Fotos Enviadas (Clique para ampliar) */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-heading font-black text-slate-700 uppercase tracking-wider block">
+                        Documentos Enviados (Toque na foto para ampliar):
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {docItems.map((doc) => (
+                          <div
+                            key={doc.label}
+                            className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 flex flex-col items-center gap-2"
+                          >
+                            <span className="text-[11px] font-heading font-black text-slate-800 text-center">
+                              {doc.label}
+                            </span>
+                            {doc.url ? (
+                              <button
+                                type="button"
+                                onClick={() => openDocumentPreview(doc.url!, `${doc.label} — ${app.name}`)}
+                                className="w-full group relative rounded-xl overflow-hidden border border-slate-300 cursor-pointer"
+                              >
+                                <img
+                                  src={doc.url}
+                                  alt={doc.label}
+                                  className="w-full h-28 object-cover group-hover:scale-105 transition-transform"
+                                />
+                                <span className="absolute bottom-1 right-1 bg-slate-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
+                                  Ampliar
+                                </span>
+                              </button>
+                            ) : (
+                              <div className="w-full h-28 rounded-xl bg-slate-100 border border-dashed border-slate-300 flex items-center justify-center text-[11px] font-bold text-slate-400 text-center px-2">
+                                Não enviada
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Motivo opcional + Botões Aprovar / Reprovar */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 border-t border-slate-200">
+                      <input
+                        type="text"
+                        value={rejectionReasonInputs[app.email] || ''}
+                        onChange={(e) =>
+                          setRejectionReasonInputs((prev) => ({
+                            ...prev,
+                            [app.email]: e.target.value,
+                          }))
+                        }
+                        placeholder="Motivo caso reprove (ex: CNH ilegível ou CRLV vencido)"
+                        className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleRejectPendingDriver(app)}
+                          className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                        >
+                          <XCircle className="w-4 h-4 text-rose-600" />
+                          <span>Reprovar</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleApprovePendingDriver(app)}
+                          className="flex-1 sm:flex-none px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                        >
+                          {isBusy ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4" />
+                          )}
+                          <span>Aprovar Motorista</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Lista de Reprovados (com opção de ver fotos ou reaprovar) */}
+          {rejectedApprovalsList.length > 0 && (
+            <div className="bg-white border border-rose-200 rounded-3xl p-5 space-y-3 shadow-sm">
+              <h4 className="font-heading font-black text-rose-900 text-sm uppercase tracking-wider">
+                Cadastros Reprovados ({rejectedApprovalsList.length})
+              </h4>
+              <div className="space-y-2.5">
+                {rejectedApprovalsList.map((app) => (
+                  <div
+                    key={app.email}
+                    className="bg-rose-50/70 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <strong className="font-heading font-black text-slate-950 text-sm">{app.name}</strong>
+                        <span className="font-mono text-slate-600">{app.email}</span>
+                        <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-rose-200 text-rose-800">
+                          {app.vehicleModel} • {app.vehicleColor} • {app.vehiclePlate}
+                        </span>
+                      </div>
+                      {app.rejectionReason && (
+                        <p className="text-rose-800 font-medium">Motivo: {app.rejectionReason}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      {app.cnhFrontPhoto && (
+                        <button
+                          type="button"
+                          onClick={() => openDocumentPreview(app.cnhFrontPhoto!, `CNH (Frente) — ${app.name}`)}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-slate-300 text-xs font-bold cursor-pointer"
+                        >
+                          Ver CNH Frente
+                        </button>
+                      )}
+                      {app.crlvPhoto && (
+                        <button
+                          type="button"
+                          onClick={() => openDocumentPreview(app.crlvPhoto!, `CRLV — ${app.name}`)}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-slate-300 text-xs font-bold cursor-pointer"
+                        >
+                          Ver CRLV
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleApprovePendingDriver(app)}
+                        className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs cursor-pointer"
+                      >
+                        Aprovar Agora
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2600,14 +3126,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Modal de Prévia do Comprovante Anexo */}
+      {/* Modal de Prévia de Documento / Comprovante Anexo */}
       {previewProofImage && (
         <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-300 animate-scale-up">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
                 <FileText className="w-5 h-5 text-emerald-600" />
-                <span>Comprovante PIX Anexado pelo Condutor</span>
+                <span>{previewDocTitle}</span>
               </h4>
               <button
                 type="button"
