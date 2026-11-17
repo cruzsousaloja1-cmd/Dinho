@@ -492,9 +492,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       u.tipo === 'motoboy_passageiro' ||
       u.tipo === 'motoboy_entregas' ||
       (u.categoria && u.categoria.includes('moto'));
+    const tipoNorm = String(u.tipo || '').trim().toLowerCase();
     const isAdminRow =
-      String(u.tipo || '').toUpperCase() === 'ADM' ||
-      String(u.tipo || '').toLowerCase() === 'admin' ||
+      tipoNorm === 'adm' ||
+      tipoNorm === 'admin' ||
+      tipoNorm === 'administrador' ||
       email.toLowerCase() === 'admin@race.com.br';
     const userType = isAdminRow ? 'ADM' : isPassenger ? 'Passageiro' : isMotoboy ? 'Motoboy' : 'Motorista';
 

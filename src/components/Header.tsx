@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { AppUser } from '../types';
 import { WEEKLY_FEE_BADGE } from '../config/pricing';
+import { isAppUserAdmin } from '../services/userService';
 
 interface HeaderProps {
   unreadNotifsCount: number;
@@ -42,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const isAdmin = currentUser?.email?.trim().toLowerCase() === 'admin@race.com.br';
+  const isAdmin = isAppUserAdmin(currentUser);
 
   const isUserDriver = Boolean(
     currentUser && (
@@ -92,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Quick Role Switcher in Header (Desktop md+) */}
-        {isUserDriver && (
+        {(isUserDriver || isAdmin) && (
           <div className="hidden lg:flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-sm font-bold shadow-inner">
             <button
               onClick={() => onChangeRole('passenger')}
@@ -104,23 +105,25 @@ export const Header: React.FC<HeaderProps> = ({
             >
               Sou passageiro
             </button>
-            <button
-              onClick={() => onChangeRole('driver')}
-              className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
-                activeRole === 'driver'
-                  ? 'bg-[#ff6a00] text-white font-extrabold shadow'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-              }`}
-            >
-              <span>Sou motorista</span>
-              <span className={`text-xs px-2 py-0.5 rounded-md font-mono font-bold ${
-                activeRole === 'driver'
-                  ? 'bg-white text-slate-950'
-                  : 'bg-emerald-100 text-emerald-800'
-              }`}>
-                {WEEKLY_FEE_BADGE}
-              </span>
-            </button>
+            {isUserDriver && (
+              <button
+                onClick={() => onChangeRole('driver')}
+                className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                  activeRole === 'driver'
+                    ? 'bg-[#ff6a00] text-white font-extrabold shadow'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                }`}
+              >
+                <span>Sou motorista</span>
+                <span className={`text-xs px-2 py-0.5 rounded-md font-mono font-bold ${
+                  activeRole === 'driver'
+                    ? 'bg-white text-slate-950'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {WEEKLY_FEE_BADGE}
+                </span>
+              </button>
+            )}
             {isAdmin && (
               <button
                 onClick={() => onChangeRole('admin')}
@@ -156,8 +159,10 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-xs font-black text-slate-950 block leading-tight truncate max-w-[100px]">
                   {currentUser.name.split(' ')[0]}
                 </span>
-                <span className="text-[10px] font-bold text-emerald-700 block leading-none">
-                  {currentUser.role === 'driver'
+                <span className={`text-[10px] font-bold block leading-none ${isAdmin ? 'text-amber-700 font-black' : 'text-emerald-700'}`}>
+                  {isAdmin
+                    ? 'ADM'
+                    : currentUser.role === 'driver'
                     ? 'Motorista'
                     : currentUser.role === 'motoboy'
                     ? 'Motoboy'
@@ -339,8 +344,10 @@ export const Header: React.FC<HeaderProps> = ({
                   <h4 className="font-heading font-black text-slate-950 text-sm">
                     {currentUser.name}
                   </h4>
-                  <span className="text-xs font-bold text-emerald-700">
-                    {currentUser.role === 'driver'
+                  <span className={`text-xs font-bold ${isAdmin ? 'text-amber-700 font-black' : 'text-emerald-700'}`}>
+                    {isAdmin
+                      ? 'Administrador ADM'
+                      : currentUser.role === 'driver'
                       ? 'Motorista Parceiro'
                       : currentUser.role === 'motoboy'
                       ? 'Motoboy Parceiro'

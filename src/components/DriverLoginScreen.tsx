@@ -2,7 +2,13 @@ import React, { useState, useRef } from 'react';
 import { Driver, AppUser, VehicleCategory } from '../types';
 import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera, FileText, Upload } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { saveSessionUser, verifyUserLogin, mapSupabaseRowToAppUser } from '../services/userService';
+import {
+  saveSessionUser,
+  verifyUserLogin,
+  mapSupabaseRowToAppUser,
+  isAdminTipoValue,
+  isAppUserAdmin,
+} from '../services/userService';
 import {
   insertUsuarioSupabase,
   loginUsuarioSupabase,
@@ -229,7 +235,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         return;
       }
 
-      // Salva na tabela public.usuarios usando SOMENTE colunas que já existem
+      // Salva na tabela public.usuarios usando SOMENTE colunas que já existem (sempre 'admin' minúsculo)
       const supabaseRes = await insertUsuarioSupabase({
         nome: cleanName,
         email: cleanEmail,
@@ -237,7 +243,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         whatsapp: cleanWhatsApp,
         login: cleanEmail,
         senha: adminRegPassword,
-        tipo: 'ADM',
+        tipo: 'admin',
       });
 
       if (!supabaseRes.success) {
@@ -265,7 +271,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         whatsapp: cleanWhatsApp,
         login: cleanEmail,
         role: 'admin',
-        tipo: 'ADM',
+        tipo: 'admin',
         isAdmin: true,
         placa: 'ADMIN-01',
         rating: 0,
@@ -301,15 +307,14 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
     setIsLoggingIn(true);
     try {
-      // FLUXO DEDICADO DA TELA ADM (aceita conta criada com tipo = ADM/admin ou admin@race.com.br)
+      // FLUXO DEDICADO DA TELA ADM (aceita conta criada com tipo = ADM, admin, Administrador ou admin@race.com.br)
       if (viewMode === 'admin_login') {
         // 1. Tenta autenticar no Supabase primeiro
         const cloudAdminRes = await loginUsuarioSupabase(cleanIdentifier, loginPassword);
         if (cloudAdminRes.success && cloudAdminRes.data) {
           const row = cloudAdminRes.data;
           const rowEmail = (row['e-mail'] || row.email || cleanIdentifier).toLowerCase().trim();
-          const rowTipo = String(row.tipo || '').toUpperCase();
-          const isRowAdmin = rowTipo === 'ADM' || rowTipo === 'ADMIN' || rowEmail === 'admin@race.com.br';
+          const isRowAdmin = isAdminTipoValue(row.tipo) || rowEmail === 'admin@race.com.br';
 
           if (!isRowAdmin) {
             setLoginErrorMessage('Acesso restrito');
@@ -324,7 +329,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             whatsapp: row.whatsapp || row.celular || '',
             login: row.login || rowEmail,
             role: 'admin',
-            tipo: 'ADM',
+            tipo: row.tipo || 'admin',
             isAdmin: true,
             placa: 'ADMIN-01',
             rating: 0,
@@ -343,11 +348,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         // 2. Fallback local (ex: senha mestre ou conta ADM salva offline)
         const localAdminRes = verifyUserLogin(cleanIdentifier, loginPassword);
         if (localAdminRes.success && localAdminRes.user) {
-          const isLocalAdmin =
-            localAdminRes.user.role === 'admin' ||
-            localAdminRes.user.isAdmin ||
-            String(localAdminRes.user.tipo || '').toUpperCase() === 'ADM' ||
-            localAdminRes.user.email.toLowerCase() === 'admin@race.com.br';
+          const isLocalAdmin = isAppUserAdmin(localAdminRes.user);
 
           if (!isLocalAdmin) {
             setLoginErrorMessage('Acesso restrito');
@@ -365,9 +366,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         // 3. Verifica se o usuário existe mas não tem perfil ADM -> exibe "Acesso restrito"
         const existingUser = await getUsuarioSupabase(cleanIdentifier).catch(() => null);
         if (existingUser) {
-          const existingTipo = String(existingUser.tipo || '').toUpperCase();
           const existingEmail = (existingUser['e-mail'] || existingUser.email || '').toLowerCase().trim();
-          if (existingTipo !== 'ADM' && existingTipo !== 'ADMIN' && existingEmail !== 'admin@race.com.br') {
+          if (!isAdminTipoValue(existingUser.tipo) && existingEmail !== 'admin@race.com.br') {
             setLoginErrorMessage('Acesso restrito');
             return;
           }
@@ -391,7 +391,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             phone: row.celular || '',
             login: row.login || 'admin@race.com.br',
             role: 'admin',
-            tipo: 'ADM',
+            tipo: row.tipo || 'admin',
             isAdmin: true,
             placa: 'ADMIN-01',
             rating: 0,

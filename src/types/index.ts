@@ -10,7 +10,8 @@ export type UserTipo =
   | 'motoboy_passageiro' 
   | 'motoboy_entregas'
   | 'ADM'
-  | 'admin';
+  | 'admin'
+  | 'Administrador';
 
 export interface AppUser {
   id: string;

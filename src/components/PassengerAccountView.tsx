@@ -24,7 +24,7 @@ import {
   Car
 } from 'lucide-react';
 import { requestCurrentLocationFast } from '../services/addressSearchService';
-import { saveSessionUser } from '../services/userService';
+import { saveSessionUser, isAppUserAdmin } from '../services/userService';
 import {
   extractPhotoFromRow,
   getUsuarioSupabase,
@@ -461,10 +461,17 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
               <h2 className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
                 {displayName}
               </h2>
-              <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                Passageiro Ativo
-              </span>
+              {isAppUserAdmin(currentUser) ? (
+                <span className="bg-amber-100 text-amber-900 border border-amber-400 text-xs px-2.5 py-0.5 rounded-full font-black flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
+                  ADM • Administrador
+                </span>
+              ) : (
+                <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Passageiro Ativo
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-3 mt-1.5 flex-wrap">

@@ -46,6 +46,7 @@ import {
   saveUserAccount, 
   normalizeEmail,
   ADMIN_EMAIL,
+  isAppUserAdmin,
   deleteUserAccount,
   deleteAllUserAccounts,
   activateAllDriverAccounts
@@ -95,12 +96,7 @@ export default function App() {
 
   const resolveInitialTab = (u: AppUser | null): TabType => {
     if (!u) return 'driver_portal';
-    const isAdminUser =
-      u.role === 'admin' ||
-      u.isAdmin ||
-      String(u.tipo || '').toUpperCase() === 'ADM' ||
-      (u.email || '').toLowerCase() === ADMIN_EMAIL;
-    if (isAdminUser) return 'admin';
+    if (isAppUserAdmin(u)) return 'admin';
     const tLower = String(u.tipo || '').toLowerCase().trim();
     const isDriverUser =
       u.role === 'driver' ||
@@ -308,12 +304,7 @@ export default function App() {
         setCurrentUser(mergedUser);
         saveSessionUser(mergedUser);
 
-        if (
-          hydratedUser.role === 'admin' ||
-          hydratedUser.isAdmin ||
-          String(hydratedUser.tipo || '').toUpperCase() === 'ADM' ||
-          hydratedUser.email.toLowerCase() === ADMIN_EMAIL
-        ) {
+        if (isAppUserAdmin(hydratedUser)) {
           setActiveTab('admin');
           return;
         }
@@ -563,13 +554,7 @@ export default function App() {
       if (isTryingAdmin) {
         const savedUser: AppUser | null = currentUser || getSessionUser();
 
-        const isUserAdmin = Boolean(
-          savedUser &&
-            (savedUser.role === 'admin' ||
-              savedUser.isAdmin ||
-              String(savedUser.tipo || '').toUpperCase() === 'ADM' ||
-              savedUser.email?.trim().toLowerCase() === ADMIN_EMAIL)
-        );
+        const isUserAdmin = isAppUserAdmin(savedUser);
 
         if (isUserAdmin && savedUser) {
           setCurrentUser(savedUser);
@@ -1559,14 +1544,19 @@ export default function App() {
         captureAndSyncDriverGps(nextDrv, 'online');
       }
     }
-    const isAdminUser = user.role === 'admin' || user.isAdmin || user.email?.toLowerCase() === ADMIN_EMAIL;
+    const isAdminUser = isAppUserAdmin(user);
     const isDriverUser =
-      user.role === 'driver' ||
-      user.role === 'motoboy' ||
-      Boolean(driver) ||
-      Boolean(user.driverData);
+      !isAdminUser &&
+      (user.role === 'driver' ||
+        user.role === 'motoboy' ||
+        Boolean(driver) ||
+        Boolean(user.driverData));
     setActiveTab(isAdminUser ? 'admin' : isDriverUser ? 'driver_portal' : 'rides');
-    const roleName = user.role === 'driver' ? 'Motorista/Motoboy Parceiro' : 'Passageiro';
+    const roleName = isAdminUser
+      ? 'Administrador ADM'
+      : user.role === 'driver' || user.role === 'motoboy'
+      ? 'Motorista/Motoboy Parceiro'
+      : 'Passageiro';
     setLoginSuccessBanner(
       `Bem-vindo(a), ${user.name}! Acesso validado com login e senha (${roleName}). Você entrou direto na página de atendimento de corridas RACE!`
     );
@@ -1649,13 +1639,8 @@ export default function App() {
           setHasSearchedRoute(false);
           setShowPostAuthSplash(true);
 
-          // Se for Administrador (tipo = ADM ou admin@race.com.br)
-          if (
-            user.role === 'admin' ||
-            user.isAdmin ||
-            String(user.tipo || '').toUpperCase() === 'ADM' ||
-            user.email?.toLowerCase() === 'admin@race.com.br'
-          ) {
+          // Se for Administrador (tipo = ADM / admin / Administrador ou admin@race.com.br)
+          if (isAppUserAdmin(user)) {
             setActiveTab('admin');
             setLoginSuccessBanner(
               'Bem-vindo, Administrador Geral! Painel de controle e auditoria liberados.'
@@ -1833,10 +1818,7 @@ export default function App() {
         activeRole={
           activeTab === 'admin'
             ? 'admin'
-            : currentUser?.role === 'admin' ||
-              currentUser?.isAdmin ||
-              String(currentUser?.tipo || '').toUpperCase() === 'ADM' ||
-              currentUser?.email?.toLowerCase() === 'admin@race.com.br'
+            : isAppUserAdmin(currentUser)
             ? 'admin'
             : currentUser?.role === 'motoboy' || currentUser?.tipo === 'motoboy'
             ? 'driver'
@@ -1848,13 +1830,7 @@ export default function App() {
           if (role === 'passenger') setActiveTab('rides');
           if (role === 'driver') setActiveTab('driver_portal');
           if (role === 'admin') {
-            const isUserAdmin = Boolean(
-              currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
-              currentUser?.role === 'admin' ||
-              currentUser?.isAdmin === true ||
-              String(currentUser?.tipo || '').toUpperCase() === 'ADM'
-            );
-            if (isUserAdmin) {
+            if (isAppUserAdmin(currentUser)) {
               setActiveTab('admin');
             }
           }
@@ -2130,7 +2106,7 @@ export default function App() {
 
         {/* 5. Painel Administrativo Master - ADM */}
         {activeTab === 'admin' && (
-          (currentUser?.email?.toLowerCase() === ADMIN_EMAIL || currentUser?.role === 'admin' || currentUser?.isAdmin || String(currentUser?.tipo || '').toUpperCase() === 'ADM') ? (
+          isAppUserAdmin(currentUser) ? (
             <AdminDashboard
               drivers={drivers}
               rides={ridesHistory}
@@ -2224,13 +2200,7 @@ export default function App() {
         activeTab={activeTab}
         onChangeTab={(tab) => {
           if (tab === 'admin') {
-            const isUserAdmin = Boolean(
-              currentUser?.email?.toLowerCase() === 'admin@race.com.br' ||
-              currentUser?.role === 'admin' ||
-              currentUser?.isAdmin === true ||
-              String(currentUser?.tipo || '').toUpperCase() === 'ADM'
-            );
-            if (!isUserAdmin) return;
+            if (!isAppUserAdmin(currentUser)) return;
           }
 
           setActiveTab(tab);

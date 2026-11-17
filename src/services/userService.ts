@@ -43,6 +43,21 @@ export function normalizeEmail(email: string): string {
   return (email || '').trim().toLowerCase();
 }
 
+export function isAdminTipoValue(rawTipo?: unknown): boolean {
+  const normalized = String(rawTipo || '').trim().toLowerCase();
+  return normalized === 'adm' || normalized === 'admin' || normalized === 'administrador';
+}
+
+export function isAppUserAdmin(user?: Partial<AppUser> | null): boolean {
+  if (!user) return false;
+  return Boolean(
+    user.role === 'admin' ||
+      user.isAdmin ||
+      isAdminTipoValue(user.tipo) ||
+      normalizeEmail(user.email || '') === ADMIN_EMAIL
+  );
+}
+
 export function getUserStorageKey(email: string): string {
   return `race_user_${normalizeEmail(email)}`;
 }
@@ -159,8 +174,7 @@ export function getSessionUser(): AppUser | null {
     const isAdmin =
       Boolean(parsed.isAdmin) ||
       parsed.role === 'admin' ||
-      tipoLower === 'adm' ||
-      tipoLower === 'admin' ||
+      isAdminTipoValue(tipoStr) ||
       cleanEmail === ADMIN_EMAIL;
     const isMoto =
       !isAdmin &&
@@ -203,9 +217,7 @@ export function getSessionUser(): AppUser | null {
  */
 export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver?: Driver } {
   const cleanEmail = normalizeEmail(cloudUser['e-mail'] || cloudUser.email || '');
-  const isCloudAdmin =
-    String(cloudUser.tipo || '').toUpperCase() === 'ADM' ||
-    String(cloudUser.tipo || '').toLowerCase() === 'admin';
+  const isCloudAdmin = isAdminTipoValue(cloudUser.tipo) || cleanEmail === ADMIN_EMAIL;
 
   const tipoLower = String(cloudUser.tipo || '').toLowerCase().trim();
   const rawCatNorm = cloudUser.categoria ? normalizeRideCategory(cloudUser.categoria) : null;
@@ -259,7 +271,8 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
 
   const isAdminAccount =
     account.role === 'admin' ||
-    String(account.tipo || '').toUpperCase() === 'ADM';
+    isAdminTipoValue(account.tipo) ||
+    cleanEmail === ADMIN_EMAIL;
 
   const currentUserPayload: AppUser = {
     id: account.id,
@@ -269,7 +282,7 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     whatsapp: account.whatsapp || account.phone,
     login: account.login || cleanEmail,
     role: isAdminAccount ? 'admin' : account.role,
-    tipo: account.tipo,
+    tipo: account.tipo || (isAdminAccount ? 'admin' : undefined),
     isAdmin: isAdminAccount || undefined,
     placa: account.placa || account.driverData?.vehiclePlate || '',
     avatar: account.avatar,
@@ -293,7 +306,9 @@ export function saveUserAccount(account: StoredUserAccount, setActiveSession: bo
     celular: account.phone,
     whatsapp: account.whatsapp || account.phone,
     login: account.login || cleanEmail,
-    tipo: account.tipo || (account.role === 'passenger' ? 'passenger' : 'driver'),
+    tipo: isAdminAccount
+      ? (account.tipo || 'admin')
+      : (account.tipo || (account.role === 'passenger' ? 'passenger' : 'driver')),
     categoria: account.role === 'passenger' || isAdminAccount
       ? undefined
       : isConfiguredDriver && account.driverData?.category

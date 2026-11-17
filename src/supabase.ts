@@ -270,7 +270,7 @@ AS $$
           OR lower(coalesce(u."e-mail", '')) = lower(auth.jwt() ->> 'email')
           OR lower(coalesce(u.login, '')) = lower(auth.jwt() ->> 'email')
         )
-        AND lower(coalesce(u.tipo, '')) IN ('adm', 'admin')
+        AND lower(coalesce(u.tipo, '')) IN ('adm', 'admin', 'administrador')
     )
   );
 $$;
@@ -661,8 +661,8 @@ BEGIN
     nullif(trim(coalesce(p_whatsapp, '')), ''),
     coalesce(nullif(trim(p_login), ''), v_clean_email),
     CASE
-      WHEN lower(coalesce(p_tipo, '')) IN ('adm', 'admin') AND v_auth_role = 'admin' THEN 'ADM'
-      WHEN lower(coalesce(p_tipo, '')) IN ('adm', 'admin') THEN 'passenger'
+      WHEN lower(coalesce(p_tipo, '')) IN ('adm', 'admin', 'administrador') AND v_auth_role = 'admin' THEN 'admin'
+      WHEN lower(coalesce(p_tipo, '')) IN ('adm', 'admin', 'administrador') THEN 'passenger'
       ELSE coalesce(nullif(trim(p_tipo), ''), 'passenger')
     END,
     coalesce(p_categoria, ''),
@@ -722,7 +722,7 @@ AS $$
   INNER JOIN public.motoristas m
     ON lower(coalesce(m.email, '')) = lower(coalesce(u.email, u."e-mail", u.login, ''))
   WHERE lower(coalesce(u.tipo, '')) <> 'passenger'
-    AND lower(coalesce(u.tipo, '')) NOT IN ('adm', 'admin')
+    AND lower(coalesce(u.tipo, '')) NOT IN ('adm', 'admin', 'administrador')
     AND coalesce(nullif(m.placa, ''), u.placa, '') <> ''
     AND coalesce(nullif(m.modelo, ''), u.modelo, '') <> ''
     AND lower(coalesce(m.status_aprovacao, 'pendente')) = 'aprovado'
@@ -1319,10 +1319,12 @@ export async function insertUsuarioSupabase(params: {
       return { success: false, error: 'Informe uma senha com pelo menos 6 caracteres.' };
     }
 
-    const tipoStr = String(params.tipo || 'passenger');
-    const tipoLower = tipoStr.toLowerCase();
+    const rawTipoStr = String(params.tipo || 'passenger').trim();
+    const tipoLower = rawTipoStr.toLowerCase();
+    const isAdminTipo = tipoLower === 'adm' || tipoLower === 'admin' || tipoLower === 'administrador';
+    const tipoStr = isAdminTipo ? 'admin' : rawTipoStr;
     const authRole =
-      tipoLower === 'adm' || tipoLower === 'admin'
+      isAdminTipo
         ? 'admin'
         : tipoLower.includes('moto') || tipoLower.includes('driver') || tipoLower.includes('motorista')
         ? 'driver'
@@ -1639,12 +1641,18 @@ export async function loginUsuarioSupabase(
     if (!foundRow) {
       const meta: any = authData.user.user_metadata || {};
       const metaPhoto = String(meta.avatar_url || meta.foto || meta.avatar || '').trim();
+      const metaTipoLower = String(meta.tipo || '').trim().toLowerCase();
+      const isMetaAdmin =
+        meta.role === 'admin' ||
+        metaTipoLower === 'adm' ||
+        metaTipoLower === 'admin' ||
+        metaTipoLower === 'administrador';
       foundRow = {
         id: authData.user.id,
         nome: meta.nome || authEmail.split('@')[0],
         email: authEmail,
         login: authEmail,
-        tipo: meta.tipo || (meta.role === 'admin' ? 'ADM' : 'passenger'),
+        tipo: isMetaAdmin ? (meta.tipo || 'admin') : (meta.tipo || 'passenger'),
         foto: metaPhoto,
         avatar: metaPhoto,
       };
@@ -3439,8 +3447,8 @@ export async function zerarDadosTesteSupabase(): Promise<{ success: boolean; err
     const allUsers = await getAllUsuariosSupabase();
     for (const u of allUsers) {
       const email = String(u['e-mail'] || u.email || '').trim().toLowerCase();
-      const tipo = String(u.tipo || '').trim().toUpperCase();
-      if (tipo !== 'ADM' && tipo !== 'ADMIN' && email !== 'admin@race.com.br') {
+      const tipo = String(u.tipo || '').trim().toLowerCase();
+      if (tipo !== 'adm' && tipo !== 'admin' && tipo !== 'administrador' && email !== 'admin@race.com.br') {
         await supabase.from('usuarios').delete().eq('id', u.id);
       }
     }
@@ -4354,10 +4362,13 @@ export async function getCorridasSupabase(currentUser: AppUser | null): Promise<
   if (!currentUser) return [];
 
   const cleanEmail = (currentUser.email || '').toLowerCase().trim();
+  const tipoLower = String(currentUser.tipo || '').trim().toLowerCase();
   const isAdmin =
     currentUser.role === 'admin' ||
     currentUser.isAdmin ||
-    String(currentUser.tipo || '').toUpperCase() === 'ADM' ||
+    tipoLower === 'adm' ||
+    tipoLower === 'admin' ||
+    tipoLower === 'administrador' ||
     cleanEmail === 'admin@race.com.br';
 
   const hasNumericId = /^\d+$/.test(String(currentUser.id || ''));
@@ -4520,10 +4531,13 @@ export async function getPagamentosSupabase(currentUser: AppUser | null): Promis
   if (!currentUser) return [];
 
   const cleanEmail = (currentUser.email || '').toLowerCase().trim();
+  const tipoLower = String(currentUser.tipo || '').trim().toLowerCase();
   const isAdmin =
     currentUser.role === 'admin' ||
     currentUser.isAdmin ||
-    String(currentUser.tipo || '').toUpperCase() === 'ADM' ||
+    tipoLower === 'adm' ||
+    tipoLower === 'admin' ||
+    tipoLower === 'administrador' ||
     cleanEmail === 'admin@race.com.br';
 
   if (isAdmin) {

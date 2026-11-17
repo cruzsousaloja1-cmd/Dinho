@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 import { AppUser } from '../types';
+import { isAppUserAdmin } from '../services/userService';
 
 export type TabType = 
   | 'rides' 
@@ -39,12 +40,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     currentUser?.role === 'motoboy' ||
     currentUser?.driverData
   );
-  const isAdmin = Boolean(
-    currentUser?.role === 'admin' ||
-    currentUser?.isAdmin ||
-    String(currentUser?.tipo || '').toUpperCase() === 'ADM' ||
-    currentUser?.email?.trim().toLowerCase() === 'admin@race.com.br'
-  );
+  const isAdmin = isAppUserAdmin(currentUser);
   const isPassenger = !isDriverOrMotoboy && !isAdmin;
 
   // 1. BARRA EXCLUSIVA DO PASSAGEIRO: SÓ 4 BOTÕES (CORRIDA, OPÇÃO, ATIVIDADE, CONTA)
