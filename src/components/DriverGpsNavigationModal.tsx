@@ -929,9 +929,12 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
 
   return (
     /* Container termina 20px acima da barra inferior (BottomNav z-40) para nunca ficar atrás dela */
-    <div className="fixed top-0 left-0 right-0 bottom-[calc(104px+env(safe-area-inset-bottom,0px))] sm:bottom-[calc(120px+env(safe-area-inset-bottom,0px))] z-50 bg-white text-slate-950 select-none">
+    <div className="fixed top-0 left-0 right-0 bottom-[calc(104px+env(safe-area-inset-bottom,0px))] sm:bottom-[calc(120px+env(safe-area-inset-bottom,0px))] z-50 bg-white text-slate-950 select-none overscroll-none">
       {/* 1. MAPA 100% LIVRE DO TOPO ATÉ EMBAIXO COM z-index: 0 E ROTAÇÃO AUTOMÁTICA SEGUINDO O CARRO */}
-      <div className="absolute inset-0 z-0 overflow-hidden bg-slate-100">
+      <div
+        className="absolute inset-0 z-0 overflow-hidden bg-slate-100 touch-none"
+        style={{ touchAction: 'none' }}
+      >
         <div
           ref={mapContainerRef}
           style={
@@ -939,9 +942,10 @@ export const DriverGpsNavigationModal: React.FC<DriverGpsNavigationModalProps> =
               transform: `rotate(${isFollowingCar ? -carHeading : 0}deg) scale(${isFollowingCar ? 1.42 : 1})`,
               transition: 'transform 0.65s linear',
               '--nav-counter-rot': `${isFollowingCar ? carHeading : 0}deg`,
+              touchAction: 'none',
             } as React.CSSProperties
           }
-          className="w-full h-full bg-white"
+          className="w-full h-full bg-white touch-none"
         />
       </div>
 

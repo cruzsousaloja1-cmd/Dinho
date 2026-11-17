@@ -94,8 +94,21 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+            mapInstanceRef.current?.invalidateSize();
+          }
+        }
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
       window.removeEventListener('resize', handleResize);
+      resizeObserver?.disconnect();
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -361,9 +374,16 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[160px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div
+      className="relative w-full h-full min-h-[160px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm touch-none overscroll-none"
+      style={{ touchAction: 'none' }}
+    >
       {/* Real Map Canvas */}
-      <div ref={mapContainerRef} className="w-full h-full z-0" />
+      <div
+        ref={mapContainerRef}
+        className="w-full h-full z-0 touch-none"
+        style={{ touchAction: 'none' }}
+      />
 
       {/* Floating GPS HUD overlay */}
       <div className="absolute top-2 left-2 z-[400] flex items-center gap-1.5 pointer-events-none">

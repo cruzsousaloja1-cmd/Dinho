@@ -53,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs w-full max-w-full overflow-x-hidden">
+    <header className="sticky top-0 z-50 shrink-0 overscroll-none bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs w-full max-w-full overflow-x-hidden">
       {/* Main Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 w-full max-w-[100vw] box-border">
         {/* Brand RACE em Destaque */}
@@ -314,7 +314,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Menu Lateral / Drawer Móvel Responsivo (Botão 3 Pontinhos) */}
       {isMobileMenuOpen && (
-        <div className="md:hidden border-t border-slate-200 bg-white/98 backdrop-blur-xl px-4 py-4 space-y-4 shadow-2xl animate-fade-in max-h-[82vh] overflow-y-auto">
+        <div className="md:hidden border-t border-slate-200 bg-white/98 backdrop-blur-xl px-4 py-4 space-y-4 shadow-2xl animate-fade-in max-h-[82vh] overflow-y-auto overscroll-contain">
           {/* Usuário / Conta no Menu */}
           {currentUser ? (
             <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200">

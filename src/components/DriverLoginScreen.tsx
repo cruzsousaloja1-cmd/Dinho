@@ -587,7 +587,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#000000] text-white flex flex-col justify-center items-center px-4 sm:px-6 py-10 selection:bg-[#ff6a00] selection:text-white">
+    <div className="h-dvh w-full overflow-y-auto overscroll-contain bg-[#000000] text-white px-4 sm:px-6 py-10 selection:bg-[#ff6a00] selection:text-white">
+      <div className="min-h-full flex flex-col justify-center items-center">
       <div className="w-full max-w-sm sm:max-w-md space-y-7 animate-fade-in">
         {/* Topo Oficial RACE Laranja */}
         <div className="text-center space-y-1.5">
@@ -1466,6 +1467,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           );
         }}
       />
+      </div>
     </div>
   );
 };

@@ -354,7 +354,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
 
               {/* Suggestions Dropdown for Coleta */}
               {activeDropdown === 'pickup' && (
-                <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border-2 border-purple-200 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border-2 border-purple-200 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-100 max-h-64 overflow-y-auto overscroll-contain">
                   <div className="px-3 py-1.5 bg-slate-50 flex items-center justify-between text-xs font-bold text-slate-600">
                     <span className="flex items-center gap-1">
                       <Search className="w-3 h-3 text-purple-600" />
@@ -445,7 +445,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
 
               {/* Suggestions Dropdown for Entrega */}
               {activeDropdown === 'destination' && (
-                <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border-2 border-purple-200 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border-2 border-purple-200 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-100 max-h-64 overflow-y-auto overscroll-contain">
                   <div className="px-3 py-1.5 bg-slate-50 flex items-center justify-between text-xs font-bold text-slate-600">
                     <span className="flex items-center gap-1">
                       <Search className="w-3 h-3 text-purple-600" />

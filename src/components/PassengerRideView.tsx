@@ -1864,7 +1864,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
           {/* Dropdown de Busca Automática para Embarque */}
           {activeDropdown === 'pickup' && (
-            <div className="absolute left-0 right-0 top-full z-50 bg-white border-2 border-emerald-400 rounded-2xl shadow-2xl mt-1 overflow-hidden divide-y divide-slate-100 max-h-72 overflow-y-auto">
+            <div className="absolute left-0 right-0 top-full z-50 bg-white border-2 border-emerald-400 rounded-2xl shadow-2xl mt-1 overflow-hidden divide-y divide-slate-100 max-h-72 overflow-y-auto overscroll-contain">
               {pickupInput.trim().length > 0 && (
                 <button
                   type="button"
@@ -2025,7 +2025,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
           {/* Dropdown de Busca Automática para Destino */}
           {activeDropdown === 'destination' && (
-            <div className="absolute left-0 right-0 top-full z-50 bg-white border-2 border-amber-400 rounded-2xl shadow-2xl mt-1 overflow-hidden divide-y divide-slate-100 max-h-64 overflow-y-auto">
+            <div className="absolute left-0 right-0 top-full z-50 bg-white border-2 border-amber-400 rounded-2xl shadow-2xl mt-1 overflow-hidden divide-y divide-slate-100 max-h-64 overflow-y-auto overscroll-contain">
               <div className="bg-amber-50 px-3.5 py-1.5 text-xs font-bold text-amber-900 flex items-center justify-between">
                 <span>Sugestões Automáticas com Número (Indaiatuba-SP)</span>
                 <button
@@ -3353,7 +3353,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
       {/* Modal em Tela Cheia para Visualizar e Editar Endereço Completo sem Corte */}
       {fullscreenAddressField && (
-        <div className="fixed inset-0 z-[1300] bg-white flex flex-col p-5 sm:p-7 animate-fade-in overflow-y-auto">
+        <div className="fixed inset-0 z-[1300] bg-white flex flex-col p-5 sm:p-7 animate-fade-in overflow-y-auto overscroll-contain">
           <div className="max-w-xl w-full mx-auto flex flex-col gap-4 flex-1">
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2">
@@ -3436,7 +3436,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               </div>
             )}
 
-            <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-64 overflow-y-auto bg-white">
+            <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-64 overflow-y-auto overscroll-contain bg-white">
               {(fullscreenAddressField === 'pickup' ? pickupSuggestions : destSuggestions).map((sug) => (
                 <button
                   key={sug.id}

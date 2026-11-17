@@ -974,7 +974,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Admin Subtabs in White */}
-      <div className="bg-white border border-slate-200 p-2 rounded-2xl flex items-center gap-2 shadow-sm overflow-x-auto">
+      <div className="bg-white border border-slate-200 p-2 rounded-2xl flex items-center gap-2 shadow-sm overflow-x-auto overscroll-x-contain">
         <button
           onClick={() => setActiveTab('overview')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
@@ -3181,7 +3181,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
-            <div className="max-h-[65vh] overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-2 text-center">
+            <div className="max-h-[65vh] overflow-auto overscroll-contain rounded-2xl border border-slate-200 bg-slate-100 p-2 text-center">
               <img
                 src={previewProofImage}
                 alt="Comprovante"
@@ -3297,7 +3297,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Modal: Ver Avaliações do Condutor */}
       {selectedUserReviewModal && (
         <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-300 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-300 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto overscroll-contain">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
@@ -3420,7 +3420,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Modal ADM: Editar Usuário (Nome, E-mail, WhatsApp, Foto + SALVAR ALTERAÇÕES) */}
       {editingAdminUser && (
         <div className="fixed inset-0 z-[1250] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full border-2 border-emerald-500 shadow-2xl p-6 space-y-5 max-h-[92vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full border-2 border-emerald-500 shadow-2xl p-6 space-y-5 max-h-[92vh] overflow-y-auto overscroll-contain">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">

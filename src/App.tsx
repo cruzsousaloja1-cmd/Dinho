@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { 
   Driver, 
   LocationPoint, 
@@ -104,6 +104,33 @@ export default function App() {
 
   // Global States
   const [activeTab, setActiveTab] = useState<TabType>(() => resolveInitialTab(initialUser));
+  const tabScrollTopsRef = useRef<Partial<Record<TabType, number>>>({});
+  const tabPanelRefs = useRef<Partial<Record<TabType, HTMLDivElement | null>>>({});
+
+  useLayoutEffect(() => {
+    const el = tabPanelRefs.current[activeTab];
+    if (el) {
+      el.scrollTop = tabScrollTopsRef.current[activeTab] ?? 0;
+    }
+  }, [activeTab]);
+
+  const getTabPanelProps = (tab: TabType) => {
+    const isActive = activeTab === tab;
+    return {
+      ref: (el: HTMLDivElement | null) => {
+        tabPanelRefs.current[tab] = el;
+      },
+      onScroll: (e: React.UIEvent<HTMLDivElement>) => {
+        if (isActive) {
+          tabScrollTopsRef.current[tab] = e.currentTarget.scrollTop;
+        }
+      },
+      className: isActive
+        ? 'h-full w-full overflow-y-auto overscroll-contain px-4 py-4 sm:p-5 pb-28 box-border'
+        : 'hidden',
+    };
+  };
+
   const [isFullMapOpen, setIsFullMapOpen] = useState(false);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [currentDriver, setCurrentDriver] = useState<Driver>(
@@ -1646,7 +1673,7 @@ export default function App() {
 
   if (passwordRecoveryEmail !== null) {
     return (
-      <div className="min-h-screen bg-[#000000] text-white flex items-center justify-center p-4">
+      <div className="h-dvh bg-[#000000] text-white flex items-center justify-center p-4 overflow-y-auto overscroll-contain">
         <ForgotPasswordModal
           isOpen={true}
           recoveryEmail={passwordRecoveryEmail}
@@ -1787,7 +1814,7 @@ export default function App() {
   // Não mostra tela de passageiro, Header ou BottomNav até concluir o preenchimento e confirmação das exigências.
   if (isUserDriver && !isDriverCategoryConfigured) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] text-white px-4 py-6 sm:py-10 overflow-y-auto">
+      <div className="h-dvh bg-[#0a0a0a] text-white px-4 py-6 sm:py-10 overflow-y-auto overscroll-contain">
         <DriverWorkSelectionView
           currentUser={currentUser}
           isMandatorySetup={true}
@@ -1840,7 +1867,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans pb-28 selection:bg-slate-900 selection:text-white w-full max-w-[100vw] overflow-x-hidden box-border">
+    <div className="h-dvh bg-white text-slate-900 flex flex-col font-sans selection:bg-slate-900 selection:text-white w-full max-w-[100vw] overflow-hidden overscroll-none box-border">
       {/* Prominent RACE Brand Header */}
       <Header
         unreadNotifsCount={unreadNotifsCount}
@@ -1873,10 +1900,10 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {/* Main Layout Container */}
-      <main className="flex-1 max-w-4xl w-full max-w-[100vw] mx-auto px-4 py-4 sm:p-5 overflow-x-hidden box-border">
-        {/* 1. Corridas (Passageiro / Condutor) com MAPA ABAIXO DAS OPÇÕES DE CORRIDA */}
-        {activeTab === 'rides' && (
+      {/* Main Layout Container - Scroll isolado por aba para não acionar pull-to-refresh nem perder posição */}
+      <main className="flex-1 min-h-0 max-w-4xl w-full max-w-[100vw] mx-auto overflow-hidden box-border relative">
+        {/* 1. Corridas (Passageiro / Condutor) */}
+        <div {...getTabPanelProps('rides')}>
           <PassengerRideView
             onStartRide={handleStartRide}
             activeRide={activeRide}
@@ -1921,10 +1948,10 @@ export default function App() {
               setIsFullMapOpen(true);
             }}
           />
-        )}
+        </div>
 
         {/* 2. Entregas Flash (Motoboy para entrega) */}
-        {activeTab === 'delivery' && (
+        <div {...getTabPanelProps('delivery')}>
           <DeliveryFlashView
             onStartDelivery={handleStartDelivery}
             availableMotoboys={drivers.filter((d) => d.category === 'moto_entrega')}
@@ -1933,11 +1960,11 @@ export default function App() {
             setPickup={setPickup}
             setDestination={setDestination}
           />
-        )}
+        </div>
 
         {/* 3. Condutor & Cadastro (85% para você, 15% Race - Sem mensalidade) */}
-        {activeTab === 'driver_portal' && (
-          isUserDriver ? (
+        <div {...getTabPanelProps('driver_portal')}>
+          {isUserDriver ? (
             <DriverPartnerPortal
               currentDriver={currentDriver}
               currentUser={currentUser}
@@ -2044,21 +2071,21 @@ export default function App() {
               onBackToRides={() => setActiveTab('rides')}
               onRenewWeeklyPlan={handleRenewWeeklyPlan}
             />
-          )
-        )}
+          )}
+        </div>
 
         {/* 4. Histórico Completo & Recibos - APENAS dados do próprio usuário no Supabase */}
-        {activeTab === 'history' && (
+        <div {...getTabPanelProps('history')}>
           <RideHistoryView
             rides={ridesHistory}
             activeRide={activeRide}
             isLoading={isLoadingHistory}
             onRefresh={() => refreshRidesHistory(currentUser)}
           />
-        )}
+        </div>
 
         {/* 5. Opções de Categoria para Passageiro (4 Categorias + Forma de Pagamento) */}
-        {activeTab === 'passenger_options' && (
+        <div {...getTabPanelProps('passenger_options')}>
           <PassengerOptionsView
             selectedCategory={selectedCategory}
             onSelectCategory={(cat) => setSelectedCategory(cat)}
@@ -2076,10 +2103,10 @@ export default function App() {
               setActiveTab('rides');
             }}
           />
-        )}
+        </div>
 
         {/* 6. Conta & Perfil do Passageiro (Nome, E-mail, WhatsApp, Login, Endereço com Meu GPS, Sair) */}
-        {activeTab === 'passenger_account' && (
+        <div {...getTabPanelProps('passenger_account')}>
           <PassengerAccountView
             currentUser={currentUser}
             currentAddress={pickup?.address}
@@ -2142,11 +2169,11 @@ export default function App() {
             onOpenPrivacyPage={openPrivacyPage}
             onWantToBeDriver={() => setActiveTab('driver_portal')}
           />
-        )}
+        </div>
 
-        {/* 5. Painel Administrativo Master - ADM */}
-        {activeTab === 'admin' && (
-          isAppUserAdmin(currentUser) ? (
+        {/* 7. Painel Administrativo Master - ADM */}
+        <div {...getTabPanelProps('admin')}>
+          {isAppUserAdmin(currentUser) ? (
             <AdminDashboard
               drivers={drivers}
               rides={ridesHistory}
@@ -2178,8 +2205,8 @@ export default function App() {
                 Voltar para Corridas
               </button>
             </div>
-          )
-        )}
+          )}
+        </div>
       </main>
 
       {/* Floating Push Notification Toast */}

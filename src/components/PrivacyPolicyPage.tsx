@@ -18,7 +18,7 @@ const WHATSAPP_SUPPORT_URL =
 
 export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({ onBack }) => {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+    <div className="h-dvh bg-slate-50 text-slate-900 flex flex-col overflow-y-auto overscroll-contain">
       {/* Cabeçalho fixo */}
       <header className="sticky top-0 z-20 bg-white border-b border-slate-200 px-4 py-3.5 shadow-xs">
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">

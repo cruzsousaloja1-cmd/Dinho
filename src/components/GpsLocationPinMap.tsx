@@ -52,7 +52,20 @@ export const GpsLocationPinMap: React.FC<GpsLocationPinMapProps> = ({
       setTimeout(() => map.invalidateSize(), 350);
     }
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+            mapRef.current?.invalidateSize();
+          }
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+    }
+
     return () => {
+      resizeObserver?.disconnect();
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -110,8 +123,15 @@ export const GpsLocationPinMap: React.FC<GpsLocationPinMapProps> = ({
   }, [lat, lng, address]);
 
   return (
-    <div className="w-full h-48 sm:h-52 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-sm bg-slate-100 relative">
-      <div ref={containerRef} className="w-full h-full z-0" />
+    <div
+      className="w-full h-48 sm:h-52 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-sm bg-slate-100 relative touch-none overscroll-none"
+      style={{ touchAction: 'none' }}
+    >
+      <div
+        ref={containerRef}
+        className="w-full h-full z-0 touch-none"
+        style={{ touchAction: 'none' }}
+      />
       <div className="pointer-events-none absolute bottom-2 left-2 right-2 z-[400] flex justify-center">
         <span className="bg-slate-900/85 text-white text-[11px] font-bold px-3 py-1 rounded-full shadow-md">
           {isUpdatingAddress
