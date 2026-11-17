@@ -2558,6 +2558,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           {/* Script SQL para o Supabase SQL Editor */}
           <div className="bg-slate-950 text-white rounded-3xl p-5 sm:p-6 border border-zinc-800 shadow-md space-y-4">
+            <div className="bg-rose-950/70 border border-rose-500/70 rounded-2xl p-4 text-xs text-rose-100 space-y-1">
+              <strong className="text-white block uppercase tracking-wider">
+                Ação obrigatória no Supabase para remover &ldquo;SEM RESTRIÇÕES / RLS desativado&rdquo;:
+              </strong>
+              <p className="text-rose-200 leading-relaxed">
+                1) Clique em <strong>Copiar SQL Completo</strong> &nbsp;&rarr;&nbsp; 2) Abra o <strong>SQL Editor</strong> no seu painel do Supabase &nbsp;&rarr;&nbsp; 3) Cole e clique em <strong>RUN</strong>. Isso apaga políticas permissivas antigas e ativa RLS restrito em <code>usuarios</code>, <code>corridas</code>, <code>pagamentos</code>, <code>motoristas</code> e <code>avaliacoes</code>.
+              </p>
+            </div>
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h4 className="font-heading font-black text-base text-white flex items-center gap-2">
@@ -2565,7 +2574,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span>Script SQL para o Supabase SQL Editor</span>
                 </h4>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Execute este código no SQL Editor do seu projeto Supabase para criar as tabelas e políticas RLS
+                  Execute este código no SQL Editor do seu projeto Supabase para ativar o RLS e corrigir todas as políticas
                 </p>
               </div>
 

@@ -203,9 +203,10 @@ CREATE TABLE IF NOT EXISTS public.avaliacoes (
 );
 
 -- ============================================================================
--- FUNÇÃO AUXILIAR ADMIN (SECURITY DEFINER PARA EVITAR RECURSÃO DE RLS 42P17)
--- ADM só vê tudo se tiver role = 'admin' (no JWT do Supabase Auth ou perfil ADM)
+-- FUNÇÕES AUXILIARES SEGURAS (SECURITY DEFINER PARA EVITAR RECURSÃO DE RLS 42P17)
 -- ============================================================================
+
+-- Retorna true se o usuário autenticado for ADM (tipo = 'ADM'/'admin' ou role = 'admin')
 CREATE OR REPLACE FUNCTION public.is_race_admin()
 RETURNS boolean
 LANGUAGE sql
@@ -230,27 +231,79 @@ AS $$
   );
 $$;
 
+-- Retorna true se o usuário autenticado for motorista/motoboy cadastrado
+CREATE OR REPLACE FUNCTION public.is_race_driver()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.usuarios u
+    WHERE coalesce(auth.jwt() ->> 'email', '') <> ''
+      AND (
+        lower(coalesce(u.email, '')) = lower(auth.jwt() ->> 'email')
+        OR lower(coalesce(u."e-mail", '')) = lower(auth.jwt() ->> 'email')
+        OR lower(coalesce(u.login, '')) = lower(auth.jwt() ->> 'email')
+      )
+      AND lower(coalesce(u.tipo, '')) <> 'passenger'
+  );
+$$;
+
+-- Retorna o id numérico (BIGINT) do usuário autenticado na tabela public.usuarios
+CREATE OR REPLACE FUNCTION public.current_usuario_id()
+RETURNS bigint
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT u.id
+  FROM public.usuarios u
+  WHERE coalesce(auth.jwt() ->> 'email', '') <> ''
+    AND (
+      lower(coalesce(u.email, '')) = lower(auth.jwt() ->> 'email')
+      OR lower(coalesce(u."e-mail", '')) = lower(auth.jwt() ->> 'email')
+      OR lower(coalesce(u.login, '')) = lower(auth.jwt() ->> 'email')
+    )
+  LIMIT 1;
+$$;
+
 -- ============================================================================
--- SEGURANÇA RLS (ROW LEVEL SECURITY) ATIVADA EM TODAS AS 5 TABELAS
+-- LIMPEZA AUTOMÁTICA DE POLÍTICAS ANTIGAS ("SEM RESTRIÇÕES" / USING (true))
+-- Garante que nenhuma política permissiva anterior permaneça ativa!
+-- ============================================================================
+DO $$
+DECLARE
+  pol RECORD;
+BEGIN
+  FOR pol IN
+    SELECT schemaname, tablename, policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename IN ('usuarios', 'corridas', 'pagamentos', 'motoristas', 'avaliacoes')
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', pol.policyname, pol.schemaname, pol.tablename);
+  END LOOP;
+END $$;
+
+-- ============================================================================
+-- SEGURANÇA RLS (ROW LEVEL SECURITY) ATIVADA EM TODAS AS TABELAS
 -- ============================================================================
 
 -- 1A. RLS em public.usuarios:
--- Ninguém consegue listar todos os usuários; usuário só vê e edita o próprio perfil (auth.uid() = id ou e-mail do JWT); ADM só vê tudo se role = 'admin'.
+-- Usuário autenticado só vê e edita o próprio perfil (auth.uid() = id ou e-mail do JWT). Ninguém lista todos os usuários. ADM (tipo = admin) vê tudo.
 ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "usuarios_insert_publico" ON public.usuarios;
-CREATE POLICY "usuarios_insert_publico" ON public.usuarios
-  FOR INSERT
-  WITH CHECK (true);
-
-DROP POLICY IF EXISTS "usuarios_select_proprio_ou_adm" ON public.usuarios;
 CREATE POLICY "usuarios_select_proprio_ou_adm" ON public.usuarios
   FOR SELECT
   USING (
     public.is_race_admin()
     OR (coalesce(auth.uid()::text, '') <> '' AND auth.uid()::text = coalesce(id::text, ''))
     OR (
-      coalesce(auth.jwt() ->> 'email', '') <> ''
+      auth.role() = 'authenticated'
+      AND coalesce(auth.jwt() ->> 'email', '') <> ''
       AND (
         lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
         OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
@@ -259,14 +312,28 @@ CREATE POLICY "usuarios_select_proprio_ou_adm" ON public.usuarios
     )
   );
 
-DROP POLICY IF EXISTS "usuarios_update_proprio_ou_adm" ON public.usuarios;
+CREATE POLICY "usuarios_insert_autenticado" ON public.usuarios
+  FOR INSERT
+  WITH CHECK (
+    public.is_race_admin()
+    OR (
+      auth.role() = 'authenticated'
+      AND coalesce(auth.jwt() ->> 'email', '') <> ''
+      AND (
+        lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
+        OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
+      )
+    )
+  );
+
 CREATE POLICY "usuarios_update_proprio_ou_adm" ON public.usuarios
   FOR UPDATE
   USING (
     public.is_race_admin()
     OR (coalesce(auth.uid()::text, '') <> '' AND auth.uid()::text = coalesce(id::text, ''))
     OR (
-      coalesce(auth.jwt() ->> 'email', '') <> ''
+      auth.role() = 'authenticated'
+      AND coalesce(auth.jwt() ->> 'email', '') <> ''
       AND (
         lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
         OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
@@ -276,199 +343,199 @@ CREATE POLICY "usuarios_update_proprio_ou_adm" ON public.usuarios
   )
   WITH CHECK (
     public.is_race_admin()
-    OR (coalesce(auth.uid()::text, '') <> '' AND auth.uid()::text = coalesce(id::text, ''))
     OR (
-      coalesce(auth.jwt() ->> 'email', '') <> ''
-      AND (
-        lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
-        OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
-        OR lower(coalesce(login, '')) = lower(auth.jwt() ->> 'email')
+      (
+        (coalesce(auth.uid()::text, '') <> '' AND auth.uid()::text = coalesce(id::text, ''))
+        OR (
+          auth.role() = 'authenticated'
+          AND coalesce(auth.jwt() ->> 'email', '') <> ''
+          AND (
+            lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email')
+            OR lower(coalesce("e-mail", '')) = lower(auth.jwt() ->> 'email')
+            OR lower(coalesce(login, '')) = lower(auth.jwt() ->> 'email')
+          )
+        )
       )
+      AND lower(coalesce(tipo, '')) NOT IN ('adm', 'admin')
     )
   );
 
-DROP POLICY IF EXISTS "usuarios_delete_adm" ON public.usuarios;
 CREATE POLICY "usuarios_delete_adm" ON public.usuarios
   FOR DELETE
   USING (public.is_race_admin());
 
 -- 2A. RLS em public.corridas:
--- Passageiro só vê as próprias corridas; Motorista só vê as corridas que aceitou ou disponíveis em Indaiatuba; ADM (role = 'admin') vê todas.
+-- Passageiro só vê as próprias corridas; Motorista só vê corridas disponíveis em Indaiatuba ou que ele aceitou; ADM vê tudo.
 ALTER TABLE public.corridas ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Acesso total corridas" ON public.corridas;
-DROP POLICY IF EXISTS "corridas_select_seguro" ON public.corridas;
 CREATE POLICY "corridas_select_seguro" ON public.corridas
   FOR SELECT
   USING (
     public.is_race_admin()
     OR (
-      coalesce(auth.jwt() ->> 'email', '') <> ''
-      AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email')
-    )
-    OR (
-      coalesce(auth.uid()::text, '') <> ''
-      AND (auth.uid()::text = coalesce(passageiro_id::text, '') OR auth.uid()::text = coalesce(id_passageiro::text, ''))
-    )
-    OR (
-      coalesce(auth.jwt() ->> 'email', '') <> ''
-      AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email')
-    )
-    OR (
-      coalesce(auth.uid()::text, '') <> ''
-      AND (auth.uid()::text = coalesce(motorista_id::text, '') OR auth.uid()::text = coalesce(id_motorista::text, ''))
-    )
-    OR (
-      lower(coalesce(status, '')) IN ('procurando', 'searching', 'procurando_motorista')
+      auth.role() = 'authenticated'
       AND (
-        lower(coalesce(origem_texto, '')) LIKE '%indaiatuba%'
-        OR lower(coalesce(destino_texto, '')) LIKE '%indaiatuba%'
-        OR lower(coalesce(origem::text, '')) LIKE '%indaiatuba%'
-      )
-      AND EXISTS (
-        SELECT 1 FROM public.usuarios u
-        WHERE coalesce(auth.jwt() ->> 'email', '') <> ''
+        (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email'))
+        OR (coalesce(auth.uid()::text, '') <> '' AND (auth.uid()::text = coalesce(passageiro_id::text, '') OR auth.uid()::text = coalesce(id_passageiro::text, '')))
+        OR (public.current_usuario_id() IS NOT NULL AND (passageiro_id = public.current_usuario_id() OR id_passageiro = public.current_usuario_id()))
+        OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email'))
+        OR (coalesce(auth.uid()::text, '') <> '' AND (auth.uid()::text = coalesce(motorista_id::text, '') OR auth.uid()::text = coalesce(id_motorista::text, '')))
+        OR (public.current_usuario_id() IS NOT NULL AND (motorista_id = public.current_usuario_id() OR id_motorista = public.current_usuario_id()))
+        OR (
+          lower(coalesce(status, '')) IN ('procurando', 'searching', 'procurando_motorista')
           AND (
-            lower(coalesce(u.email, '')) = lower(auth.jwt() ->> 'email')
-            OR lower(coalesce(u."e-mail", '')) = lower(auth.jwt() ->> 'email')
+            lower(coalesce(origem_texto, '')) LIKE '%indaiatuba%'
+            OR lower(coalesce(destino_texto, '')) LIKE '%indaiatuba%'
+            OR lower(coalesce(origem::text, '')) LIKE '%indaiatuba%'
           )
-          AND lower(coalesce(u.tipo, '')) <> 'passenger'
+          AND public.is_race_driver()
+        )
       )
     )
   );
 
-DROP POLICY IF EXISTS "corridas_insert_seguro" ON public.corridas;
 CREATE POLICY "corridas_insert_seguro" ON public.corridas
   FOR INSERT
   WITH CHECK (
     public.is_race_admin()
     OR (
-      coalesce(auth.jwt() ->> 'email', '') <> ''
-      AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email')
+      auth.role() = 'authenticated'
+      AND (
+        (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email'))
+        OR (coalesce(auth.uid()::text, '') <> '' AND (auth.uid()::text = coalesce(passageiro_id::text, '') OR auth.uid()::text = coalesce(id_passageiro::text, '')))
+        OR (public.current_usuario_id() IS NOT NULL AND (passageiro_id = public.current_usuario_id() OR id_passageiro = public.current_usuario_id()))
+      )
     )
   );
 
-DROP POLICY IF EXISTS "corridas_update_seguro" ON public.corridas;
 CREATE POLICY "corridas_update_seguro" ON public.corridas
   FOR UPDATE
   USING (
     public.is_race_admin()
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email'))
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email'))
     OR (
-      lower(coalesce(status, '')) IN ('procurando', 'searching', 'procurando_motorista')
+      auth.role() = 'authenticated'
       AND (
-        lower(coalesce(origem_texto, '')) LIKE '%indaiatuba%'
-        OR lower(coalesce(destino_texto, '')) LIKE '%indaiatuba%'
-        OR lower(coalesce(origem::text, '')) LIKE '%indaiatuba%'
-      )
-      AND EXISTS (
-        SELECT 1 FROM public.usuarios u
-        WHERE coalesce(auth.jwt() ->> 'email', '') <> ''
+        (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email'))
+        OR (public.current_usuario_id() IS NOT NULL AND (passageiro_id = public.current_usuario_id() OR id_passageiro = public.current_usuario_id()))
+        OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email'))
+        OR (public.current_usuario_id() IS NOT NULL AND (motorista_id = public.current_usuario_id() OR id_motorista = public.current_usuario_id()))
+        OR (
+          lower(coalesce(status, '')) IN ('procurando', 'searching', 'procurando_motorista')
           AND (
-            lower(coalesce(u.email, '')) = lower(auth.jwt() ->> 'email')
-            OR lower(coalesce(u."e-mail", '')) = lower(auth.jwt() ->> 'email')
+            lower(coalesce(origem_texto, '')) LIKE '%indaiatuba%'
+            OR lower(coalesce(destino_texto, '')) LIKE '%indaiatuba%'
+            OR lower(coalesce(origem::text, '')) LIKE '%indaiatuba%'
           )
-          AND lower(coalesce(u.tipo, '')) <> 'passenger'
+          AND public.is_race_driver()
+        )
       )
     )
   )
   WITH CHECK (
     public.is_race_admin()
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email'))
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email'))
+    OR (
+      auth.role() = 'authenticated'
+      AND (
+        (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email'))
+        OR (public.current_usuario_id() IS NOT NULL AND (passageiro_id = public.current_usuario_id() OR id_passageiro = public.current_usuario_id()))
+        OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email'))
+        OR (public.current_usuario_id() IS NOT NULL AND (motorista_id = public.current_usuario_id() OR id_motorista = public.current_usuario_id()))
+      )
+    )
   );
 
-DROP POLICY IF EXISTS "corridas_delete_adm" ON public.corridas;
 CREATE POLICY "corridas_delete_adm" ON public.corridas
   FOR DELETE
   USING (public.is_race_admin());
 
 -- 3A. RLS em public.motoristas:
--- Condutor só vê/edita o próprio registro; ADM (role = 'admin') gerencia todos.
+-- Condutor só vê/edita o próprio registro; ADM vê tudo.
 ALTER TABLE public.motoristas ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "motoristas_select_seguro" ON public.motoristas;
 CREATE POLICY "motoristas_select_seguro" ON public.motoristas
   FOR SELECT
   USING (
     public.is_race_admin()
     OR (coalesce(auth.uid()::text, '') <> '' AND (auth.uid()::text = coalesce(usuario_id::text, '') OR auth.uid()::text = coalesce(id::text, '')))
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email'))
+    OR (auth.role() = 'authenticated' AND coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email'))
   );
 
-DROP POLICY IF EXISTS "motoristas_insert_seguro" ON public.motoristas;
 CREATE POLICY "motoristas_insert_seguro" ON public.motoristas
   FOR INSERT
   WITH CHECK (
     public.is_race_admin()
     OR (coalesce(auth.uid()::text, '') <> '' AND (auth.uid()::text = coalesce(usuario_id::text, '') OR auth.uid()::text = coalesce(id::text, '')))
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email'))
+    OR (auth.role() = 'authenticated' AND coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email'))
   );
 
-DROP POLICY IF EXISTS "motoristas_update_seguro" ON public.motoristas;
 CREATE POLICY "motoristas_update_seguro" ON public.motoristas
   FOR UPDATE
   USING (
     public.is_race_admin()
     OR (coalesce(auth.uid()::text, '') <> '' AND (auth.uid()::text = coalesce(usuario_id::text, '') OR auth.uid()::text = coalesce(id::text, '')))
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email'))
+    OR (auth.role() = 'authenticated' AND coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email'))
   )
   WITH CHECK (
     public.is_race_admin()
     OR (coalesce(auth.uid()::text, '') <> '' AND (auth.uid()::text = coalesce(usuario_id::text, '') OR auth.uid()::text = coalesce(id::text, '')))
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email'))
+    OR (auth.role() = 'authenticated' AND coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email, '')) = lower(auth.jwt() ->> 'email'))
   );
 
-DROP POLICY IF EXISTS "motoristas_delete_adm" ON public.motoristas;
 CREATE POLICY "motoristas_delete_adm" ON public.motoristas
   FOR DELETE
   USING (public.is_race_admin());
 
 -- 4A. RLS em public.pagamentos:
--- Somente ADM (role = 'admin') e o motorista dono do pagamento têm acesso.
+-- Usuário só vê os próprios pagamentos; ADM vê tudo.
 ALTER TABLE public.pagamentos ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Acesso total pagamentos" ON public.pagamentos;
-DROP POLICY IF EXISTS "pagamentos_select_seguro" ON public.pagamentos;
 CREATE POLICY "pagamentos_select_seguro" ON public.pagamentos
   FOR SELECT
   USING (
     public.is_race_admin()
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email'))
+    OR (
+      auth.role() = 'authenticated'
+      AND (
+        (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email'))
+        OR (id_motorista IS NOT NULL AND id_motorista = public.current_usuario_id())
+      )
+    )
   );
 
-DROP POLICY IF EXISTS "pagamentos_insert_seguro" ON public.pagamentos;
 CREATE POLICY "pagamentos_insert_seguro" ON public.pagamentos
   FOR INSERT
   WITH CHECK (
     public.is_race_admin()
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email'))
+    OR (
+      auth.role() = 'authenticated'
+      AND (
+        (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email'))
+        OR (id_motorista IS NOT NULL AND id_motorista = public.current_usuario_id())
+      )
+    )
   );
 
-DROP POLICY IF EXISTS "pagamentos_update_adm" ON public.pagamentos;
 CREATE POLICY "pagamentos_update_adm" ON public.pagamentos
   FOR UPDATE
   USING (public.is_race_admin())
   WITH CHECK (public.is_race_admin());
 
-DROP POLICY IF EXISTS "pagamentos_delete_adm" ON public.pagamentos;
 CREATE POLICY "pagamentos_delete_adm" ON public.pagamentos
   FOR DELETE
   USING (public.is_race_admin());
 
 -- 5A. RLS em public.avaliacoes:
--- Usuário só vê/insere avaliações das próprias corridas; ADM (role = 'admin') vê todas.
+-- Usuário só vê/insere avaliações das próprias corridas; ADM vê tudo.
 ALTER TABLE public.avaliacoes ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "avaliacoes_select_seguro" ON public.avaliacoes;
 CREATE POLICY "avaliacoes_select_seguro" ON public.avaliacoes
   FOR SELECT
   USING (
     public.is_race_admin()
     OR (coalesce(auth.uid()::text, '') <> '' AND (auth.uid()::text = coalesce(passageiro_id::text, '') OR auth.uid()::text = coalesce(motorista_id::text, '')))
     OR (
-      coalesce(auth.jwt() ->> 'email', '') <> ''
+      auth.role() = 'authenticated'
+      AND coalesce(auth.jwt() ->> 'email', '') <> ''
       AND (
         lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email')
         OR lower(coalesce(email_motorista, '')) = lower(auth.jwt() ->> 'email')
@@ -476,22 +543,19 @@ CREATE POLICY "avaliacoes_select_seguro" ON public.avaliacoes
     )
   );
 
-DROP POLICY IF EXISTS "avaliacoes_insert_seguro" ON public.avaliacoes;
 CREATE POLICY "avaliacoes_insert_seguro" ON public.avaliacoes
   FOR INSERT
   WITH CHECK (
     public.is_race_admin()
     OR (coalesce(auth.uid()::text, '') <> '' AND auth.uid()::text = coalesce(passageiro_id::text, ''))
-    OR (coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email'))
+    OR (auth.role() = 'authenticated' AND coalesce(auth.jwt() ->> 'email', '') <> '' AND lower(coalesce(email_passageiro, '')) = lower(auth.jwt() ->> 'email'))
   );
 
-DROP POLICY IF EXISTS "avaliacoes_update_adm" ON public.avaliacoes;
 CREATE POLICY "avaliacoes_update_adm" ON public.avaliacoes
   FOR UPDATE
   USING (public.is_race_admin())
   WITH CHECK (public.is_race_admin());
 
-DROP POLICY IF EXISTS "avaliacoes_delete_adm" ON public.avaliacoes;
 CREATE POLICY "avaliacoes_delete_adm" ON public.avaliacoes
   FOR DELETE
   USING (public.is_race_admin());
@@ -559,6 +623,73 @@ $$;
 
 -- Remover função antiga de redefinição de senha em public.usuarios (agora exclusiva do Supabase Auth)
 DROP FUNCTION IF EXISTS public.rpc_redefinir_senha(text, text);
+
+-- Completa cadastro na tabela public.usuarios SOMENTE quando já existe conta válida recém-criada em auth.users
+CREATE OR REPLACE FUNCTION public.rpc_complete_signup_profile(
+  p_auth_uid uuid,
+  p_nome text,
+  p_email text,
+  p_celular text DEFAULT '',
+  p_whatsapp text DEFAULT '',
+  p_login text DEFAULT '',
+  p_tipo text DEFAULT 'passenger',
+  p_categoria text DEFAULT '',
+  p_placa text DEFAULT '',
+  p_modelo text DEFAULT '',
+  p_ano integer DEFAULT 2023,
+  p_cnh text DEFAULT '',
+  p_foto text DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_clean_email text := lower(regexp_replace(coalesce(p_email, ''), '\s+', '', 'g'));
+  v_auth_role text;
+  v_row public.usuarios%ROWTYPE;
+BEGIN
+  IF p_auth_uid IS NULL OR v_clean_email = '' THEN
+    RAISE EXCEPTION 'Auth UID ou e-mail inválido';
+  END IF;
+
+  SELECT lower(coalesce(au.raw_user_meta_data ->> 'role', ''))
+  INTO v_auth_role
+  FROM auth.users au
+  WHERE au.id = p_auth_uid
+    AND lower(coalesce(au.email, '')) = v_clean_email
+    AND au.created_at > now() - interval '30 minutes'
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Conta Supabase Auth não encontrada para finalizar perfil';
+  END IF;
+
+  INSERT INTO public.usuarios (nome, email, celular, whatsapp, login, tipo, categoria, placa, modelo, ano, cnh, foto)
+  VALUES (
+    coalesce(nullif(trim(p_nome), ''), split_part(v_clean_email, '@', 1)),
+    v_clean_email,
+    nullif(trim(coalesce(p_celular, '')), ''),
+    nullif(trim(coalesce(p_whatsapp, '')), ''),
+    coalesce(nullif(trim(p_login), ''), v_clean_email),
+    CASE
+      WHEN lower(coalesce(p_tipo, '')) IN ('adm', 'admin') AND v_auth_role = 'admin' THEN 'ADM'
+      WHEN lower(coalesce(p_tipo, '')) IN ('adm', 'admin') THEN 'passenger'
+      ELSE coalesce(nullif(trim(p_tipo), ''), 'passenger')
+    END,
+    coalesce(p_categoria, ''),
+    coalesce(p_placa, ''),
+    coalesce(p_modelo, ''),
+    coalesce(p_ano, 2023),
+    coalesce(p_cnh, ''),
+    p_foto
+  )
+  RETURNING * INTO v_row;
+
+  RETURN to_jsonb(v_row) - 'senha' - 'password';
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION public.rpc_get_online_drivers()
 RETURNS TABLE (
@@ -1028,18 +1159,40 @@ export async function insertUsuarioSupabase(params: {
       },
     });
 
+    let signedAuthUserId: string | undefined = authSignUpRes.data?.user?.id;
+    let hasActiveAuthSession = Boolean(authSignUpRes.data?.session);
+
     if (authSignUpRes.error) {
       const authMsg = (authSignUpRes.error.message || '').toLowerCase();
       if (authMsg.includes('already registered') || authMsg.includes('already exists') || authMsg.includes('user already')) {
-        return {
-          success: false,
-          error: 'Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.',
-        };
-      }
-      if (authMsg.includes('password')) {
+        // Caso exista em auth.users sem registro correspondente em public.usuarios, valida senha via signInWithPassword
+        const existingAuthSignIn = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: rawSenha,
+        });
+        if (!existingAuthSignIn.error && existingAuthSignIn.data?.user) {
+          signedAuthUserId = existingAuthSignIn.data.user.id;
+          hasActiveAuthSession = Boolean(existingAuthSignIn.data.session);
+        } else {
+          return {
+            success: false,
+            error: 'Este e-mail já está cadastrado. Clique em Entrar ou em Esqueci minha senha.',
+          };
+        }
+      } else if (authMsg.includes('password')) {
         return { success: false, error: 'A senha deve ter no mínimo 6 caracteres.' };
+      } else {
+        return { success: false, error: authSignUpRes.error.message || 'Falha ao cadastrar autenticação no Supabase Auth.' };
       }
-      return { success: false, error: authSignUpRes.error.message || 'Falha ao cadastrar autenticação no Supabase Auth.' };
+    } else if (!hasActiveAuthSession && signedAuthUserId) {
+      // Tenta autenticar imediatamente caso o servidor exija login após signUp
+      const quickSignIn = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: rawSenha,
+      }).catch(() => null);
+      if (quickSignIn && !quickSignIn.error && quickSignIn.data?.session) {
+        hasActiveAuthSession = true;
+      }
     }
 
     const cleanCelular = (params.celular || params.whatsapp || '').trim();
@@ -1116,11 +1269,31 @@ export async function insertUsuarioSupabase(params: {
 
       const msg = error.message || '';
 
-      // Se RLS permitir INSERT mas restringir RETURNING SELECT, tenta INSERT sem .select()
+      // Se RLS bloquear INSERT sem sessão imediata (ex: "Confirm email" ligado no Supabase), finaliza via RPC vinculada ao auth.users
       if (error.code === '42501' || msg.toLowerCase().includes('row-level security')) {
         const plainInsert = await supabase.from('usuarios').insert([row]);
         if (!plainInsert.error) {
           return { success: true, data: stripSensitiveUserFields(row) };
+        }
+        if (signedAuthUserId) {
+          const rpcProfile = await supabase.rpc('rpc_complete_signup_profile', {
+            p_auth_uid: signedAuthUserId,
+            p_nome: row.nome || params.nome.trim(),
+            p_email: cleanEmail,
+            p_celular: cleanCelular || '',
+            p_whatsapp: cleanWhatsapp || '',
+            p_login: cleanLogin || cleanEmail,
+            p_tipo: tipoStr,
+            p_categoria: row.categoria || '',
+            p_placa: row.placa || '',
+            p_modelo: row.modelo || '',
+            p_ano: Number(row.ano) || 2023,
+            p_cnh: row.cnh || '',
+            p_foto: compressedPhoto || null,
+          });
+          if (!rpcProfile.error && rpcProfile.data) {
+            return { success: true, data: stripSensitiveUserFields(rpcProfile.data) };
+          }
         }
       }
 
