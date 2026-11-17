@@ -410,6 +410,47 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     };
   }, [isOnline, isCategoryConfigured, isApprovedDriver, acceptedDriverRide, currentDriver.category, dismissedTick]);
 
+  // Escuta cancelamento em tempo real pelo passageiro enquanto o motorista está com corrida aceita
+  useEffect(() => {
+    if (!acceptedDriverRide?.id) return;
+    let mounted = true;
+    const targetId = String(acceptedDriverRide.id);
+
+    const handleCancelled = (st?: string) => {
+      const lower = String(st || '').toLowerCase();
+      if (lower === 'cancelled' || lower === 'cancelada') {
+        setIsDriverGpsOpen(false);
+        setAcceptedDriverRide(null);
+        setAcceptedRideNotice('Corrida cancelada pelo passageiro.');
+      }
+    };
+
+    const unsubscribe = subscribeToCorridasRealtime({
+      onUpdate: (updRide) => {
+        if (!mounted || !updRide?.id) return;
+        if (String(updRide.id) === targetId) {
+          handleCancelled(updRide.status);
+        }
+      },
+    });
+
+    const pollTimer = setInterval(async () => {
+      try {
+        if (!/^\d+$/.test(targetId)) return;
+        const latest = await getCorridaByIdSupabase(targetId);
+        if (mounted && latest) {
+          handleCancelled(latest.status);
+        }
+      } catch {}
+    }, 3500);
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+      clearInterval(pollTimer);
+    };
+  }, [acceptedDriverRide?.id]);
+
   // Carrega automaticamente foto do motorista e do passageiro direto do Supabase se estiverem vazias na chamada
   useEffect(() => {
     if (!currentDriver.avatar && (currentDriver.email || currentDriver.id)) {
@@ -4198,7 +4239,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           onOpenSupport={onOpenSupport}
           onCancelRide={() => {
             const rid = acceptedDriverRide?.id || activeRide?.id;
-            if (rid) updateCorridaStatusSupabase(rid, 'cancelled').catch(() => {});
+            if (rid) updateCorridaStatusSupabase(rid, 'cancelada').catch(() => {});
             setIsDriverGpsOpen(false);
             setAcceptedDriverRide(null);
             setAcceptedRideNotice('Corrida cancelada.');

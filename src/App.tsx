@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Driver, 
   LocationPoint, 
@@ -36,7 +37,7 @@ import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { RatingModal } from './components/RatingModal';
 import { saveDriverReview, clearReviewsCache } from './services/reviewService';
 import { AppUser } from './types';
-import { AlertTriangle, CheckCircle2, X, QrCode } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, X, QrCode, XCircle, Loader2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { WEEKLY_FEE, WEEKLY_FEE_TEXT, COMMISSION, WEEKLY_FEE_BADGE } from './config/pricing';
 import { 
@@ -115,8 +116,30 @@ export default function App() {
     }
   }, [activeTab]);
 
+  const [isFullMapOpen, setIsFullMapOpen] = useState(false);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [currentDriver, setCurrentDriver] = useState<Driver>(
+    () => initialUser?.driverData || DEFAULT_NEW_DRIVER
+  );
+  const [ridesHistory, setRidesHistory] = useState<Ride[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [activeRide, setActiveRide] = useState<Ride | null>(null);
+  const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+  const [isCancellingRide, setIsCancellingRide] = useState(false);
+  const [completedRideForRating, setCompletedRideForRating] = useState<Ride | null>(null);
+  const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
+
+  const activeRideStatusLower = String(activeRide?.status || '').toLowerCase();
+  const isRideActivePhase =
+    Boolean(activeRide) &&
+    activeRideStatusLower !== 'completed' &&
+    activeRideStatusLower !== 'finalizada' &&
+    activeRideStatusLower !== 'cancelled' &&
+    activeRideStatusLower !== 'cancelada';
+
   const getTabPanelProps = (tab: TabType) => {
     const isActive = activeTab === tab;
+    const bottomPad = isRideActivePhase && tab !== 'driver_portal' ? 'pb-40' : 'pb-28';
     return {
       ref: (el: HTMLDivElement | null) => {
         tabPanelRefs.current[tab] = el;
@@ -127,21 +150,10 @@ export default function App() {
         }
       },
       className: isActive
-        ? 'h-full w-full overflow-y-auto overscroll-contain px-4 py-4 sm:p-5 pb-28 box-border'
+        ? `h-full w-full overflow-y-auto overscroll-contain px-4 py-4 sm:p-5 ${bottomPad} box-border`
         : 'hidden',
     };
   };
-
-  const [isFullMapOpen, setIsFullMapOpen] = useState(false);
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [currentDriver, setCurrentDriver] = useState<Driver>(
-    () => initialUser?.driverData || DEFAULT_NEW_DRIVER
-  );
-  const [ridesHistory, setRidesHistory] = useState<Ride[]>([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [activeRide, setActiveRide] = useState<Ride | null>(null);
-  const [completedRideForRating, setCompletedRideForRating] = useState<Ride | null>(null);
-  const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory>('economica');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'credit_card' | 'dinheiro'>('pix');
   const [optionsLaunchNonce, setOptionsLaunchNonce] = useState(0);
@@ -661,15 +673,21 @@ export default function App() {
 
   // Motoristas trabalham livres sem bloqueio de taxa semanal (modelo 15% Race / 85% motorista)
 
-  // Realtime Supabase ('corridas') + Polling em tempo real enquanto a corrida do passageiro estiver em MODO PROCURANDO
+  // Realtime Supabase ('corridas') + Polling em tempo real enquanto houver corrida ativa
   useEffect(() => {
     const curSt = String(activeRide?.status || '').toLowerCase();
+    const isTerminal =
+      curSt === 'completed' ||
+      curSt === 'finalizada' ||
+      curSt === 'cancelled' ||
+      curSt === 'cancelada';
+    if (!activeRide || isTerminal) return;
+
     const isSearching =
       curSt === 'searching' || curSt === 'procurando' || curSt === 'procurando_motorista';
-    if (!activeRide || !isSearching) return;
 
     let isMounted = true;
-    let handledAccept = false;
+    let handledAccept = !isSearching;
 
     const applyLatestRideUpdate = async (latestRide: Ride) => {
       if (!isMounted || !latestRide) return;
@@ -685,10 +703,13 @@ export default function App() {
         cancelVoiceSpeech();
         setActiveRide(null);
         setIsFullMapOpen(false);
+        setIsCancelConfirmOpen(false);
+        setDriverPosition(undefined);
         return;
       }
 
       if (
+        isSearching &&
         !handledAccept &&
         (st === 'accepted' ||
           st === 'aceita' ||
@@ -809,7 +830,7 @@ export default function App() {
       } catch {}
     };
 
-    const interval = setInterval(checkAccepted, 2500);
+    const interval = setInterval(checkAccepted, isSearching ? 2500 : 4000);
     return () => {
       isMounted = false;
       unsubscribeRealtime();
@@ -1167,20 +1188,57 @@ export default function App() {
     );
   };
 
-  // Cancel active ride (para tudo, sem voz e cancela no Supabase)
-  const handleCancelRide = () => {
-    cancelVoiceSpeech();
-    if (activeRide?.id) {
-      updateCorridaStatusSupabase(activeRide.id, 'cancelled').catch(() => {});
+  // Confirm & Cancel active ride (para tudo, atualiza status 'cancelada' no Supabase e volta para o mapa limpo)
+  const handleConfirmCancelRide = async () => {
+    if (isCancellingRide) return;
+    setIsCancellingRide(true);
+    try {
+      cancelVoiceSpeech();
+      let targetRideId = activeRide?.id ? String(activeRide.id) : '';
+      if ((!targetRideId || !/^\d+$/.test(targetRideId)) && currentUser) {
+        try {
+          const userRides = await getCorridasSupabase(currentUser);
+          const match =
+            (activeRide?.confirmationCode
+              ? userRides.find((r) => r.confirmationCode === activeRide.confirmationCode)
+              : null) || userRides[0];
+          if (match?.id && /^\d+$/.test(String(match.id))) {
+            targetRideId = String(match.id);
+          }
+        } catch {}
+      }
+
+      if (targetRideId && /^\d+$/.test(targetRideId)) {
+        await updateCorridaStatusSupabase(targetRideId, 'cancelada').catch(() => false);
+      }
+
+      setRidesHistory((prev) =>
+        prev.map((r) =>
+          (targetRideId && String(r.id) === targetRideId) ||
+          (activeRide?.confirmationCode && r.confirmationCode === activeRide.confirmationCode)
+            ? { ...r, status: 'cancelada' }
+            : r
+        )
+      );
+      setActiveRide(null);
+      setIsFullMapOpen(false);
+      setDriverPosition(undefined);
+      setCompletedRideForRating(null);
+      setIsRatingModalOpen(false);
+      setIsCancelConfirmOpen(false);
+      setActiveTab('rides');
+      triggerPush(
+        '❌ Corrida Cancelada',
+        'A corrida foi cancelada. Nenhum valor adicional foi cobrado.',
+        'system'
+      );
+    } finally {
+      setIsCancellingRide(false);
     }
-    setActiveRide(null);
-    setIsFullMapOpen(false);
-    setDriverPosition(undefined);
-    triggerPush(
-      '❌ Busca Cancelada',
-      'A corrida foi cancelada. Nenhum valor adicional foi cobrado.',
-      'system'
-    );
+  };
+
+  const handleRequestCancelRide = () => {
+    setIsCancelConfirmOpen(true);
   };
 
   // Delivery Flash order -> direciona para pagamento obrigatório antes de chamar motoboy
@@ -1643,6 +1701,8 @@ export default function App() {
     clearReviewsCache();
     setRidesHistory([]);
     setActiveRide(null);
+    setIsCancelConfirmOpen(false);
+    setIsCancellingRide(false);
     setCompletedRideForRating(null);
     setIsRatingModalOpen(false);
     setIsFullMapOpen(false);
@@ -1728,6 +1788,8 @@ export default function App() {
     setPassengers([]);
     setRidesHistory([]);
     setActiveRide(null);
+    setIsCancelConfirmOpen(false);
+    setIsCancellingRide(false);
     setCompletedRideForRating(null);
     setIsRatingModalOpen(false);
     setIsFullMapOpen(false);
@@ -2025,7 +2087,7 @@ export default function App() {
           <PassengerRideView
             onStartRide={handleStartRide}
             activeRide={activeRide}
-            onCancelRide={handleCancelRide}
+            onCancelRide={handleRequestCancelRide}
             onCompleteRide={handleCompleteRide}
             onSubmitRating={handleSubmitRating}
             pickup={pickup}
@@ -2424,7 +2486,7 @@ export default function App() {
               currentUserName={currentUser?.name}
               onlineDrivers={matchingOnlineDrivers}
               onCompleteRide={handleCompleteRide}
-              onCancelRide={handleCancelRide}
+              onCancelRide={handleRequestCancelRide}
               onUpdateDriverPosition={(pos) => {
                 setDriverPosition((prev) => {
                   if (prev && prev.lat === pos.lat && prev.lng === pos.lng) return prev;
@@ -2434,6 +2496,76 @@ export default function App() {
             />
           );
         })()}
+
+      {/* Botão Fixo CANCELAR CORRIDA em TODAS as fases de corrida ativa (Procurando, A caminho, Chegou, Em corrida) */}
+      {typeof document !== 'undefined' &&
+        Boolean(currentUser) &&
+        isRideActivePhase &&
+        !isRatingModalOpen &&
+        (isFullMapOpen || activeTab !== 'driver_portal') &&
+        createPortal(
+          <button
+            type="button"
+            onClick={handleRequestCancelRide}
+            style={{
+              position: 'fixed',
+              bottom: '80px',
+              left: '16px',
+              right: '16px',
+              zIndex: 999,
+              height: '56px',
+            }}
+            className="bg-red-600 hover:bg-red-700 active:scale-[0.99] text-white font-heading font-black text-base uppercase tracking-wider rounded-2xl shadow-[0_8px_24px_rgba(220,38,38,0.45)] border-2 border-red-400 flex items-center justify-center gap-2 cursor-pointer transition-all"
+          >
+            <XCircle className="w-5 h-5 shrink-0" />
+            <span>CANCELAR CORRIDA</span>
+          </button>,
+          document.body
+        )}
+
+      {/* Modal de Confirmação de Cancelamento (Sim / Não) */}
+      {typeof document !== 'undefined' &&
+        isCancelConfirmOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4"
+            style={{ zIndex: 1100 }}
+          >
+            <div className="w-full max-w-sm bg-white border-2 border-red-500 rounded-3xl p-6 shadow-2xl space-y-5 text-center">
+              <div className="w-14 h-14 mx-auto rounded-full bg-red-100 text-red-600 flex items-center justify-center">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="font-heading font-black text-lg text-slate-950">
+                  Tem certeza que deseja cancelar?
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 font-medium">
+                  Ao confirmar, a corrida será cancelada e você voltará para o mapa limpo.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  disabled={isCancellingRide}
+                  onClick={() => setIsCancelConfirmOpen(false)}
+                  className="py-3.5 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-heading font-black text-sm uppercase cursor-pointer disabled:opacity-60"
+                >
+                  Não
+                </button>
+                <button
+                  type="button"
+                  disabled={isCancellingRide}
+                  onClick={handleConfirmCancelRide}
+                  className="py-3.5 px-4 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-heading font-black text-sm uppercase cursor-pointer shadow-md flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {isCancellingRide ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  <span>Sim</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Modal de Avaliação do Motorista / Motoboy ao Concluir Corrida */}
       <RatingModal

@@ -4480,6 +4480,12 @@ function ensureSharedCorridasChannel() {
       if (!row) return;
       const ride = row.pickup && row.destination ? (row as Ride) : mapSupabaseCorridaToRide(row as SupabaseCorridaRow);
       notifyHydratedUpdate(ride, row);
+    })
+    .on('broadcast', { event: 'corrida_cancelada' }, (msg: any) => {
+      const row = msg?.payload;
+      if (!row) return;
+      const ride = row.pickup && row.destination ? (row as Ride) : mapSupabaseCorridaToRide(row as SupabaseCorridaRow);
+      notifyHydratedUpdate(ride, row);
     });
 
   sharedCorridasChannel.subscribe((status: string) => {
@@ -4498,7 +4504,7 @@ export function subscribeToCorridasRealtime(listener: CorridaRealtimeListener): 
 }
 
 export async function broadcastCorridaEvent(
-  eventName: 'nova_corrida' | 'corrida_aceita',
+  eventName: 'nova_corrida' | 'corrida_aceita' | 'corrida_cancelada',
   payload: any
 ): Promise<void> {
   try {
@@ -4914,6 +4920,12 @@ export async function updateCorridaStatusSupabase(
       .from('corridas')
       .update(updatePayload)
       .eq('id', Number(rideId));
+    if (!error && (status === 'cancelada' || status === 'cancelled')) {
+      broadcastCorridaEvent('corrida_cancelada', {
+        id: Number(rideId),
+        status,
+      }).catch(() => {});
+    }
     return !error;
   } catch {
     return false;

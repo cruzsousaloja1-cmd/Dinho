@@ -118,7 +118,7 @@ interface PassengerRideViewProps {
 export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   onStartRide,
   activeRide,
-  onCancelRide,
+  onCancelRide: _onCancelRide,
   onCompleteRide,
   onSubmitRating,
   pickup,
@@ -181,6 +181,22 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [rideCodeCopied, setRideCodeCopied] = useState(false);
   const [livePassengerAvatar, setLivePassengerAvatar] = useState('');
   const [liveDriverAvatar, setLiveDriverAvatar] = useState('');
+  const prevActiveRideRef = useRef<Ride | null>(activeRide);
+
+  useEffect(() => {
+    const hadRide = Boolean(prevActiveRideRef.current);
+    prevActiveRideRef.current = activeRide;
+    if (hadRide && !activeRide) {
+      if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+      setPassengerStep('search');
+      setIsPaidInApp(false);
+      setIsProcessingPayment(false);
+      setAsaasConfirmedStatus('PENDING');
+      setAsaasPayment(null);
+      setPaymentBlockedError(null);
+      autoConfirmedPaymentIdRef.current = null;
+    }
+  }, [activeRide]);
 
   useEffect(() => {
     if (!activeRide) {
@@ -1295,18 +1311,21 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
         if (!isRideAccepted) {
           return (
-            <div className="bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-fade-in">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div
+              style={{ maxHeight: '45vh', overflowY: 'auto' }}
+              className="overscroll-contain bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3 animate-fade-in"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3.5 w-full sm:w-auto">
                   <div className="relative shrink-0">
                     {passengerDisplayAvatar ? (
                       <img
                         src={passengerDisplayAvatar}
                         alt={passengerDisplayName}
-                        className="w-16 h-16 rounded-full object-cover border-2 border-[#ff6a00] shadow-lg"
+                        className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-[#ff6a00] shadow-lg"
                       />
                     ) : (
-                      <div className="w-16 h-16 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] flex flex-col items-center justify-center font-heading font-black text-lg">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#ff6a00]/20 text-[#ff6a00] border-2 border-[#ff6a00] flex flex-col items-center justify-center font-heading font-black text-lg">
                         <span>{passengerDisplayName.charAt(0).toUpperCase()}</span>
                         <User className="w-4 h-4 opacity-75" />
                       </div>
@@ -1323,40 +1342,43 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       </span>
                     </div>
                     <h4 className="font-heading font-black text-base text-white truncate">
-                      {passengerDisplayName} • Aguardando motorista aceitar
+                      Passageiro: {passengerDisplayName}
                     </h4>
-                    <p className="text-xs text-zinc-400 truncate">
-                      {activeRide.pickup?.address} → {activeRide.destination?.address}
+                    <p className="text-xs text-zinc-400">
+                      Aguardando motorista aceitar
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  {onOpenFullMap && (
-                    <button
-                      type="button"
-                      onClick={onOpenFullMap}
-                      className="flex-1 sm:flex-none px-4 py-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs sm:text-sm rounded-2xl transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 active:scale-95 border border-[#ff8533]"
-                    >
-                      <Maximize2 className="w-4 h-4 shrink-0" />
-                      <span>VER O MAPA TELA INTEIRA</span>
-                    </button>
-                  )}
+                {onOpenFullMap && (
                   <button
                     type="button"
-                    onClick={onCancelRide}
-                    className="px-4 py-3 bg-rose-600 hover:bg-rose-500 text-white font-heading font-black text-xs sm:text-sm rounded-2xl border border-rose-500 cursor-pointer active:scale-95"
+                    onClick={onOpenFullMap}
+                    className="w-full sm:w-auto px-4 py-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs sm:text-sm rounded-2xl transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 active:scale-95 border border-[#ff8533]"
                   >
-                    Cancelar busca
+                    <Maximize2 className="w-4 h-4 shrink-0" />
+                    <span>VER O MAPA TELA INTEIRA</span>
                   </button>
-                </div>
+                )}
+              </div>
+
+              <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-3 text-xs space-y-1.5">
+                <p className="text-zinc-200 break-words leading-snug">
+                  <strong className="text-emerald-400">Embarque:</strong> {activeRide.pickup?.address}
+                </p>
+                <p className="text-zinc-200 break-words leading-snug">
+                  <strong className="text-[#ff6a00]">Destino:</strong> {activeRide.destination?.address}
+                </p>
               </div>
             </div>
           );
         }
 
         return (
-          <div className="bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-fade-in">
+          <div
+            style={{ maxHeight: '45vh', overflowY: 'auto' }}
+            className="overscroll-contain bg-zinc-950 border-2 border-[#ff6a00] text-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-fade-in"
+          >
             {/* CAIXA AMARELA GRANDE NO TOPO DO CARD DO PASSAGEIRO (SÓ DEPOIS QUE ACEITAR) */}
             {activeRide.confirmationCode && (
               <div className="bg-amber-300 border-4 border-amber-500 rounded-2xl p-4 text-center shadow-lg text-slate-950">
@@ -1451,15 +1473,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   </a>
                 )}
 
-                {!isRideDone ? (
-                  <button
-                    type="button"
-                    onClick={onCancelRide}
-                    className="px-3.5 py-3 bg-zinc-800 hover:bg-zinc-700 text-rose-400 font-bold text-xs rounded-2xl border border-zinc-700 cursor-pointer active:scale-95"
-                  >
-                    Cancelar
-                  </button>
-                ) : (
+                {isRideDone && (
                   <button
                     type="button"
                     onClick={onCompleteRide}
@@ -1471,29 +1485,36 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               </div>
             </div>
 
-            {/* Passageiro na chamada */}
-            <div className="flex items-center gap-3 bg-zinc-900/90 border border-zinc-800 rounded-2xl px-3.5 py-2.5">
-              {passengerDisplayAvatar ? (
-                <img
-                  src={passengerDisplayAvatar}
-                  alt={passengerDisplayName}
-                  className="w-14 h-14 rounded-full object-cover border-2 border-emerald-500 shrink-0 shadow-md"
-                />
-              ) : (
-                <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-300 border-2 border-emerald-500 shrink-0 flex flex-col items-center justify-center font-heading font-black text-lg">
-                  <span>{passengerDisplayName.charAt(0).toUpperCase()}</span>
-                  <User className="w-3.5 h-3.5 opacity-75" />
+            {/* Passageiro, Embarque e Destino na chamada */}
+            <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl px-3.5 py-2.5 space-y-2">
+              <div className="flex items-center gap-3">
+                {passengerDisplayAvatar ? (
+                  <img
+                    src={passengerDisplayAvatar}
+                    alt={passengerDisplayName}
+                    className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500 shrink-0 shadow-md"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-300 border-2 border-emerald-500 shrink-0 flex flex-col items-center justify-center font-heading font-black text-lg">
+                    <span>{passengerDisplayName.charAt(0).toUpperCase()}</span>
+                    <User className="w-3.5 h-3.5 opacity-75" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase block">
+                    Passageiro
+                  </span>
+                  <p className="font-heading font-black text-sm text-white truncate">
+                    {passengerDisplayName}
+                  </p>
                 </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase block">
-                  Passageiro
-                </span>
-                <p className="font-heading font-black text-sm text-white truncate">
-                  {passengerDisplayName}
+              </div>
+              <div className="text-xs text-zinc-300 space-y-1 border-t border-zinc-800 pt-2">
+                <p className="break-words leading-snug">
+                  <strong className="text-emerald-400">Embarque:</strong> {activeRide.pickup?.address}
                 </p>
-                <p className="text-xs text-zinc-400 truncate">
-                  {activeRide.pickup?.address}
+                <p className="break-words leading-snug">
+                  <strong className="text-[#ff6a00]">Destino:</strong> {activeRide.destination?.address}
                 </p>
               </div>
             </div>

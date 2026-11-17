@@ -19,7 +19,6 @@ import {
   Check,
   Phone,
   Loader2,
-  XCircle,
   User,
 } from 'lucide-react';
 import { 
@@ -824,7 +823,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       style={{ touchAction: 'none' }}
     >
       {/* 1. HUD SUPERIOR: MODO PROCURANDO vs MODO A CAMINHO */}
-      <div className="absolute top-3 left-3 right-14 z-[1000] flex items-start justify-between gap-2.5 pointer-events-none">
+      <div className="absolute top-3 left-3 right-14 z-[900] flex items-start justify-between gap-2.5 pointer-events-none">
         {/* Botão VOLTAR */}
         <button
           type="button"
@@ -886,13 +885,13 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
 
       {/* TOAST DE FEEDBACK DE ÁUDIO */}
       {audioToast && (
-        <div className="pointer-events-none absolute top-20 left-1/2 -translate-x-1/2 z-[1001] bg-slate-950/90 backdrop-blur-md text-white font-heading font-black text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border border-[#ff6a00] flex items-center gap-2 animate-bounce">
+        <div className="pointer-events-none absolute top-20 left-1/2 -translate-x-1/2 z-[910] bg-slate-950/90 backdrop-blur-md text-white font-heading font-black text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border border-[#ff6a00] flex items-center gap-2 animate-bounce">
           <span>{audioToast}</span>
         </div>
       )}
 
       {/* BOTÕES RÁPIDOS LATERAIS */}
-      <div className="absolute top-24 right-2.5 z-[1000] flex flex-col gap-2 pointer-events-none">
+      <div className="absolute top-24 right-2.5 z-[900] flex flex-col gap-2 pointer-events-none">
         {/* Botão de Som / Voz Ligar/Desligar */}
         <button
           type="button"
@@ -937,10 +936,13 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
         style={{ width: '100vw', height: '100vh', background: '#ffffff', touchAction: 'none' }}
       />
 
-      {/* 3. CARD EMBAIXO: MODO PROCURANDO vs MODO A CAMINHO */}
-      <div className="absolute bottom-2.5 sm:bottom-3 left-2.5 right-2.5 sm:left-6 sm:right-6 max-w-md mx-auto z-[1000] pointer-events-none">
+      {/* 3. CARD EMBAIXO ACIMA DO BOTÃO FIXO CANCELAR CORRIDA: MODO PROCURANDO vs MODO A CAMINHO */}
+      <div className="fixed bottom-[148px] left-4 right-4 max-w-md mx-auto z-[900] pointer-events-none">
         {isSearching ? (
-          <div className="pointer-events-auto bg-white/95 backdrop-blur-xl border-2 border-[#ff6a00] text-slate-900 rounded-3xl p-4 shadow-[0_8px_30px_rgba(0,0,0,0.22)] space-y-3">
+          <div
+            style={{ maxHeight: '45vh', overflowY: 'auto' }}
+            className="pointer-events-auto overscroll-contain bg-white/95 backdrop-blur-xl border-2 border-[#ff6a00] text-slate-900 rounded-3xl p-4 shadow-[0_8px_30px_rgba(0,0,0,0.22)] space-y-3"
+          >
             <div className="flex items-center gap-3">
               <div className="relative shrink-0">
                 {displayPassengerAvatar ? (
@@ -974,30 +976,20 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
               </div>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs space-y-1">
-              <p className="text-slate-700 truncate">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs space-y-1.5">
+              <p className="text-slate-800 break-words leading-snug">
                 <strong>Embarque:</strong> {activeRide?.pickup?.address || pickup?.address}
               </p>
-              <p className="text-slate-700 truncate">
+              <p className="text-slate-800 break-words leading-snug">
                 <strong>Destino:</strong> {activeRide?.destination?.address || destination?.address}
               </p>
             </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                cancelVoiceSpeech();
-                if (onCancelRide) onCancelRide();
-                onClose();
-              }}
-              className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-heading font-black text-sm rounded-2xl shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <XCircle className="w-5 h-5" />
-              <span>Cancelar busca</span>
-            </button>
           </div>
         ) : (
-          <div className="pointer-events-none bg-white/95 backdrop-blur-xl border border-slate-200 text-slate-900 rounded-2xl p-2.5 sm:p-3 shadow-[0_8px_30px_rgba(0,0,0,0.18)] space-y-2">
+          <div
+            style={{ maxHeight: '45vh', overflowY: 'auto' }}
+            className="pointer-events-auto overscroll-contain bg-white/95 backdrop-blur-xl border border-slate-200 text-slate-900 rounded-2xl p-2.5 sm:p-3 shadow-[0_8px_30px_rgba(0,0,0,0.18)] space-y-2"
+          >
 
             {/* CAIXA AMARELA GIGANTE NO TOPO DO CARD (SÓ DEPOIS QUE MOTORISTA ACEITAR) */}
             <div className="bg-amber-300 border-2 border-amber-500 rounded-2xl px-3 py-2.5 text-center shadow-md">
@@ -1076,26 +1068,36 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
               </div>
             </div>
 
-            {/* Passageiro na chamada */}
-            <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
-              {displayPassengerAvatar ? (
-                <img
-                  src={displayPassengerAvatar}
-                  alt={displayPassengerName}
-                  className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500 shrink-0 shadow-xs"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shrink-0 flex flex-col items-center justify-center font-heading font-black text-sm shadow-xs">
-                  <span>{displayPassengerName.charAt(0).toUpperCase()}</span>
-                  <User className="w-3 h-3 opacity-75" />
+            {/* Passageiro, Embarque e Destino na chamada */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 space-y-1.5">
+              <div className="flex items-center gap-2.5">
+                {displayPassengerAvatar ? (
+                  <img
+                    src={displayPassengerAvatar}
+                    alt={displayPassengerName}
+                    className="w-11 h-11 rounded-full object-cover border-2 border-emerald-500 shrink-0 shadow-xs"
+                  />
+                ) : (
+                  <div className="w-11 h-11 rounded-full bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shrink-0 flex flex-col items-center justify-center font-heading font-black text-sm shadow-xs">
+                    <span>{displayPassengerName.charAt(0).toUpperCase()}</span>
+                    <User className="w-3 h-3 opacity-75" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 uppercase block leading-none">
+                    Passageiro
+                  </span>
+                  <p className="text-xs font-heading font-black text-slate-950 truncate">
+                    {displayPassengerName}
+                  </p>
                 </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase block leading-none">
-                  Passageiro
-                </span>
-                <p className="text-xs font-heading font-black text-slate-950 truncate">
-                  {displayPassengerName}
+              </div>
+              <div className="text-[11px] text-slate-700 space-y-0.5 border-t border-slate-200/80 pt-1.5">
+                <p className="break-words leading-snug">
+                  <strong>Embarque:</strong> {activeRide?.pickup?.address || pickup?.address}
+                </p>
+                <p className="break-words leading-snug">
+                  <strong>Destino:</strong> {activeRide?.destination?.address || destination?.address}
                 </p>
               </div>
             </div>
@@ -1188,7 +1190,7 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
               </div>
             )}
 
-            {/* Linha de Botões: Ligar para o motorista e Cancelar */}
+            {/* Linha de Botões: Ligar para o motorista / Centralizar (Cancelar fica fixo embaixo) */}
             <div className="flex items-center gap-2 pt-1.5 border-t border-slate-100">
               {effectiveDriver.phone ? (
                 <a
@@ -1207,21 +1209,6 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                 >
                   <Crosshair className="w-3.5 h-3.5 text-[#ff6a00]" />
                   <span>Centralizar</span>
-                </button>
-              )}
-
-              {!isRideFinished && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    cancelVoiceSpeech();
-                    if (onCancelRide) onCancelRide();
-                    onClose();
-                  }}
-                  className="pointer-events-auto py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
-                >
-                  <XCircle className="w-3.5 h-3.5" />
-                  <span>Cancelar</span>
                 </button>
               )}
             </div>

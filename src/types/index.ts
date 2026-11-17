@@ -150,7 +150,8 @@ export type RideStatus =
   | 'in_progress' 
   | 'completed' 
   | 'finalizada'
-  | 'cancelled';
+  | 'cancelled'
+  | 'cancelada';
 
 export interface RideModalityDetails {
   passengerCount?: number;
