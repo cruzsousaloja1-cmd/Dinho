@@ -8,6 +8,8 @@ import {
   VehicleCategory 
 } from '../types';
 import { VEHICLE_CATEGORIES, calculateFare, formatBRL, generateUniqueRideConfirmationCode } from '../services/pricingService';
+import { computePassengerCreditBreakdown } from '../services/promoService';
+import { isAppUserDriver } from '../services/userService';
 import { FINAL_RIDE_MESSAGE, WEEKLY_FEE_TEXT } from '../config/pricing';
 import { fetchUsuarioPhotoByIdentity, normalizeRideCategory } from '../supabase';
 import { 
@@ -752,6 +754,24 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     }
   };
 
+  const passengerCredit = !isAppUserDriver(currentUser)
+    ? Math.max(0, Number(currentUser?.creditBalance || 0))
+    : 0;
+
+  const getCategoryCreditPricing = (cat: VehicleCategory) => {
+    const fare = calculateFare(cat, dynamicDistanceKm);
+    const credit = computePassengerCreditBreakdown(fare.totalPrice, passengerCredit);
+    return { fare, ...credit };
+  };
+
+  const formatCreditSummaryText = (credit: {
+    availableCredit: number;
+    originalPrice: number;
+    creditUsed: number;
+    finalPayable: number;
+  }) =>
+    `Você tem ${formatBRL(credit.availableCredit)} de crédito - essa corrida vai sair por ${formatBRL(credit.originalPrice)} - ${formatBRL(credit.creditUsed)} de crédito = ${formatBRL(credit.finalPayable)}`;
+
   const handleRequestRideWithCategory = (
     catId?: VehicleCategory,
     methodOverride?: 'pix' | 'credit_card' | 'money' | 'dinheiro' | 'race_pay',
@@ -788,18 +808,26 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setAddressValidationError(null);
     setSelectedCategory(finalCategory);
 
+    const calculated = calculateFare(finalCategory, dynamicDistanceKm);
+    const creditBreakdown = computePassengerCreditBreakdown(calculated.totalPrice, passengerCredit);
+
     const effectiveMethod = methodOverride || paymentMethod;
     const isCash = isCashMethod(effectiveMethod);
+    const isCreditCovered =
+      creditBreakdown.creditUsed > 0 && creditBreakdown.finalPayable <= 0;
     const effectiveAsaasStatus = confirmedAsaasStatusOverride || asaasConfirmedStatus;
     const isAsaasConfirmed =
       effectiveAsaasStatus === 'RECEIVED' || effectiveAsaasStatus === 'CONFIRMED';
 
-    if (!isCash && (!isAsaasConfirmed || !asaasPayment?.id || (!confirmedAsaasStatusOverride && !isPaidInApp))) {
+    if (
+      !isCash &&
+      !isCreditCovered &&
+      (!isAsaasConfirmed || !asaasPayment?.id || (!confirmedAsaasStatusOverride && !isPaidInApp))
+    ) {
       setPaymentBlockedError('Pague o PIX primeiro, estamos aguardando confirmação do Asaas');
       return false;
     }
 
-    const calculated = calculateFare(finalCategory, dynamicDistanceKm);
     const modalityDetailsPayload = buildModalityDetailsPayload(finalCategory);
 
     const finalPickup: LocationPoint = pickup || {
@@ -815,6 +843,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     };
 
     // Dinheiro: cria imediatamente com status 'procurando' e forma_pagamento 'dinheiro' (SEM Asaas)
+    // Crédito 100%: cria imediatamente com forma_pagamento 'race_pay' (SEM Asaas)
     // PIX / Cartão: criado apenas após confirmação real no Asaas (RECEIVED ou CONFIRMED)
     const confirmationCodeVal = generateUniqueRideConfirmationCode();
     const newRide: Ride = {
@@ -831,13 +860,15 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
       destination: finalDest,
       distanceKm: dynamicDistanceKm,
       durationMinutes: Math.round(dynamicDistanceKm * 2.2),
-      price: calculated.totalPrice,
-      driverEarnings: calculated.driverEarnings, // 85% repassado ao condutor
-      platformFee: calculated.platformFee,       // 15% comissão Race
-      paymentMethod: isCash ? 'dinheiro' : effectiveMethod,
+      price: creditBreakdown.finalPayable,
+      originalPrice: creditBreakdown.originalPrice,
+      creditUsed: creditBreakdown.creditUsed,
+      driverEarnings: calculated.driverEarnings, // 85% ou 100% sobre valor cheio da corrida
+      platformFee: calculated.platformFee,
+      paymentMethod: isCreditCovered ? 'race_pay' : isCash ? 'dinheiro' : effectiveMethod,
       paymentStatus: isCash ? 'pending' : 'paid',
-      asaasPaymentId: isCash ? undefined : asaasPayment?.id,
-      asaasStatus: isCash ? undefined : (effectiveAsaasStatus as 'RECEIVED' | 'CONFIRMED'),
+      asaasPaymentId: isCash || isCreditCovered ? undefined : asaasPayment?.id,
+      asaasStatus: isCash || isCreditCovered ? undefined : (effectiveAsaasStatus as 'RECEIVED' | 'CONFIRMED'),
       status: 'procurando',
       confirmationCode: confirmationCodeVal,
       modalityDetails: modalityDetailsPayload,
@@ -938,16 +969,23 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setAsaasConfirmedStatus('PENDING');
     setPaymentBlockedError(null);
     setAsaasPayment(null);
+
+    const { finalPayable } = getCategoryCreditPricing(cat);
+    if (finalPayable <= 0) {
+      setIsLoadingAsaas(false);
+      setIsPaidInApp(true);
+      return;
+    }
+
     if (isCashMethod(method)) {
       setIsLoadingAsaas(false);
       return;
     }
     setIsLoadingAsaas(true);
-    const fare = calculateFare(cat, dynamicDistanceKm);
     try {
       if (method === 'pix') {
         const res = await createAsaasPixPayment({
-          value: fare.totalPrice,
+          value: finalPayable,
           categoryName: getCategoryDisplayName(cat),
           passengerName: currentUser?.name,
           passengerEmail: currentUser?.email,
@@ -956,7 +994,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         setAsaasPayment(res);
       } else {
         const res = await createAsaasCardPayment({
-          value: fare.totalPrice,
+          value: finalPayable,
           categoryName: getCategoryDisplayName(cat),
           passengerName: currentUser?.name,
           passengerEmail: currentUser?.email,
@@ -1113,6 +1151,23 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setIsPaidInApp(false);
     setPaymentBlockedError(null);
     const created = handleRequestRideWithCategory(selectedCategory, 'dinheiro');
+    if (created) {
+      setPassengerStep('search');
+    }
+  };
+
+  // Fluxo CRÉDITO 100%: crédito cobre 100% do valor da corrida sem passar pelo Asaas
+  const handleConfirmCreditRide = () => {
+    const validation = getModalityValidation(selectedCategory);
+    if (!validation.isValid) {
+      setPaymentBlockedError(`Falta preencher: ${validation.missingLabel}`);
+      return;
+    }
+
+    if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+    setIsProcessingPayment(false);
+    setPaymentBlockedError(null);
+    const created = handleRequestRideWithCategory(selectedCategory, 'race_pay');
     if (created) {
       setPassengerStep('search');
     }
@@ -2197,8 +2252,17 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             )}
           </div>
 
-          {/* Opções de Corrida para Passageiro (4 Opções com VALOR FINAL) */}
+          {/* Opções de Corrida para Passageiro (4 Opções com VALOR FINAL e desconto de crédito) */}
           <div className="space-y-3 min-w-0">
+            {passengerCredit > 0 && (
+              <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-3.5 flex items-center gap-2.5 text-xs sm:text-sm font-black text-emerald-950 shadow-xs">
+                <Wallet className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>
+                  Você tem {formatBRL(passengerCredit)} de crédito! O desconto já está aplicado automaticamente nas corridas abaixo.
+                </span>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <label className="text-sm font-heading font-black text-slate-950 uppercase tracking-wider">
                 Escolha sua Categoria de Viagem
@@ -2212,7 +2276,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               {/* 1. Motorista Econômico */}
               {(() => {
                 const cat = VEHICLE_CATEGORIES.economica;
-                const fare = calculateFare('economica', dynamicDistanceKm);
+                const creditInfo = getCategoryCreditPricing('economica');
                 return (
                   <div
                     onClick={() => handleSelectCategory('economica')}
@@ -2240,12 +2304,25 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         </div>
 
                         <div className="text-left sm:text-right shrink-0">
+                          {creditInfo.creditUsed > 0 && (
+                            <span className="block text-xs font-mono text-slate-400 line-through">
+                              {formatBRL(creditInfo.originalPrice)}
+                            </span>
+                          )}
                           <span className="font-heading font-black text-2xl sm:text-3xl text-amber-600 whitespace-nowrap">
-                            {formatBRL(fare.totalPrice)}
+                            {formatBRL(creditInfo.finalPayable)}
                           </span>
-                          <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
+                          <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">
+                            {creditInfo.creditUsed > 0 ? 'Com Crédito' : 'Preço Final'}
+                          </p>
                         </div>
                       </div>
+
+                      {creditInfo.creditUsed > 0 && (
+                        <div className="mt-2.5 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-[11px] sm:text-xs font-bold text-emerald-950 leading-snug">
+                          {formatCreditSummaryText(creditInfo)}
+                        </div>
+                      )}
 
                       <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
                         <span>{cat.tagline}</span>
@@ -2261,7 +2338,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       }}
                       className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 uppercase tracking-wide"
                     >
-                      <span>Escolher Econômico ({formatBRL(fare.totalPrice)})</span>
+                      <span>Escolher Econômico ({formatBRL(creditInfo.finalPayable)})</span>
                     </button>
                   </div>
                 );
@@ -2270,7 +2347,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               {/* 2. Motorista Confort (Bloqueia se 0 motoristas Confort ONLINE) */}
               {(() => {
                 const cat = VEHICLE_CATEGORIES.confort;
-                const fare = calculateFare('confort', dynamicDistanceKm);
+                const creditInfo = getCategoryCreditPricing('confort');
                 const hasConfortOnline = onlineConfortDriversCount > 0;
                 return (
                   <div
@@ -2313,14 +2390,27 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         </div>
 
                         <div className="text-left sm:text-right shrink-0">
+                          {creditInfo.creditUsed > 0 && hasConfortOnline && (
+                            <span className="block text-xs font-mono text-slate-400 line-through">
+                              {formatBRL(creditInfo.originalPrice)}
+                            </span>
+                          )}
                           <span className={`font-heading font-black text-2xl sm:text-3xl whitespace-nowrap ${
                             hasConfortOnline ? 'text-purple-900' : 'text-slate-400'
                           }`}>
-                            {formatBRL(fare.totalPrice)}
+                            {formatBRL(creditInfo.finalPayable)}
                           </span>
-                          <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
+                          <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">
+                            {creditInfo.creditUsed > 0 && hasConfortOnline ? 'Com Crédito' : 'Preço Final'}
+                          </p>
                         </div>
                       </div>
+
+                      {creditInfo.creditUsed > 0 && hasConfortOnline && (
+                        <div className="mt-2.5 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-[11px] sm:text-xs font-bold text-emerald-950 leading-snug">
+                          {formatCreditSummaryText(creditInfo)}
+                        </div>
+                      )}
 
                       <div className="mt-3 text-xs text-slate-600 border-t border-slate-200/80 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
                         <span>{cat.tagline}</span>
@@ -2339,7 +2429,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         }}
                         className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-purple-700 hover:bg-purple-600 text-white border border-purple-600 uppercase tracking-wide"
                       >
-                        <span>Escolher Confort ({formatBRL(fare.totalPrice)})</span>
+                        <span>Escolher Confort ({formatBRL(creditInfo.finalPayable)})</span>
                       </button>
                     ) : (
                       <div className="mt-4 space-y-2.5 bg-amber-50 border border-amber-300 rounded-2xl p-3">
@@ -2367,7 +2457,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               {/* 3. Motoboy Passageiro */}
               {(() => {
                 const cat = VEHICLE_CATEGORIES.moto_passageiro;
-                const fare = calculateFare('moto_passageiro', dynamicDistanceKm);
+                const creditInfo = getCategoryCreditPricing('moto_passageiro');
                 return (
                   <div
                     onClick={() => handleSelectCategory('moto_passageiro')}
@@ -2395,12 +2485,25 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         </div>
 
                         <div className="text-left sm:text-right shrink-0">
+                          {creditInfo.creditUsed > 0 && (
+                            <span className="block text-xs font-mono text-slate-400 line-through">
+                              {formatBRL(creditInfo.originalPrice)}
+                            </span>
+                          )}
                           <span className="font-heading font-black text-cyan-900 text-2xl sm:text-3xl whitespace-nowrap">
-                            {formatBRL(fare.totalPrice)}
+                            {formatBRL(creditInfo.finalPayable)}
                           </span>
-                          <p className="text-[10px] sm:text-xs text-cyan-600 font-bold uppercase font-mono">Preço Final</p>
+                          <p className="text-[10px] sm:text-xs text-cyan-600 font-bold uppercase font-mono">
+                            {creditInfo.creditUsed > 0 ? 'Com Crédito' : 'Preço Final'}
+                          </p>
                         </div>
                       </div>
+
+                      {creditInfo.creditUsed > 0 && (
+                        <div className="mt-2.5 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-[11px] sm:text-xs font-bold text-emerald-950 leading-snug">
+                          {formatCreditSummaryText(creditInfo)}
+                        </div>
+                      )}
 
                       <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
                         <span>{cat.tagline}</span>
@@ -2416,7 +2519,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       }}
                       className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-cyan-600 hover:bg-cyan-500 text-white border border-cyan-500 uppercase tracking-wide"
                     >
-                      <span>Escolher Motoboy Passageiro ({formatBRL(fare.totalPrice)})</span>
+                      <span>Escolher Motoboy Passageiro ({formatBRL(creditInfo.finalPayable)})</span>
                     </button>
                   </div>
                 );
@@ -2425,7 +2528,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               {/* 4. Motoboy Entregas */}
               {(() => {
                 const cat = VEHICLE_CATEGORIES.moto_entrega;
-                const fare = calculateFare('moto_entrega', dynamicDistanceKm);
+                const creditInfo = getCategoryCreditPricing('moto_entrega');
                 return (
                   <div
                     onClick={() => handleSelectCategory('moto_entrega')}
@@ -2453,12 +2556,25 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         </div>
 
                         <div className="text-left sm:text-right shrink-0">
+                          {creditInfo.creditUsed > 0 && (
+                            <span className="block text-xs font-mono text-slate-400 line-through">
+                              {formatBRL(creditInfo.originalPrice)}
+                            </span>
+                          )}
                           <span className="font-heading font-black text-2xl sm:text-3xl text-amber-600 whitespace-nowrap">
-                            {formatBRL(fare.totalPrice)}
+                            {formatBRL(creditInfo.finalPayable)}
                           </span>
-                          <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">Preço Final</p>
+                          <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase font-mono">
+                            {creditInfo.creditUsed > 0 ? 'Com Crédito' : 'Preço Final'}
+                          </p>
                         </div>
                       </div>
+
+                      {creditInfo.creditUsed > 0 && (
+                        <div className="mt-2.5 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-[11px] sm:text-xs font-bold text-emerald-950 leading-snug">
+                          {formatCreditSummaryText(creditInfo)}
+                        </div>
+                      )}
 
                       <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center justify-between gap-1 font-medium">
                         <span>{cat.tagline}</span>
@@ -2474,7 +2590,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       }}
                       className="w-full mt-4 py-3.5 px-4 rounded-2xl font-heading font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-105 text-slate-950 border border-amber-400 uppercase tracking-wide"
                     >
-                      <span>Escolher Entregas ({formatBRL(fare.totalPrice)})</span>
+                      <span>Escolher Entregas ({formatBRL(creditInfo.finalPayable)})</span>
                     </button>
                   </div>
                 );
@@ -2486,7 +2602,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
       {/* ETAPA 3 (PASSO 2 e 3): CAMPOS OBRIGATÓRIOS EXCLUSIVOS DA MODALIDADE ESCOLHIDA */}
       {!hasOpenDebt && passengerStep === 'details' && (() => {
-        const fare = calculateFare(selectedCategory, dynamicDistanceKm);
+        const creditInfo = getCategoryCreditPricing(selectedCategory);
         const isMoto = selectedCategory === 'moto_passageiro' || selectedCategory === 'moto_entrega';
         const isValid = modalityValidation.isValid;
 
@@ -2524,7 +2640,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     Passo 2 • Requisitos da Modalidade
                   </span>
                   <h3 className="text-lg sm:text-2xl font-heading font-black text-slate-950 mt-1 break-words">
-                    {getCategoryDisplayName(selectedCategory)} • {formatBRL(fare.totalPrice)}
+                    {getCategoryDisplayName(selectedCategory)} • {formatBRL(creditInfo.finalPayable)}
                   </h3>
                   <p className="text-xs text-slate-600 mt-1 font-medium">
                     Preencha todos os dados abaixo para liberar o pagamento e o mapa.
@@ -2534,6 +2650,13 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   {isMoto ? <Bike className="w-6 h-6" /> : <Car className="w-6 h-6" />}
                 </div>
               </div>
+
+              {creditInfo.creditUsed > 0 && (
+                <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-3.5 text-xs sm:text-sm font-black text-emerald-950 flex items-center gap-2.5">
+                  <Wallet className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>{formatCreditSummaryText(creditInfo)}</span>
+                </div>
+              )}
 
               {/* Resumo dos Endereços (Coleta / Saída e Entrega / Chegada) */}
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2 text-xs sm:text-sm">
@@ -2812,7 +2935,11 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   className="w-full bg-[#ff6a00] hover:bg-[#e05e00] active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-5 rounded-2xl shadow-xl flex items-center justify-center gap-2.5 border-2 border-[#ff8533] cursor-pointer transition-all uppercase tracking-wider"
                 >
                   <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5] shrink-0" />
-                  <span>CONFIRMAR E PAGAR ({formatBRL(fare.totalPrice)})</span>
+                  <span>
+                    {creditInfo.finalPayable <= 0
+                      ? `CONFIRMAR CORRIDA COM CRÉDITO (${formatBRL(0)})`
+                      : `CONFIRMAR E PAGAR (${formatBRL(creditInfo.finalPayable)})`}
+                  </span>
                 </button>
               ) : (
                 <button
@@ -2831,13 +2958,14 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
       {/* ETAPA 4: PÁGINA DE PAGAMENTO NO APP */}
       {!hasOpenDebt && passengerStep === 'payment' && (() => {
-        const fare = calculateFare(selectedCategory, dynamicDistanceKm);
+        const creditInfo = getCategoryCreditPricing(selectedCategory);
+        const isFullyCoveredByCredit = creditInfo.creditUsed > 0 && creditInfo.finalPayable <= 0;
         const isMoto = selectedCategory === 'moto_passageiro' || selectedCategory === 'moto_entrega';
         // Código PIX completo retornado pelo Asaas (sem nenhum corte por slice ou substring)
         const pixPayloadCompleto = (
           asaasPayment?.pixQrCode?.payload ||
           (asaasPayment?.pixQrCode as any)?.pixCopyPaste ||
-          generateFallbackPixCopiaECola(fare.totalPrice, `RACE${Math.round(fare.totalPrice * 100)}`)
+          generateFallbackPixCopiaECola(creditInfo.finalPayable, `RACE${Math.round(creditInfo.finalPayable * 100)}`)
         ).trim();
 
         return (
@@ -2863,13 +2991,20 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                     Resumo do Pedido de Corrida
                   </span>
                   <h3 className="text-lg sm:text-2xl font-heading font-black text-slate-950 mt-1 break-words">
-                    Você escolheu {getCategoryDisplayName(selectedCategory)} - {formatBRL(fare.totalPrice)}
+                    Você escolheu {getCategoryDisplayName(selectedCategory)} - {formatBRL(creditInfo.finalPayable)}
                   </h3>
                 </div>
                 <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-[#ff6a00] text-white flex items-center justify-center font-bold shrink-0 shadow-md">
                   {isMoto ? <Bike className="w-6 h-6" /> : <Car className="w-6 h-6" />}
                 </div>
               </div>
+
+              {creditInfo.creditUsed > 0 && (
+                <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-3.5 text-xs sm:text-sm font-black text-emerald-950 flex items-center gap-2.5 shadow-xs">
+                  <Wallet className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>{formatCreditSummaryText(creditInfo)}</span>
+                </div>
+              )}
 
               {/* Rota e Detalhes da Modalidade */}
               <div className="space-y-2 text-xs sm:text-sm text-slate-800 bg-white/80 rounded-2xl p-3.5 sm:p-4 border border-orange-200 min-w-0">
@@ -2906,7 +3041,30 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
               </div>
             </div>
 
-            {/* Formas de Pagamento no App (PIX no app / Cartão no app) */}
+            {/* Formas de Pagamento no App (Crédito 100% ou PIX / Cartão / Dinheiro) */}
+            {isFullyCoveredByCredit ? (
+              <div className="bg-white border-2 border-emerald-500 rounded-3xl p-5 sm:p-6 shadow-md space-y-4 text-center">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center border border-emerald-300">
+                  <Wallet className="w-7 h-7" />
+                </div>
+                <div className="space-y-1.5">
+                  <h4 className="font-heading font-black text-slate-950 text-base sm:text-lg uppercase">
+                    Corrida 100% Paga com Seu Crédito RACE!
+                  </h4>
+                  <p className="text-xs sm:text-sm font-bold text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-2xl p-3">
+                    {formatCreditSummaryText(creditInfo)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleConfirmCreditRide}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg py-4 px-6 rounded-2xl shadow-xl flex items-center justify-center gap-3 border-2 border-emerald-400 cursor-pointer transition-all uppercase tracking-wider"
+                >
+                  <CheckCircle2 className="w-6 h-6 text-white stroke-[2.5]" />
+                  <span>Confirmar e chamar motorista (Pago com Crédito)</span>
+                </button>
+              </div>
+            ) : (
             <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-md space-y-4 min-w-0 w-full box-border overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200">
                 <div className="flex items-center gap-2 min-w-0">
@@ -3003,7 +3161,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         </span>
                       </div>
                       <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-300 shrink-0">
-                        {formatBRL(fare.totalPrice)}
+                        {formatBRL(creditInfo.finalPayable)}
                       </span>
                     </div>
 
@@ -3011,7 +3169,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                       <div className="py-12 flex flex-col items-center justify-center gap-3">
                         <Loader2 className="w-10 h-10 animate-spin text-[#ff6a00]" />
                         <p className="text-xs sm:text-sm font-bold text-slate-700">
-                          Gerando cobrança PIX no Asaas com valor de {formatBRL(fare.totalPrice)}...
+                          Gerando cobrança PIX no Asaas com valor de {formatBRL(creditInfo.finalPayable)}...
                         </p>
                       </div>
                     ) : (
@@ -3039,7 +3197,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           <div className="flex flex-wrap items-center justify-between gap-1.5">
                             <label className="text-xs font-heading font-black text-slate-900 uppercase flex items-center gap-1.5">
                               <Copy className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <span>PIX Copia e Cola Completo ({formatBRL(fare.totalPrice)})</span>
+                              <span>PIX Copia e Cola Completo ({formatBRL(creditInfo.finalPayable)})</span>
                             </label>
                             <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
                               {pixPayloadCompleto.length} CARACTERES
@@ -3100,7 +3258,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                           {pixCopied && (
                             <div className="p-2.5 bg-emerald-50 border border-emerald-400 rounded-xl text-center text-xs font-bold text-emerald-950 animate-fade-in flex items-center justify-center gap-2">
                               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <span>Código PIX copiado! Cole no seu banco para pagar {formatBRL(fare.totalPrice)}.</span>
+                              <span>Código PIX copiado! Cole no seu banco para pagar {formatBRL(creditInfo.finalPayable)}.</span>
                             </div>
                           )}
                         </div>
@@ -3155,7 +3313,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         </span>
                       </div>
                       <span className="text-xs font-mono font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-300">
-                        {formatBRL(fare.totalPrice)}
+                        {formatBRL(creditInfo.finalPayable)}
                       </span>
                     </div>
 
@@ -3273,7 +3431,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         ) : (
                           <>
                             <CreditCard className="w-4 h-4 text-amber-400" />
-                            <span>Autorizar Cartão no Asaas ({formatBRL(fare.totalPrice)})</span>
+                            <span>Autorizar Cartão no Asaas ({formatBRL(creditInfo.finalPayable)})</span>
                           </>
                         )}
                       </button>
@@ -3326,12 +3484,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                         </span>
                       </div>
                       <span className="text-xs font-mono font-bold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-full border border-blue-300">
-                        {formatBRL(fare.totalPrice)}
+                        {formatBRL(creditInfo.finalPayable)}
                       </span>
                     </div>
 
                     <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5 text-xs sm:text-sm text-blue-950 font-bold">
-                      Você vai pagar em dinheiro para o motorista - Motorista vai confirmar recebimento no final ({formatBRL(fare.totalPrice)}).
+                      Você vai pagar em dinheiro para o motorista - Motorista vai confirmar recebimento no final ({formatBRL(creditInfo.finalPayable)}).
                     </div>
 
                     {modalityValidation.isValid ? (
@@ -3357,6 +3515,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 </div>
               )}
             </div>
+            )}
           </div>
         );
       })()}

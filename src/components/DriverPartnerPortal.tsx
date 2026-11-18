@@ -1525,7 +1525,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
 
   const acceptIncomingRideHandler = async (rideToAccept: Ride) => {
     const price = rideToAccept.price || 0;
-    const split = calculateRideSplitForDriver(price, currentDriver, rideToAccept.createdAt);
+    const grossFare = rideToAccept.originalPrice ?? price;
+    const split = calculateRideSplitForDriver(grossFare, currentDriver, rideToAccept.createdAt);
     const driverEarns = split.driverEarnings;
     const raceCommission = split.platformFee;
     const isCash =
@@ -1615,13 +1616,16 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       {/* ALERTA GRANDE GLOBAL EM TEMPO REAL NA TELA DO MOTORISTA ONLINE */}
       {openIncomingRide && (() => {
         const alertPrice = openIncomingRide.price || 0;
-        const alertSplit = calculateRideSplitForDriver(alertPrice, currentDriver, openIncomingRide.createdAt);
+        const alertGrossFare = openIncomingRide.originalPrice ?? alertPrice;
+        const alertSplit = calculateRideSplitForDriver(alertGrossFare, currentDriver, openIncomingRide.createdAt);
         const driverNetAlert = alertSplit.driverEarnings;
         const isCashAlert =
           openIncomingRide.paymentMethod === 'money' ||
           openIncomingRide.paymentMethod === 'dinheiro';
         const paymentLabel = isCashAlert
           ? 'DINHEIRO'
+          : openIncomingRide.paymentMethod === 'race_pay'
+          ? 'CRÉDITO RACE'
           : openIncomingRide.paymentMethod === 'credit_card'
           ? 'CARTÃO'
           : 'PIX';
@@ -2168,7 +2172,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       const incomingPickupAddress = incomingRideSnapshot.pickup?.address || '';
                       const incomingDestAddress = incomingRideSnapshot.destination?.address || '';
                       const incomingPrice = incomingRideSnapshot.price || 0;
-                      const incomingSplit = calculateRideSplitForDriver(incomingPrice, currentDriver, incomingRideSnapshot.createdAt);
+                      const incomingGrossFare = incomingRideSnapshot.originalPrice ?? incomingPrice;
+                      const incomingSplit = calculateRideSplitForDriver(incomingGrossFare, currentDriver, incomingRideSnapshot.createdAt);
                       const incomingDriverEarns = incomingSplit.driverEarnings;
                       const isCashCall =
                         incomingRideSnapshot.paymentMethod === 'money' ||
@@ -2494,7 +2499,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     {rides
                       .filter((r) => (currentDriver.id && r.driver?.id === currentDriver.id) || (currentDriver.email && r.driver?.email?.toLowerCase() === currentDriver.email.toLowerCase()))
                       .map((ride) => {
-                        const rSplit = calculateRideSplitForDriver(ride.price, currentDriver, ride.createdAt);
+                        const rSplit = calculateRideSplitForDriver(ride.originalPrice ?? ride.price, currentDriver, ride.createdAt);
                         const driverEarns = rSplit.driverEarnings;
                         const raceCommission = rSplit.platformFee;
                         return (
@@ -2545,7 +2550,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               ? Number(
                   ownDriverRides
                     .reduce(
-                      (acc, r) => acc + calculateRideSplitForDriver(r.price, currentDriver, r.createdAt).platformFee,
+                      (acc, r) => acc + calculateRideSplitForDriver(r.originalPrice ?? r.price, currentDriver, r.createdAt).platformFee,
                       0
                     )
                     .toFixed(2)
@@ -4693,7 +4698,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             const isCash =
               targetRide?.paymentMethod === 'money' || targetRide?.paymentMethod === 'dinheiro';
             const totalRideVal = targetRide?.price || 0;
-            const split = calculateRideSplitForDriver(totalRideVal, currentDriver, targetRide?.createdAt);
+            const grossFareForSplit = targetRide?.originalPrice ?? totalRideVal;
+            const split = calculateRideSplitForDriver(grossFareForSplit, currentDriver, targetRide?.createdAt);
             const driverEarns = split.driverEarnings;
             const raceCommission = split.platformFee;
             const didPassengerNotPay = Boolean(finishedRide?.nonPaymentReported);
@@ -4743,6 +4749,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               driverId: currentDriver.id,
               driverEmail: currentDriver.email,
             }).catch(() => {});
+            if (targetRide?.passengerId || targetRide?.passengerEmail) {
+              checkAndAwardReferralBonusSupabase({
+                userId: targetRide.passengerId,
+                userEmail: targetRide.passengerEmail,
+              }).catch(() => {});
+            }
 
             onUpdateDriver({
               ...currentDriver,

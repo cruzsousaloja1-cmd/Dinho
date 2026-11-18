@@ -23,10 +23,12 @@ import {
   MessageCircle,
   Car,
   Copy,
-  Gift
+  Gift,
+  Wallet
 } from 'lucide-react';
 import { requestCurrentLocationFast } from '../services/addressSearchService';
-import { saveSessionUser, isAppUserAdmin } from '../services/userService';
+import { saveSessionUser, isAppUserAdmin, isAppUserDriver } from '../services/userService';
+import { formatBRL } from '../services/pricingService';
 import {
   extractPhotoFromRow,
   getUsuarioSupabase,
@@ -92,10 +94,17 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   const [referralCode, setReferralCode] = useState<string>(
     currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao || ''
   );
+  const [creditBalance, setCreditBalance] = useState<number>(
+    Number(currentUser?.creditBalance || 0)
+  );
   const [copiedCodeHeader, setCopiedCodeHeader] = useState(false);
   const [copiedCodeCard, setCopiedCodeCard] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setCreditBalance(Number(currentUser?.creditBalance || 0));
+  }, [currentUser?.creditBalance]);
 
   useEffect(() => {
     if (!isEditingProfile && !hasPendingAvatarPreview) {
@@ -121,7 +130,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         try {
           const { data } = await supabase
             .from('usuarios')
-            .select('foto, avatar')
+            .select('foto, avatar, saldo, codigo_indicacao')
             .eq('email', targetEmail)
             .single();
           row = data;
@@ -131,6 +140,18 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           try {
             row = await getUsuarioSupabase(targetEmail);
           } catch {}
+        }
+
+        if (active && row && row.saldo !== undefined && row.saldo !== null) {
+          const liveSaldo = Number(row.saldo || 0);
+          setCreditBalance(liveSaldo);
+          if (currentUser && liveSaldo !== Number(currentUser.creditBalance || 0)) {
+            const updatedUser: AppUser = { ...currentUser, creditBalance: liveSaldo };
+            saveSessionUser(updatedUser);
+            if (onUpdateProfile) {
+              onUpdateProfile(updatedUser);
+            }
+          }
         }
 
         const rawFoto = String(
@@ -567,27 +588,38 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             </div>
 
             {referralCode && (
-              <div className="mt-2.5 inline-flex items-center gap-2 flex-wrap bg-orange-50 border border-orange-300 rounded-xl px-3 py-1.5">
-                <span className="text-xs font-bold text-slate-800">
-                  Seu código de indicação:{' '}
-                  <strong className="font-mono font-black text-[#ff6a00] tracking-wider">
-                    {referralCode}
-                  </strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      navigator.clipboard.writeText(referralCode);
-                    } catch {}
-                    setCopiedCodeHeader(true);
-                    setTimeout(() => setCopiedCodeHeader(false), 2500);
-                  }}
-                  className="px-2.5 py-0.5 rounded-lg bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-[11px] inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
-                >
-                  {copiedCodeHeader ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedCodeHeader ? 'Copiado!' : 'Copiar'}</span>
-                </button>
+              <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                <div className="inline-flex items-center gap-2 flex-wrap bg-orange-50 border border-orange-300 rounded-xl px-3 py-1.5">
+                  <span className="text-xs font-bold text-slate-800">
+                    Seu código de indicação:{' '}
+                    <strong className="font-mono font-black text-[#ff6a00] tracking-wider">
+                      {referralCode}
+                    </strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        navigator.clipboard.writeText(referralCode);
+                      } catch {}
+                      setCopiedCodeHeader(true);
+                      setTimeout(() => setCopiedCodeHeader(false), 2500);
+                    }}
+                    className="px-2.5 py-0.5 rounded-lg bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-[11px] inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                  >
+                    {copiedCodeHeader ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedCodeHeader ? 'Copiado!' : 'Copiar'}</span>
+                  </button>
+                </div>
+
+                {!isAppUserDriver(currentUser) && creditBalance > 0 && (
+                  <div className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-1.5">
+                    <Wallet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="text-xs font-bold text-emerald-900">
+                      Crédito: <strong className="font-mono font-black">{formatBRL(creditBalance)}</strong>
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -862,7 +894,9 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       </div>
 
       {/* 3B. INDICAR E GANHAR (CÓDIGO DE INDICAÇÃO) */}
-      {referralCode && (
+      {referralCode && (() => {
+        const isDriverOrMoto = isAppUserDriver(currentUser);
+        return (
         <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
@@ -870,11 +904,25 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                 Indicação Premiada RACE
               </span>
               <h3 className="text-xl sm:text-2xl font-heading font-black leading-tight">
-                Indicar e Ganhar R$ 50,00
+                {isDriverOrMoto ? 'Indicar e Ganhar R$ 50,00' : 'Indicar e Ganhar Crédito!'}
               </h3>
-              <p className="text-xs sm:text-sm font-semibold text-amber-50">
-                Indique 1 Motorista ou Motoboy com seu código. Quando ele finalizar <strong>10 corridas</strong>, você ganha <strong>R$ 50,00</strong>!
-              </p>
+              {isDriverOrMoto ? (
+                <p className="text-xs sm:text-sm font-semibold text-amber-50">
+                  Indique 1 Motorista ou Motoboy com seu código. Quando ele finalizar <strong>10 corridas</strong>, você ganha <strong>R$ 50,00</strong>!
+                </p>
+              ) : (
+                <p className="text-xs sm:text-sm font-semibold text-amber-50 leading-relaxed">
+                  Indique 1 Motorista ou Motoboy com seu código <strong>{referralCode}</strong>. Quando ele finalizar 10 corridas, você ganha <strong>R$ 50,00 de crédito</strong> para suas corridas! Indique 1 Passageiro e ganhe <strong>R$ 10,00 de crédito</strong> quando ele fizer a 1ª corrida!
+                </p>
+              )}
+              {!isDriverOrMoto && creditBalance > 0 && (
+                <div className="pt-1">
+                  <span className="inline-flex items-center gap-1.5 bg-emerald-950/60 border border-emerald-300/60 text-emerald-100 text-xs font-black px-3 py-1 rounded-full">
+                    <Wallet className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>Seu crédito disponível: {formatBRL(creditBalance)}</span>
+                  </span>
+                </div>
+              )}
             </div>
             <div className="w-11 h-11 rounded-2xl bg-black/20 border border-white/30 flex items-center justify-center shrink-0">
               <Gift className="w-6 h-6 text-white" />
@@ -920,7 +968,8 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             </a>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* 4. ATALHOS RÁPIDOS */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

@@ -87,6 +87,7 @@ import {
   fetchDriverApplicationsSupabase,
   mergeDriverWithApplication,
   checkAndAwardReferralBonusSupabase,
+  deductPassengerCreditSupabase,
   syncDriverWalletSaldoSupabase,
   ensureUserReferralCodeSupabase,
   supabase,
@@ -545,6 +546,24 @@ export default function App() {
         setPassengerDebt(debt);
       })
       .catch(() => {});
+
+    if (!isAppUserDriver(currentUser) && !isAppUserAdmin(currentUser) && currentUser.email) {
+      getUsuarioSupabase(currentUser.email)
+        .then((cloudRow) => {
+          if (cloudRow && typeof cloudRow.saldo === 'number') {
+            const nextSaldo = Math.max(0, Number(cloudRow.saldo) || 0);
+            setCurrentUser((prev) => {
+              if (!prev) return prev;
+              const prevSaldo = Number(prev.creditBalance || 0);
+              if (Math.abs(nextSaldo - prevSaldo) < 0.01) return prev;
+              const updated = { ...prev, creditBalance: nextSaldo };
+              saveSessionUser(updated);
+              return updated;
+            });
+          }
+        })
+        .catch(() => {});
+    }
   }, [currentUser, activeTab]);
 
   const handleClearPassengerDebt = async (
@@ -974,10 +993,15 @@ export default function App() {
       return;
     }
     const isCash = ride.paymentMethod === 'money' || ride.paymentMethod === 'dinheiro';
+    const isCreditCovered =
+      ride.paymentMethod === 'race_pay' &&
+      Number(ride.creditUsed || 0) > 0 &&
+      Number(ride.price || 0) <= 0 &&
+      ride.paymentStatus === 'paid';
     const isAsaasConfirmed =
       ride.asaasStatus === 'RECEIVED' || ride.asaasStatus === 'CONFIRMED';
 
-    if (!isCash && (!isAsaasConfirmed || ride.paymentStatus !== 'paid')) {
+    if (!isCash && !isCreditCovered && (!isAsaasConfirmed || ride.paymentStatus !== 'paid')) {
       triggerPush(
         'Pague primeiro para chamar o motorista',
         'Aguarde a confirmação real do pagamento no Asaas (PIX ou Cartão) ou escolha Dinheiro.',
@@ -993,7 +1017,7 @@ export default function App() {
       passengerId: ride.passengerId || currentUser?.id,
       passengerEmail: ride.passengerEmail || currentUser?.email,
       passengerAvatar: resolvedPassengerAvatar,
-      paymentMethod: isCash ? 'dinheiro' : ride.paymentMethod,
+      paymentMethod: isCreditCovered ? 'race_pay' : isCash ? 'dinheiro' : ride.paymentMethod,
       paymentStatus: isCash ? 'pending' : 'paid',
       status: 'procurando',
       confirmationCode,
@@ -1034,8 +1058,39 @@ export default function App() {
       })
       .catch(() => {});
 
-    // Dinheiro NÃO passa pelo Asaas — só grava pagamento Asaas quando for PIX / Cartão
-    if (!isCash) {
+    // Deduz crédito RACE utilizado pelo passageiro (parcial ou total)
+    const creditUsedAmount = Number(ride.creditUsed || 0);
+    if (creditUsedAmount > 0 && (currentUser?.id || currentUser?.email)) {
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const optimisticSaldo = Math.max(
+          0,
+          Number((Number(prev.creditBalance || 0) - creditUsedAmount).toFixed(2))
+        );
+        const nextUser = { ...prev, creditBalance: optimisticSaldo };
+        saveSessionUser(nextUser);
+        return nextUser;
+      });
+      deductPassengerCreditSupabase({
+        userId: currentUser?.id,
+        email: currentUser?.email,
+        amountUsed: creditUsedAmount,
+      })
+        .then((res) => {
+          if (res.success && typeof res.newBalance === 'number') {
+            setCurrentUser((prev) => {
+              if (!prev) return prev;
+              const nextUser = { ...prev, creditBalance: res.newBalance };
+              saveSessionUser(nextUser);
+              return nextUser;
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
+    // Dinheiro e 100% Crédito NÃO passam pelo Asaas — só grava pagamento Asaas quando há valor pago via PIX / Cartão
+    if (!isCash && !isCreditCovered && startedRide.price > 0) {
       savePagamentoSupabase({
         id_motorista: startedRide.driver?.id || '',
         nome_motorista: startedRide.driver?.name || '',
@@ -1053,8 +1108,10 @@ export default function App() {
       id: `driver-call-${Date.now()}`,
       title: isCash
         ? `💵 Pagamento em DINHEIRO - Receba ${`R$ ${ride.price.toFixed(2).replace('.', ',')}`} do passageiro`
+        : isCreditCovered
+        ? '🎟️ Nova corrida (Crédito RACE) - Aceitar'
         : '🔔 Nova corrida - Aceitar',
-      message: `${ride.passengerName || 'Passageiro'} • ${ride.pickup.address} → ${ride.destination.address} (R$ ${ride.price.toFixed(2).replace('.', ',')})`,
+      message: `${ride.passengerName || 'Passageiro'} • ${ride.pickup.address} → ${ride.destination.address} (R$ ${(ride.originalPrice ?? ride.price).toFixed(2).replace('.', ',')})`,
       time: 'Agora',
       type: 'ride',
       read: false,
@@ -1062,7 +1119,7 @@ export default function App() {
     setNotifications((prev) => [driverAlert, ...prev]);
 
     triggerPush(
-      '🔍 Procurando motorista...',
+      isCreditCovered ? '🎟️ Corrida paga com Crédito RACE!' : '🔍 Procurando motorista...',
       isCash
         ? 'Corrida em dinheiro criada no sistema! Buscando motoristas online no mapa.'
         : 'Buscando motoristas online próximos a você no mapa.',
@@ -1076,8 +1133,9 @@ export default function App() {
     const isCash = activeRide.paymentMethod === 'money' || activeRide.paymentMethod === 'dinheiro';
     const finalStatus = 'finalizada';
     const targetDriver = activeRide.driver || currentDriver;
+    const fareForSplit = activeRide.originalPrice ?? activeRide.price;
     const split = calculateRideSplitForDriver(
-      activeRide.price,
+      fareForSplit,
       targetDriver,
       activeRide.createdAt
     );
@@ -1106,6 +1164,14 @@ export default function App() {
           valor_race: split.platformFee,
         }
       ).catch(() => {});
+    }
+
+    // Verifica bônus de indicação do passageiro (1ª corrida finalizada -> R$ 10,00 de crédito para quem indicou)
+    if (activeRide.passengerId || activeRide.passengerEmail || currentUser?.id || currentUser?.email) {
+      checkAndAwardReferralBonusSupabase({
+        userId: activeRide.passengerId || currentUser?.id,
+        userEmail: activeRide.passengerEmail || currentUser?.email,
+      }).catch(() => {});
     }
 
     // Credita o valor líquido da corrida (100% na Promo Lançamento ou 85% normal) na carteira do motorista

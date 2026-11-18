@@ -11,6 +11,31 @@ export const PROMO_ZERO_FEE_END_MS = new Date('2026-12-18T02:59:59.999Z').getTim
 export const STANDARD_COMMISSION_RATE = 0.15;
 export const REFERRAL_REQUIRED_RIDES = 10;
 export const REFERRAL_BONUS_AMOUNT = 50;
+export const PASSENGER_REFERRAL_REQUIRED_RIDES = 1;
+export const PASSENGER_REFERRAL_BONUS_AMOUNT = 10;
+
+export interface PassengerCreditBreakdown {
+  originalPrice: number;
+  availableCredit: number;
+  creditUsed: number;
+  finalPayable: number;
+}
+
+export const computePassengerCreditBreakdown = (
+  ridePrice: number,
+  availableCredit?: number | null
+): PassengerCreditBreakdown => {
+  const safeOriginal = Number(Math.max(0, Number(ridePrice || 0)).toFixed(2));
+  const safeCredit = Number(Math.max(0, Number(availableCredit || 0)).toFixed(2));
+  const creditUsed = Number(Math.min(safeOriginal, safeCredit).toFixed(2));
+  const finalPayable = Number(Math.max(0, safeOriginal - creditUsed).toFixed(2));
+  return {
+    originalPrice: safeOriginal,
+    availableCredit: safeCredit,
+    creditUsed,
+    finalPayable,
+  };
+};
 
 export interface RideSplitResult {
   totalPrice: number;

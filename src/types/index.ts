@@ -38,6 +38,7 @@ export interface AppUser {
   codigoIndicacao?: string;
   indicadoPorCodigo?: string;
   bonusPago?: boolean;
+  creditBalance?: number;
 }
 
 export interface CategoryInfo {
@@ -189,6 +190,8 @@ export interface Ride {
   distanceKm: number;
   durationMinutes: number;
   price: number;
+  originalPrice?: number;
+  creditUsed?: number;
   driverEarnings: number; // 85% do valor da corrida
   platformFee: number;    // 15% comissão Race
   paymentMethod: 'pix' | 'credit_card' | 'race_pay' | 'money' | 'dinheiro';

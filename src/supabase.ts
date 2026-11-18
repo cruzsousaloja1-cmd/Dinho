@@ -11,6 +11,8 @@ import {
   calculateRideSplitForDriver,
   generateReferralCodeCandidate,
   normalizeReferralDigits,
+  PASSENGER_REFERRAL_BONUS_AMOUNT,
+  PASSENGER_REFERRAL_REQUIRED_RIDES,
   REFERRAL_BONUS_AMOUNT,
   REFERRAL_REQUIRED_RIDES,
 } from './services/promoService';
@@ -1021,7 +1023,9 @@ BEGIN
 END;
 $$;
 
--- Processa bônus automático de R$ 50 quando motorista/motoboy indicado completa 10 corridas finalizadas
+-- Processa bônus automático de indicação:
+-- • Motorista/Motoboy indicado: 10 corridas finalizadas -> R$ 50,00
+-- • Passageiro indicado: 1 corrida finalizada -> R$ 10,00
 CREATE OR REPLACE FUNCTION public.rpc_process_referral_bonus(
   p_indicated_id bigint DEFAULT NULL,
   p_indicated_email text DEFAULT ''
@@ -1038,6 +1042,9 @@ DECLARE
   v_ind_digits text := '';
   v_referrer public.usuarios%ROWTYPE;
   v_referrer_email text := '';
+  v_is_passenger boolean := false;
+  v_required_rides integer := 10;
+  v_bonus_amount numeric := 50;
   v_rides_count integer := 0;
   v_dedup_key text := '';
   v_already_paid boolean := false;
@@ -1072,17 +1079,37 @@ BEGIN
     RETURN jsonb_build_object('awarded', false, 'alreadyPaid', true);
   END IF;
 
-  SELECT count(*)::integer INTO v_rides_count
-  FROM public.corridas c
-  WHERE lower(coalesce(c.status, '')) = 'finalizada'
-    AND (
-      c.id_motorista = v_indicated.id
-      OR c.motorista_id = v_indicated.id
-      OR (v_clean_email <> '' AND lower(coalesce(c.email_motorista, '')) = v_clean_email)
-    );
+  v_is_passenger := lower(coalesce(v_indicated.tipo, '')) IN ('passenger', 'passageiro');
+  v_required_rides := CASE WHEN v_is_passenger THEN 1 ELSE 10 END;
+  v_bonus_amount := CASE WHEN v_is_passenger THEN 10 ELSE 50 END;
 
-  IF v_rides_count < 10 THEN
-    RETURN jsonb_build_object('awarded', false, 'reason', 'not_enough_rides', 'ridesCount', v_rides_count);
+  IF v_is_passenger THEN
+    SELECT count(*)::integer INTO v_rides_count
+    FROM public.corridas c
+    WHERE lower(coalesce(c.status, '')) = 'finalizada'
+      AND (
+        c.id_passageiro = v_indicated.id
+        OR c.passageiro_id = v_indicated.id
+        OR (v_clean_email <> '' AND lower(coalesce(c.email_passageiro, '')) = v_clean_email)
+      );
+  ELSE
+    SELECT count(*)::integer INTO v_rides_count
+    FROM public.corridas c
+    WHERE lower(coalesce(c.status, '')) = 'finalizada'
+      AND (
+        c.id_motorista = v_indicated.id
+        OR c.motorista_id = v_indicated.id
+        OR (v_clean_email <> '' AND lower(coalesce(c.email_motorista, '')) = v_clean_email)
+      );
+  END IF;
+
+  IF v_rides_count < v_required_rides THEN
+    RETURN jsonb_build_object(
+      'awarded', false,
+      'reason', 'not_enough_rides',
+      'ridesCount', v_rides_count,
+      'requiredRides', v_required_rides
+    );
   END IF;
 
   SELECT * INTO v_referrer
@@ -1132,23 +1159,25 @@ BEGIN
     data
   ) VALUES (
     v_referrer.id,
-    coalesce(v_referrer.nome, 'Motorista'),
+    coalesce(v_referrer.nome, 'Usuário'),
     v_referrer_email,
-    50,
+    v_bonus_amount,
     'bonus_indicacao',
     'pago',
     v_dedup_key,
     jsonb_build_object(
       'indicatedId', v_indicated.id::text,
-      'indicatedName', coalesce(v_indicated.nome, 'Motorista indicado'),
+      'indicatedName', coalesce(v_indicated.nome, CASE WHEN v_is_passenger THEN 'Passageiro indicado' ELSE 'Motorista indicado' END),
       'indicatedEmail', v_clean_email,
-      'ridesCount', v_rides_count
+      'indicatedRole', CASE WHEN v_is_passenger THEN 'passenger' ELSE 'driver' END,
+      'ridesCount', v_rides_count,
+      'requiredRides', v_required_rides
     )::text,
     now()
   );
 
   UPDATE public.usuarios
-  SET saldo = coalesce(saldo, 0) + 50
+  SET saldo = coalesce(saldo, 0) + v_bonus_amount
   WHERE id = v_referrer.id;
 
   UPDATE public.usuarios
@@ -1157,12 +1186,62 @@ BEGIN
 
   RETURN jsonb_build_object(
     'awarded', true,
-    'amount', 50,
+    'amount', v_bonus_amount,
     'ridesCount', v_rides_count,
+    'requiredRides', v_required_rides,
     'referrerId', v_referrer.id,
     'referrerName', v_referrer.nome,
     'referrerEmail', v_referrer_email,
     'indicatedName', v_indicated.nome
+  );
+END;
+$$;
+
+-- Desconta crédito usado pelo passageiro em uma corrida de forma atômica no Supabase
+CREATE OR REPLACE FUNCTION public.rpc_use_passenger_credit(
+  p_amount numeric DEFAULT 0
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_email text := lower(trim(coalesce(auth.jwt() ->> 'email', '')));
+  v_user public.usuarios%ROWTYPE;
+  v_current numeric := 0;
+  v_deduct numeric := 0;
+  v_new_balance numeric := 0;
+BEGIN
+  IF auth.role() <> 'authenticated' OR v_email = '' THEN
+    RETURN jsonb_build_object('success', false, 'reason', 'not_authenticated');
+  END IF;
+
+  SELECT * INTO v_user
+  FROM public.usuarios u
+  WHERE lower(coalesce(u.email, '')) = v_email
+     OR lower(coalesce(u."e-mail", '')) = v_email
+     OR lower(coalesce(u.login, '')) = v_email
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'reason', 'user_not_found');
+  END IF;
+
+  v_current := greatest(0, coalesce(v_user.saldo, 0));
+  v_deduct := round(least(v_current, greatest(0, coalesce(p_amount, 0)))::numeric, 2);
+  v_new_balance := round(greatest(0, v_current - v_deduct)::numeric, 2);
+
+  IF v_deduct > 0 THEN
+    UPDATE public.usuarios
+    SET saldo = v_new_balance
+    WHERE id = v_user.id;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'deducted', v_deduct,
+    'newBalance', v_new_balance
   );
 END;
 $$;
@@ -1209,14 +1288,20 @@ BEGIN
   FROM (
     SELECT jsonb_build_object(
       'id', u.id::text,
-      'nome', split_part(coalesce(u.nome, 'Condutor'), ' ', 1) || CASE WHEN position(' ' in trim(coalesce(u.nome, ''))) > 0 THEN ' ' || split_part(u.nome, ' ', 2) ELSE '' END,
+      'nome', split_part(coalesce(u.nome, 'Indicado'), ' ', 1) || CASE WHEN position(' ' in trim(coalesce(u.nome, ''))) > 0 THEN ' ' || split_part(u.nome, ' ', 2) ELSE '' END,
       'email', coalesce(u.email, ''),
       'tipo', coalesce(u.tipo, 'driver'),
       'created_at', coalesce(u.created_at, now()),
       'rides_count', (
         SELECT count(*)::integer FROM public.corridas c
         WHERE lower(coalesce(c.status, '')) = 'finalizada'
-          AND (c.id_motorista = u.id OR c.motorista_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_motorista, '')) = lower(u.email)))
+          AND (
+            CASE WHEN lower(coalesce(u.tipo, '')) IN ('passenger', 'passageiro') THEN
+              (c.id_passageiro = u.id OR c.passageiro_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_passageiro, '')) = lower(u.email)))
+            ELSE
+              (c.id_motorista = u.id OR c.motorista_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_motorista, '')) = lower(u.email)))
+            END
+          )
       ),
       'bonus_paid', (
         coalesce(u.bonus_pago, false)
@@ -1269,7 +1354,7 @@ BEGIN
   FROM (
     SELECT jsonb_build_object(
       'indicated_id', u.id::text,
-      'indicated_name', coalesce(u.nome, 'Condutor'),
+      'indicated_name', coalesce(u.nome, 'Indicado'),
       'indicated_email', coalesce(u.email, ''),
       'indicated_tipo', coalesce(u.tipo, 'driver'),
       'indicado_por', coalesce(nullif(trim(u.indicado_por_codigo), ''), u.indicado_por, ''),
@@ -1277,7 +1362,13 @@ BEGIN
       'rides_count', (
         SELECT count(*)::integer FROM public.corridas c
         WHERE lower(coalesce(c.status, '')) = 'finalizada'
-          AND (c.id_motorista = u.id OR c.motorista_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_motorista, '')) = lower(u.email)))
+          AND (
+            CASE WHEN lower(coalesce(u.tipo, '')) IN ('passenger', 'passageiro') THEN
+              (c.id_passageiro = u.id OR c.passageiro_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_passageiro, '')) = lower(u.email)))
+            ELSE
+              (c.id_motorista = u.id OR c.motorista_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_motorista, '')) = lower(u.email)))
+            END
+          )
       ),
       'bonus_paid', (
         coalesce(u.bonus_pago, false)
@@ -4559,6 +4650,7 @@ export function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
   const rawPayment = String(row.forma_pagamento || 'pix').toLowerCase().trim();
   const isCash = rawPayment === 'dinheiro' || rawPayment === 'money';
   const isCard = rawPayment.includes('cart') || rawPayment === 'credit_card';
+  const isCredit = rawPayment === 'race_pay' || rawPayment === 'credito';
   const rawStatus = String(row.status || 'completed').toLowerCase().trim();
   const normCategory = normalizeRideCategory(row.categoria);
   const totalValue = Number(row.valor_total ?? row.valor ?? 0);
@@ -4574,11 +4666,11 @@ export function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
 
   const rawAsaasSt = String(row.asaas_status || '').toUpperCase().trim();
   const hasExplicitAsaasStatus = rawAsaasSt.length > 0 && rawAsaasSt !== 'DINHEIRO';
-  const isAsaasApproved = rawAsaasSt === 'RECEIVED' || rawAsaasSt === 'CONFIRMED';
+  const isAsaasApproved = rawAsaasSt === 'RECEIVED' || rawAsaasSt === 'CONFIRMED' || rawAsaasSt === 'CREDITO';
   const isPaidDigital = !isCash && (
-    hasExplicitAsaasStatus
-      ? isAsaasApproved
-      : row.pagamento_confirmado !== false
+    isCredit ||
+    rawAsaasSt === 'CREDITO' ||
+    (hasExplicitAsaasStatus ? isAsaasApproved : row.pagamento_confirmado !== false)
   );
 
   return {
@@ -4626,7 +4718,7 @@ export function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
     price: totalValue,
     driverEarnings: driverValue,
     platformFee: raceValue,
-    paymentMethod: isCash ? 'dinheiro' : isCard ? 'credit_card' : 'pix',
+    paymentMethod: isCash ? 'dinheiro' : isCard ? 'credit_card' : isCredit ? 'race_pay' : 'pix',
     paymentStatus: isCash
       ? (rawStatus !== 'finalizada' && rawStatus !== 'completed' ? 'pending' : 'paid')
       : (isPaidDigital ? 'paid' : 'pending'),
@@ -4656,9 +4748,13 @@ export function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
       const modalObj = parseJson((row as any).detalhes_modalidade);
       const md = modalObj || origObj?.modalityDetails || destObj?.modalityDetails || undefined;
       const dd = origObj?.deliveryDetails || destObj?.deliveryDetails || undefined;
+      const rawCreditUsed = origObj?.creditUsed ?? destObj?.creditUsed;
+      const rawOriginalPrice = origObj?.originalPrice ?? destObj?.originalPrice;
       return {
         modalityDetails: md,
         deliveryDetails: dd,
+        creditUsed: typeof rawCreditUsed === 'number' ? rawCreditUsed : undefined,
+        originalPrice: typeof rawOriginalPrice === 'number' ? rawOriginalPrice : undefined,
       };
     })(),
   };
@@ -4681,7 +4777,7 @@ export function isDeliveryRideCompleteForDriver(ride?: Ride | null): boolean {
 
 /**
  * Garante que o Radar do Motorista só exiba corridas pagas de verdade no Asaas
- * (RECEIVED ou CONFIRMED) OU corridas confirmadas em Dinheiro.
+ * (RECEIVED ou CONFIRMED), pagas com Crédito RACE OU corridas confirmadas em Dinheiro.
  */
 export function isRidePaidOrConfirmedCash(ride?: Ride | null): boolean {
   if (!ride) return false;
@@ -4689,9 +4785,12 @@ export function isRidePaidOrConfirmedCash(ride?: Ride | null): boolean {
   if (method === 'dinheiro' || method === 'money') {
     return true;
   }
+  if (method === 'race_pay' || method === 'credito') {
+    return ride.paymentStatus === 'paid' || String(ride.asaasStatus || '').toUpperCase().trim() === 'CREDITO';
+  }
   if (ride.asaasStatus) {
     const st = String(ride.asaasStatus).toUpperCase().trim();
-    return st === 'RECEIVED' || st === 'CONFIRMED';
+    return st === 'RECEIVED' || st === 'CONFIRMED' || st === 'CREDITO';
   }
   return ride.paymentStatus === 'paid';
 }
@@ -5127,6 +5226,8 @@ export async function saveCorridaSupabase(
         ? 'dinheiro'
         : ride.paymentMethod === 'credit_card'
         ? 'credit_card'
+        : ride.paymentMethod === 'race_pay'
+        ? 'race_pay'
         : 'pix';
 
     const rawSt = String(ride.status || 'procurando').toLowerCase().trim();
@@ -5136,9 +5237,13 @@ export async function saveCorridaSupabase(
     const isCash = normalizedPaymentMethod === 'dinheiro';
     const isAsaasConfirmed =
       ride.asaasStatus === 'RECEIVED' || ride.asaasStatus === 'CONFIRMED';
+    const isCreditOnly =
+      normalizedPaymentMethod === 'race_pay' &&
+      Number(ride.creditUsed || 0) > 0 &&
+      Number(ride.price || 0) === 0;
 
-    // Bloqueia gravação de corrida procurando sem pagamento real no Asaas (exceto dinheiro)
-    if (!isCash && normalizedStatus === 'procurando' && !isAsaasConfirmed) {
+    // Bloqueia gravação de corrida procurando sem pagamento real no Asaas (exceto dinheiro ou 100% crédito)
+    if (!isCash && !isCreditOnly && normalizedStatus === 'procurando' && !isAsaasConfirmed) {
       return { success: false, error: 'Pague primeiro no Asaas para chamar o motorista.' };
     }
 
@@ -5159,9 +5264,19 @@ export async function saveCorridaSupabase(
     const raceFee = Number((ride.platformFee ?? totalPrice * 0.15).toFixed(2));
     const nowIso = ride.createdAt || new Date().toISOString();
 
-    const origemWithMeta = ride.modalityDetails
-      ? { ...ride.pickup, modalityDetails: ride.modalityDetails, deliveryDetails: ride.deliveryDetails }
-      : ride.pickup;
+    const hasCreditMeta =
+      (ride.creditUsed !== undefined && ride.creditUsed > 0) ||
+      ride.originalPrice !== undefined;
+    const origemWithMeta =
+      ride.modalityDetails || hasCreditMeta
+        ? {
+            ...ride.pickup,
+            modalityDetails: ride.modalityDetails,
+            deliveryDetails: ride.deliveryDetails,
+            ...(ride.creditUsed !== undefined ? { creditUsed: ride.creditUsed } : {}),
+            ...(ride.originalPrice !== undefined ? { originalPrice: ride.originalPrice } : {}),
+          }
+        : ride.pickup;
     const destinoWithMeta = ride.modalityDetails
       ? {
           ...ride.destination,
@@ -5197,8 +5312,8 @@ export async function saveCorridaSupabase(
       detalhes_modalidade: ride.modalityDetails ? JSON.stringify(ride.modalityDetails) : '',
       codigo_confirmacao: ride.confirmationCode || '',
       asaas_payment_id: ride.asaasPaymentId || '',
-      asaas_status: isCash ? 'DINHEIRO' : (ride.asaasStatus || 'PENDING'),
-      pagamento_confirmado: isCash || isAsaasConfirmed,
+      asaas_status: isCash ? 'DINHEIRO' : isCreditOnly ? 'CREDITO' : (ride.asaasStatus || 'PENDING'),
+      pagamento_confirmado: isCash || isAsaasConfirmed || isCreditOnly,
     };
 
     if (/^\d+$/.test(String(rawPassengerId))) {
@@ -6141,14 +6256,70 @@ export async function syncDriverWalletSaldoSupabase(params: {
 }
 
 /**
- * Promoção 2 — Indicação R$50:
- * Verifica se o motorista/motoboy indicado já completou 10 corridas com status = 'finalizada'
- * e cria o bônus de R$50 em public.pagamentos (tipo = 'bonus_indicacao') para quem indicou,
- * garantindo que nunca seja pago duas vezes para o mesmo indicado.
+ * Desconta crédito usado pelo passageiro em public.usuarios.saldo e retorna o saldo atualizado.
+ */
+export async function deductPassengerCreditSupabase(params: {
+  userId?: string | number;
+  email?: string;
+  amountUsed: number;
+}): Promise<{ success: boolean; newBalance?: number }> {
+  const cleanAmount = Number(Math.max(0, Number(params.amountUsed || 0)).toFixed(2));
+  if (cleanAmount <= 0) return { success: true };
+
+  try {
+    const rpcRes = await supabase.rpc('rpc_use_passenger_credit', {
+      p_amount: cleanAmount,
+    });
+    if (!rpcRes.error && rpcRes.data && typeof rpcRes.data === 'object' && (rpcRes.data as any).success) {
+      return {
+        success: true,
+        newBalance: Number((rpcRes.data as any).newBalance ?? 0),
+      };
+    }
+  } catch {}
+
+  try {
+    const cleanEmail = String(params.email || '').trim().toLowerCase();
+    const numericId =
+      params.userId !== undefined && params.userId !== null && /^\d+$/.test(String(params.userId))
+        ? Number(params.userId)
+        : null;
+    if (!cleanEmail && !numericId) return { success: false };
+
+    let row: any = null;
+    if (cleanEmail) {
+      row = await getUsuarioSupabase(cleanEmail);
+    }
+    if (!row && numericId) {
+      const { data } = await selectSafeUsuariosRows((q) => q.eq('id', numericId).limit(1));
+      if (data && data.length > 0) row = data[0];
+    }
+    if (!row) return { success: false };
+
+    const currentSaldo = Math.max(0, Number(row.saldo || 0));
+    const nextSaldo = Number(Math.max(0, currentSaldo - cleanAmount).toFixed(2));
+    const { error } = await supabase
+      .from('usuarios')
+      .update({ saldo: nextSaldo })
+      .eq('id', row.id);
+    if (!error) {
+      return { success: true, newBalance: nextSaldo };
+    }
+  } catch {}
+
+  return { success: false };
+}
+
+/**
+ * Promoção 2 — Indicação Premiada:
+ * - Motorista/Motoboy indicado: 10 corridas 'finalizada' -> R$ 50,00 para quem indicou
+ * - Passageiro indicado: 1 corrida 'finalizada' -> R$ 10,00 de crédito para quem indicou
  */
 export async function checkAndAwardReferralBonusSupabase(params: {
   driverId?: string | number;
   driverEmail?: string;
+  userId?: string | number;
+  userEmail?: string;
 }): Promise<{
   awarded: boolean;
   alreadyPaid?: boolean;
@@ -6158,11 +6329,12 @@ export async function checkAndAwardReferralBonusSupabase(params: {
   indicatedName?: string;
   amount?: number;
 }> {
+  const rawId = params.userId ?? params.driverId;
   const numericId =
-    params.driverId !== undefined && params.driverId !== null && /^\d+$/.test(String(params.driverId))
-      ? Number(params.driverId)
+    rawId !== undefined && rawId !== null && /^\d+$/.test(String(rawId))
+      ? Number(rawId)
       : null;
-  const cleanEmail = String(params.driverEmail || '').trim().toLowerCase();
+  const cleanEmail = String(params.userEmail || params.driverEmail || '').trim().toLowerCase();
   if (!numericId && !cleanEmail) {
     return { awarded: false };
   }
@@ -6186,19 +6358,29 @@ export async function checkAndAwardReferralBonusSupabase(params: {
     }
   } catch {}
 
-  // Fallback cliente (funciona caso ADM esteja logado ou RLS permita leitura do indicado)
+  // Fallback cliente (caso RLS permita leitura do indicado)
   try {
     const indicatedRow = cleanEmail ? await getUsuarioSupabase(cleanEmail) : null;
-    if (!indicatedRow || !indicatedRow.indicado_por) {
+    if (!indicatedRow || (!indicatedRow.indicado_por && !indicatedRow.indicado_por_codigo)) {
       return { awarded: false };
     }
-    const ridesQuery = numericId
+    const tipoLower = String(indicatedRow.tipo || '').trim().toLowerCase();
+    const isPassenger = tipoLower === 'passenger' || tipoLower === 'passageiro';
+    const requiredRides = isPassenger ? PASSENGER_REFERRAL_REQUIRED_RIDES : REFERRAL_REQUIRED_RIDES;
+    const bonusAmount = isPassenger ? PASSENGER_REFERRAL_BONUS_AMOUNT : REFERRAL_BONUS_AMOUNT;
+
+    const ridesQuery = isPassenger
+      ? numericId
+        ? supabase.from('corridas').select('id,status').eq('status', 'finalizada').or(`id_passageiro.eq.${numericId},email_passageiro.eq.${cleanEmail}`)
+        : supabase.from('corridas').select('id,status').eq('status', 'finalizada').eq('email_passageiro', cleanEmail)
+      : numericId
       ? supabase.from('corridas').select('id,status').eq('status', 'finalizada').or(`id_motorista.eq.${numericId},email_motorista.eq.${cleanEmail}`)
       : supabase.from('corridas').select('id,status').eq('status', 'finalizada').eq('email_motorista', cleanEmail);
+
     const { data: ridesData } = await ridesQuery;
     const ridesCount = Array.isArray(ridesData) ? ridesData.length : 0;
-    if (ridesCount < REFERRAL_REQUIRED_RIDES) {
-      return { awarded: false, ridesCount };
+    if (ridesCount < requiredRides) {
+      return { awarded: false, ridesCount, amount: bonusAmount };
     }
   } catch {}
 
@@ -6220,7 +6402,7 @@ export async function getDriverReferralsAndBonusesSupabase(
     if (!rpcRes.error && Array.isArray(rpcRes.data)) {
       return rpcRes.data.map((item: any) => ({
         id: String(item.id || ''),
-        nome: String(item.nome || 'Condutor'),
+        nome: String(item.nome || 'Indicado'),
         email: String(item.email || ''),
         tipo: String(item.tipo || 'driver'),
         createdAt: String(item.created_at || ''),
@@ -6239,7 +6421,7 @@ export async function getAllReferralsAdminSupabase(): Promise<AdminReferralItem[
     if (!rpcRes.error && Array.isArray(rpcRes.data)) {
       return rpcRes.data.map((item: any) => ({
         id: String(item.indicated_id || ''),
-        nome: String(item.indicated_name || 'Condutor'),
+        nome: String(item.indicated_name || 'Indicado'),
         email: String(item.indicated_email || ''),
         tipo: String(item.indicated_tipo || 'driver'),
         indicadoPor: String(item.indicado_por || ''),

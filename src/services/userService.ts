@@ -162,6 +162,10 @@ export function saveSessionUser(user: AppUser | null): void {
           ? user.indicadoPorCodigo
           : (existingSaved?.indicadoPorCodigo || ''),
       bonusPago: user.bonusPago ?? existingSaved?.bonusPago ?? false,
+      creditBalance:
+        user.creditBalance !== undefined
+          ? Number(user.creditBalance || 0)
+          : Number(existingSaved?.creditBalance ?? existingSaved?.saldo ?? 0),
       driverData: sanitizedDriverData,
     };
 
@@ -247,6 +251,7 @@ export function getSessionUser(): AppUser | null {
       codigoIndicacao: parsed.codigoIndicacao || undefined,
       indicadoPorCodigo: parsed.indicadoPorCodigo || undefined,
       bonusPago: Boolean(parsed.bonusPago),
+      creditBalance: Number(parsed.creditBalance ?? parsed.saldo ?? 0),
       driverData: parsed.driverData,
     };
   } catch {}
@@ -295,6 +300,7 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
     codigoIndicacao: cloudUser.codigo_indicacao || '',
     indicadoPorCodigo: cloudUser.indicado_por_codigo || cloudUser.indicado_por || '',
     bonusPago: Boolean(cloudUser.bonus_pago),
+    creditBalance: Number(cloudUser.saldo || 0),
   };
 
   return { user: userPayload, driver: driverObj };
