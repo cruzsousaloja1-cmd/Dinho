@@ -7209,6 +7209,7 @@ export interface ReferralCandidateItem {
   email: string;
   tipo: string;
   foto?: string;
+  codigoIndicacao?: string;
   createdAt: string;
   ridesCount: number;
   bonusPaid: boolean;
@@ -7580,6 +7581,7 @@ export async function getDriverReferralsAndBonusesSupabase(
         ...existing,
         ...item,
         foto: item.foto || existing.foto || '',
+        codigoIndicacao: item.codigoIndicacao || existing.codigoIndicacao || '',
         ridesCount: Math.max(Number(existing.ridesCount || 0), Number(item.ridesCount || 0)),
         bonusPaid: Boolean(existing.bonusPaid || item.bonusPaid),
       });
@@ -7680,12 +7682,17 @@ export async function getDriverReferralsAndBonusesSupabase(
           (uEmail && meta.paidBonusEmails.has(uEmail))
       );
 
+      const ownCode =
+        normalizeReferralCodeInput(u?.codigo_indicacao || '') ||
+        (uid ? meta.codeByUserId.get(uid) || '' : '');
+
       addItem({
         id: uid || uEmail,
         nome: String(u?.nome || u?.login || 'Indicado'),
         email: uEmail,
         tipo: String(u?.tipo || 'driver'),
         foto: extractPhotoFromRow(u),
+        codigoIndicacao: ownCode || undefined,
         createdAt: String(u?.created_at || ''),
         ridesCount,
         bonusPaid,
@@ -7709,6 +7716,7 @@ export async function getAllReferralsAdminSupabase(): Promise<AdminReferralItem[
         ...existing,
         ...item,
         foto: item.foto || existing.foto || '',
+        codigoIndicacao: item.codigoIndicacao || existing.codigoIndicacao || '',
         indicadoPor: item.indicadoPor || existing.indicadoPor || '',
         indicadoPorId: item.indicadoPorId || existing.indicadoPorId || '',
         codigoUsado: item.codigoUsado || existing.codigoUsado || '',
@@ -7769,12 +7777,17 @@ export async function getAllReferralsAdminSupabase(): Promise<AdminReferralItem[
           (uEmail && meta.paidBonusEmails.has(uEmail))
       );
 
+      const ownCode =
+        normalizeReferralCodeInput(u?.codigo_indicacao || '') ||
+        (uid ? meta.codeByUserId.get(uid) || '' : '');
+
       addAdminItem({
         id: uid || uEmail,
         nome: String(u?.nome || u?.login || 'Indicado'),
         email: uEmail,
         tipo: String(u?.tipo || 'driver'),
         foto: extractPhotoFromRow(u),
+        codigoIndicacao: ownCode || undefined,
         indicadoPor: displayIndicadoPor,
         indicadoPorId: resolvedRefId || undefined,
         codigoUsado: resolvedCode || undefined,

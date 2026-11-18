@@ -333,11 +333,21 @@ export const MyReferralsControlSection: React.FC<MyReferralsControlSectionProps>
                               <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-orange-100 text-orange-900 border border-orange-300">
                                 {roleLabel}
                               </span>
+                              {item.codigoIndicacao && (
+                                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-300">
+                                  Código: {item.codigoIndicacao}
+                                </span>
+                              )}
                               <span className="text-[11px] font-mono font-black px-2 py-0.5 rounded-full bg-slate-900 text-white">
                                 Valor R$50
                               </span>
                             </div>
                             <p className="text-xs font-mono text-slate-600 mt-0.5">
+                              {formatDateBR(item.createdAt) && (
+                                <>
+                                  <span>Cadastro: {formatDateBR(item.createdAt)}</span> &bull;{' '}
+                                </>
+                              )}
                               Progresso: <strong>{completed}/10 corridas</strong> &bull;{' '}
                               {remainingRides > 0 ? (
                                 <span className="text-amber-700 font-bold">
@@ -456,17 +466,26 @@ export const MyReferralsControlSection: React.FC<MyReferralsControlSectionProps>
                           <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 border border-blue-300">
                             Passageiro
                           </span>
+                          {item.codigoIndicacao && (
+                            <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-300">
+                              Código: {item.codigoIndicacao}
+                            </span>
+                          )}
                           <span className="text-[11px] font-mono font-black px-2 py-0.5 rounded-full bg-blue-700 text-white">
-                            R$10 crédito
+                            R$10
                           </span>
                         </div>
                         <p className="text-xs font-mono text-slate-600 mt-0.5">
-                          Progresso: <strong>{completed}/1 corrida</strong> &bull;{' '}
-                          {completed >= 1 ? (
-                            <span className="text-emerald-700 font-bold">1ª corrida concluída!</span>
-                          ) : (
-                            <span className="text-amber-700 font-bold">Falta 1 corrida</span>
+                          {formatDateBR(item.createdAt) && (
+                            <>
+                              <span>Cadastro: {formatDateBR(item.createdAt)}</span> &bull;{' '}
+                            </>
                           )}
+                          <span>
+                            <strong>{completed}/1</strong> -{' '}
+                            {status === 'waiting' ? 'Aguardando' : status === 'used' ? 'Crédito Usado' : 'Liberado'} -{' '}
+                            <strong>R$10</strong>
+                          </span>
                         </p>
                       </div>
                     </div>
@@ -474,17 +493,17 @@ export const MyReferralsControlSection: React.FC<MyReferralsControlSectionProps>
                     <div className="shrink-0">
                       {status === 'waiting' && (
                         <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold">
-                          ⏳ Aguardando 1ª corrida
+                          ⏳ 0/1 - Aguardando - R$10
                         </span>
                       )}
                       {status === 'released' && (
                         <span className="inline-flex items-center px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-black">
-                          ✅ Crédito Liberado
+                          ✅ Crédito Liberado (R$10)
                         </span>
                       )}
                       {status === 'used' && (
                         <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-200 text-slate-800 border border-slate-300 text-xs font-black">
-                          💳 Crédito Usado
+                          💳 Crédito Usado (R$10)
                         </span>
                       )}
                     </div>

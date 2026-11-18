@@ -1094,12 +1094,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return row ? extractPhotoFromRow(row) : '';
     };
 
+    const findUserCode = (uid?: string, uEmail?: string): string => {
+      const cleanId = String(uid || '').trim();
+      const cleanEm = String(uEmail || '').trim().toLowerCase();
+      const row = supabaseUsers.find(
+        (u) =>
+          (cleanId && String(u.id || '').trim() === cleanId) ||
+          (cleanEm && String(u.email || '').trim().toLowerCase() === cleanEm)
+      );
+      return String(row?.codigo_indicacao || '').trim().toUpperCase();
+    };
+
     for (const r of adminReferrals) {
       const key = String(r.id || r.email || '').trim().toLowerCase();
       if (key) {
         byKey.set(key, {
           ...r,
           foto: r.foto || findUserPhoto(r.id, r.email),
+          codigoIndicacao: r.codigoIndicacao || findUserCode(r.id, r.email) || undefined,
         });
       }
     }
@@ -1134,6 +1146,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         email: uEmail,
         tipo: String(u.tipo || 'driver'),
         foto: extractPhotoFromRow(u),
+        codigoIndicacao: String(u.codigo_indicacao || '').trim().toUpperCase() || undefined,
         indicadoPor: rawCod || rawPor,
         indicadoPorId: /^\d+$/.test(rawPor) ? rawPor : undefined,
         codigoUsado: rawCod || (/^\d+$/.test(rawPor) ? undefined : rawPor.toUpperCase()),
@@ -3285,7 +3298,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span>Editar</span>
                       </button>
 
-                      {/* Botão Corrigir Indicação (ex: vincular Antônio Carlos ID 37 ao JOSE492) */}
+                      {/* Botão Corrigir Vínculo (ex: vincular Antônio Carlos ID 37 ao JOSE492) */}
                       {!u.isAdminRow && (
                         <button
                           type="button"
@@ -3294,7 +3307,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           title="Vincular ou corrigir código de indicação deste usuário"
                         >
                           <Gift className="w-3.5 h-3.5 text-[#ff6a00]" />
-                          <span>Corrigir indicação</span>
+                          <span>Corrigir vínculo</span>
                         </button>
                       )}
 
@@ -4905,7 +4918,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <h4 className="font-heading font-black text-slate-950 text-base sm:text-lg">
-                    Corrigir Indicação
+                    Corrigir Vínculo
                   </h4>
                   <p className="text-xs text-slate-500 font-medium">
                     Vincular {fixReferralTarget.name} (ID {fixReferralTarget.id})
