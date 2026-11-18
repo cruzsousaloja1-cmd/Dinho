@@ -78,8 +78,13 @@ import {
   calculateRideSplitForDriver,
   parseReferralBonusMeta,
   formatReferralBonusMessage,
+  formatPassengerReferralBonusMessage,
+  isPassengerReferralRole,
+  normalizeReferralDigits,
   REFERRAL_BONUS_AMOUNT,
   REFERRAL_REQUIRED_RIDES,
+  PASSENGER_REFERRAL_BONUS_AMOUNT,
+  PASSENGER_REFERRAL_REQUIRED_RIDES,
 } from '../services/promoService';
 
 interface AdminDashboardProps {
@@ -822,6 +827,177 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Financial calculations - Soma EXCLUSIVA das tabelas pagamentos e corridas do Supabase (considera Promo 0% quando aplicável)
   const activeWeeklySubs = approvedApprovalsList.filter((d) => d.online).length;
   const referralBonusesAdmin = supabasePagamentos.filter((p) => p.tipo === 'bonus_indicacao');
+  const driverBonusesAdmin = referralBonusesAdmin.filter(
+    (p) => parseReferralBonusMeta(p.comprovante_url, p.chave_pix, p.valor).indicatedRole !== 'passenger'
+  );
+  const passengerBonusesAdmin = referralBonusesAdmin.filter(
+    (p) => parseReferralBonusMeta(p.comprovante_url, p.chave_pix, p.valor).indicatedRole === 'passenger'
+  );
+
+  // Combina RPC adminReferrals com eventuais linhas de supabaseUsers que tenham indicado_por/indicado_por_codigo
+  const mergedReferralsAdmin: AdminReferralItem[] = (() => {
+    const byKey = new Map<string, AdminReferralItem>();
+    for (const r of adminReferrals) {
+      const key = String(r.id || r.email || '').trim().toLowerCase();
+      if (key) byKey.set(key, r);
+    }
+    for (const u of supabaseUsers) {
+      const indCode = String(u.indicado_por_codigo || u.indicado_por || '').trim();
+      if (!indCode) continue;
+      const uid = String(u.id || '').trim();
+      const uEmail = String(u.email || '').trim().toLowerCase();
+      const existing =
+        (uid && byKey.get(uid.toLowerCase())) ||
+        (uEmail && byKey.get(uEmail));
+      if (existing) continue;
+
+      const isPass = isPassengerReferralRole(u.tipo);
+      const ridesCount = supabaseCorridas.filter((c) => {
+        if (String(c.status || '').toLowerCase() !== 'finalizada') return false;
+        if (isPass) {
+          const pid = String(c.passengerId || '').trim();
+          const pmail = String(c.passengerEmail || '').trim().toLowerCase();
+          return (uid && pid === uid) || (uEmail && pmail === uEmail);
+        }
+        const did = String(c.driver?.id || '').trim();
+        const dmail = String(c.driver?.email || '').trim().toLowerCase();
+        return (uid && did === uid) || (uEmail && dmail === uEmail);
+      }).length;
+
+      const fallbackItem: AdminReferralItem = {
+        id: uid || uEmail,
+        nome: String(u.nome || u.login || 'Indicado'),
+        email: uEmail,
+        tipo: String(u.tipo || 'driver'),
+        indicadoPor: indCode,
+        createdAt: String(u.created_at || ''),
+        ridesCount,
+        bonusPaid: Boolean(u.bonus_pago),
+      };
+      byKey.set((uid || uEmail).toLowerCase(), fallbackItem);
+    }
+    return Array.from(byKey.values());
+  })();
+
+  const driverReferralsAdmin = mergedReferralsAdmin.filter((item) => !isPassengerReferralRole(item.tipo));
+  const passengerReferralsAdmin = mergedReferralsAdmin.filter((item) => isPassengerReferralRole(item.tipo));
+
+  // Calcula status dos créditos R$10 (⏳ Aguardando 1ª corrida / ✅ Crédito Liberado / 💳 Crédito Usado)
+  const passengerReferralEntries = (() => {
+    const paymentMatchedFor = (item: AdminReferralItem) =>
+      passengerBonusesAdmin.find((p) => {
+        const meta = parseReferralBonusMeta(p.comprovante_url, p.chave_pix, p.valor);
+        return (
+          (meta.indicatedId && meta.indicatedId === String(item.id)) ||
+          (meta.indicatedEmail && meta.indicatedEmail.toLowerCase() === item.email.toLowerCase())
+        );
+      });
+
+    const findReferrerUser = (codeOrPhone: string) => {
+      const clean = String(codeOrPhone || '').trim();
+      if (!clean) return null;
+      const upper = clean.toUpperCase();
+      const lower = clean.toLowerCase();
+      const digits = normalizeReferralDigits(clean);
+      return (
+        supabaseUsers.find((u) => {
+          const uCode = String(u.codigo_indicacao || '').trim().toUpperCase();
+          if (uCode && uCode === upper) return true;
+          const uEmail = String(u.email || '').trim().toLowerCase();
+          const uLogin = String(u.login || '').trim().toLowerCase();
+          if (uEmail === lower || uLogin === lower) return true;
+          if (digits.length >= 8) {
+            const w = normalizeReferralDigits(u.whatsapp || '');
+            const c = normalizeReferralDigits(u.celular || '');
+            if ((w && w.endsWith(digits)) || (c && c.endsWith(digits))) return true;
+          }
+          return false;
+        }) || null
+      );
+    };
+
+    const rawEntries = passengerReferralsAdmin.map((item) => {
+      const matchedPayment = paymentMatchedFor(item);
+      const completedRides = Math.min(
+        PASSENGER_REFERRAL_REQUIRED_RIDES,
+        Math.max(Number(item.ridesCount || 0), item.bonusPaid || matchedPayment ? 1 : 0)
+      );
+      const isReleased = Boolean(
+        item.bonusPaid || completedRides >= PASSENGER_REFERRAL_REQUIRED_RIDES || matchedPayment
+      );
+      const referrerUser = findReferrerUser(item.indicadoPor);
+      const referrerKey = referrerUser
+        ? `user:${referrerUser.id}`
+        : `code:${String(item.indicadoPor || '').trim().toUpperCase()}`;
+      return {
+        item,
+        matchedPayment,
+        completedRides,
+        isReleased,
+        referrerUser,
+        referrerKey,
+      };
+    });
+
+    // FIFO per referrer to determine ✅ Crédito Liberado vs 💳 Crédito Usado
+    const usedIds = new Set<string>();
+    const byReferrer = new Map<string, typeof rawEntries>();
+    for (const entry of rawEntries) {
+      if (!entry.isReleased) continue;
+      const list = byReferrer.get(entry.referrerKey) || [];
+      list.push(entry);
+      byReferrer.set(entry.referrerKey, list);
+    }
+
+    for (const [, list] of byReferrer.entries()) {
+      const sampleUser = list[0]?.referrerUser;
+      const totalReleasedBRL = list.length * PASSENGER_REFERRAL_BONUS_AMOUNT;
+      const ridesCreditUsedSum = sampleUser
+        ? supabaseCorridas
+            .filter((c) => {
+              const cid = String(c.passengerId || '').trim();
+              const cmail = String(c.passengerEmail || '').trim().toLowerCase();
+              const uid = String(sampleUser.id || '').trim();
+              const umail = String(sampleUser.email || '').trim().toLowerCase();
+              return (uid && cid === uid) || (umail && cmail === umail);
+            })
+            .reduce((acc, c) => acc + Number(c.creditUsed || 0), 0)
+        : 0;
+      const isReferrerPassenger = sampleUser ? isPassengerReferralRole(sampleUser.tipo) : false;
+      const currentSaldo = sampleUser ? Math.max(0, Number(sampleUser.saldo || 0)) : 0;
+      const saldoGapUsed = isReferrerPassenger ? Math.max(0, totalReleasedBRL - currentSaldo) : 0;
+      let remainingConsumed = Math.max(ridesCreditUsedSum, saldoGapUsed);
+
+      const oldestFirst = [...list].sort(
+        (a, b) => new Date(a.item.createdAt || 0).getTime() - new Date(b.item.createdAt || 0).getTime()
+      );
+      for (const entry of oldestFirst) {
+        if (remainingConsumed >= PASSENGER_REFERRAL_BONUS_AMOUNT - 0.01) {
+          usedIds.add(String(entry.item.id || entry.item.email));
+          remainingConsumed -= PASSENGER_REFERRAL_BONUS_AMOUNT;
+        }
+      }
+    }
+
+    return rawEntries.map((entry) => {
+      const key = String(entry.item.id || entry.item.email);
+      const status: 'waiting' | 'released' | 'used' = !entry.isReleased
+        ? 'waiting'
+        : usedIds.has(key)
+        ? 'used'
+        : 'released';
+      return { ...entry, status };
+    });
+  })();
+
+  const creditedPassengerCount = Math.max(
+    passengerReferralEntries.filter((e) => e.isReleased).length,
+    passengerBonusesAdmin.length
+  );
+  const totalPassengerCreditsBRL =
+    passengerBonusesAdmin.length >= creditedPassengerCount && passengerBonusesAdmin.length > 0
+      ? passengerBonusesAdmin.reduce((acc, p) => acc + Number(p.valor || PASSENGER_REFERRAL_BONUS_AMOUNT), 0)
+      : Number((creditedPassengerCount * PASSENGER_REFERRAL_BONUS_AMOUNT).toFixed(2));
   const paidPaymentsTotal = supabasePagamentos
     .filter((p) => {
       const st = String(p.status || '').toLowerCase();
@@ -2956,9 +3132,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB: INDICAÇÕES & BÔNUS R$50 */}
+      {/* TAB: INDICAÇÕES & BÔNUS (R$50 MOTORISTA/MOTOBOY + R$10 PASSAGEIRO) */}
       {activeTab === 'referrals' && (
         <div className="space-y-6 animate-fade-in">
+          {/* SEÇÃO 1 (LARANJA): R$50 MOTORISTA / MOTOBOY — MANTIDA INTACTA */}
           <div className="bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <h3 className="font-heading font-black text-xl sm:text-2xl flex items-center gap-2">
@@ -2982,31 +3159,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
               <span className="text-xs font-bold uppercase text-slate-500 block">Indicados Cadastrados</span>
-              <span className="text-3xl font-heading font-black text-slate-950">{adminReferrals.length}</span>
+              <span className="text-3xl font-heading font-black text-slate-950">{driverReferralsAdmin.length}</span>
             </div>
             <div className="bg-white border border-emerald-200 rounded-2xl p-5 shadow-xs">
               <span className="text-xs font-bold uppercase text-emerald-700 block">Bônus Pagos (R$50)</span>
-              <span className="text-3xl font-heading font-black text-emerald-700">{referralBonusesAdmin.length}</span>
+              <span className="text-3xl font-heading font-black text-emerald-700">{driverBonusesAdmin.length}</span>
             </div>
             <div className="bg-white border border-orange-200 rounded-2xl p-5 shadow-xs">
               <span className="text-xs font-bold uppercase text-orange-700 block">Total em Bônus Creditados</span>
               <span className="text-3xl font-heading font-black text-[#ff6a00]">
-                {formatBRL(referralBonusesAdmin.reduce((acc, p) => acc + Number(p.valor || REFERRAL_BONUS_AMOUNT), 0))}
+                {formatBRL(driverBonusesAdmin.reduce((acc, p) => acc + Number(p.valor || REFERRAL_BONUS_AMOUNT), 0))}
               </span>
             </div>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
             <h4 className="font-heading font-black text-slate-950 text-base">
-              Indicações Registradas ({adminReferrals.length})
+              Indicações Registradas ({driverReferralsAdmin.length})
             </h4>
-            {adminReferrals.length === 0 ? (
+            {driverReferralsAdmin.length === 0 ? (
               <p className="text-xs text-slate-500 py-6 text-center">
-                Nenhuma indicação registrada ainda em public.usuarios.
+                Nenhuma indicação de Motorista OU Motoboy registrada ainda em public.usuarios.
               </p>
             ) : (
               <div className="space-y-3">
-                {adminReferrals.map((item) => (
+                {driverReferralsAdmin.map((item) => (
                   <div
                     key={item.id}
                     className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
@@ -3041,14 +3218,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <h4 className="font-heading font-black text-slate-950 text-base">
               Histórico de Bônus Pago (tipo = bonus_indicacao)
             </h4>
-            {referralBonusesAdmin.length === 0 ? (
+            {driverBonusesAdmin.length === 0 ? (
               <p className="text-xs text-slate-500 py-6 text-center">
-                Nenhum bônus de indicação criado em public.pagamentos ainda.
+                Nenhum bônus de indicação R$50 criado em public.pagamentos ainda.
               </p>
             ) : (
               <div className="space-y-2.5">
-                {referralBonusesAdmin.map((bonus, idx) => {
-                  const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix);
+                {driverBonusesAdmin.map((bonus, idx) => {
+                  const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix, bonus.valor);
                   return (
                     <div
                       key={bonus.id || `adm-bonus-${idx}`}
@@ -3071,6 +3248,138 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
           </div>
+
+          {/* SEÇÃO 2 (AZUL): R$10 PASSAGEIRO INDICA PASSAGEIRO */}
+          <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-sky-500 text-white rounded-3xl p-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="font-heading font-black text-xl sm:text-2xl flex items-center gap-2">
+                <Gift className="w-6 h-6" />
+                <span>Promoção Indicação R$10 - Passageiro Indica Passageiro</span>
+              </h3>
+              <p className="text-xs sm:text-sm text-blue-50 font-medium">
+                Acompanhe suas indicações de passageiros e seus créditos de R$10 gerados automaticamente ao completar a 1ª corrida do indicado.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchSupabaseUsuarios}
+              className="px-4 py-2.5 rounded-xl bg-black/25 hover:bg-black/40 border border-white/30 text-white text-xs font-heading font-black flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Atualizar Dados</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white border border-blue-200 rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold uppercase text-blue-800 block">
+                PASSAGEIROS INDICADOS CADASTRADOS
+              </span>
+              <span className="text-3xl font-heading font-black text-slate-950">
+                {passengerReferralsAdmin.length}
+              </span>
+            </div>
+            <div className="bg-white border border-emerald-200 rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold uppercase text-emerald-700 block">
+                CRÉDITOS LIBERADOS (R$10)
+              </span>
+              <span className="text-3xl font-heading font-black text-emerald-700">
+                {creditedPassengerCount}
+              </span>
+            </div>
+            <div className="bg-white border border-sky-200 rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold uppercase text-blue-700 block">
+                TOTAL EM CRÉDITOS DE PASSAGEIRO
+              </span>
+              <span className="text-3xl font-heading font-black text-blue-600">
+                {formatBRL(totalPassengerCreditsBRL)}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-white border border-blue-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+            <h4 className="font-heading font-black text-slate-950 text-base">
+              Indicações de Passageiros ({passengerReferralsAdmin.length})
+            </h4>
+            {passengerReferralEntries.length === 0 ? (
+              <p className="text-xs text-slate-500 py-6 text-center">
+                Nenhuma indicação de passageiro registrada ainda em public.usuarios.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {passengerReferralEntries.map(({ item, completedRides, status }) => (
+                  <div
+                    key={item.id || item.email}
+                    className="p-4 rounded-2xl border border-blue-200 bg-blue-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-heading font-black text-slate-950 text-sm">{item.nome}</span>
+                        <span className="text-[11px] font-mono bg-white border border-blue-200 px-2 py-0.5 rounded text-blue-900 font-bold">
+                          Progresso: {completedRides}/{PASSENGER_REFERRAL_REQUIRED_RIDES} corrida
+                        </span>
+                        <span className="text-[11px] font-mono bg-blue-100 border border-blue-300 px-2 py-0.5 rounded text-blue-900 font-black">
+                          Valor: R$10
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        E-mail: <strong>{item.email}</strong> &bull; Indicado por WhatsApp/Código:{' '}
+                        <strong className="font-mono text-blue-700">{item.indicadoPor}</strong>
+                      </p>
+                    </div>
+                    <div className="shrink-0">
+                      {status === 'waiting' && (
+                        <span className="inline-flex items-center text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-full">
+                          ⏳ Aguardando 1ª corrida
+                        </span>
+                      )}
+                      {status === 'released' && (
+                        <span className="inline-flex items-center text-[11px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1 rounded-full">
+                          ✅ Crédito Liberado
+                        </span>
+                      )}
+                      {status === 'used' && (
+                        <span className="inline-flex items-center text-[11px] font-black bg-slate-200 text-slate-800 border border-slate-300 px-3 py-1 rounded-full">
+                          💳 Crédito Usado
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {passengerBonusesAdmin.length > 0 && (
+            <div className="bg-white border border-blue-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+              <h4 className="font-heading font-black text-slate-950 text-base">
+                Histórico de Créditos R$10 Liberados (Passageiro)
+              </h4>
+              <div className="space-y-2.5">
+                {passengerBonusesAdmin.map((bonus, idx) => {
+                  const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix, bonus.valor);
+                  return (
+                    <div
+                      key={bonus.id || `adm-pass-bonus-${idx}`}
+                      className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div>
+                        <p className="text-xs font-black text-blue-950">
+                          Indicador: {bonus.nome_motorista || bonus.email_motorista}
+                        </p>
+                        <p className="text-xs text-blue-800 font-medium">
+                          {formatPassengerReferralBonusMessage(meta.indicatedName)}
+                        </p>
+                      </div>
+                      <span className="font-mono font-black text-blue-700 text-base shrink-0">
+                        +{formatBRL(Number(bonus.valor || PASSENGER_REFERRAL_BONUS_AMOUNT))}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

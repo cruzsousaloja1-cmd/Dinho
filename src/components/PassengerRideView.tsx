@@ -1728,10 +1728,22 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
           <p className="w-full text-xs sm:text-sm text-slate-600 font-medium leading-snug">
             Informe o ponto de embarque e destino com o número exato para o trajeto em Indaiatuba
           </p>
-          <div className="w-full">
+          <div className="w-full flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center text-xs font-mono text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 font-extrabold">
               {availableDrivers.filter((d) => d.status === 'online' && d.approvalStatus === 'aprovado').length} condutores online
             </span>
+            {!isAppUserDriver(currentUser) && (
+              <span
+                className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full border ${
+                  passengerCredit > 0
+                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                    : 'bg-blue-50 text-blue-900 border-blue-200'
+                }`}
+              >
+                <Wallet className={`w-3.5 h-3.5 shrink-0 ${passengerCredit > 0 ? 'text-emerald-100' : 'text-blue-600'}`} />
+                <span>Seu crédito: {formatBRL(passengerCredit)} - Use na próxima corrida</span>
+              </span>
+            )}
           </div>
         </div>
 

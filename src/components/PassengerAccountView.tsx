@@ -38,6 +38,10 @@ import {
   uploadProfilePhotoSupabase,
   withPhotoCacheBuster,
   ensureUserReferralCodeSupabase,
+  getDriverReferralsAndBonusesSupabase,
+  getPagamentosSupabase,
+  ReferralCandidateItem,
+  SupabasePagamentoRow,
 } from '../supabase';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
@@ -49,6 +53,11 @@ import {
   preloadRaceLogoBlob,
   downloadRaceLogoPng,
   shareReferralWithLogo,
+  isPassengerReferralRole,
+  PASSENGER_REFERRAL_BONUS_AMOUNT,
+  PASSENGER_REFERRAL_REQUIRED_RIDES,
+  parseReferralBonusMeta,
+  formatPassengerReferralBonusMessage,
 } from '../services/promoService';
 
 interface PassengerAccountViewProps {
@@ -107,12 +116,34 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   const [copiedCodeCard, setCopiedCodeCard] = useState(false);
   const [showDownloadLogoFallback, setShowDownloadLogoFallback] = useState(false);
   const [logoDownloadedNotice, setLogoDownloadedNotice] = useState(false);
+  const [myReferrals, setMyReferrals] = useState<ReferralCandidateItem[]>([]);
+  const [myBonusPayments, setMyBonusPayments] = useState<SupabasePagamentoRow[]>([]);
+  const [isLoadingMyReferrals, setIsLoadingMyReferrals] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setCreditBalance(Number(currentUser?.creditBalance || 0));
   }, [currentUser?.creditBalance]);
+
+  const loadMyPassengerReferrals = async () => {
+    if (!currentUser?.email && !currentUser?.id) return;
+    setIsLoadingMyReferrals(true);
+    try {
+      const [refs, payments] = await Promise.all([
+        getDriverReferralsAndBonusesSupabase(currentUser).catch(() => [] as ReferralCandidateItem[]),
+        getPagamentosSupabase(currentUser).catch(() => [] as SupabasePagamentoRow[]),
+      ]);
+      setMyReferrals(refs);
+      setMyBonusPayments(payments.filter((p) => p.tipo === 'bonus_indicacao'));
+    } finally {
+      setIsLoadingMyReferrals(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMyPassengerReferrals();
+  }, [currentUser?.id, currentUser?.email]);
 
   useEffect(() => {
     if (!isEditingProfile && !hasPendingAvatarPreview) {
@@ -624,11 +655,21 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                   </button>
                 </div>
 
-                {!isAppUserDriver(currentUser) && creditBalance > 0 && (
-                  <div className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-1.5">
-                    <Wallet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span className="text-xs font-bold text-emerald-900">
-                      Crédito: <strong className="font-mono font-black">{formatBRL(creditBalance)}</strong>
+                {!isAppUserDriver(currentUser) && (
+                  <div
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 border ${
+                      creditBalance > 0
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                        : 'bg-blue-50 border-blue-200 text-blue-900'
+                    }`}
+                  >
+                    <Wallet
+                      className={`w-3.5 h-3.5 shrink-0 ${
+                        creditBalance > 0 ? 'text-emerald-600' : 'text-blue-600'
+                      }`}
+                    />
+                    <span className="text-xs font-bold">
+                      Seu crédito: <strong className="font-mono font-black">{formatBRL(creditBalance)}</strong> - Use na próxima corrida
                     </span>
                   </div>
                 )}
@@ -934,10 +975,10 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                 <span className="inline-flex items-center gap-1.5 bg-black/30 border border-white/25 text-amber-100 text-xs font-black px-3 py-1 rounded-full">
                   <span>⏳ {countdownText}</span>
                 </span>
-                {!isDriverOrMoto && creditBalance > 0 && (
-                  <span className="inline-flex items-center gap-1.5 bg-emerald-950/60 border border-emerald-300/60 text-emerald-100 text-xs font-black px-3 py-1 rounded-full">
-                    <Wallet className="w-3.5 h-3.5 text-emerald-300" />
-                    <span>Seu crédito disponível: {formatBRL(creditBalance)}</span>
+                {!isDriverOrMoto && (
+                  <span className="inline-flex items-center gap-1.5 bg-emerald-950/70 border border-emerald-300/70 text-emerald-100 text-xs font-black px-3 py-1 rounded-full">
+                    <Wallet className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                    <span>Seu crédito: {formatBRL(creditBalance)} - Use na próxima corrida</span>
                   </span>
                 )}
               </div>
@@ -1044,6 +1085,161 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
               </p>
             </div>
           </div>
+
+          {!isDriverOrMoto && (() => {
+            const passengerRefs = myReferrals.filter((r) => isPassengerReferralRole(r.tipo));
+            const passengerPayments10 = myBonusPayments.filter((p) => {
+              const meta = parseReferralBonusMeta(p.comprovante_url, p.chave_pix, p.valor);
+              return meta.indicatedRole === 'passenger' || Number(p.valor) === PASSENGER_REFERRAL_BONUS_AMOUNT;
+            });
+            const releasedList = passengerRefs.filter((r) => {
+              const hasPayment = passengerPayments10.some((p) => {
+                const meta = parseReferralBonusMeta(p.comprovante_url, p.chave_pix, p.valor);
+                return (
+                  (meta.indicatedId && meta.indicatedId === String(r.id)) ||
+                  (meta.indicatedEmail && meta.indicatedEmail.toLowerCase() === r.email.toLowerCase())
+                );
+              });
+              return r.bonusPaid || r.ridesCount >= PASSENGER_REFERRAL_REQUIRED_RIDES || hasPayment;
+            });
+            const totalReleasedAmount = Number(
+              (releasedList.length * PASSENGER_REFERRAL_BONUS_AMOUNT).toFixed(2)
+            );
+            const consumedAmount = Math.max(0, totalReleasedAmount - Math.max(0, creditBalance));
+            const sortedCreditedIds = [...releasedList]
+              .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+              .map((r) => String(r.id));
+            const usedIdSet = new Set<string>();
+            let remainingUsed = consumedAmount;
+            for (const rid of sortedCreditedIds) {
+              if (remainingUsed >= PASSENGER_REFERRAL_BONUS_AMOUNT - 0.01) {
+                usedIdSet.add(rid);
+                remainingUsed -= PASSENGER_REFERRAL_BONUS_AMOUNT;
+              }
+            }
+
+            return (
+              <div className="bg-white text-slate-950 rounded-2xl p-4 sm:p-5 space-y-4 border-2 border-blue-400 shadow-lg">
+                <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-sky-500 text-white rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <h4 className="font-heading font-black text-base sm:text-lg flex items-center gap-2">
+                      <Gift className="w-5 h-5 shrink-0" />
+                      <span>Promoção Indicação R$10 - Passageiro Indica Passageiro</span>
+                    </h4>
+                    <p className="text-xs text-blue-50 font-medium">
+                      Seu crédito: <strong>{formatBRL(creditBalance)}</strong> - Use na próxima corrida. Sem limite de indicações até 17/12/2026!
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadMyPassengerReferrals}
+                    disabled={isLoadingMyReferrals}
+                    className="px-3 py-2 rounded-xl bg-black/25 hover:bg-black/40 border border-white/30 text-white text-xs font-heading font-black cursor-pointer shrink-0 disabled:opacity-60"
+                  >
+                    {isLoadingMyReferrals ? 'Atualizando...' : 'Atualizar'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                    <span className="text-[10px] font-bold uppercase text-blue-800 block">
+                      Passageiros Indicados
+                    </span>
+                    <span className="text-2xl font-heading font-black text-slate-950">
+                      {passengerRefs.length}
+                    </span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                    <span className="text-[10px] font-bold uppercase text-emerald-800 block">
+                      Créditos Liberados (R$10)
+                    </span>
+                    <span className="text-2xl font-heading font-black text-emerald-700">
+                      {releasedList.length}
+                    </span>
+                  </div>
+                  <div className="bg-sky-50 border border-sky-200 rounded-xl p-3">
+                    <span className="text-[10px] font-bold uppercase text-sky-800 block">
+                      Total em Créditos R$10
+                    </span>
+                    <span className="text-2xl font-heading font-black text-blue-700">
+                      {formatBRL(totalReleasedAmount)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  <h5 className="font-heading font-black text-slate-950 text-sm">
+                    Indicações de Passageiros ({passengerRefs.length})
+                  </h5>
+                  {passengerRefs.length === 0 ? (
+                    <p className="text-xs text-slate-500 bg-slate-50 border border-dashed border-slate-300 rounded-xl p-4 text-center">
+                      Nenhum passageiro indicado ainda. Compartilhe seu código e ganhe R$10 quando seu indicado fizer a 1ª corrida!
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {passengerRefs.map((refItem) => {
+                        const completedRides = Math.min(
+                          PASSENGER_REFERRAL_REQUIRED_RIDES,
+                          Number(refItem.ridesCount || 0)
+                        );
+                        const isReleased = releasedList.some((r) => String(r.id) === String(refItem.id));
+                        const isUsed = isReleased && usedIdSet.has(String(refItem.id));
+                        return (
+                          <div
+                            key={refItem.id || refItem.email}
+                            className="p-3 rounded-xl border border-blue-200 bg-blue-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                          >
+                            <div className="space-y-0.5">
+                              <p className="font-heading font-black text-slate-950 text-xs sm:text-sm">
+                                {refItem.nome}
+                              </p>
+                              <p className="text-[11px] font-mono text-slate-600">
+                                {completedRides}/{PASSENGER_REFERRAL_REQUIRED_RIDES} corrida &bull; Valor: R$10
+                              </p>
+                            </div>
+                            {!isReleased ? (
+                              <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[11px] font-bold self-start sm:self-auto shrink-0">
+                                ⏳ Aguardando 1ª corrida
+                              </span>
+                            ) : isUsed ? (
+                              <span className="px-2.5 py-1 rounded-full bg-slate-200 text-slate-800 border border-slate-300 text-[11px] font-black self-start sm:self-auto shrink-0">
+                                💳 Crédito Usado
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-black self-start sm:self-auto shrink-0">
+                                ✅ Crédito Liberado
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {passengerPayments10.length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                    {passengerPayments10.map((bonus, idx) => {
+                      const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix, bonus.valor);
+                      return (
+                        <div
+                          key={bonus.id || `pass-bonus-${idx}`}
+                          className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="font-bold text-emerald-950">
+                            {formatPassengerReferralBonusMessage(meta.indicatedName)}
+                          </span>
+                          <span className="font-mono font-black text-emerald-700 shrink-0">
+                            +{formatBRL(Number(bonus.valor || PASSENGER_REFERRAL_BONUS_AMOUNT))}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
         );
       })()}

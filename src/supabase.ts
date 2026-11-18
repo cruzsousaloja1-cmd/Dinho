@@ -6362,27 +6362,113 @@ export async function checkAndAwardReferralBonusSupabase(params: {
 
   // Fallback cliente (caso RLS permita leitura do indicado)
   try {
-    const indicatedRow = cleanEmail ? await getUsuarioSupabase(cleanEmail) : null;
-    if (!indicatedRow || (!indicatedRow.indicado_por && !indicatedRow.indicado_por_codigo)) {
+    let indicatedRow = cleanEmail ? await getUsuarioSupabase(cleanEmail) : null;
+    if (!indicatedRow && numericId) {
+      const { data: idRows } = await selectSafeUsuariosRows((q) => q.eq('id', numericId).limit(1));
+      if (idRows && idRows.length > 0) indicatedRow = idRows[0];
+    }
+    const rawIndCode = String(
+      indicatedRow?.indicado_por_codigo || indicatedRow?.indicado_por || ''
+    ).trim();
+    if (!indicatedRow || !rawIndCode) {
       return { awarded: false };
     }
+    if (indicatedRow.bonus_pago) {
+      return { awarded: false, alreadyPaid: true };
+    }
+
     const tipoLower = String(indicatedRow.tipo || '').trim().toLowerCase();
     const isPassenger = tipoLower === 'passenger' || tipoLower === 'passageiro';
     const requiredRides = isPassenger ? PASSENGER_REFERRAL_REQUIRED_RIDES : REFERRAL_REQUIRED_RIDES;
     const bonusAmount = isPassenger ? PASSENGER_REFERRAL_BONUS_AMOUNT : REFERRAL_BONUS_AMOUNT;
+    const indicatedId = Number(indicatedRow.id || numericId || 0);
+    const indicatedEmail = String(indicatedRow.email || cleanEmail || '').trim().toLowerCase();
 
     const ridesQuery = isPassenger
-      ? numericId
-        ? supabase.from('corridas').select('id,status').eq('status', 'finalizada').or(`id_passageiro.eq.${numericId},email_passageiro.eq.${cleanEmail}`)
-        : supabase.from('corridas').select('id,status').eq('status', 'finalizada').eq('email_passageiro', cleanEmail)
-      : numericId
-      ? supabase.from('corridas').select('id,status').eq('status', 'finalizada').or(`id_motorista.eq.${numericId},email_motorista.eq.${cleanEmail}`)
-      : supabase.from('corridas').select('id,status').eq('status', 'finalizada').eq('email_motorista', cleanEmail);
+      ? indicatedId
+        ? supabase.from('corridas').select('id,status').eq('status', 'finalizada').or(`id_passageiro.eq.${indicatedId},passageiro_id.eq.${indicatedId}${indicatedEmail ? `,email_passageiro.eq.${indicatedEmail}` : ''}`)
+        : supabase.from('corridas').select('id,status').eq('status', 'finalizada').eq('email_passageiro', indicatedEmail)
+      : indicatedId
+      ? supabase.from('corridas').select('id,status').eq('status', 'finalizada').or(`id_motorista.eq.${indicatedId},motorista_id.eq.${indicatedId}${indicatedEmail ? `,email_motorista.eq.${indicatedEmail}` : ''}`)
+      : supabase.from('corridas').select('id,status').eq('status', 'finalizada').eq('email_motorista', indicatedEmail);
 
     const { data: ridesData } = await ridesQuery;
     const ridesCount = Array.isArray(ridesData) ? ridesData.length : 0;
     if (ridesCount < requiredRides) {
       return { awarded: false, ridesCount, amount: bonusAmount };
+    }
+
+    const dedupKey = `INDICADO:${indicatedId}`;
+    const { data: existingBonuses } = await supabase
+      .from('pagamentos')
+      .select('id,chave_pix,comprovante_url')
+      .eq('tipo', 'bonus_indicacao')
+      .eq('chave_pix', dedupKey)
+      .limit(1);
+
+    if (Array.isArray(existingBonuses) && existingBonuses.length > 0) {
+      await supabase.from('usuarios').update({ bonus_pago: true }).eq('id', indicatedId);
+      return { awarded: false, alreadyPaid: true, ridesCount, amount: bonusAmount };
+    }
+
+    const normDigits = normalizeReferralDigits(rawIndCode);
+    const upperCode = rawIndCode.toUpperCase();
+    const lowerCode = rawIndCode.toLowerCase();
+    const { data: allCandidates } = await selectSafeUsuariosRows((q) => q.neq('id', indicatedId));
+    const referrerRow = (allCandidates || []).find((u: any) => {
+      const uCode = String(u.codigo_indicacao || '').trim().toUpperCase();
+      if (uCode && uCode === upperCode) return true;
+      const uEmail = String(u.email || '').trim().toLowerCase();
+      const uLogin = String(u.login || '').trim().toLowerCase();
+      if (uEmail === lowerCode || uLogin === lowerCode) return true;
+      if (normDigits.length >= 8) {
+        const w = normalizeReferralDigits(u.whatsapp || '');
+        const c = normalizeReferralDigits(u.celular || '');
+        if ((w && w.endsWith(normDigits)) || (c && c.endsWith(normDigits))) return true;
+      }
+      return false;
+    });
+
+    if (!referrerRow) {
+      return { awarded: false, ridesCount, amount: bonusAmount };
+    }
+
+    const referrerEmail = String(referrerRow.email || '').trim().toLowerCase();
+    const indicatedName = String(
+      indicatedRow.nome || (isPassenger ? 'Passageiro indicado' : 'Motorista indicado')
+    ).trim();
+
+    const { error: insertErr } = await supabase.from('pagamentos').insert({
+      id_motorista: referrerRow.id,
+      nome_motorista: referrerRow.nome || 'Usuário',
+      email_motorista: referrerEmail,
+      valor: bonusAmount,
+      tipo: 'bonus_indicacao',
+      status: 'pago',
+      chave_pix: dedupKey,
+      comprovante_url: JSON.stringify({
+        indicatedId: String(indicatedId),
+        indicatedName,
+        indicatedEmail,
+        indicatedRole: isPassenger ? 'passenger' : 'driver',
+        ridesCount,
+        requiredRides,
+      }),
+      data: new Date().toISOString(),
+    });
+
+    if (!insertErr) {
+      const nextReferrerSaldo = Number(Math.max(0, Number(referrerRow.saldo || 0) + bonusAmount).toFixed(2));
+      await supabase.from('usuarios').update({ saldo: nextReferrerSaldo }).eq('id', referrerRow.id);
+      await supabase.from('usuarios').update({ bonus_pago: true }).eq('id', indicatedId);
+      return {
+        awarded: true,
+        ridesCount,
+        referrerName: referrerRow.nome || undefined,
+        referrerEmail: referrerEmail || undefined,
+        indicatedName,
+        amount: bonusAmount,
+      };
     }
   } catch {}
 

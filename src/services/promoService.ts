@@ -178,47 +178,81 @@ export const getReferralCodeFromUrl = (): string => {
   }
 };
 
+export const isPassengerReferralRole = (tipo?: string | null): boolean => {
+  const norm = String(tipo || '').trim().toLowerCase();
+  return norm === 'passenger' || norm === 'passageiro';
+};
+
 export interface ReferralBonusMeta {
   indicatedId: string;
   indicatedName: string;
   indicatedEmail: string;
+  indicatedRole: 'passenger' | 'driver';
   ridesCount: number;
+  requiredRides: number;
 }
 
 export const parseReferralBonusMeta = (
   comprovanteUrl?: string | null,
-  chavePix?: string | null
+  chavePix?: string | null,
+  bonusAmount?: number | null
 ): ReferralBonusMeta => {
   let indicatedId = '';
   if (chavePix && chavePix.startsWith('INDICADO:')) {
     indicatedId = chavePix.slice('INDICADO:'.length).trim();
   }
+  const inferredRoleFromAmount: 'passenger' | 'driver' =
+    Number(bonusAmount) === PASSENGER_REFERRAL_BONUS_AMOUNT ? 'passenger' : 'driver';
+
   if (comprovanteUrl && typeof comprovanteUrl === 'string') {
     try {
       const parsed = JSON.parse(comprovanteUrl);
       if (parsed && typeof parsed === 'object') {
+        const rawRole = String(parsed.indicatedRole || '').trim().toLowerCase();
+        const resolvedRole: 'passenger' | 'driver' =
+          rawRole === 'passenger' || rawRole === 'passageiro'
+            ? 'passenger'
+            : rawRole === 'driver' || rawRole === 'motoboy' || rawRole === 'motorista'
+            ? 'driver'
+            : inferredRoleFromAmount;
+        const defaultRequired =
+          resolvedRole === 'passenger' ? PASSENGER_REFERRAL_REQUIRED_RIDES : REFERRAL_REQUIRED_RIDES;
+        const defaultName =
+          resolvedRole === 'passenger' ? 'Passageiro indicado' : 'Motorista OU Motoboy indicado';
         return {
           indicatedId: String(parsed.indicatedId ?? indicatedId ?? '').trim(),
-          indicatedName: String(parsed.indicatedName || 'Motorista OU Motoboy indicado').trim(),
+          indicatedName: String(parsed.indicatedName || defaultName).trim(),
           indicatedEmail: String(parsed.indicatedEmail || '').trim(),
-          ridesCount: Number(parsed.ridesCount) || REFERRAL_REQUIRED_RIDES,
+          indicatedRole: resolvedRole,
+          ridesCount: Number(parsed.ridesCount) || defaultRequired,
+          requiredRides: Number(parsed.requiredRides) || defaultRequired,
         };
       }
     } catch {
       // Ignore plain text fallback
     }
   }
+  const defaultRequired =
+    inferredRoleFromAmount === 'passenger' ? PASSENGER_REFERRAL_REQUIRED_RIDES : REFERRAL_REQUIRED_RIDES;
   return {
     indicatedId,
-    indicatedName: 'Motorista OU Motoboy indicado',
+    indicatedName:
+      inferredRoleFromAmount === 'passenger' ? 'Passageiro indicado' : 'Motorista OU Motoboy indicado',
     indicatedEmail: '',
-    ridesCount: REFERRAL_REQUIRED_RIDES,
+    indicatedRole: inferredRoleFromAmount,
+    ridesCount: defaultRequired,
+    requiredRides: defaultRequired,
   };
 };
 
 export const formatReferralBonusMessage = (indicatedName?: string | null): string => {
   const cleanName = (indicatedName || 'Motorista OU Motoboy indicado').trim();
   return `Bônus Indicação: + R$50 - ${cleanName} fez 10 corridas!`;
+};
+
+export const formatPassengerReferralBonusMessage = (indicatedName?: string | null): string => {
+  const cleanName = (indicatedName || 'Passageiro indicado').trim();
+  return `Crédito Indicação: + R$10 - ${cleanName} completou a 1ª corrida!`;
 };
 
 /**

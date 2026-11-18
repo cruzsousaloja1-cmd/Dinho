@@ -18,8 +18,12 @@ import {
   normalizeReferralDigits,
   parseReferralBonusMeta,
   formatReferralBonusMessage,
+  formatPassengerReferralBonusMessage,
+  isPassengerReferralRole,
   REFERRAL_REQUIRED_RIDES,
   REFERRAL_BONUS_AMOUNT,
+  PASSENGER_REFERRAL_REQUIRED_RIDES,
+  PASSENGER_REFERRAL_BONUS_AMOUNT,
 } from '../services/promoService';
 import { compressImageToMax200KB, validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
@@ -2659,17 +2663,19 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       </div>
                       <div className="space-y-2">
                         {referralBonuses.map((bonus, idx) => {
-                          const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix);
+                          const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix, bonus.valor);
                           return (
                             <div
                               key={bonus.id || `bonus-${idx}`}
                               className="p-3 rounded-xl bg-black/40 border border-emerald-500/40 flex items-center justify-between gap-2 text-xs"
                             >
                               <span className="font-bold text-emerald-200">
-                                {formatReferralBonusMessage(meta.indicatedName)}
+                                {meta.indicatedRole === 'passenger'
+                                  ? formatPassengerReferralBonusMessage(meta.indicatedName)
+                                  : formatReferralBonusMessage(meta.indicatedName)}
                               </span>
                               <span className="font-mono font-black text-emerald-400 shrink-0">
-                                +{formatBRL(Number(bonus.valor || REFERRAL_BONUS_AMOUNT))}
+                                +{formatBRL(Number(bonus.valor || (meta.indicatedRole === 'passenger' ? PASSENGER_REFERRAL_BONUS_AMOUNT : REFERRAL_BONUS_AMOUNT)))}
                               </span>
                             </div>
                           );
@@ -2984,17 +2990,19 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     </h4>
                     <div className="space-y-2">
                       {referralBonuses.map((bonus, idx) => {
-                        const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix);
+                        const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix, bonus.valor);
                         return (
                           <div
                             key={bonus.id || `ind-bonus-${idx}`}
                             className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3"
                           >
                             <span className="text-xs sm:text-sm font-bold text-emerald-950">
-                              {formatReferralBonusMessage(meta.indicatedName)}
+                              {meta.indicatedRole === 'passenger'
+                                ? formatPassengerReferralBonusMessage(meta.indicatedName)
+                                : formatReferralBonusMessage(meta.indicatedName)}
                             </span>
                             <span className="font-mono font-black text-emerald-700 text-sm shrink-0">
-                              +{formatBRL(Number(bonus.valor || REFERRAL_BONUS_AMOUNT))}
+                              +{formatBRL(Number(bonus.valor || (meta.indicatedRole === 'passenger' ? PASSENGER_REFERRAL_BONUS_AMOUNT : REFERRAL_BONUS_AMOUNT)))}
                             </span>
                           </div>
                         );
@@ -3003,71 +3011,119 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </div>
                 )}
 
-                {/* Lista de indicados e progresso */}
-                <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
-                      <Users className="w-5 h-5 text-[#ff6a00]" />
-                      <span>Motoristas / Motoboys Indicados ({referredDrivers.length})</span>
-                    </h4>
-                    <span className="text-xs font-mono font-bold text-slate-500">Meta: {REFERRAL_REQUIRED_RIDES} corridas</span>
-                  </div>
+                {/* Lista de motoristas/motoboys indicados (R$50) + passageiros indicados (R$10) */}
+                {(() => {
+                  const driverOnlyRefs = referredDrivers.filter((r) => !isPassengerReferralRole(r.tipo));
+                  const passengerOnlyRefs = referredDrivers.filter((r) => isPassengerReferralRole(r.tipo));
+                  return (
+                    <div className="space-y-4">
+                      <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                          <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
+                            <Users className="w-5 h-5 text-[#ff6a00]" />
+                            <span>Motoristas / Motoboys Indicados ({driverOnlyRefs.length})</span>
+                          </h4>
+                          <span className="text-xs font-mono font-bold text-slate-500">Meta: {REFERRAL_REQUIRED_RIDES} corridas</span>
+                        </div>
 
-                  {isLoadingReferrals ? (
-                    <div className="py-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-[#ff6a00]" />
-                      <span>Carregando suas indicações...</span>
-                    </div>
-                  ) : referredDrivers.length === 0 ? (
-                    <div className="py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 p-4 space-y-1">
-                      <Gift className="w-8 h-8 text-orange-400 mx-auto" />
-                      <p className="text-sm font-bold text-slate-700">Nenhum motorista indicado ainda</p>
-                      <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                        Copie seu link ou WhatsApp acima e envie para amigos motoristas e motoboys informarem no cadastro!
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {referredDrivers.map((refDriver) => {
-                        const pct = Math.min(100, Math.round((refDriver.ridesCount / REFERRAL_REQUIRED_RIDES) * 100));
-                        return (
-                          <div
-                            key={refDriver.id}
-                            className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div>
-                                <p className="font-heading font-black text-slate-950 text-sm">
-                                  {refDriver.nome}
-                                </p>
-                                <p className="text-[11px] font-mono text-slate-500">
-                                  {refDriver.tipo === 'motoboy' ? 'Motoboy' : 'Motorista'} • {refDriver.ridesCount} / {REFERRAL_REQUIRED_RIDES} corridas finalizadas
-                                </p>
-                              </div>
-                              {refDriver.bonusPaid ? (
-                                <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-black shrink-0">
-                                  ✓ Bônus +R$ 50 Pago!
-                                </span>
-                              ) : (
-                                <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold shrink-0">
-                                  Faltam {Math.max(0, REFERRAL_REQUIRED_RIDES - refDriver.ridesCount)} corridas
-                                </span>
-                              )}
-                            </div>
-                            <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  refDriver.bonusPaid ? 'bg-emerald-500' : 'bg-[#ff6a00]'
-                                }`}
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
+                        {isLoadingReferrals ? (
+                          <div className="py-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin text-[#ff6a00]" />
+                            <span>Carregando suas indicações...</span>
                           </div>
-                        );
-                      })}
+                        ) : driverOnlyRefs.length === 0 ? (
+                          <div className="py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 p-4 space-y-1">
+                            <Gift className="w-8 h-8 text-orange-400 mx-auto" />
+                            <p className="text-sm font-bold text-slate-700">Nenhum Motorista OU Motoboy indicado ainda</p>
+                            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                              Copie seu link ou WhatsApp acima e envie para amigos motoristas e motoboys informarem no cadastro!
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {driverOnlyRefs.map((refDriver) => {
+                              const pct = Math.min(100, Math.round((refDriver.ridesCount / REFERRAL_REQUIRED_RIDES) * 100));
+                              return (
+                                <div
+                                  key={refDriver.id}
+                                  className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div>
+                                      <p className="font-heading font-black text-slate-950 text-sm">
+                                        {refDriver.nome}
+                                      </p>
+                                      <p className="text-[11px] font-mono text-slate-500">
+                                        {refDriver.tipo === 'motoboy' ? 'Motoboy' : 'Motorista'} • {refDriver.ridesCount} / {REFERRAL_REQUIRED_RIDES} corridas finalizadas
+                                      </p>
+                                    </div>
+                                    {refDriver.bonusPaid ? (
+                                      <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-black shrink-0">
+                                        ✓ Bônus +R$ 50 Pago!
+                                      </span>
+                                    ) : (
+                                      <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold shrink-0">
+                                        Faltam {Math.max(0, REFERRAL_REQUIRED_RIDES - refDriver.ridesCount)} corridas
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all ${
+                                        refDriver.bonusPaid ? 'bg-emerald-500' : 'bg-[#ff6a00]'
+                                      }`}
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {passengerOnlyRefs.length > 0 && (
+                        <div className="bg-white border border-blue-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-3">
+                          <div className="flex items-center justify-between border-b border-blue-100 pb-3">
+                            <h4 className="font-heading font-black text-blue-950 text-base flex items-center gap-2">
+                              <Users className="w-5 h-5 text-blue-600" />
+                              <span>Passageiros Indicados ({passengerOnlyRefs.length})</span>
+                            </h4>
+                            <span className="text-xs font-mono font-bold text-blue-700">R$10 por 1ª corrida</span>
+                          </div>
+                          <div className="space-y-2.5">
+                            {passengerOnlyRefs.map((refPass) => {
+                              const completed = Math.min(PASSENGER_REFERRAL_REQUIRED_RIDES, refPass.ridesCount);
+                              const released = refPass.bonusPaid || refPass.ridesCount >= PASSENGER_REFERRAL_REQUIRED_RIDES;
+                              return (
+                                <div
+                                  key={refPass.id}
+                                  className="p-3.5 rounded-2xl border border-blue-200 bg-blue-50/60 flex items-center justify-between gap-2"
+                                >
+                                  <div>
+                                    <p className="font-heading font-black text-slate-950 text-sm">{refPass.nome}</p>
+                                    <p className="text-[11px] font-mono text-slate-600">
+                                      Passageiro &bull; {completed}/{PASSENGER_REFERRAL_REQUIRED_RIDES} corrida &bull; R${PASSENGER_REFERRAL_BONUS_AMOUNT}
+                                    </p>
+                                  </div>
+                                  {released ? (
+                                    <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-black shrink-0">
+                                      ✅ Crédito Liberado
+                                    </span>
+                                  ) : (
+                                    <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold shrink-0">
+                                      ⏳ Aguardando 1ª corrida
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
               </div>
             );
           })()}
