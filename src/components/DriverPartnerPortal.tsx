@@ -2816,11 +2816,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <div className="flex flex-col items-center gap-2">
                       <img
                         src={raceLogoUrl}
-                        alt="Logo RACE"
+                        alt="RACE - Mobilidade e Entregas Indaiatuba - SP"
                         onLoad={() => {
                           preloadRaceLogoBlob().catch(() => {});
                         }}
-                        className="w-28 h-28 sm:w-32 sm:h-32 rounded-3xl object-cover border-2 border-yellow-400 shadow-2xl mx-auto bg-black"
+                        className="w-40 h-40 sm:w-48 sm:h-48 rounded-3xl object-contain border-2 border-yellow-400 shadow-2xl mx-auto bg-black"
                       />
                     </div>
 
@@ -2873,6 +2873,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <p className="text-xs text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 text-left leading-relaxed">
                       {unifiedShareText}
                     </p>
+
+                    <div className="bg-black/40 border border-yellow-400/60 rounded-xl p-3 text-center">
+                      <p className="text-xs sm:text-sm font-black text-yellow-300 tracking-wide">
+                        SEM LIMITE DE INDICAÇÃO ATÉ 17/12/2026 - Quanto mais você indicar, mais você ganha!
+                      </p>
+                    </div>
                   </div>
 
                   <div className="bg-black/20 border border-white/20 rounded-2xl p-4 space-y-2">

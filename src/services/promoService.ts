@@ -249,6 +249,7 @@ export const buildReferralWhatsappShareText = (
     '® CADASTRANDO NO APP RACE COMO MOTORISTA OU MOTOBOY USANDO MEU CÓDIGO, GANHA 100% DAS CORRIDAS ATÉ 17/12/2026.',
     '® INDICANDO MOTOBOY OU MOTORISTA USANDO SEU CÓDIGO GANHA R$50 QUANDO SEU INDICADO COMPLETAR 10 CORRIDAS.',
     '® INDICANDO PASSAGEIROS COM SEU CÓDIGO GANHA R$10 DE CRÉDITOS SOMENTE NA PRIMEIRA VIAGEM DO SEU INDICADO',
+    'SEM LIMITE DE INDICAÇÃO ATÉ A DATA 17/12/2026',
     'Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/',
   ].join('\n');
 };
@@ -266,7 +267,7 @@ export const getRaceLogoPublicUrl = (): string => {
     (typeof import.meta !== 'undefined' && (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL) ||
     '/Dinho/';
   const normalized = base.endsWith('/') ? base : `${base}/`;
-  return `${normalized}logo.png`;
+  return `${normalized}logo-race-indaiatuba.png`;
 };
 
 let cachedRaceLogoBlob: Blob | null = null;
@@ -336,7 +337,7 @@ export const shareReferralWithLogo = async (
     typeof navigator.share === 'function'
   ) {
     try {
-      const logoFile = new File([logoBlob], 'logo.png', { type: 'image/png' });
+      const logoFile = new File([logoBlob], 'logo-race-indaiatuba.png', { type: 'image/png' });
       const canShareFiles =
         typeof navigator.canShare !== 'function' ||
         navigator.canShare({ files: [logoFile], text });
@@ -357,11 +358,11 @@ export const shareReferralWithLogo = async (
   }
 
   if (logoBlob) {
-    triggerFileDownload(logoBlob, 'logo-race.png');
+    triggerFileDownload(logoBlob, 'logo-race-indaiatuba.png');
   } else {
     const link = document.createElement('a');
     link.href = getRaceLogoPublicUrl();
-    link.download = 'logo-race.png';
+    link.download = 'logo-race-indaiatuba.png';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
