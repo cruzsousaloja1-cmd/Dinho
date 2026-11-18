@@ -2781,8 +2781,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               .toUpperCase();
             const myReferralLink = buildReferralLink(myPersonalCode || myWhatsappCode);
             const unifiedShareText = buildReferralWhatsappShareText(myPersonalCode);
-            const driverShareUrl = buildReferralWhatsappShareUrl(myPersonalCode, { isDriver: true });
-            const passengerShareUrl = buildReferralWhatsappShareUrl(myPersonalCode, { isDriver: false });
+            const whatsappShareUrl = buildReferralWhatsappShareUrl(myPersonalCode);
             const countdownText = getLaunchPromoCountdownText();
 
             return (
@@ -2822,7 +2821,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       {unifiedShareText}
                     </p>
 
-                    <div className="flex flex-col gap-2.5 pt-1">
+                    <div className="flex flex-col gap-3 pt-1">
                       <button
                         type="button"
                         onClick={() => {
@@ -2839,27 +2838,15 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         <span>{copiedDriverCode ? 'Código copiado!' : 'Copiar código'}</span>
                       </button>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <a
-                          href={driverShareUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
-                        >
-                          <MessageCircle className="w-4 h-4 shrink-0" />
-                          <span>Compartilhar para Motorista / Motoboy</span>
-                        </a>
-
-                        <a
-                          href={passengerShareUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="py-3.5 px-4 rounded-xl bg-zinc-950 hover:bg-zinc-900 border border-white/25 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
-                        >
-                          <MessageCircle className="w-4 h-4 shrink-0 text-emerald-400" />
-                          <span>Compartilhar para Passageiro</span>
-                        </a>
-                      </div>
+                      <a
+                        href={whatsappShareUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full min-h-[60px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-[18px] leading-tight flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98]"
+                      >
+                        <MessageCircle className="w-6 h-6 shrink-0" />
+                        <span>Compartilhar para Motorista, Motoboy e Passageiros</span>
+                      </a>
                     </div>
                   </div>
 
