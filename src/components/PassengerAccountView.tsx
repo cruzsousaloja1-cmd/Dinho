@@ -24,7 +24,8 @@ import {
   Car,
   Copy,
   Gift,
-  Wallet
+  Wallet,
+  Download
 } from 'lucide-react';
 import { requestCurrentLocationFast } from '../services/addressSearchService';
 import { saveSessionUser, isAppUserAdmin, isAppUserDriver } from '../services/userService';
@@ -46,6 +47,7 @@ import {
   getLaunchPromoCountdownText,
   getRaceLogoPublicUrl,
   preloadRaceLogoBlob,
+  downloadRaceLogoPng,
   shareReferralWithLogo,
 } from '../services/promoService';
 
@@ -103,6 +105,8 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   );
   const [copiedCodeHeader, setCopiedCodeHeader] = useState(false);
   const [copiedCodeCard, setCopiedCodeCard] = useState(false);
+  const [showDownloadLogoFallback, setShowDownloadLogoFallback] = useState(false);
+  const [logoDownloadedNotice, setLogoDownloadedNotice] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -979,13 +983,51 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  shareReferralWithLogo(referralCode).catch(() => {});
+                  shareReferralWithLogo(referralCode)
+                    .then((res) => {
+                      if (res === 'whatsapp_with_download') {
+                        setShowDownloadLogoFallback(true);
+                      }
+                    })
+                    .catch(() => {});
                 }}
                 className="w-full min-h-[60px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-[18px] leading-tight flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98] cursor-pointer"
               >
                 <MessageCircle className="w-6 h-6 shrink-0" />
                 <span>Compartilhar para Motorista, Motoboy e Passageiros</span>
               </button>
+
+              {showDownloadLogoFallback && (
+                <div className="bg-black/45 border border-yellow-400/70 rounded-xl p-3.5 space-y-2.5 text-center">
+                  <p className="text-xs font-semibold text-amber-100 leading-snug">
+                    Seu celular/navegador não permitiu enviar a imagem direto. Baixe a logo abaixo para anexar manualmente no WhatsApp:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      downloadRaceLogoPng()
+                        .then(() => {
+                          setLogoDownloadedNotice(true);
+                          setTimeout(() => setLogoDownloadedNotice(false), 3500);
+                        })
+                        .catch(() => {});
+                    }}
+                    className="w-full min-h-[50px] py-2.5 px-4 rounded-xl bg-black hover:bg-zinc-900 border-2 border-yellow-400 text-white font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    {logoDownloadedNotice ? (
+                      <>
+                        <Check className="w-5 h-5 text-emerald-400" />
+                        <span>Logo baixada! Anexe no WhatsApp</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-5 h-5 text-yellow-400" />
+                        <span>Baixar Logo</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
 
             <p className="text-[11px] text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 text-left leading-relaxed">

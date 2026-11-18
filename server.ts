@@ -300,6 +300,11 @@ async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production';
 
   if (!isProduction) {
+    const publicDir = path.resolve(__dirname, 'public');
+    if (fs.existsSync(publicDir)) {
+      app.use('/Dinho', express.static(publicDir));
+      app.use(express.static(publicDir));
+    }
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },

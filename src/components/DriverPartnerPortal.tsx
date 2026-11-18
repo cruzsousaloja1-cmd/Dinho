@@ -12,6 +12,7 @@ import {
   getLaunchPromoCountdownText,
   getRaceLogoPublicUrl,
   preloadRaceLogoBlob,
+  downloadRaceLogoPng,
   shareReferralWithLogo,
   normalizeReferralDigits,
   parseReferralBonusMeta,
@@ -252,7 +253,8 @@ import {
   Pencil,
   Gift,
   Users,
-  MessageCircle
+  MessageCircle,
+  Download
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
@@ -866,6 +868,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     currentDriver.codigoIndicacao || currentUser?.codigoIndicacao || ''
   );
   const [copiedDriverCode, setCopiedDriverCode] = useState(false);
+  const [showDownloadLogoFallback, setShowDownloadLogoFallback] = useState(false);
+  const [logoDownloadedNotice, setLogoDownloadedNotice] = useState(false);
 
   const isPromoZeroFeeActive = isDriverInLaunchZeroFeePromo(
     currentDriver.createdAt || currentDriver.registrationDate || currentUser?.createdAt
@@ -2856,12 +2860,15 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         onClick={() => {
                           shareReferralWithLogo(myPersonalCode)
                             .then((res) => {
-                              if (res === 'whatsapp_with_download' && onTriggerToast) {
-                                onTriggerToast(
-                                  'Logo do RACE baixada!',
-                                  'Abrimos o WhatsApp com sua mensagem. Anexe a logo baixada para enviar junto!',
-                                  'ride'
-                                );
+                              if (res === 'whatsapp_with_download') {
+                                setShowDownloadLogoFallback(true);
+                                if (onTriggerToast) {
+                                  onTriggerToast(
+                                    'WhatsApp aberto com a mensagem!',
+                                    'Clique em "Baixar Logo" abaixo para salvar a imagem PNG e anexar no WhatsApp.',
+                                    'ride'
+                                  );
+                                }
                               }
                             })
                             .catch(() => {});
@@ -2871,6 +2878,38 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         <MessageCircle className="w-6 h-6 shrink-0" />
                         <span>Compartilhar para Motorista, Motoboy e Passageiros</span>
                       </button>
+
+                      {showDownloadLogoFallback && (
+                        <div className="bg-black/45 border border-yellow-400/70 rounded-xl p-3.5 space-y-2.5 text-center">
+                          <p className="text-xs font-semibold text-amber-100 leading-snug">
+                            Seu celular/navegador não permitiu enviar a imagem direto. Baixe a logo abaixo para anexar manualmente no WhatsApp:
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              downloadRaceLogoPng()
+                                .then(() => {
+                                  setLogoDownloadedNotice(true);
+                                  setTimeout(() => setLogoDownloadedNotice(false), 3500);
+                                })
+                                .catch(() => {});
+                            }}
+                            className="w-full min-h-[50px] py-2.5 px-4 rounded-xl bg-black hover:bg-zinc-900 border-2 border-yellow-400 text-white font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] cursor-pointer"
+                          >
+                            {logoDownloadedNotice ? (
+                              <>
+                                <Check className="w-5 h-5 text-emerald-400" />
+                                <span>Logo baixada! Anexe no WhatsApp</span>
+                              </>
+                            ) : (
+                              <>
+                                <Download className="w-5 h-5 text-yellow-400" />
+                                <span>Baixar Logo</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <p className="text-xs text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 text-left leading-relaxed">

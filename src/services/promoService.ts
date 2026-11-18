@@ -273,19 +273,56 @@ export const getRaceLogoPublicUrl = (): string => {
 let cachedRaceLogoBlob: Blob | null = null;
 let cachedRaceLogoPromise: Promise<Blob | null> | null = null;
 
+const isPngBuffer = (buf: ArrayBuffer): boolean => {
+  if (buf.byteLength < 8) return false;
+  const bytes = new Uint8Array(buf, 0, 8);
+  return (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  );
+};
+
+const fetchVerifiedPngBlob = async (url: string): Promise<Blob | null> => {
+  try {
+    const res = await fetch(url, { cache: 'no-cache' });
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    if (!isPngBuffer(buf)) return null;
+    return new Blob([buf], { type: 'image/png' });
+  } catch {
+    return null;
+  }
+};
+
 export const preloadRaceLogoBlob = (): Promise<Blob | null> => {
   if (cachedRaceLogoBlob) return Promise.resolve(cachedRaceLogoBlob);
   if (cachedRaceLogoPromise) return cachedRaceLogoPromise;
   if (typeof window === 'undefined' || typeof fetch === 'undefined') {
     return Promise.resolve(null);
   }
-  cachedRaceLogoPromise = fetch(getRaceLogoPublicUrl())
-    .then((res) => (res.ok ? res.blob() : null))
-    .then((blob) => {
-      if (blob) cachedRaceLogoBlob = blob;
-      return blob;
-    })
-    .catch(() => null);
+  const candidates = Array.from(
+    new Set([
+      '/Dinho/logo-race-indaiatuba.png',
+      getRaceLogoPublicUrl(),
+      '/logo-race-indaiatuba.png',
+    ])
+  );
+  cachedRaceLogoPromise = (async () => {
+    for (const url of candidates) {
+      const pngBlob = await fetchVerifiedPngBlob(url);
+      if (pngBlob) {
+        cachedRaceLogoBlob = pngBlob;
+        return pngBlob;
+      }
+    }
+    return null;
+  })();
   return cachedRaceLogoPromise;
 };
 
@@ -301,7 +338,6 @@ const triggerFileDownload = (blob: Blob, filename: string) => {
     document.body.removeChild(link);
     setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
   } catch {
-    // Fallback URL download
     const link = document.createElement('a');
     link.href = getRaceLogoPublicUrl();
     link.download = filename;
@@ -309,6 +345,21 @@ const triggerFileDownload = (blob: Blob, filename: string) => {
     link.click();
     document.body.removeChild(link);
   }
+};
+
+export const downloadRaceLogoPng = async (): Promise<boolean> => {
+  const logoBlob = cachedRaceLogoBlob || (await preloadRaceLogoBlob());
+  if (logoBlob) {
+    triggerFileDownload(logoBlob, 'logo-race.png');
+    return true;
+  }
+  const link = document.createElement('a');
+  link.href = getRaceLogoPublicUrl();
+  link.download = 'logo-race.png';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  return false;
 };
 
 const openExternalUrlSafely = (url: string) => {
@@ -337,10 +388,10 @@ export const shareReferralWithLogo = async (
     typeof navigator.share === 'function'
   ) {
     try {
-      const logoFile = new File([logoBlob], 'logo-race-indaiatuba.png', { type: 'image/png' });
+      const logoFile = new File([logoBlob], 'logo-race.png', { type: 'image/png' });
       const canShareFiles =
-        typeof navigator.canShare !== 'function' ||
-        navigator.canShare({ files: [logoFile], text });
+        typeof navigator.canShare === 'function' &&
+        navigator.canShare({ files: [logoFile] });
       if (canShareFiles) {
         await navigator.share({
           title: 'RACE - Promoção de Lançamento!',
@@ -353,19 +404,8 @@ export const shareReferralWithLogo = async (
       if (err instanceof DOMException && err.name === 'AbortError') {
         return 'cancelled';
       }
-      // Fall through to logo download + WhatsApp web/app link
+      // Fall through to WhatsApp message + Baixar Logo button
     }
-  }
-
-  if (logoBlob) {
-    triggerFileDownload(logoBlob, 'logo-race-indaiatuba.png');
-  } else {
-    const link = document.createElement('a');
-    link.href = getRaceLogoPublicUrl();
-    link.download = 'logo-race-indaiatuba.png';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   }
 
   openExternalUrlSafely(whatsappUrl);
