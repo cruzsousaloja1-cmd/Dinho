@@ -71,6 +71,7 @@ import {
   saveCorridaSupabase,
   savePagamentoSupabase,
   getUsuarioSupabase,
+  checkEmailExistsSupabase,
   getAllDriversFromSupabase,
   getOnlineDriversFromSupabase,
   updateDriverOnlineStatusSupabase,
@@ -292,6 +293,17 @@ export default function App() {
         }
 
         if (!cloudRow) {
+          if (!isAppUserAdmin(session)) {
+            try {
+              const stillExists = await checkEmailExistsSupabase(sessionIdentifier);
+              if (stillExists === false) {
+                saveSessionUser(null);
+                setCurrentUser(null);
+                setCurrentDriver(DEFAULT_NEW_DRIVER);
+                await supabase.auth.signOut().catch(() => {});
+              }
+            } catch {}
+          }
           // Mesmo com sessão local, carrega apenas marcadores públicos online se passageiro/motorista
           const publicOnline = await getOnlineDriversFromSupabase().catch(() => []);
           if (active) {

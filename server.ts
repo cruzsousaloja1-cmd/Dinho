@@ -279,6 +279,119 @@ async function handleAsaasProxyRequest(req: Request, res: Response): Promise<voi
   }
 }
 
+async function handleAdminDeleteAuthUser(req: Request, res: Response): Promise<void> {
+  try {
+    const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://catljaosibqsqexzkrrv.supabase.co').trim().replace(/\/$/, '');
+    if (!serviceRoleKey) {
+      res.status(200).json({ configured: false, deleted: false });
+      return;
+    }
+
+    const authHeader = String(req.headers.authorization || '').trim();
+    const bearerToken = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
+    if (!bearerToken) {
+      res.status(401).json({ configured: true, deleted: false, error: 'Sessão ADM não autenticada.' });
+      return;
+    }
+
+    const callerRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${bearerToken}`,
+      },
+    });
+    if (!callerRes.ok) {
+      res.status(401).json({ configured: true, deleted: false, error: 'Token ADM inválido ou expirado.' });
+      return;
+    }
+    const callerUser = (await callerRes.json().catch(() => null)) as any;
+    const callerEmail = String(callerUser?.email || '').trim().toLowerCase();
+    const callerMetaRole = String(callerUser?.app_metadata?.role || callerUser?.user_metadata?.role || '').trim().toLowerCase();
+
+    let isAdmin = callerMetaRole === 'admin' || callerEmail === 'admin@race.com.br';
+    if (!isAdmin && callerEmail) {
+      const checkAdminRes = await fetch(
+        `${supabaseUrl}/rest/v1/usuarios?select=id,tipo&limit=1&or=(%22e-mail%22.ilike.${encodeURIComponent(callerEmail)},email.ilike.${encodeURIComponent(callerEmail)})`,
+        {
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+        }
+      ).catch(() => null);
+      if (checkAdminRes && checkAdminRes.ok) {
+        const rows = (await checkAdminRes.json().catch(() => [])) as any[];
+        const tipo = String(rows?.[0]?.tipo || '').trim().toLowerCase();
+        isAdmin = tipo === 'adm' || tipo === 'admin' || tipo === 'administrador';
+      }
+    }
+
+    if (!isAdmin) {
+      res.status(403).json({ configured: true, deleted: false, error: 'Acesso negado: apenas ADM.' });
+      return;
+    }
+
+    const body = (req.body || {}) as { authUid?: string; email?: string };
+    let targetUid = String(body.authUid || '').trim();
+    const targetEmail = String(body.email || '').trim().toLowerCase();
+
+    if (targetEmail && targetEmail === callerEmail) {
+      res.status(400).json({ configured: true, deleted: false, error: 'Você não pode apagar seu próprio ADM.' });
+      return;
+    }
+
+    if (!targetUid && targetEmail) {
+      const listRes = await fetch(
+        `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1000`,
+        {
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+        }
+      );
+      if (listRes.ok) {
+        const listJson = (await listRes.json().catch(() => null)) as { users?: any[] } | null;
+        const match = (listJson?.users || []).find(
+          (u) => String(u?.email || '').trim().toLowerCase() === targetEmail
+        );
+        if (match?.id) targetUid = String(match.id);
+      }
+    }
+
+    if (!targetUid) {
+      res.status(200).json({ configured: true, deleted: false, notFound: true });
+      return;
+    }
+
+    const delRes = await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(targetUid)}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+    });
+    if (!delRes.ok) {
+      const errBody = (await delRes.json().catch(() => null)) as any;
+      res.status(delRes.status).json({
+        configured: true,
+        deleted: false,
+        error: errBody?.message || errBody?.msg || 'Erro ao excluir usuário no Supabase Auth.',
+      });
+      return;
+    }
+
+    res.status(200).json({ configured: true, deleted: true });
+  } catch (err: any) {
+    res.status(500).json({
+      configured: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      deleted: false,
+      error: err?.message || 'Erro interno ao excluir conta no Supabase Auth.',
+    });
+  }
+}
+
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
@@ -296,6 +409,7 @@ async function startServer() {
   });
 
   app.post(['/api/asaas', '/Dinho/api/asaas'], handleAsaasProxyRequest);
+  app.post(['/api/admin/delete-auth-user', '/Dinho/api/admin/delete-auth-user'], handleAdminDeleteAuthUser);
 
   const isProduction = process.env.NODE_ENV === 'production';
 

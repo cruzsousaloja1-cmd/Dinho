@@ -5308,6 +5308,19 @@ export async function deleteUserCompleteAdminSupabase(params: {
   authUid?: string;
   currentAdmin?: { id?: string | number; email?: string; login?: string } | null;
 }): Promise<DeleteUserCompleteResult> {
+  const isMissingTableErr = (err: any): boolean => {
+    if (!err) return false;
+    const code = String(err.code || '').toUpperCase();
+    const msg = String(err.message || '').toLowerCase();
+    return (
+      code === '42P01' ||
+      code === 'PGRST205' ||
+      (msg.includes('relation') && msg.includes('does not exist')) ||
+      msg.includes('could not find the table') ||
+      msg.includes('schema cache')
+    );
+  };
+
   try {
     const cleanEmail = String(params.email || '').trim().toLowerCase();
     const cleanLogin = String(params.login || '').trim().toLowerCase();
@@ -5345,12 +5358,17 @@ export async function deleteUserCompleteAdminSupabase(params: {
       targetTipoLower === 'administrador' ||
       targetEmail === 'admin@race.com.br';
 
-    // Verifica também sessão autenticada atual
+    // Verifica sessão autenticada atual
     let sessionEmail = currentAdminEmail;
+    let sessionAccessToken = '';
     try {
-      const { data: authData } = await supabase.auth.getUser();
+      const [{ data: authData }, { data: sessionRes }] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.auth.getSession(),
+      ]);
       const authJwtEmail = String(authData?.user?.email || '').trim().toLowerCase();
       if (authJwtEmail) sessionEmail = authJwtEmail;
+      sessionAccessToken = String(sessionRes?.session?.access_token || '').trim();
       if (targetAuthUid && authData?.user?.id && targetAuthUid === authData.user.id) {
         return { success: false, selfDelete: true, error: SELF_ADMIN_DELETE_ERROR };
       }
@@ -5367,6 +5385,26 @@ export async function deleteUserCompleteAdminSupabase(params: {
       return { success: false, selfDelete: true, error: SELF_ADMIN_DELETE_ERROR };
     }
 
+    // Helper para confirmar se o usuário realmente sumiu de public.usuarios
+    const checkUserStillExistsInUsuarios = async (): Promise<{ exists: boolean; checkError?: string }> => {
+      try {
+        if (targetId !== null) {
+          const { data, error } = await supabase.from('usuarios').select('id').eq('id', targetId).limit(1);
+          if (error) return { exists: false, checkError: error.message };
+          if (Array.isArray(data) && data.length > 0) return { exists: true };
+          return { exists: false };
+        }
+        if (targetEmail) {
+          const knownCols = await getUsuariosTableColumns();
+          const emailCol = knownCols?.has('e-mail') ? 'e-mail' : 'email';
+          const { data, error } = await supabase.from('usuarios').select('id').ilike(emailCol, targetEmail).limit(1);
+          if (error) return { exists: false, checkError: error.message };
+          if (Array.isArray(data) && data.length > 0) return { exists: true };
+        }
+      } catch {}
+      return { exists: false };
+    };
+
     // 1. Tenta execução atômica via RPC SECURITY DEFINER (apaga inclusive em auth.users)
     try {
       const rpcRes = await supabase.rpc('rpc_admin_delete_user_complete', {
@@ -5379,34 +5417,44 @@ export async function deleteUserCompleteAdminSupabase(params: {
           return { success: false, selfDelete: true, error: d.error || SELF_ADMIN_DELETE_ERROR };
         }
         if (d.success) {
-          if (targetEmail) {
-            removeDriverApprovalLocal(targetEmail);
+          const postRpcCheck = await checkUserStillExistsInUsuarios();
+          if (!postRpcCheck.exists) {
+            if (targetEmail) {
+              removeDriverApprovalLocal(targetEmail);
+            }
+            return {
+              success: true,
+              authDeleted: Number(d.deletedAuth || 0) > 0,
+            };
           }
-          return {
-            success: true,
-            authDeleted: Number(d.deletedAuth || 0) > 0,
-          };
+        } else if (d.error) {
+          return { success: false, error: String(d.error) };
         }
       }
     } catch {}
 
-    // 2. Fallback direto autenticado como ADM caso a RPC ainda não esteja publicada no Postgres
-    // 2a. Estorna saldo de eventual bônus R$10/R$50 pago ao indicante e apaga todos pagamentos/bônus ligados ao usuário
+    // 2. Execução direta autenticada como ADM
+    // 2a. Estorna eventual bônus R$10/R$50 pago ao indicante e apaga todos pagamentos/bônus/códigos ligados ao usuário
+    let pagamentosDeleteError: string | null = null;
     try {
-      const { data: allPayRows } = await supabase.from('pagamentos').select('*').limit(1000);
+      const { data: allPayRows, error: payReadErr } = await supabase.from('pagamentos').select('*').limit(1000);
+      if (payReadErr && !isMissingTableErr(payReadErr)) {
+        pagamentosDeleteError = payReadErr.message;
+      }
       const matchingPayIds: number[] = [];
       for (const p of allPayRows || []) {
-        const pIdMotorista = p.id_motorista !== undefined && p.id_motorista !== null ? Number(p.id_motorista) : null;
+        const pIdMotoristaStr = p.id_motorista !== undefined && p.id_motorista !== null ? String(p.id_motorista).trim() : '';
+        const pIdMotorista = pIdMotoristaStr && /^\d+$/.test(pIdMotoristaStr) ? Number(pIdMotoristaStr) : null;
         const pEmailMotorista = String(p.email_motorista || '').trim().toLowerCase();
         const pChavePix = String(p.chave_pix || '').trim();
         const pComp = String(p.comprovante_url || '').toLowerCase();
 
         const isPayeeMatch =
-          (targetId !== null && pIdMotorista === targetId) ||
+          (targetId !== null && (pIdMotorista === targetId || pIdMotoristaStr === String(targetId))) ||
           (targetEmail && pEmailMotorista === targetEmail);
 
         const isIndicatedBonusMatch =
-          String(p.tipo || '').toLowerCase() === 'bonus_indicacao' &&
+          (String(p.tipo || '').toLowerCase() === 'bonus_indicacao' || pChavePix.startsWith('INDICADO')) &&
           ((targetId !== null &&
             (pChavePix === `INDICADO:${targetId}` || pComp.includes(`"indicatedid":"${targetId}"`))) ||
             (targetEmail &&
@@ -5446,78 +5494,149 @@ export async function deleteUserCompleteAdminSupabase(params: {
           if (
             String(p?.status || '').trim().toLowerCase() === INTERNAL_REFERRAL_CODE_STATUS &&
             targetId !== null &&
-            Number(p?.id_motorista) === targetId &&
+            String(p?.id_motorista ?? '').trim() === String(targetId) &&
             p?.chave_pix
           ) {
             await removePublicReferralCodeFile(String(p.chave_pix));
           }
         }
-        await supabase.from('pagamentos').delete().in('id', matchingPayIds);
+        const { error: delMatchErr } = await supabase.from('pagamentos').delete().in('id', matchingPayIds).select('id');
+        if (delMatchErr && !isMissingTableErr(delMatchErr) && !isMissingColumnError(delMatchErr)) {
+          pagamentosDeleteError = delMatchErr.message;
+        }
       }
       if (targetRow?.codigo_indicacao) {
         await removePublicReferralCodeFile(String(targetRow.codigo_indicacao));
       }
       if (targetId !== null) {
-        await supabase.from('pagamentos').delete().eq('id_motorista', targetId);
-        await supabase.from('pagamentos').delete().eq('chave_pix', `INDICADO:${targetId}`);
-      }
-      if (targetEmail) {
-        await supabase.from('pagamentos').delete().ilike('email_motorista', targetEmail);
-      }
-    } catch {}
-
-    // 2b. Apaga avaliações ligadas ao usuário
-    try {
-      if (targetEmail) {
-        await supabase.from('avaliacoes').delete().ilike('email_passageiro', targetEmail);
-        await supabase.from('avaliacoes').delete().ilike('email_motorista', targetEmail);
-      }
-      if (targetAuthUid) {
-        await supabase.from('avaliacoes').delete().eq('passageiro_id', targetAuthUid);
-        await supabase.from('avaliacoes').delete().eq('motorista_id', targetAuthUid);
-      }
-    } catch {}
-
-    // 2c. Apaga corridas do usuário (como passageiro ou motorista/motoboy)
-    try {
-      for (const corridasTbl of ['corridas', 'Corridas']) {
-        if (targetId !== null) {
-          await supabase.from(corridasTbl).delete().eq('passageiro_id', targetId);
-          await supabase.from(corridasTbl).delete().eq('id_passageiro', targetId);
-          await supabase.from(corridasTbl).delete().eq('motorista_id', targetId);
-          await supabase.from(corridasTbl).delete().eq('id_motorista', targetId);
+        const resById = await supabase.from('pagamentos').delete().eq('id_motorista', String(targetId)).select('id');
+        if (resById.error && !isMissingTableErr(resById.error) && !isMissingColumnError(resById.error) && !pagamentosDeleteError) {
+          pagamentosDeleteError = resById.error.message;
         }
-        if (targetEmail) {
-          await supabase.from(corridasTbl).delete().ilike('email_passageiro', targetEmail);
-          await supabase.from(corridasTbl).delete().ilike('email_motorista', targetEmail);
+        const resByChave = await supabase.from('pagamentos').delete().eq('chave_pix', `INDICADO:${targetId}`).select('id');
+        if (resByChave.error && !isMissingTableErr(resByChave.error) && !isMissingColumnError(resByChave.error) && !pagamentosDeleteError) {
+          pagamentosDeleteError = resByChave.error.message;
         }
       }
-    } catch {}
-
-    // 2d. Apaga registro operacional de motoristas
-    try {
       if (targetEmail) {
-        await supabase.from('motoristas').delete().ilike('email', targetEmail);
+        const resByEmail = await supabase.from('pagamentos').delete().ilike('email_motorista', targetEmail).select('id');
+        if (resByEmail.error && !isMissingTableErr(resByEmail.error) && !isMissingColumnError(resByEmail.error) && !pagamentosDeleteError) {
+          pagamentosDeleteError = resByEmail.error.message;
+        }
       }
-      if (targetAuthUid) {
-        await supabase.from('motoristas').delete().eq('usuario_id', targetAuthUid);
-      }
-    } catch {}
-
-    // 2e. Apaga o usuário da tabela public.usuarios
-    let usuarioDeleteError: string | null = null;
-    if (targetId !== null) {
-      const { error } = await supabase.from('usuarios').delete().eq('id', targetId);
-      if (error) usuarioDeleteError = error.message;
+    } catch (err: any) {
+      if (!pagamentosDeleteError) pagamentosDeleteError = err?.message || 'Erro ao excluir pagamentos.';
     }
+
+    // 2b. Apaga avaliações ligadas ao usuário (somente se tabela existir)
+    try {
+      for (const emailField of ['email_passageiro', 'email_motorista']) {
+        if (!targetEmail) continue;
+        const r = await supabase.from('avaliacoes').delete().ilike(emailField, targetEmail).select('id');
+        if (r.error && isMissingTableErr(r.error)) break;
+      }
+      if (targetAuthUid) {
+        for (const uidField of ['passageiro_id', 'motorista_id']) {
+          const r = await supabase.from('avaliacoes').delete().eq(uidField, targetAuthUid).select('id');
+          if (r.error && isMissingTableErr(r.error)) break;
+        }
+      }
+    } catch {}
+
+    // 2c. Apaga corridas do usuário nas tabelas Corridas e corridas (usuario_id, passageiro, motorista)
+    let corridasDeleteError: string | null = null;
+    try {
+      for (const corridasTbl of ['Corridas', 'corridas']) {
+        let tableMissing = false;
+        if (targetId !== null) {
+          for (const col of ['usuario_id', 'passageiro_id', 'id_passageiro', 'motorista_id', 'id_motorista']) {
+            const { error } = await supabase.from(corridasTbl).delete().eq(col, targetId).select('id');
+            if (error) {
+              if (isMissingTableErr(error)) {
+                tableMissing = true;
+                break;
+              }
+              if (isMissingColumnError(error)) continue;
+              if (!corridasDeleteError) corridasDeleteError = error.message;
+            }
+          }
+        }
+        if (tableMissing) continue;
+
+        const emailValues = Array.from(new Set([targetEmail, targetLogin].filter(Boolean)));
+        for (const emVal of emailValues) {
+          for (const col of ['email_passageiro', 'email_motorista']) {
+            const { error } = await supabase.from(corridasTbl).delete().ilike(col, emVal).select('id');
+            if (error) {
+              if (isMissingTableErr(error)) {
+                tableMissing = true;
+                break;
+              }
+              if (isMissingColumnError(error)) continue;
+              if (!corridasDeleteError) corridasDeleteError = error.message;
+            }
+          }
+          if (tableMissing) break;
+        }
+      }
+    } catch (err: any) {
+      if (!corridasDeleteError) corridasDeleteError = err?.message || 'Erro ao excluir corridas.';
+    }
+
+    // 2d. Apaga registro operacional de motoristas (se tabela existir)
+    try {
+      if (targetEmail) {
+        const r = await supabase.from('motoristas').delete().ilike('email', targetEmail).select('id');
+        if (!r.error || !isMissingTableErr(r.error)) {
+          if (targetAuthUid) {
+            await supabase.from('motoristas').delete().eq('usuario_id', targetAuthUid).select('id');
+          }
+        }
+      }
+    } catch {}
+
+    // 2e. Apaga o usuário da tabela public.usuarios com confirmação real (.select('id'))
+    let usuarioDeleteError: string | null = null;
+    let deletedUsuariosCount = 0;
+
+    if (targetId !== null) {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .delete()
+        .eq('id', targetId)
+        .select('id');
+      if (error) {
+        usuarioDeleteError = error.message;
+      } else if (Array.isArray(data)) {
+        deletedUsuariosCount += data.length;
+      }
+    }
+
     if (targetEmail) {
       const knownCols = await getUsuariosTableColumns();
       if (!knownCols || knownCols.has('email')) {
-        const { error } = await supabase.from('usuarios').delete().ilike('email', targetEmail);
-        if (error && !usuarioDeleteError) usuarioDeleteError = error.message;
+        const { data, error } = await supabase
+          .from('usuarios')
+          .delete()
+          .ilike('email', targetEmail)
+          .select('id');
+        if (error && !isMissingColumnError(error) && !usuarioDeleteError) {
+          usuarioDeleteError = error.message;
+        } else if (Array.isArray(data)) {
+          deletedUsuariosCount += data.length;
+        }
       }
-      if (knownCols?.has('e-mail')) {
-        await supabase.from('usuarios').delete().ilike('e-mail', targetEmail);
+      if (!knownCols || knownCols.has('e-mail')) {
+        const { data, error } = await supabase
+          .from('usuarios')
+          .delete()
+          .ilike('e-mail', targetEmail)
+          .select('id');
+        if (error && !isMissingColumnError(error) && !usuarioDeleteError) {
+          usuarioDeleteError = error.message;
+        } else if (Array.isArray(data)) {
+          deletedUsuariosCount += data.length;
+        }
       }
     }
 
@@ -5525,11 +5644,55 @@ export async function deleteUserCompleteAdminSupabase(params: {
       return { success: false, error: usuarioDeleteError };
     }
 
+    // Verificação obrigatória pós-DELETE: nunca fingir que excluiu se o cadastro ainda existe (ex: bloqueio silencioso de RLS)
+    const postCheck = await checkUserStillExistsInUsuarios();
+    if (postCheck.checkError) {
+      return { success: false, error: postCheck.checkError };
+    }
+    if (postCheck.exists || (targetRow && deletedUsuariosCount === 0)) {
+      return {
+        success: false,
+        error: !sessionAccessToken
+          ? 'Permissão RLS negada no Supabase: sessão Auth do ADM não autenticada (0 linhas removidas de usuarios). Saia e entre novamente no ADM.'
+          : 'Permissão RLS no Supabase bloqueou a exclusão na tabela usuarios (0 linhas removidas). Verifique as políticas DELETE para ADM.',
+      };
+    }
+
+    if (corridasDeleteError) {
+      return { success: false, error: corridasDeleteError };
+    }
+    if (pagamentosDeleteError) {
+      return { success: false, error: pagamentosDeleteError };
+    }
+
+    // 2f. Tenta excluir também do Supabase Auth via endpoint do servidor (quando SUPABASE_SERVICE_ROLE_KEY estiver configurada)
+    let authDeleted = false;
+    if (sessionAccessToken && (targetAuthUid || targetEmail)) {
+      try {
+        const basePath = typeof window !== 'undefined' && window.location.pathname.startsWith('/Dinho') ? '/Dinho' : '';
+        const authRes = await fetch(`${basePath}/api/admin/delete-auth-user`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${sessionAccessToken}`,
+          },
+          body: JSON.stringify({
+            authUid: targetAuthUid || undefined,
+            email: targetEmail || undefined,
+          }),
+        });
+        if (authRes.ok) {
+          const authJson = (await authRes.json().catch(() => null)) as { deleted?: boolean } | null;
+          authDeleted = Boolean(authJson?.deleted);
+        }
+      } catch {}
+    }
+
     if (targetEmail) {
       removeDriverApprovalLocal(targetEmail);
     }
 
-    return { success: true, authDeleted: false };
+    return { success: true, authDeleted };
   } catch (err: any) {
     return {
       success: false,

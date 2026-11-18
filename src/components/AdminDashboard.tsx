@@ -368,6 +368,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     raw?: any;
   } | null>(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [deleteUserError, setDeleteUserError] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
 
   // Modal do ADM para corrigir/vincular indicação manualmente (ex: Antônio Carlos ID 37 -> JOSE492)
@@ -619,6 +620,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const cleanEmail = String(raw?.['e-mail'] || raw?.email || u?.email || '').trim().toLowerCase();
     const resolvedEmail = cleanEmail === 'sem e-mail' ? '' : cleanEmail;
 
+    setDeleteUserError(null);
     setDeleteConfirmTarget({
       type: u?.isPassenger ? 'passenger' : 'driver',
       id: String(u?.id ?? raw?.id ?? ''),
@@ -642,6 +644,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const targetId = String(target.id || '').trim();
     const targetEmail = String(target.email || '').trim().toLowerCase();
 
+    setDeleteUserError(null);
     setIsDeletingUser(true);
     try {
       const res = await deleteUserCompleteAdminSupabase({
@@ -658,9 +661,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       if (!res.success) {
         if (res.selfDelete) {
+          setDeleteUserError(null);
           setDeleteConfirmTarget(null);
+          showToast(res.error || SELF_ADMIN_DELETE_ERROR);
+          return;
         }
-        showToast(res.error || 'Erro ao excluir usuário no Supabase.');
+        const rawErr = String(res.error || 'Erro desconhecido ao excluir no Supabase.')
+          .replace(/^Erro ao excluir:\s*/i, '')
+          .trim();
+        const formattedErr = `Erro ao excluir: ${rawErr}`;
+        setDeleteUserError(formattedErr);
+        showToast(formattedErr);
         return;
       }
 
@@ -4874,12 +4885,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {deleteConfirmTarget.email}
                 </p>
               )}
+              {deleteUserError && (
+                <div className="bg-rose-50 border border-rose-300 text-rose-800 rounded-xl p-3 text-xs font-bold text-left flex items-start gap-2 mt-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{deleteUserError}</span>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-3 pt-2">
               <button
                 type="button"
                 disabled={isDeletingUser}
-                onClick={() => setDeleteConfirmTarget(null)}
+                onClick={() => {
+                  setDeleteUserError(null);
+                  setDeleteConfirmTarget(null);
+                }}
                 className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer disabled:opacity-50"
               >
                 Cancelar
