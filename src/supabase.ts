@@ -1291,6 +1291,7 @@ BEGIN
       'nome', split_part(coalesce(u.nome, 'Indicado'), ' ', 1) || CASE WHEN position(' ' in trim(coalesce(u.nome, ''))) > 0 THEN ' ' || split_part(u.nome, ' ', 2) ELSE '' END,
       'email', coalesce(u.email, ''),
       'tipo', coalesce(u.tipo, 'driver'),
+      'foto', coalesce(nullif(u.avatar, ''), nullif(u.foto, ''), ''),
       'created_at', coalesce(u.created_at, now()),
       'rides_count', (
         SELECT count(*)::integer FROM public.corridas c
@@ -1357,6 +1358,7 @@ BEGIN
       'indicated_name', coalesce(u.nome, 'Indicado'),
       'indicated_email', coalesce(u.email, ''),
       'indicated_tipo', coalesce(u.tipo, 'driver'),
+      'foto', coalesce(nullif(u.avatar, ''), nullif(u.foto, ''), ''),
       'indicado_por', coalesce(nullif(trim(u.indicado_por_codigo), ''), u.indicado_por, ''),
       'created_at', coalesce(u.created_at, now()),
       'rides_count', (
@@ -6214,6 +6216,7 @@ export interface ReferralCandidateItem {
   nome: string;
   email: string;
   tipo: string;
+  foto?: string;
   createdAt: string;
   ridesCount: number;
   bonusPaid: boolean;
@@ -6493,6 +6496,7 @@ export async function getDriverReferralsAndBonusesSupabase(
         nome: String(item.nome || 'Indicado'),
         email: String(item.email || ''),
         tipo: String(item.tipo || 'driver'),
+        foto: String(item.foto || ''),
         createdAt: String(item.created_at || ''),
         ridesCount: Number(item.rides_count || 0),
         bonusPaid: Boolean(item.bonus_paid),
@@ -6512,6 +6516,7 @@ export async function getAllReferralsAdminSupabase(): Promise<AdminReferralItem[
         nome: String(item.indicated_name || 'Indicado'),
         email: String(item.indicated_email || ''),
         tipo: String(item.indicated_tipo || 'driver'),
+        foto: String(item.foto || ''),
         indicadoPor: String(item.indicado_por || ''),
         createdAt: String(item.created_at || ''),
         ridesCount: Number(item.rides_count || 0),
@@ -6522,4 +6527,131 @@ export async function getAllReferralsAdminSupabase(): Promise<AdminReferralItem[
 
   return [];
 }
+
+/**
+ * ADM marca bônus de indicação como PAGO (sexta-feira via PIX ou crédito liberado)
+ * Trava rigorosa: 1 indicado = 1 bônus só, nunca pode pagar 2 vezes.
+ */
+export async function markReferralBonusPaidByAdminSupabase(params: {
+  indicatedId: string;
+  indicatedName: string;
+  indicatedEmail: string;
+  indicatedRole: 'passenger' | 'driver';
+  ridesCount: number;
+  requiredRides: number;
+  bonusAmount: number;
+  referrerId?: string | number | null;
+  referrerName: string;
+  referrerEmail: string;
+  existingPaymentId?: string | number | null;
+  existingComprovanteUrl?: string | null;
+}): Promise<{
+  success: boolean;
+  alreadyLocked?: boolean;
+  paidAt?: string;
+  paymentRow?: SupabasePagamentoRow;
+  error?: string;
+}> {
+  const cleanIndicatedId = String(params.indicatedId || '').trim();
+  const cleanIndicatedEmail = String(params.indicatedEmail || '').trim().toLowerCase();
+  const dedupKey = cleanIndicatedId ? `INDICADO:${cleanIndicatedId}` : '';
+
+  try {
+    // 1. Verifica trava no Supabase antes de qualquer escrita (1 indicado = 1 bônus só)
+    const { data: existingRows } = await supabase
+      .from('pagamentos')
+      .select('*')
+      .eq('tipo', 'bonus_indicacao')
+      .limit(200);
+
+    const matchedRow = (existingRows || []).find((p: any) => {
+      if (dedupKey && String(p.chave_pix || '').trim() === dedupKey) return true;
+      if (cleanIndicatedEmail && String(p.comprovante_url || '').toLowerCase().includes(cleanIndicatedEmail)) {
+        return true;
+      }
+      return false;
+    });
+
+    const targetRow = matchedRow || (params.existingPaymentId ? { id: params.existingPaymentId, comprovante_url: params.existingComprovanteUrl } : null);
+
+    if (targetRow && targetRow.comprovante_url) {
+      try {
+        const parsed = JSON.parse(String(targetRow.comprovante_url));
+        if (parsed?.paidFriday === true || String((targetRow as any).status || '').toLowerCase() === 'pago_sexta') {
+          return {
+            success: false,
+            alreadyLocked: true,
+            paidAt: parsed?.paidAt || (targetRow as any).data || undefined,
+          };
+        }
+      } catch {}
+    }
+
+    const paidAtIso = new Date().toISOString();
+    const metaPayload = JSON.stringify({
+      indicatedId: cleanIndicatedId,
+      indicatedName: params.indicatedName || 'Indicado',
+      indicatedEmail: cleanIndicatedEmail,
+      indicatedRole: params.indicatedRole,
+      ridesCount: params.ridesCount,
+      requiredRides: params.requiredRides,
+      paidFriday: true,
+      paidAt: paidAtIso,
+      locked: true,
+    });
+
+    if (targetRow && targetRow.id) {
+      const { data: updatedData, error: updErr } = await supabase
+        .from('pagamentos')
+        .update({
+          status: 'pago_sexta',
+          comprovante_url: metaPayload,
+          data: paidAtIso,
+        })
+        .eq('id', targetRow.id)
+        .select()
+        .single();
+
+      if (updErr) {
+        return { success: false, error: updErr.message };
+      }
+      if (cleanIndicatedId && /^\d+$/.test(cleanIndicatedId)) {
+        await supabase.from('usuarios').update({ bonus_pago: true }).eq('id', Number(cleanIndicatedId));
+      }
+      return { success: true, paidAt: paidAtIso, paymentRow: updatedData as SupabasePagamentoRow };
+    }
+
+    const numericReferrerId =
+      params.referrerId && /^\d+$/.test(String(params.referrerId)) ? Number(params.referrerId) : null;
+
+    const { data: insertedData, error: insErr } = await supabase
+      .from('pagamentos')
+      .insert({
+        id_motorista: numericReferrerId,
+        nome_motorista: params.referrerName || 'Indicador',
+        email_motorista: String(params.referrerEmail || '').trim().toLowerCase(),
+        valor: params.bonusAmount,
+        tipo: 'bonus_indicacao',
+        status: 'pago_sexta',
+        chave_pix: dedupKey || `INDICADO_EMAIL:${cleanIndicatedEmail}`,
+        comprovante_url: metaPayload,
+        data: paidAtIso,
+      })
+      .select()
+      .single();
+
+    if (insErr) {
+      return { success: false, error: insErr.message };
+    }
+
+    if (cleanIndicatedId && /^\d+$/.test(cleanIndicatedId)) {
+      await supabase.from('usuarios').update({ bonus_pago: true }).eq('id', Number(cleanIndicatedId));
+    }
+
+    return { success: true, paidAt: paidAtIso, paymentRow: insertedData as SupabasePagamentoRow };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao marcar pagamento do bônus.' };
+  }
+}
+
 

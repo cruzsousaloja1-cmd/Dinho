@@ -42,7 +42,9 @@ import {
   Camera,
   Pencil,
   Loader2,
-  Gift
+  Gift,
+  Lock,
+  MessageCircle
 } from 'lucide-react';
 import { getWithdrawals, markWithdrawalAsPaid, setWithdrawalsFromSupabase } from '../services/walletService';
 import { WithdrawalRequest } from '../types';
@@ -62,7 +64,12 @@ import {
   approveOrRejectDriverSupabase,
   uploadProfilePhotoSupabase,
   extractPhotoFromRow,
+  withPhotoCacheBuster,
   getAllReferralsAdminSupabase,
+  getDriverReferralsAndBonusesSupabase,
+  ensureUserReferralCodeSupabase,
+  markReferralBonusPaidByAdminSupabase,
+  ReferralCandidateItem,
   AdminReferralItem,
   DriverApplicationRecord,
   SupabasePagamentoRow
@@ -74,6 +81,7 @@ import {
 import { maskLast4Digits } from '../utils/security';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isAppUserAdmin } from '../services/userService';
+import { MyReferralsControlSection } from './MyReferralsControlSection';
 import {
   calculateRideSplitForDriver,
   parseReferralBonusMeta,
@@ -81,6 +89,10 @@ import {
   formatPassengerReferralBonusMessage,
   isPassengerReferralRole,
   normalizeReferralDigits,
+  buildReferralWhatsappShareText,
+  getRaceLogoPublicUrl,
+  shareReferralWithLogo,
+  downloadRaceLogoPng,
   REFERRAL_BONUS_AMOUNT,
   REFERRAL_REQUIRED_RIDES,
   PASSENGER_REFERRAL_BONUS_AMOUNT,
@@ -122,12 +134,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onApproveDriverApplication,
   onRejectDriverApplication,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'pending_drivers' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'referrals' | 'reports' | 'reviews' | 'supabase'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'pending_drivers' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'referrals' | 'beneficiaries' | 'reports' | 'reviews' | 'supabase'>('overview');
   const [cadastrosSubTab, setCadastrosSubTab] = useState<'all' | 'drivers' | 'passengers'>('all');
   const [driverFilterCategory, setDriverFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewProofImage, setPreviewProofImage] = useState<string | null>(null);
   const [previewDocTitle, setPreviewDocTitle] = useState<string>('Comprovante PIX Anexado pelo Condutor');
+
+  // Filtros & estado do Controle Geral dos Beneficiados + Indicar e Ganhar do ADM
+  const [beneficiaryFilterName, setBeneficiaryFilterName] = useState('');
+  const [beneficiaryFilterCode, setBeneficiaryFilterCode] = useState('');
+  const [beneficiaryFilterStatus, setBeneficiaryFilterStatus] = useState<'all' | 'waiting' | 'liberado' | 'pago' | 'used'>('all');
+  const [beneficiaryFilterDate, setBeneficiaryFilterDate] = useState('');
+  const [markingBonusPaidId, setMarkingBonusPaidId] = useState<string | null>(null);
+  const [admReferralCode, setAdmReferralCode] = useState<string>(
+    String(currentUser?.codigoIndicacao || 'JOSE367').trim().toUpperCase()
+  );
+  const [admOwnReferrals, setAdmOwnReferrals] = useState<ReferralCandidateItem[]>([]);
+  const [copiedAdmCode, setCopiedAdmCode] = useState(false);
+  const [showAdmLogoFallback, setShowAdmLogoFallback] = useState(false);
 
   // Leitura direta das tabelas do Supabase (usuarios, corridas, pagamentos, motoristas)
   const [supabaseUsers, setSupabaseUsers] = useState<any[]>([]);
@@ -141,6 +166,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [supabaseUsersError, setSupabaseUsersError] = useState<string | null>(null);
   const [userStatusMap, setUserStatusMap] = useState<Record<string, { status: 'liberado' | 'bloqueado' | 'pendente'; expiresAt?: string }>>({});
   const [selectedUserReviewModal, setSelectedUserReviewModal] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    ensureUserReferralCodeSupabase({
+      id: currentUser.id,
+      email: currentUser.email,
+      name: currentUser.name,
+      currentCode: currentUser.codigoIndicacao,
+    })
+      .then((code) => {
+        if (code) setAdmReferralCode(code);
+      })
+      .catch(() => {});
+
+    getDriverReferralsAndBonusesSupabase(currentUser)
+      .then((refs) => setAdmOwnReferrals(refs))
+      .catch(() => {});
+  }, [currentUser?.id, currentUser?.email]);
 
   useEffect(() => {
     setSupabaseCorridas(rides);
@@ -834,12 +877,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     (p) => parseReferralBonusMeta(p.comprovante_url, p.chave_pix, p.valor).indicatedRole === 'passenger'
   );
 
-  // Combina RPC adminReferrals com eventuais linhas de supabaseUsers que tenham indicado_por/indicado_por_codigo
+  // Combina RPC adminReferrals com eventuais linhas de supabaseUsers que tenham indicado_por/indicado_por_codigo + hidrata fotos
   const mergedReferralsAdmin: AdminReferralItem[] = (() => {
     const byKey = new Map<string, AdminReferralItem>();
+    const findUserPhoto = (uid?: string, uEmail?: string): string => {
+      const cleanId = String(uid || '').trim();
+      const cleanEm = String(uEmail || '').trim().toLowerCase();
+      const row = supabaseUsers.find(
+        (u) =>
+          (cleanId && String(u.id || '').trim() === cleanId) ||
+          (cleanEm && String(u.email || '').trim().toLowerCase() === cleanEm)
+      );
+      return row ? extractPhotoFromRow(row) : '';
+    };
+
     for (const r of adminReferrals) {
       const key = String(r.id || r.email || '').trim().toLowerCase();
-      if (key) byKey.set(key, r);
+      if (key) {
+        byKey.set(key, {
+          ...r,
+          foto: r.foto || findUserPhoto(r.id, r.email),
+        });
+      }
     }
     for (const u of supabaseUsers) {
       const indCode = String(u.indicado_por_codigo || u.indicado_por || '').trim();
@@ -869,6 +928,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         nome: String(u.nome || u.login || 'Indicado'),
         email: uEmail,
         tipo: String(u.tipo || 'driver'),
+        foto: extractPhotoFromRow(u),
         indicadoPor: indCode,
         createdAt: String(u.created_at || ''),
         ridesCount,
@@ -881,6 +941,245 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const driverReferralsAdmin = mergedReferralsAdmin.filter((item) => !isPassengerReferralRole(item.tipo));
   const passengerReferralsAdmin = mergedReferralsAdmin.filter((item) => isPassengerReferralRole(item.tipo));
+
+  // Helper global para resolver o usuário que indicou (nome + código + id + email)
+  const resolveReferrerForCode = (codeOrPhone: string) => {
+    const clean = String(codeOrPhone || '').trim();
+    if (!clean) return null;
+    const upper = clean.toUpperCase();
+    const lower = clean.toLowerCase();
+    const digits = normalizeReferralDigits(clean);
+    return (
+      supabaseUsers.find((u) => {
+        const uCode = String(u.codigo_indicacao || '').trim().toUpperCase();
+        if (uCode && uCode === upper) return true;
+        const uEmail = String(u.email || '').trim().toLowerCase();
+        const uLogin = String(u.login || '').trim().toLowerCase();
+        if (uEmail === lower || uLogin === lower) return true;
+        if (digits.length >= 8) {
+          const w = normalizeReferralDigits(u.whatsapp || '');
+          const c = normalizeReferralDigits(u.celular || '');
+          if ((w && w.endsWith(digits)) || (c && c.endsWith(digits))) return true;
+        }
+        return false;
+      }) || null
+    );
+  };
+
+  // Controle Geral dos Beneficiados (TODOS os usuários: R$50 + R$10 com trava 1 indicado = 1 bônus só)
+  const allBeneficiaryRows = mergedReferralsAdmin.map((item) => {
+    const isPass = isPassengerReferralRole(item.tipo);
+    const requiredRides = isPass ? PASSENGER_REFERRAL_REQUIRED_RIDES : REFERRAL_REQUIRED_RIDES;
+    const bonusAmount = isPass ? PASSENGER_REFERRAL_BONUS_AMOUNT : REFERRAL_BONUS_AMOUNT;
+    const matchedPayment = referralBonusesAdmin.find((p) => {
+      const meta = parseReferralBonusMeta(p.comprovante_url, p.chave_pix, p.valor);
+      return (
+        (meta.indicatedId && String(item.id || '') && meta.indicatedId === String(item.id)) ||
+        (meta.indicatedEmail && item.email && meta.indicatedEmail.toLowerCase() === item.email.toLowerCase())
+      );
+    });
+    const meta = matchedPayment
+      ? parseReferralBonusMeta(matchedPayment.comprovante_url, matchedPayment.chave_pix, matchedPayment.valor)
+      : null;
+
+    const referrerUser = resolveReferrerForCode(item.indicadoPor);
+    const referrerName = String(
+      referrerUser?.nome || matchedPayment?.nome_motorista || item.indicadoPor || 'Indicador'
+    ).trim();
+    const referrerCode = String(
+      referrerUser?.codigo_indicacao || item.indicadoPor || ''
+    ).trim().toUpperCase();
+    const referrerEmail = String(
+      referrerUser?.email || matchedPayment?.email_motorista || ''
+    ).trim().toLowerCase();
+
+    const ridesCount = Math.max(
+      Number(item.ridesCount || 0),
+      item.bonusPaid || matchedPayment ? requiredRides : 0
+    );
+    const isPaidLocked = Boolean(
+      meta?.paidFriday ||
+        String(matchedPayment?.status || '').toLowerCase() === 'pago_sexta'
+    );
+    const isLiberado = Boolean(
+      isPaidLocked || item.bonusPaid || ridesCount >= requiredRides || matchedPayment
+    );
+    const paidAtIso = isPaidLocked ? meta?.paidAt || matchedPayment?.data || null : null;
+    const refDateIso = paidAtIso || matchedPayment?.data || item.createdAt || '';
+
+    let rowStatus: 'waiting' | 'liberado' | 'pago' | 'used' = 'waiting';
+    if (isPaidLocked) {
+      rowStatus = 'pago';
+    } else if (isPass) {
+      rowStatus = isLiberado ? 'liberado' : 'waiting';
+    } else if (isLiberado) {
+      rowStatus = 'liberado';
+    }
+
+    const roleLabel = isPass
+      ? 'Passageiro'
+      : String(item.tipo || '').toLowerCase() === 'motoboy'
+      ? 'Motoboy'
+      : 'Motorista';
+
+    return {
+      item,
+      isPass,
+      roleLabel,
+      requiredRides,
+      bonusAmount,
+      ridesCount: Math.min(requiredRides, ridesCount),
+      matchedPayment,
+      meta,
+      referrerUser,
+      referrerName,
+      referrerCode,
+      referrerEmail,
+      isLiberado,
+      isPaidLocked,
+      paidAtIso,
+      refDateIso,
+      rowStatus,
+    };
+  });
+
+  // Marca status 'used' (💳 Crédito Usado) nas linhas R$10 dentro de allBeneficiaryRows via FIFO por indicador
+  const usedBeneficiaryIds = new Set<string>();
+  {
+    const passByReferrer = new Map<string, typeof allBeneficiaryRows>();
+    for (const r of allBeneficiaryRows) {
+      if (!r.isPass || !r.isLiberado) continue;
+      const key = r.referrerUser ? `user:${r.referrerUser.id}` : `code:${r.referrerCode}`;
+      const arr = passByReferrer.get(key) || [];
+      arr.push(r);
+      passByReferrer.set(key, arr);
+    }
+    for (const [, list] of passByReferrer.entries()) {
+      const sampleUser = list[0]?.referrerUser;
+      const totalReleasedBRL = list.length * PASSENGER_REFERRAL_BONUS_AMOUNT;
+      const ridesCreditUsedSum = sampleUser
+        ? supabaseCorridas
+            .filter((c) => {
+              const cid = String(c.passengerId || '').trim();
+              const cmail = String(c.passengerEmail || '').trim().toLowerCase();
+              const uid = String(sampleUser.id || '').trim();
+              const umail = String(sampleUser.email || '').trim().toLowerCase();
+              return (uid && cid === uid) || (umail && cmail === umail);
+            })
+            .reduce((acc, c) => acc + Number(c.creditUsed || 0), 0)
+        : 0;
+      const isReferrerPassenger = sampleUser ? isPassengerReferralRole(sampleUser.tipo) : false;
+      const currentSaldo = sampleUser ? Math.max(0, Number(sampleUser.saldo || 0)) : 0;
+      const saldoGapUsed = isReferrerPassenger ? Math.max(0, totalReleasedBRL - currentSaldo) : 0;
+      let remainingConsumed = Math.max(ridesCreditUsedSum, saldoGapUsed);
+      for (const entry of [...list].sort(
+        (a, b) => new Date(a.item.createdAt || 0).getTime() - new Date(b.item.createdAt || 0).getTime()
+      )) {
+        if (remainingConsumed >= PASSENGER_REFERRAL_BONUS_AMOUNT - 0.01) {
+          usedBeneficiaryIds.add(String(entry.item.id || entry.item.email));
+          remainingConsumed -= PASSENGER_REFERRAL_BONUS_AMOUNT;
+        }
+      }
+    }
+  }
+
+  const allBeneficiaryRowsWithUsage = allBeneficiaryRows.map((row) => {
+    const key = String(row.item.id || row.item.email);
+    if (!row.isPaidLocked && row.isPass && row.isLiberado && usedBeneficiaryIds.has(key)) {
+      return { ...row, rowStatus: 'used' as const };
+    }
+    return row;
+  });
+
+  // Minhas Indicações do ADM (usado no MyReferralsControlSection dentro da aba Indicações & Bônus)
+  const admOwnMergedReferrals: ReferralCandidateItem[] = (() => {
+    const myEmail = String(currentUser?.email || '').trim().toLowerCase();
+    const myPhoneDigits = normalizeReferralDigits(currentUser?.whatsapp || currentUser?.phone || '');
+    const myCodeUpper = String(admReferralCode || currentUser?.codigoIndicacao || '').trim().toUpperCase();
+    const matchingFromAdmin = mergedReferralsAdmin.filter((item) => {
+      const indRaw = String(item.indicadoPor || '').trim();
+      const indUpper = indRaw.toUpperCase();
+      const indLower = indRaw.toLowerCase();
+      const indDigits = normalizeReferralDigits(indRaw);
+      return (
+        (myCodeUpper && indUpper === myCodeUpper) ||
+        (myEmail && indLower === myEmail) ||
+        (myPhoneDigits.length >= 8 && indDigits.length >= 8 && (indDigits.endsWith(myPhoneDigits) || myPhoneDigits.endsWith(indDigits)))
+      );
+    });
+    const combined = new Map<string, ReferralCandidateItem>();
+    for (const r of admOwnReferrals) {
+      combined.set(String(r.id || r.email).toLowerCase(), r);
+    }
+    for (const r of matchingFromAdmin) {
+      const key = String(r.id || r.email).toLowerCase();
+      const existing = combined.get(key);
+      combined.set(key, existing ? { ...existing, foto: existing.foto || r.foto } : r);
+    }
+    return Array.from(combined.values());
+  })();
+
+  const admOwnBonusPayments = referralBonusesAdmin.filter((p) => {
+    const pEmail = String(p.email_motorista || '').trim().toLowerCase();
+    const pId = String(p.id_motorista || '').trim();
+    const myEmail = String(currentUser?.email || '').trim().toLowerCase();
+    const myId = String(currentUser?.id || '').trim();
+    return (myEmail && pEmail === myEmail) || (myId && pId === myId);
+  });
+
+  const handleMarkBeneficiaryAsPaid = async (row: (typeof allBeneficiaryRowsWithUsage)[number]) => {
+    const key = String(row.item.id || row.item.email);
+    if (row.isPaidLocked) {
+      showToast('🔒 Este beneficiado já teve o bônus marcado como PAGO anteriormente (trava 1 bônus por indicado).');
+      return;
+    }
+    setMarkingBonusPaidId(key);
+    try {
+      const res = await markReferralBonusPaidByAdminSupabase({
+        indicatedId: String(row.item.id || ''),
+        indicatedName: row.item.nome,
+        indicatedEmail: row.item.email,
+        indicatedRole: row.isPass ? 'passenger' : 'driver',
+        ridesCount: row.ridesCount,
+        requiredRides: row.requiredRides,
+        bonusAmount: row.bonusAmount,
+        referrerId: row.referrerUser?.id || row.matchedPayment?.id_motorista || null,
+        referrerName: row.referrerName,
+        referrerEmail: row.referrerEmail,
+        existingPaymentId: row.matchedPayment?.id || null,
+        existingComprovanteUrl: row.matchedPayment?.comprovante_url || null,
+      });
+
+      if (res.alreadyLocked) {
+        showToast('🔒 Trava ativada: 1 indicado = 1 bônus só. Esse bônus já foi pago anteriormente!');
+        await fetchSupabaseUsuarios();
+        return;
+      }
+
+      if (!res.success) {
+        showToast(`⚠️ Não foi possível salvar o pagamento no Supabase: ${res.error || 'verifique RLS'}`);
+        return;
+      }
+
+      if (res.paymentRow) {
+        setSupabasePagamentos((prev) => {
+          const exists = prev.some((p) => String(p.id) === String(res.paymentRow!.id));
+          if (exists) {
+            return prev.map((p) => (String(p.id) === String(res.paymentRow!.id) ? res.paymentRow! : p));
+          }
+          return [res.paymentRow!, ...prev];
+        });
+      }
+      setAdminReferrals((prev) =>
+        prev.map((r) => (String(r.id) === String(row.item.id) ? { ...r, bonusPaid: true } : r))
+      );
+      showToast(
+        `✅ Bônus de ${formatBRL(row.bonusAmount)} marcado como PAGO para ${row.referrerName} (indicado: ${row.item.nome}). Trava ativada!`
+      );
+    } finally {
+      setMarkingBonusPaidId(null);
+    }
+  };
 
   // Calcula status dos créditos R$10 (⏳ Aguardando 1ª corrida / ✅ Crédito Liberado / 💳 Crédito Usado)
   const passengerReferralEntries = (() => {
@@ -1280,6 +1579,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         >
           <Gift className="w-4 h-4 shrink-0" />
           <span>Indicações & Bônus ({referralBonusesAdmin.length})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('beneficiaries')}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'beneficiaries'
+              ? 'bg-blue-700 text-white shadow'
+              : 'text-blue-800 hover:text-blue-950 hover:bg-blue-50'
+          }`}
+        >
+          <Users className="w-4 h-4 shrink-0" />
+          <span>📋 Controle Geral dos Beneficiados ({allBeneficiaryRowsWithUsage.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('reports')}
@@ -3132,9 +3442,93 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB: INDICAÇÕES & BÔNUS (R$50 MOTORISTA/MOTOBOY + R$10 PASSAGEIRO) */}
+      {/* TAB: INDICAÇÕES & BÔNUS (MEUS BENEFICIADOS DO ADM + VISÃO R$50 LARANJA & R$10 AZUL) */}
       {activeTab === 'referrals' && (
         <div className="space-y-6 animate-fade-in">
+          {/* BLOCO DO PRÓPRIO ADM: CÓDIGO + COMPARTILHAR + MEUS BENEFICIADOS / MINHAS INDICAÇÕES */}
+          <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-widest bg-black/25 px-3 py-1 rounded-full inline-block">
+                  Indicar e Ganhar (ADM) &bull; Código: {admReferralCode}
+                </span>
+                <h3 className="font-heading font-black text-xl sm:text-2xl flex items-center gap-2">
+                  <Gift className="w-6 h-6" />
+                  <span>Seu Código & Minhas Indicações ({admReferralCode})</span>
+                </h3>
+                <p className="text-xs sm:text-sm text-amber-50 font-medium">
+                  Compartilhe com a logo oficial RACE + acompanhe seus próprios beneficiados R$50 (Laranja) e R$10 (Azul) abaixo.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <img
+                  src={getRaceLogoPublicUrl()}
+                  alt="RACE Indaiatuba"
+                  className="w-14 h-14 rounded-2xl object-contain bg-black border-2 border-yellow-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      navigator.clipboard.writeText(admReferralCode);
+                    } catch {}
+                    setCopiedAdmCode(true);
+                    setTimeout(() => setCopiedAdmCode(false), 2500);
+                  }}
+                  className="px-3.5 py-2.5 rounded-xl bg-white text-orange-800 hover:bg-amber-50 font-heading font-black text-xs inline-flex items-center gap-1.5 cursor-pointer shadow"
+                >
+                  {copiedAdmCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedAdmCode ? 'Copiado!' : 'Copiar código'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    shareReferralWithLogo(admReferralCode)
+                      .then((res) => {
+                        if (res === 'whatsapp_with_download') {
+                          setShowAdmLogoFallback(true);
+                        }
+                      })
+                      .catch(() => {});
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Compartilhar WhatsApp</span>
+                </button>
+              </div>
+            </div>
+
+            {showAdmLogoFallback && (
+              <div className="bg-black/35 border border-yellow-400/70 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+                <span className="text-amber-100 font-semibold">
+                  Baixe a logo PNG oficial caso o navegador não anexe direto no WhatsApp:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => downloadRaceLogoPng().catch(() => {})}
+                  className="px-3.5 py-1.5 rounded-lg bg-black border border-yellow-400 text-white font-black inline-flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <Download className="w-4 h-4 text-yellow-400" />
+                  <span>Baixar Logo</span>
+                </button>
+              </div>
+            )}
+
+            <p className="text-[11px] text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 leading-relaxed">
+              {buildReferralWhatsappShareText(admReferralCode)}
+            </p>
+          </div>
+
+          <MyReferralsControlSection
+            referrals={admOwnMergedReferrals}
+            bonusPayments={admOwnBonusPayments}
+            creditBalance={Number(currentUser?.creditBalance || 0)}
+            isLoading={isLoadingUsers}
+            onRefresh={fetchSupabaseUsuarios}
+            titleSubtitle="Suas indicações pessoais como ADM (R$50 Motorista/Motoboy + R$10 Passageiro). Para ver TODOS os usuários, abra a aba Controle Geral dos Beneficiados."
+          />
+
           {/* SEÇÃO 1 (LARANJA): R$50 MOTORISTA / MOTOBOY — MANTIDA INTACTA */}
           <div className="bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
@@ -3382,6 +3776,365 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
         </div>
       )}
+
+      {/* TAB NOVA: CONTROLE GERAL DOS BENEFICIADOS (TODOS OS USUÁRIOS) */}
+      {activeTab === 'beneficiaries' && (() => {
+        const filteredRows = allBeneficiaryRowsWithUsage.filter((row) => {
+          const nameFilter = beneficiaryFilterName.trim().toLowerCase();
+          if (nameFilter) {
+            const matchIndicated = row.item.nome.toLowerCase().includes(nameFilter);
+            const matchReferrer = row.referrerName.toLowerCase().includes(nameFilter);
+            const matchEmail = row.item.email.toLowerCase().includes(nameFilter);
+            if (!matchIndicated && !matchReferrer && !matchEmail) return false;
+          }
+          const codeFilter = beneficiaryFilterCode.trim().toLowerCase();
+          if (codeFilter) {
+            const c1 = row.referrerCode.toLowerCase();
+            const c2 = String(row.item.indicadoPor || '').toLowerCase();
+            if (!c1.includes(codeFilter) && !c2.includes(codeFilter)) return false;
+          }
+          if (beneficiaryFilterStatus !== 'all' && row.rowStatus !== beneficiaryFilterStatus) {
+            return false;
+          }
+          if (beneficiaryFilterDate) {
+            const targetDate = beneficiaryFilterDate;
+            const dCreated = row.item.createdAt ? row.item.createdAt.slice(0, 10) : '';
+            const dPaid = row.paidAtIso ? row.paidAtIso.slice(0, 10) : '';
+            if (dCreated !== targetDate && dPaid !== targetDate) return false;
+          }
+          return true;
+        });
+
+        const totalBeneficiariesCount = allBeneficiaryRowsWithUsage.length;
+        const paidRows = allBeneficiaryRowsWithUsage.filter(
+          (r) => r.rowStatus === 'pago' || r.rowStatus === 'used'
+        );
+        const pendingRows = allBeneficiaryRowsWithUsage.filter(
+          (r) => r.rowStatus === 'waiting' || r.rowStatus === 'liberado'
+        );
+        const totalPaidBRL = paidRows.reduce((acc, r) => acc + r.bonusAmount, 0);
+        const totalPendingBRL = pendingRows.reduce((acc, r) => acc + r.bonusAmount, 0);
+
+        return (
+          <div className="space-y-6 animate-fade-in">
+            {/* Cabeçalho */}
+            <div className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 text-white rounded-3xl p-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-blue-500/40">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-400/40 px-3 py-0.5 rounded-full">
+                  SEM LIMITE DE INDICAÇÃO ATÉ 17/12/2026 &bull; TRAVA ANTI-DUPLICIDADE ATIVA
+                </span>
+                <h3 className="font-heading font-black text-xl sm:text-2xl flex items-center gap-2">
+                  <Users className="w-6 h-6 text-sky-400" />
+                  <span>Controle Geral dos Beneficiados (Todos os Usuários)</span>
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-300 font-medium">
+                  Audite todas as indicações R$50 (Motorista/Motoboy) e R$10 (Passageiro). 1 indicado = 1 bônus só; ao marcar como Pago grava data e trava.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fetchSupabaseUsuarios}
+                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-heading font-black flex items-center gap-1.5 cursor-pointer shrink-0 shadow"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Atualizar Tudo</span>
+              </button>
+            </div>
+
+            {/* Totais Gerais */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+                <span className="text-xs font-bold uppercase text-slate-500 block">
+                  Total beneficiados
+                </span>
+                <span className="text-3xl font-heading font-black text-slate-950">
+                  {totalBeneficiariesCount}
+                </span>
+                <span className="text-xs text-slate-500 block mt-0.5">
+                  R$50: {driverReferralsAdmin.length} &bull; R$10: {passengerReferralsAdmin.length}
+                </span>
+              </div>
+              <div className="bg-white border border-emerald-200 rounded-2xl p-5 shadow-xs">
+                <span className="text-xs font-bold uppercase text-emerald-700 block">
+                  Total pago
+                </span>
+                <span className="text-3xl font-heading font-black text-emerald-700">
+                  {formatBRL(totalPaidBRL)}
+                </span>
+                <span className="text-xs text-emerald-700 block mt-0.5">
+                  {paidRows.length} beneficiado(s) pago(s)/usado(s)
+                </span>
+              </div>
+              <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs">
+                <span className="text-xs font-bold uppercase text-amber-700 block">
+                  Total pendente
+                </span>
+                <span className="text-3xl font-heading font-black text-[#ff6a00]">
+                  {formatBRL(totalPendingBRL)}
+                </span>
+                <span className="text-xs text-amber-700 block mt-0.5">
+                  {pendingRows.length} aguardando meta ou pagamento sexta
+                </span>
+              </div>
+            </div>
+
+            {/* Filtros */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h4 className="font-heading font-black text-slate-950 text-sm flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-blue-600" />
+                  <span>Filtros por Nome, Código, Status e Data</span>
+                </h4>
+                {(beneficiaryFilterName || beneficiaryFilterCode || beneficiaryFilterStatus !== 'all' || beneficiaryFilterDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBeneficiaryFilterName('');
+                      setBeneficiaryFilterCode('');
+                      setBeneficiaryFilterStatus('all');
+                      setBeneficiaryFilterDate('');
+                    }}
+                    className="text-xs font-bold text-rose-700 hover:text-rose-900 underline cursor-pointer"
+                  >
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-slate-500 block mb-1">
+                    Filtrar por Nome
+                  </label>
+                  <input
+                    type="text"
+                    value={beneficiaryFilterName}
+                    onChange={(e) => setBeneficiaryFilterName(e.target.value)}
+                    placeholder="Indicador ou indicado..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-slate-500 block mb-1">
+                    Filtrar por Código
+                  </label>
+                  <input
+                    type="text"
+                    value={beneficiaryFilterCode}
+                    onChange={(e) => setBeneficiaryFilterCode(e.target.value)}
+                    placeholder="Ex: JOSE367..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono font-bold text-slate-900 uppercase focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-slate-500 block mb-1">
+                    Filtrar por Status
+                  </label>
+                  <select
+                    value={beneficiaryFilterStatus}
+                    onChange={(e) => setBeneficiaryFilterStatus(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-900 bg-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="all">Todos os Status</option>
+                    <option value="waiting">⏳ Aguardando corridas</option>
+                    <option value="liberado">✅ Liberado (Pronto p/ pagar)</option>
+                    <option value="pago">💸 Pago na sexta (Travado)</option>
+                    <option value="used">💳 Crédito Usado</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-slate-500 block mb-1">
+                    Filtrar por Data
+                  </label>
+                  <input
+                    type="date"
+                    value={beneficiaryFilterDate}
+                    onChange={(e) => setBeneficiaryFilterDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono font-bold text-slate-900 bg-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Tabela Geral de Beneficiados */}
+            <div className="bg-white border border-slate-200 rounded-3xl shadow-md overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                <h4 className="font-heading font-black text-slate-950 text-base">
+                  Beneficiados Encontrados ({filteredRows.length})
+                </h4>
+                <span className="text-xs font-mono text-slate-500">
+                  Trava: 1 indicado = 1 bônus só
+                </span>
+              </div>
+
+              {filteredRows.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500">
+                  Nenhum registro encontrado para os filtros selecionados.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs sm:text-sm">
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200 text-[11px] font-heading font-black uppercase text-slate-700">
+                        <th className="py-3 px-4">Quem indicou (nome + código)</th>
+                        <th className="py-3 px-4">Quem foi indicado (nome + tipo)</th>
+                        <th className="py-3 px-4">Bônus R$10 ou R$50</th>
+                        <th className="py-3 px-4">Data</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4 text-right">Marcar como Pago</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {filteredRows.map((row) => {
+                        const rowKey = String(row.item.id || row.item.email);
+                        const isBusy = markingBonusPaidId === rowKey;
+                        const photoSrc = row.item.foto ? withPhotoCacheBuster(row.item.foto) : '';
+                        const createdDateText = row.item.createdAt
+                          ? new Date(row.item.createdAt).toLocaleDateString('pt-BR')
+                          : '-';
+                        const paidDateText = row.paidAtIso
+                          ? new Date(row.paidAtIso).toLocaleDateString('pt-BR')
+                          : '';
+
+                        return (
+                          <tr key={rowKey} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-3.5 px-4 align-middle">
+                              <p className="font-heading font-black text-slate-950 text-xs sm:text-sm">
+                                {row.referrerName}
+                              </p>
+                              <span className="inline-block mt-0.5 font-mono text-[11px] font-bold bg-orange-50 text-orange-800 border border-orange-200 px-2 py-0.5 rounded">
+                                {row.referrerCode || row.item.indicadoPor}
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-4 align-middle">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-full border border-slate-300 bg-zinc-900 overflow-hidden flex items-center justify-center shrink-0">
+                                  {photoSrc ? (
+                                    <img
+                                      src={photoSrc}
+                                      alt={row.item.nome}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <span className="font-heading font-black text-xs text-white">
+                                      {(row.item.nome || 'I').charAt(0).toUpperCase()}
+                                    </span>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="font-heading font-black text-slate-950 text-xs sm:text-sm">
+                                    {row.item.nome}
+                                  </p>
+                                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                    <span
+                                      className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                                        row.isPass
+                                          ? 'bg-blue-100 text-blue-900 border-blue-300'
+                                          : 'bg-orange-100 text-orange-900 border-orange-300'
+                                      }`}
+                                    >
+                                      {row.roleLabel}
+                                    </span>
+                                    <span className="text-[11px] font-mono text-slate-500">
+                                      {row.ridesCount}/{row.requiredRides} corridas
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-4 align-middle">
+                              <span
+                                className={`inline-flex items-center font-mono font-black text-xs px-2.5 py-1 rounded-full border ${
+                                  row.isPass
+                                    ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                    : 'bg-orange-50 text-orange-800 border-orange-300'
+                                }`}
+                              >
+                                {row.isPass ? 'R$10 crédito' : 'R$50 PIX'}
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-4 align-middle font-mono text-xs text-slate-700">
+                              <div>Cad: {createdDateText}</div>
+                              {paidDateText && (
+                                <div className="text-emerald-700 font-black mt-0.5">
+                                  Pago: {paidDateText}
+                                </div>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-4 align-middle">
+                              {row.rowStatus === 'waiting' && (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold">
+                                  {row.isPass ? '⏳ Aguardando 1ª corrida' : '⏳ Aguardando'}
+                                </span>
+                              )}
+                              {row.rowStatus === 'liberado' && (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-black">
+                                  {row.isPass ? '✅ Crédito Liberado' : '✅ Liberado'}
+                                </span>
+                              )}
+                              {row.rowStatus === 'pago' && (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-600 text-white border border-emerald-500 text-[11px] font-black">
+                                  💸 Pago na sexta
+                                </span>
+                              )}
+                              {row.rowStatus === 'used' && (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-200 text-slate-800 border border-slate-300 text-[11px] font-black">
+                                  💳 Crédito Usado
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-4 align-middle text-right">
+                              {row.isPaidLocked ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="px-3 py-1.5 rounded-xl bg-slate-200 text-slate-700 border border-slate-300 font-heading font-black text-[11px] inline-flex items-center gap-1 cursor-not-allowed"
+                                  title="1 indicado = 1 bônus só. Já pago e travado."
+                                >
+                                  <Lock className="w-3.5 h-3.5" />
+                                  <span>Pago ({paidDateText || 'Travado'})</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={isBusy || !row.isLiberado}
+                                  onClick={() => handleMarkBeneficiaryAsPaid(row)}
+                                  className={`px-3.5 py-2 rounded-xl font-heading font-black text-xs inline-flex items-center gap-1.5 transition-all ${
+                                    row.isLiberado
+                                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow cursor-pointer active:scale-95'
+                                      : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                  }`}
+                                  title={
+                                    row.isLiberado
+                                      ? 'Marcar bônus como pago e travar pagamento duplicado'
+                                      : `Aguardando completar ${row.requiredRides} ${row.requiredRides === 1 ? 'corrida' : 'corridas'}`
+                                  }
+                                >
+                                  {isBusy ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>Marcar como Pago</span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* TAB: NUVEM SUPABASE */}
       {activeTab === 'supabase' && (

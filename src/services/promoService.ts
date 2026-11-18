@@ -190,6 +190,8 @@ export interface ReferralBonusMeta {
   indicatedRole: 'passenger' | 'driver';
   ridesCount: number;
   requiredRides: number;
+  paidFriday?: boolean;
+  paidAt?: string | null;
 }
 
 export const parseReferralBonusMeta = (
@@ -226,6 +228,8 @@ export const parseReferralBonusMeta = (
           indicatedRole: resolvedRole,
           ridesCount: Number(parsed.ridesCount) || defaultRequired,
           requiredRides: Number(parsed.requiredRides) || defaultRequired,
+          paidFriday: Boolean(parsed.paidFriday),
+          paidAt: parsed.paidAt ? String(parsed.paidAt) : null,
         };
       }
     } catch {
@@ -242,6 +246,8 @@ export const parseReferralBonusMeta = (
     indicatedRole: inferredRoleFromAmount,
     ridesCount: defaultRequired,
     requiredRides: defaultRequired,
+    paidFriday: false,
+    paidAt: null,
   };
 };
 
