@@ -243,7 +243,13 @@ export const buildReferralWhatsappShareText = (
   _options?: { isDriver?: boolean }
 ): string => {
   const cleanCode = String(code || '').trim().toUpperCase() || 'RACE100';
-  return `Baixe o app RACE com meu código ${cleanCode}, se vc indicar passageiros ganha R$10 de crédito na primeira corrida dele e se indicar para motorista ou motoboy vc ganha R$50 de crédito quando completar 10 corridas. Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/`;
+  return [
+    `Baixe o app RACE com meu código ${cleanCode}!`,
+    '® CADASTRANDO NO APP RACE COMO MOTORISTA OU MOTOBOY USANDO MEU CÓDIGO, GANHA 100% DAS CORRIDAS ATÉ 17/12/2026.',
+    '® INDICANDO MOTOBOY OU MOTORISTA USANDO MEU CÓDIGO GANHA R$50 QUANDO SEU INDICADO COMPLETAR 10 CORRIDAS.',
+    '® INDICANDO PASSAGEIROS COM MEU CÓDIGO GANHA R$10 DE CRÉDITOS SOMENTE NA PRIMEIRA VIAGEM DO SEU INDICADO',
+    'Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/',
+  ].join('\n');
 };
 
 export const buildReferralWhatsappShareUrl = (

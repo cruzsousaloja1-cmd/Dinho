@@ -2818,7 +2818,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <div className="text-4xl sm:text-5xl font-mono font-black tracking-[0.22em] text-white select-all py-1">
                       {myPersonalCode || '...'}
                     </div>
-                    <p className="text-xs text-amber-100/95 font-medium break-words bg-black/25 rounded-xl p-3 border border-white/15 text-left">
+                    <p className="text-xs text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/25 rounded-xl p-3 border border-white/15 text-left leading-relaxed">
                       {unifiedShareText}
                     </p>
 

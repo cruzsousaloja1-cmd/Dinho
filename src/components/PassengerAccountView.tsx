@@ -944,7 +944,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             <div className="text-3xl sm:text-4xl font-mono font-black tracking-[0.2em] text-white select-all py-1">
               {referralCode}
             </div>
-            <p className="text-[11px] text-amber-100/95 font-medium break-words bg-black/25 rounded-xl p-2.5 border border-white/15 text-left">
+            <p className="text-[11px] text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/25 rounded-xl p-2.5 border border-white/15 text-left leading-relaxed">
               {unifiedShareText}
             </p>
           </div>
