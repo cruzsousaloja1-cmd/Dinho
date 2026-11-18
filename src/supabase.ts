@@ -1935,6 +1935,86 @@ export async function generateUniqueReferralCodeSupabase(name?: string | null): 
   return generateReferralCodeCandidate(cleanName);
 }
 
+export const INVALID_REFERRAL_CODE_ERROR =
+  'Código de indicação inválido. Verifique o código e tente de novo ou deixe em branco.';
+
+/**
+ * Normaliza código de indicação: remove espaços e converte para maiúsculo (ex: "jose367 " -> "JOSE367").
+ */
+export function normalizeReferralCodeInput(rawCode?: string | null): string {
+  return String(rawCode || '').replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * Verifica no Supabase (public.usuarios) se o código de indicação existe antes de salvar o cadastro.
+ * Campo vazio retorna válido (sem indicante).
+ */
+export async function validateReferralCodeExistsSupabase(rawCode?: string | null): Promise<{
+  valid: boolean;
+  normalizedCode: string;
+  error?: string;
+}> {
+  const normalizedCode = normalizeReferralCodeInput(rawCode);
+  if (!normalizedCode) {
+    return { valid: true, normalizedCode: '' };
+  }
+
+  // 1. Verifica codigo_indicacao via RPC SECURITY DEFINER (funciona mesmo antes do login / com RLS ativo)
+  try {
+    const rpcCheck = await supabase.rpc('rpc_check_codigo_indicacao_exists', {
+      p_code: normalizedCode,
+    });
+    if (!rpcCheck.error && typeof rpcCheck.data === 'boolean') {
+      if (rpcCheck.data) {
+        return { valid: true, normalizedCode };
+      }
+      // Caso o usuário tenha informado um WhatsApp (10+ dígitos), verifica se existe em usuarios
+      const onlyPhoneChars = /^[0-9()+\-]+$/.test(normalizedCode);
+      const digitsOnly = normalizedCode.replace(/\D/g, '');
+      if (onlyPhoneChars && digitsOnly.length >= 10) {
+        const phoneExists = await checkWhatsAppExistsSupabase(digitsOnly).catch(() => false);
+        if (phoneExists) {
+          return { valid: true, normalizedCode: digitsOnly };
+        }
+      }
+      return {
+        valid: false,
+        normalizedCode,
+        error: INVALID_REFERRAL_CODE_ERROR,
+      };
+    }
+  } catch {}
+
+  // 2. Fallback caso a RPC não esteja disponível: consulta direta na tabela usuarios
+  try {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('id, codigo_indicacao')
+      .ilike('codigo_indicacao', normalizedCode)
+      .limit(1);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return { valid: true, normalizedCode };
+    }
+  } catch {}
+
+  // Também checa WhatsApp se aplicável
+  const onlyPhoneChars = /^[0-9()+\-]+$/.test(normalizedCode);
+  const digitsOnly = normalizedCode.replace(/\D/g, '');
+  if (onlyPhoneChars && digitsOnly.length >= 10) {
+    const phoneExists = await checkWhatsAppExistsSupabase(digitsOnly).catch(() => false);
+    if (phoneExists) {
+      return { valid: true, normalizedCode: digitsOnly };
+    }
+  }
+
+  return {
+    valid: false,
+    normalizedCode,
+    error: INVALID_REFERRAL_CODE_ERROR,
+  };
+}
+
 /**
  * Garante que usuários antigos ou sem código recebam automaticamente um codigo_indicacao único ao abrir o app.
  */
@@ -2080,6 +2160,16 @@ export async function insertUsuarioSupabase(params: {
     });
     if (dupCheck.isDuplicate) {
       return { success: false, error: dupCheck.message };
+    }
+
+    const rawReferralToValidate = normalizeReferralCodeInput(
+      params.indicado_por_codigo || params.indicado_por || ''
+    );
+    if (rawReferralToValidate) {
+      const refCheck = await validateReferralCodeExistsSupabase(rawReferralToValidate);
+      if (!refCheck.valid) {
+        return { success: false, error: refCheck.error || INVALID_REFERRAL_CODE_ERROR };
+      }
     }
 
     if (params.exigencias_confirmadas === true) {

@@ -19,6 +19,9 @@ import {
   withPhotoCacheBuster,
   generateUniqueReferralCodeSupabase,
   ensureUserReferralCodeSupabase,
+  validateReferralCodeExistsSupabase,
+  normalizeReferralCodeInput,
+  INVALID_REFERRAL_CODE_ERROR,
 } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
@@ -81,6 +84,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [regIndicadoPor, setRegIndicadoPor] = useState<string>(() => getReferralCodeFromUrl());
+  const [regIndicadoPorError, setRegIndicadoPorError] = useState<string | null>(null);
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regErrorMessage, setRegErrorMessage] = useState<string | null>(null);
   const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
@@ -89,6 +93,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   // Foto de perfil do cadastro (Galeria do Celular ou Câmera)
   const [regAvatar, setRegAvatar] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const indicadoPorInputRef = useRef<HTMLInputElement>(null);
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -109,6 +114,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const handleStartRegister = (role: RegistrationRole) => {
     setRegRole(role);
     setRegErrorMessage(null);
+    setRegIndicadoPorError(null);
     setRegSuccessMessage(null);
     setViewMode('register');
   };
@@ -419,6 +425,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegErrorMessage(null);
+    setRegIndicadoPorError(null);
     setRegSuccessMessage(null);
 
     // 1. Foto Obrigatória para TODAS as opções: Motorista, Motoboy, Passageiro
@@ -476,27 +483,39 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         return;
       }
 
+      const normalizedReferralInput = normalizeReferralCodeInput(regIndicadoPor);
+      if (normalizedReferralInput !== regIndicadoPor) {
+        setRegIndicadoPor(normalizedReferralInput);
+      }
+
+      const cleanReferralDigits = normalizeReferralDigits(normalizedReferralInput);
+      const cleanWhatsAppDigits = normalizeReferralDigits(cleanWhatsApp);
+      if (
+        normalizedReferralInput &&
+        ((cleanReferralDigits && cleanWhatsAppDigits && cleanReferralDigits === cleanWhatsAppDigits) ||
+          normalizedReferralInput.toLowerCase() === cleanEmail)
+      ) {
+        setRegIndicadoPorError('Você não pode usar o seu próprio WhatsApp ou e-mail como código de indicação.');
+        indicadoPorInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        indicadoPorInputRef.current?.focus();
+        return;
+      }
+
+      let normalizedIndicadoPor = '';
+      if (normalizedReferralInput) {
+        const referralCheck = await validateReferralCodeExistsSupabase(normalizedReferralInput);
+        if (!referralCheck.valid) {
+          setRegIndicadoPorError(referralCheck.error || INVALID_REFERRAL_CODE_ERROR);
+          indicadoPorInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          indicadoPorInputRef.current?.focus();
+          return;
+        }
+        normalizedIndicadoPor = referralCheck.normalizedCode;
+      }
+
       const isDriverRole = regRole === 'driver';
       const isMotoboyRole = regRole === 'motoboy';
       const chosenAvatar = await compressImageToMax200KB(regAvatar);
-      const rawReferralCode = regIndicadoPor.trim();
-      const cleanReferralDigits = normalizeReferralDigits(rawReferralCode);
-      const cleanWhatsAppDigits = normalizeReferralDigits(cleanWhatsApp);
-      if (
-        rawReferralCode &&
-        ((cleanReferralDigits && cleanWhatsAppDigits && cleanReferralDigits === cleanWhatsAppDigits) ||
-          rawReferralCode.toLowerCase() === cleanEmail)
-      ) {
-        setRegErrorMessage('Você não pode usar o seu próprio WhatsApp ou e-mail como código de indicação.');
-        return;
-      }
-      const normalizedIndicadoPor = !rawReferralCode
-        ? ''
-        : cleanReferralDigits.length >= 8
-        ? cleanReferralDigits
-        : rawReferralCode.includes('@')
-        ? rawReferralCode.toLowerCase()
-        : rawReferralCode.toUpperCase();
       const generatedReferralCode = await generateUniqueReferralCodeSupabase(cleanName);
       const nowIso = new Date().toISOString();
 
@@ -1204,6 +1223,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 type="button"
                 onClick={() => {
                   setRegErrorMessage(null);
+                  setRegIndicadoPorError(null);
                   setViewMode('selection');
                 }}
                 className="text-zinc-400 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
@@ -1423,18 +1443,42 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </div>
               </div>
 
-              <div className="space-y-1.5 p-3.5 rounded-2xl bg-orange-950/30 border border-orange-500/40">
+              <div className={`space-y-1.5 p-3.5 rounded-2xl border ${
+                regIndicadoPorError
+                  ? 'bg-red-950/30 border-red-500/70'
+                  : 'bg-orange-950/30 border-orange-500/40'
+              }`}>
                 <label className="text-orange-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
                   <Gift className="w-3.5 h-3.5 text-[#ff6a00] shrink-0" />
                   <span>Código de quem indicou (opcional)</span>
                 </label>
                 <input
+                  ref={indicadoPorInputRef}
                   type="text"
                   value={regIndicadoPor}
-                  onChange={(e) => setRegIndicadoPor(e.target.value)}
+                  onChange={(e) => {
+                    setRegIndicadoPor(e.target.value);
+                    if (regIndicadoPorError) setRegIndicadoPorError(null);
+                  }}
+                  onBlur={() => {
+                    const normalized = normalizeReferralCodeInput(regIndicadoPor);
+                    if (normalized !== regIndicadoPor) {
+                      setRegIndicadoPor(normalized);
+                    }
+                  }}
                   placeholder="Ex: JOSE123 ou WhatsApp (19) 99999-9999"
-                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium font-mono"
+                  className={`w-full bg-[#121212] border text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none transition-colors font-medium font-mono uppercase ${
+                    regIndicadoPorError
+                      ? 'border-red-500 focus:border-red-500'
+                      : 'border-[#2a2a2a] focus:border-[#ff6a00]'
+                  }`}
                 />
+                {regIndicadoPorError && (
+                  <p className="text-xs text-red-400 font-bold flex items-start gap-1.5 pt-0.5" role="alert">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                    <span>{regIndicadoPorError}</span>
+                  </p>
+                )}
                 <p className="text-[11px] text-orange-200/80 font-medium">
                   Se alguém te indicou, informe o código (ex: JOSE123) ou WhatsApp para ele ganhar R$ 50 quando o Motorista OU Motoboy indicado fizer 10 corridas!
                 </p>
