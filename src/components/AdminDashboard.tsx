@@ -68,6 +68,7 @@ import {
   getAllReferralsAdminSupabase,
   getDriverReferralsAndBonusesSupabase,
   ensureUserReferralCodeSupabase,
+  fixUserReferralAdminSupabase,
   markReferralBonusPaidByAdminSupabase,
   deleteUserCompleteAdminSupabase,
   SELF_ADMIN_DELETE_ERROR,
@@ -171,6 +172,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   useEffect(() => {
     if (!currentUser) return;
+    let active = true;
     ensureUserReferralCodeSupabase({
       id: currentUser.id,
       email: currentUser.email,
@@ -178,14 +180,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       currentCode: currentUser.codigoIndicacao,
     })
       .then((code) => {
-        if (code) setAdmReferralCode(code);
+        if (!active) return;
+        const effectiveCode = String(code || currentUser.codigoIndicacao || 'JOSE367')
+          .trim()
+          .toUpperCase();
+        if (effectiveCode) setAdmReferralCode(effectiveCode);
+        return getDriverReferralsAndBonusesSupabase({
+          ...currentUser,
+          codigoIndicacao: effectiveCode,
+        });
+      })
+      .then((refs) => {
+        if (active && Array.isArray(refs)) setAdmOwnReferrals(refs);
       })
       .catch(() => {});
 
-    getDriverReferralsAndBonusesSupabase(currentUser)
-      .then((refs) => setAdmOwnReferrals(refs))
-      .catch(() => {});
-  }, [currentUser?.id, currentUser?.email]);
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.id, currentUser?.email, currentUser?.codigoIndicacao]);
 
   useEffect(() => {
     setSupabaseCorridas(rides);
@@ -205,13 +218,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsLoadingUsers(true);
     setSupabaseUsersError(null);
     try {
-      const [usersRes, corridasData, pagamentosData, appsMap, referralsData] = await Promise.all([
+      const effectiveAdmCode = String(
+        admReferralCode || currentUser?.codigoIndicacao || 'JOSE367'
+      )
+        .trim()
+        .toUpperCase();
+      const [usersRes, corridasData, pagamentosData, appsMap, referralsData, ownRefsData] = await Promise.all([
         selectSafeUsuariosRows((q) => q.order('created_at', { ascending: false })),
         getAllCorridasForAdminSupabase(),
         getAllPagamentosSupabase(),
         fetchDriverApplicationsSupabase().catch(() => ({} as Record<string, DriverApplicationRecord>)),
         getAllReferralsAdminSupabase().catch(() => [] as AdminReferralItem[]),
+        currentUser
+          ? getDriverReferralsAndBonusesSupabase({
+              ...currentUser,
+              codigoIndicacao: effectiveAdmCode,
+            }).catch(() => [] as ReferralCandidateItem[])
+          : Promise.resolve([] as ReferralCandidateItem[]),
       ]);
+
+      setAdmOwnReferrals(ownRefsData);
 
       if (usersRes.error) {
         console.error('Erro ao buscar usuarios no Supabase:', usersRes.error.message);
@@ -327,6 +353,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   } | null>(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [actionToast, setActionToast] = useState<string | null>(null);
+
+  // Modal do ADM para corrigir/vincular indicação manualmente (ex: Antônio Carlos ID 37 -> JOSE492)
+  const [fixReferralTarget, setFixReferralTarget] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    currentCode: string;
+  } | null>(null);
+  const [fixReferralCodeInput, setFixReferralCodeInput] = useState('');
+  const [isFixingReferral, setIsFixingReferral] = useState(false);
+  const [fixReferralError, setFixReferralError] = useState<string | null>(null);
 
   // Modal de edição de usuário pelo ADM (com botão SALVAR ALTERAÇÕES no final)
   const [editingAdminUser, setEditingAdminUser] = useState<any | null>(null);
@@ -1051,7 +1088,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     }
     for (const u of supabaseUsers) {
-      const indCode = String(u.indicado_por_codigo || u.indicado_por || '').trim();
+      const indCode = String(u.codigo_usado || u.indicado_por_codigo || u.indicado_por || '').trim();
       if (!indCode) continue;
       const uid = String(u.id || '').trim();
       const uEmail = String(u.email || '').trim().toLowerCase();
@@ -1073,13 +1110,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         return (uid && did === uid) || (uEmail && dmail === uEmail);
       }).length;
 
+      const rawPor = String(u.indicado_por || '').trim();
+      const rawCod = String(u.codigo_usado || u.indicado_por_codigo || '').trim().toUpperCase();
       const fallbackItem: AdminReferralItem = {
         id: uid || uEmail,
         nome: String(u.nome || u.login || 'Indicado'),
         email: uEmail,
         tipo: String(u.tipo || 'driver'),
         foto: extractPhotoFromRow(u),
-        indicadoPor: indCode,
+        indicadoPor: rawCod || rawPor,
+        indicadoPorId: /^\d+$/.test(rawPor) ? rawPor : undefined,
+        codigoUsado: rawCod || (/^\d+$/.test(rawPor) ? undefined : rawPor.toUpperCase()),
         createdAt: String(u.created_at || ''),
         ridesCount,
         bonusPaid: Boolean(u.bonus_pago),
@@ -1093,14 +1134,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const passengerReferralsAdmin = mergedReferralsAdmin.filter((item) => isPassengerReferralRole(item.tipo));
 
   // Helper global para resolver o usuário que indicou (nome + código + id + email)
-  const resolveReferrerForCode = (codeOrPhone: string) => {
-    const clean = String(codeOrPhone || '').trim();
+  const resolveReferrerForCode = (codeOrPhoneOrId: string) => {
+    const clean = String(codeOrPhoneOrId || '').trim();
     if (!clean) return null;
     const upper = clean.toUpperCase();
     const lower = clean.toLowerCase();
     const digits = normalizeReferralDigits(clean);
-    return (
+    const matched =
       supabaseUsers.find((u) => {
+        if (String(u.id || '').trim() === clean) return true;
         const uCode = String(u.codigo_indicacao || '').trim().toUpperCase();
         if (uCode && uCode === upper) return true;
         const uEmail = String(u.email || '').trim().toLowerCase();
@@ -1112,8 +1154,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           if ((w && w.endsWith(digits)) || (c && c.endsWith(digits))) return true;
         }
         return false;
-      }) || null
-    );
+      }) || null;
+
+    if (matched) return matched;
+
+    const myId = String(currentUser?.id || '').trim();
+    const myEmail = String(currentUser?.email || '').trim().toLowerCase();
+    const myCodeUpper = String(admReferralCode || currentUser?.codigoIndicacao || '').trim().toUpperCase();
+    if ((myId && clean === myId) || (myCodeUpper && upper === myCodeUpper)) {
+      const admRow = supabaseUsers.find(
+        (u) =>
+          (myId && String(u.id || '').trim() === myId) ||
+          (myEmail && String(u.email || u['e-mail'] || '').trim().toLowerCase() === myEmail)
+      );
+      if (admRow) {
+        return { ...admRow, codigo_indicacao: admRow.codigo_indicacao || myCodeUpper };
+      }
+      if (currentUser) {
+        return {
+          id: myId,
+          nome: currentUser.name || 'José da Cruz de Sousa',
+          email: myEmail,
+          codigo_indicacao: myCodeUpper,
+        };
+      }
+    }
+    return null;
   };
 
   // Controle Geral dos Beneficiados (TODOS os usuários: R$50 + R$10 com trava 1 indicado = 1 bônus só)
@@ -1243,15 +1309,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Minhas Indicações do ADM (usado no MyReferralsControlSection dentro da aba Indicações & Bônus)
   const admOwnMergedReferrals: ReferralCandidateItem[] = (() => {
+    const myId = String(currentUser?.id || '').trim();
     const myEmail = String(currentUser?.email || '').trim().toLowerCase();
     const myPhoneDigits = normalizeReferralDigits(currentUser?.whatsapp || currentUser?.phone || '');
     const myCodeUpper = String(admReferralCode || currentUser?.codigoIndicacao || '').trim().toUpperCase();
     const matchingFromAdmin = mergedReferralsAdmin.filter((item) => {
+      const indId = String(item.indicadoPorId || '').trim();
+      if (myId && indId && indId === myId) return true;
+
+      const codUpper = String(item.codigoUsado || '').trim().toUpperCase();
+      if (myCodeUpper && codUpper && codUpper === myCodeUpper) return true;
+
       const indRaw = String(item.indicadoPor || '').trim();
       const indUpper = indRaw.toUpperCase();
       const indLower = indRaw.toLowerCase();
       const indDigits = normalizeReferralDigits(indRaw);
       return (
+        (myId && indRaw === myId) ||
         (myCodeUpper && indUpper === myCodeUpper) ||
         (myEmail && indLower === myEmail) ||
         (myPhoneDigits.length >= 8 && indDigits.length >= 8 && (indDigits.endsWith(myPhoneDigits) || myPhoneDigits.endsWith(indDigits)))
@@ -1268,6 +1342,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     return Array.from(combined.values());
   })();
+
+  const handleOpenFixReferral = (u: any, linkedCode: string) => {
+    setFixReferralTarget({
+      id: String(u.id || '').trim(),
+      name: String(u.name || 'Usuário').trim(),
+      email: u.email === 'Sem e-mail' ? '' : String(u.email || '').trim().toLowerCase(),
+      currentCode: linkedCode,
+    });
+    setFixReferralCodeInput(linkedCode || admReferralCode || '');
+    setFixReferralError(null);
+  };
+
+  const handleConfirmFixReferral = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fixReferralTarget || isFixingReferral) return;
+    const cleanCode = fixReferralCodeInput.trim().toUpperCase();
+    if (!cleanCode) {
+      setFixReferralError('Informe o código de indicação (ex: JOSE492).');
+      return;
+    }
+    setIsFixingReferral(true);
+    setFixReferralError(null);
+    try {
+      const res = await fixUserReferralAdminSupabase({
+        targetUserId: fixReferralTarget.id,
+        targetEmail: fixReferralTarget.email,
+        referralCode: cleanCode,
+      });
+      if (!res.success) {
+        setFixReferralError(res.error || 'Não foi possível vincular a indicação.');
+        return;
+      }
+      const savedTargetName = fixReferralTarget.name;
+      const savedCode = res.referralCode || cleanCode;
+      setFixReferralTarget(null);
+      showToast(`🎁 Indicação corrigida! ${savedTargetName} agora está vinculado(a) ao código ${savedCode}.`);
+      await fetchSupabaseUsuarios();
+    } finally {
+      setIsFixingReferral(false);
+    }
+  };
 
   const admOwnBonusPayments = referralBonusesAdmin.filter((p) => {
     const pEmail = String(p.email_motorista || '').trim().toLowerCase();
@@ -2982,7 +3097,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </p>
               </div>
             ) : (
-              filteredUsers.map((u) => (
+              filteredUsers.map((u) => {
+                const refMatch = mergedReferralsAdmin.find((r) => {
+                  const rId = String(r.id || '').trim();
+                  const rEmail = String(r.email || '').trim().toLowerCase();
+                  return (
+                    (u.id && rId && rId === String(u.id).trim()) ||
+                    (u.email && u.email !== 'Sem e-mail' && rEmail && rEmail === u.email.toLowerCase())
+                  );
+                });
+                const rawLinkedCode = String(
+                  refMatch?.codigoUsado ||
+                    refMatch?.indicadoPor ||
+                    u.raw?.codigo_usado ||
+                    u.raw?.indicado_por_codigo ||
+                    u.raw?.indicado_por ||
+                    ''
+                )
+                  .trim()
+                  .toUpperCase();
+                const linkedReferrer = rawLinkedCode ? resolveReferrerForCode(rawLinkedCode) : null;
+                const displayLinkedCode = String(
+                  linkedReferrer?.codigo_indicacao || rawLinkedCode || ''
+                )
+                  .trim()
+                  .toUpperCase();
+
+                return (
                 <div
                   key={u.id}
                   className="bg-white border border-slate-200 rounded-3xl p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-md hover:border-slate-300 transition-all"
@@ -3039,6 +3180,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span className="text-xs text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
                           ⭐ {u.rating.toFixed(1)}
                         </span>
+
+                        {!u.isAdminRow && (
+                          displayLinkedCode ? (
+                            <span className="text-xs font-mono font-bold bg-orange-50 text-orange-800 border border-orange-200 px-2.5 py-0.5 rounded-full">
+                              🎁 Indicado por: {displayLinkedCode}
+                            </span>
+                          ) : (
+                            <span className="text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-0.5 rounded-full">
+                              Sem indicante
+                            </span>
+                          )
+                        )}
                       </div>
 
                       {/* Dados veiculares e documentos mascarados (apenas 4 últimos dígitos) */}
@@ -3103,7 +3256,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Botões de Controle ADM: Editar, Ativar / Liberar 7 dias, Bloquear, Remover, Ver avaliações */}
+                    {/* Botões de Controle ADM: Editar, Corrigir indicação, Ativar / Liberar 7 dias, Bloquear, Remover, Ver avaliações */}
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {/* Botão Editar */}
                       <button
@@ -3115,6 +3268,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <Pencil className="w-3.5 h-3.5" />
                         <span>Editar</span>
                       </button>
+
+                      {/* Botão Corrigir Indicação (ex: vincular Antônio Carlos ID 37 ao JOSE492) */}
+                      {!u.isAdminRow && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenFixReferral(u, displayLinkedCode)}
+                          className="px-3 py-2 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-800 border border-orange-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                          title="Vincular ou corrigir código de indicação deste usuário"
+                        >
+                          <Gift className="w-3.5 h-3.5 text-[#ff6a00]" />
+                          <span>Corrigir indicação</span>
+                        </button>
+                      )}
 
                       {/* Botão 1: Ativar / Liberar 7 dias */}
                       <button
@@ -3162,7 +3328,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -4705,6 +4872,97 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal: Corrigir Indicação (Vincular usuário existente a um código de indicação no Supabase) */}
+      {fixReferralTarget && (
+        <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <form
+            onSubmit={handleConfirmFixReferral}
+            className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border-2 border-orange-400 animate-scale-up"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#ff6a00] flex items-center justify-center">
+                  <Gift className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                    Corrigir Indicação
+                  </h4>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Vincular {fixReferralTarget.name} (ID {fixReferralTarget.id})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isFixingReferral && setFixReferralTarget(null)}
+                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase text-slate-700 block">
+                Código de quem indicou
+              </label>
+              <input
+                type="text"
+                value={fixReferralCodeInput}
+                onChange={(e) => {
+                  setFixReferralCodeInput(e.target.value.toUpperCase());
+                  if (fixReferralError) setFixReferralError(null);
+                }}
+                placeholder="Ex: JOSE492"
+                className="w-full px-4 py-3 rounded-xl border-2 border-slate-300 focus:border-[#ff6a00] outline-none font-mono font-black text-base uppercase tracking-wider text-slate-950"
+              />
+              {admReferralCode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFixReferralCodeInput(admReferralCode);
+                    setFixReferralError(null);
+                  }}
+                  className="text-xs font-bold text-[#ff6a00] hover:underline cursor-pointer"
+                >
+                  Usar meu código ({admReferralCode})
+                </button>
+              )}
+              {fixReferralError && (
+                <p className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+                  {fixReferralError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isFixingReferral}
+                onClick={() => setFixReferralTarget(null)}
+                className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isFixingReferral}
+                className="flex-1 py-3 rounded-xl bg-[#ff6a00] hover:bg-orange-500 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 disabled:opacity-60 flex items-center justify-center gap-1.5"
+              >
+                {isFixingReferral ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <span>Salvar Indicação</span>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

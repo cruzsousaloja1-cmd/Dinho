@@ -10,7 +10,9 @@ import {
 import {
   calculateRideSplitForDriver,
   generateReferralCodeCandidate,
+  isPassengerReferralRole,
   normalizeReferralDigits,
+  parseReferralBonusMeta,
   PASSENGER_REFERRAL_BONUS_AMOUNT,
   PASSENGER_REFERRAL_REQUIRED_RIDES,
   REFERRAL_BONUS_AMOUNT,
@@ -64,6 +66,7 @@ const SAFE_USUARIO_COLS_LIST = [
   'documentos_aceitos',
   'data_aceite',
   'indicado_por',
+  'codigo_usado',
   'codigo_indicacao',
   'indicado_por_codigo',
   'bonus_pago',
@@ -136,6 +139,7 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   aceitou_lgpd BOOLEAN DEFAULT false,
   data_aceite TIMESTAMP WITH TIME ZONE,
   indicado_por TEXT DEFAULT '',
+  codigo_usado TEXT DEFAULT '',
   codigo_indicacao TEXT DEFAULT '',
   indicado_por_codigo TEXT DEFAULT '',
   bonus_pago BOOLEAN DEFAULT false
@@ -148,6 +152,7 @@ ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_termos BOOLEAN DEFA
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_lgpd BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS data_aceite TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS indicado_por TEXT DEFAULT '';
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS codigo_usado TEXT DEFAULT '';
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS codigo_indicacao TEXT DEFAULT '';
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS indicado_por_codigo TEXT DEFAULT '';
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS bonus_pago BOOLEAN DEFAULT false;
@@ -817,7 +822,7 @@ BEGIN
     END LOOP;
   END IF;
 
-  INSERT INTO public.usuarios (nome, email, celular, whatsapp, login, tipo, categoria, placa, modelo, ano, cnh, foto, indicado_por, codigo_indicacao, indicado_por_codigo, bonus_pago)
+  INSERT INTO public.usuarios (nome, email, celular, whatsapp, login, tipo, categoria, placa, modelo, ano, cnh, foto, indicado_por, codigo_usado, codigo_indicacao, indicado_por_codigo, bonus_pago)
   VALUES (
     coalesce(nullif(trim(p_nome), ''), split_part(v_clean_email, '@', 1)),
     v_clean_email,
@@ -836,8 +841,9 @@ BEGIN
     coalesce(p_cnh, ''),
     p_foto,
     coalesce(nullif(trim(p_indicado_por), ''), nullif(trim(p_indicado_por_codigo), ''), ''),
+    upper(trim(coalesce(nullif(trim(p_indicado_por_codigo), ''), nullif(trim(p_indicado_por), ''), ''))),
     v_code,
-    coalesce(nullif(trim(p_indicado_por_codigo), ''), nullif(trim(p_indicado_por), ''), ''),
+    upper(trim(coalesce(nullif(trim(p_indicado_por_codigo), ''), nullif(trim(p_indicado_por), ''), ''))),
     false
   )
   RETURNING * INTO v_row;
@@ -1065,7 +1071,7 @@ BEGIN
   END IF;
 
   v_clean_email := lower(trim(coalesce(v_indicated.email, v_clean_email, '')));
-  v_ind_code := trim(coalesce(nullif(trim(v_indicated.indicado_por_codigo), ''), v_indicated.indicado_por, ''));
+  v_ind_code := trim(coalesce(nullif(trim(v_indicated.indicado_por_codigo), ''), nullif(trim(v_indicated.codigo_usado), ''), v_indicated.indicado_por, ''));
   v_ind_digits := regexp_replace(v_ind_code, '[^0-9]', '', 'g');
   IF length(v_ind_digits) >= 12 AND left(v_ind_digits, 2) = '55' THEN
     v_ind_digits := substr(v_ind_digits, 3);
@@ -1116,7 +1122,8 @@ BEGIN
   FROM public.usuarios u
   WHERE u.id <> v_indicated.id
     AND (
-      (coalesce(u.codigo_indicacao, '') <> '' AND upper(trim(u.codigo_indicacao)) = upper(v_ind_code))
+      u.id::text = trim(coalesce(v_indicated.indicado_por, ''))
+      OR (coalesce(u.codigo_indicacao, '') <> '' AND upper(trim(u.codigo_indicacao)) = upper(v_ind_code))
       OR (length(v_ind_digits) >= 8 AND (
         regexp_replace(coalesce(u.whatsapp, ''), '[^0-9]', '', 'g') LIKE '%' || v_ind_digits
         OR regexp_replace(coalesce(u.celular, ''), '[^0-9]', '', 'g') LIKE '%' || v_ind_digits
@@ -1279,7 +1286,7 @@ BEGIN
     v_digits := substr(v_digits, 3);
   END IF;
 
-  IF v_caller_code = '' AND v_digits = '' AND v_caller_email = '' THEN
+  IF v_caller.id IS NULL AND v_caller_code = '' AND v_digits = '' AND v_caller_email = '' THEN
     RETURN '[]'::jsonb;
   END IF;
 
@@ -1315,10 +1322,16 @@ BEGIN
     ) AS item
     FROM public.usuarios u
     WHERE u.id <> coalesce(v_caller.id, -1)
-      AND (coalesce(trim(u.indicado_por), '') <> '' OR coalesce(trim(u.indicado_por_codigo), '') <> '')
       AND (
-        (v_caller_code <> '' AND (
-          upper(trim(coalesce(u.indicado_por_codigo, ''))) = v_caller_code
+        coalesce(trim(u.indicado_por), '') <> ''
+        OR coalesce(trim(u.codigo_usado), '') <> ''
+        OR coalesce(trim(u.indicado_por_codigo), '') <> ''
+      )
+      AND (
+        (v_caller.id IS NOT NULL AND trim(coalesce(u.indicado_por, '')) = v_caller.id::text)
+        OR (v_caller_code <> '' AND (
+          upper(trim(coalesce(u.codigo_usado, ''))) = v_caller_code
+          OR upper(trim(coalesce(u.indicado_por_codigo, ''))) = v_caller_code
           OR upper(trim(coalesce(u.indicado_por, ''))) = v_caller_code
         ))
         OR (length(v_digits) >= 8 AND (
@@ -1359,7 +1372,9 @@ BEGIN
       'indicated_email', coalesce(u.email, ''),
       'indicated_tipo', coalesce(u.tipo, 'driver'),
       'foto', coalesce(nullif(u.avatar, ''), nullif(u.foto, ''), ''),
-      'indicado_por', coalesce(nullif(trim(u.indicado_por_codigo), ''), u.indicado_por, ''),
+      'indicado_por', coalesce(nullif(trim(u.codigo_usado), ''), nullif(trim(u.indicado_por_codigo), ''), u.indicado_por, ''),
+      'indicado_por_id', coalesce(u.indicado_por, ''),
+      'codigo_usado', coalesce(nullif(trim(u.codigo_usado), ''), u.indicado_por_codigo, ''),
       'created_at', coalesce(u.created_at, now()),
       'rides_count', (
         SELECT count(*)::integer FROM public.corridas c
@@ -1383,6 +1398,7 @@ BEGIN
     ) AS item
     FROM public.usuarios u
     WHERE coalesce(trim(u.indicado_por), '') <> ''
+       OR coalesce(trim(u.codigo_usado), '') <> ''
        OR coalesce(trim(u.indicado_por_codigo), '') <> ''
   ) sub;
 
@@ -1630,6 +1646,7 @@ export interface SupabaseUsuarioRow {
   corrida_divida_id?: string;
   data_cadastro?: string;
   indicado_por?: string;
+  codigo_usado?: string;
   codigo_indicacao?: string;
   indicado_por_codigo?: string;
   bonus_pago?: boolean;
@@ -1859,6 +1876,8 @@ function buildSafeReturnCols(knownCols: Set<string> | null): string[] {
     'rating',
     'saldo',
     'divida',
+    'indicado_por',
+    'codigo_usado',
     'codigo_indicacao',
     'indicado_por_codigo',
     'bonus_pago',
@@ -2110,6 +2129,233 @@ export async function generateUniqueReferralCodeSupabase(name?: string | null): 
 export const INVALID_REFERRAL_CODE_ERROR =
   'Código de indicação inválido. Verifique o código e tente de novo ou deixe em branco.';
 
+const INTERNAL_REFERRAL_CODE_STATUS = 'codigo_indicacao';
+const INTERNAL_REFERRAL_LINK_STATUS = 'indicacao_vinculo';
+
+function isInternalReferralMetaRow(p: any): boolean {
+  const st = String(p?.status || '').trim().toLowerCase();
+  return st === INTERNAL_REFERRAL_CODE_STATUS || st === INTERNAL_REFERRAL_LINK_STATUS;
+}
+
+function buildReferralLinkChavePix(
+  indicatedId: string | number | null | undefined,
+  code: string,
+  indicatedEmail?: string | null
+): string {
+  const cleanId =
+    indicatedId !== undefined && indicatedId !== null && /^\d+$/.test(String(indicatedId).trim())
+      ? String(indicatedId).trim()
+      : '';
+  const cleanCode = normalizeReferralCodeInput(code);
+  const cleanEmail = String(indicatedEmail || '').trim().toLowerCase();
+  const parts: string[] = [];
+  if (cleanId) parts.push(`IND:${cleanId}`);
+  if (cleanCode) parts.push(`COD:${cleanCode}`);
+  if (cleanEmail) parts.push(`EM:${cleanEmail}`);
+  return parts.join('|');
+}
+
+function parseReferralLinkChavePix(chavePix?: string | null): {
+  indicatedId: string;
+  code: string;
+  email: string;
+} {
+  const raw = String(chavePix || '').trim();
+  let indicatedId = '';
+  let code = '';
+  let email = '';
+  if (!raw) return { indicatedId, code, email };
+
+  for (const part of raw.split('|')) {
+    const p = part.trim();
+    if (p.startsWith('IND:')) {
+      indicatedId = p.slice(4).trim();
+    } else if (p.startsWith('COD:')) {
+      code = p.slice(4).trim().toUpperCase();
+    } else if (p.startsWith('EM:')) {
+      email = p.slice(3).trim().toLowerCase();
+    }
+  }
+  return { indicatedId, code, email };
+}
+
+async function publishPublicReferralCodeFile(
+  userId: number | string | null | undefined,
+  code: string,
+  name?: string
+): Promise<boolean> {
+  const cleanCode = normalizeReferralCodeInput(code);
+  const cleanId = userId !== undefined && userId !== null ? String(userId).trim() : '';
+  if (!cleanCode || !cleanId || cleanId === '0') return false;
+  try {
+    const path = `referrals/codes/${cleanCode}.json`;
+    const payload = JSON.stringify({
+      referrerId: cleanId,
+      code: cleanCode,
+      name: String(name || '').trim(),
+      updatedAt: new Date().toISOString(),
+    });
+    const blob = new Blob([payload], { type: 'application/json' });
+    const { error } = await supabase.storage.from('avatars').upload(path, blob, {
+      upsert: true,
+      contentType: 'application/json',
+      cacheControl: '60',
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchPublicReferralCodeFile(
+  code: string
+): Promise<{ referrerId?: string; code?: string; name?: string } | null> {
+  const cleanCode = normalizeReferralCodeInput(code);
+  if (!cleanCode || !/^[A-Z0-9_-]{3,32}$/.test(cleanCode)) return null;
+  try {
+    const { data } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(`referrals/codes/${cleanCode}.json`);
+    if (!data?.publicUrl) return null;
+    const res = await fetch(`${data.publicUrl}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const parsed = await res.json();
+    if (parsed && normalizeReferralCodeInput(parsed.code) === cleanCode) {
+      return {
+        referrerId: parsed.referrerId ? String(parsed.referrerId).trim() : undefined,
+        code: cleanCode,
+        name: parsed.name ? String(parsed.name).trim() : undefined,
+      };
+    }
+  } catch {}
+  return null;
+}
+
+async function removePublicReferralCodeFile(code?: string | null): Promise<void> {
+  const cleanCode = normalizeReferralCodeInput(code);
+  if (!cleanCode) return;
+  try {
+    await supabase.storage.from('avatars').remove([`referrals/codes/${cleanCode}.json`]);
+  } catch {}
+}
+
+async function upsertReferralCodeRegistryInPagamentos(
+  userId: number | null | undefined,
+  code: string,
+  name?: string
+): Promise<boolean> {
+  const cleanCode = normalizeReferralCodeInput(code);
+  if (!cleanCode || !userId || !Number.isFinite(userId) || userId <= 0) return false;
+  await publishPublicReferralCodeFile(userId, cleanCode, name).catch(() => false);
+  try {
+    const { data: existingRows, error: selErr } = await supabase
+      .from('pagamentos')
+      .select('id,id_motorista,status,chave_pix')
+      .eq('status', INTERNAL_REFERRAL_CODE_STATUS)
+      .limit(500);
+
+    if (!selErr && Array.isArray(existingRows)) {
+      const exactMatch = existingRows.find(
+        (r: any) =>
+          Number(r.id_motorista) === Number(userId) &&
+          normalizeReferralCodeInput(r.chave_pix) === cleanCode
+      );
+      if (exactMatch) return true;
+
+      const existingForUser = existingRows.find(
+        (r: any) => Number(r.id_motorista) === Number(userId)
+      );
+      if (existingForUser?.id) {
+        const oldCode = normalizeReferralCodeInput(existingForUser.chave_pix);
+        if (oldCode && oldCode !== cleanCode) {
+          await removePublicReferralCodeFile(oldCode);
+        }
+        const { error: updErr } = await supabase
+          .from('pagamentos')
+          .update({ chave_pix: cleanCode })
+          .eq('id', existingForUser.id);
+        if (!updErr) return true;
+      }
+    }
+
+    const { error: insErr } = await supabase.from('pagamentos').insert({
+      id_motorista: Number(userId),
+      valor: 0,
+      status: INTERNAL_REFERRAL_CODE_STATUS,
+      chave_pix: cleanCode,
+    });
+    return !insErr;
+  } catch {
+    return false;
+  }
+}
+
+async function upsertReferralLinkInPagamentos(params: {
+  referrerId?: string | number | null;
+  indicatedId?: string | number | null;
+  indicatedEmail?: string | null;
+  referralCode: string;
+}): Promise<boolean> {
+  const cleanCode = normalizeReferralCodeInput(params.referralCode);
+  const indIdStr =
+    params.indicatedId !== undefined &&
+    params.indicatedId !== null &&
+    /^\d+$/.test(String(params.indicatedId).trim())
+      ? String(params.indicatedId).trim()
+      : '';
+  const indEmail = String(params.indicatedEmail || '').trim().toLowerCase();
+  const refIdNum =
+    params.referrerId !== undefined &&
+    params.referrerId !== null &&
+    /^\d+$/.test(String(params.referrerId).trim())
+      ? Number(String(params.referrerId).trim())
+      : 0;
+
+  if (!cleanCode && !refIdNum) return false;
+  if (!indIdStr && !indEmail) return false;
+
+  const chaveVal = buildReferralLinkChavePix(indIdStr || null, cleanCode, indEmail);
+  if (!chaveVal) return false;
+
+  try {
+    const { data: existingRows, error: selErr } = await supabase
+      .from('pagamentos')
+      .select('id,id_motorista,status,chave_pix')
+      .eq('status', INTERNAL_REFERRAL_LINK_STATUS)
+      .limit(1000);
+
+    if (!selErr && Array.isArray(existingRows)) {
+      const matched = existingRows.find((r: any) => {
+        const parsed = parseReferralLinkChavePix(r.chave_pix);
+        return (
+          (indIdStr && parsed.indicatedId === indIdStr) ||
+          (indEmail && parsed.email === indEmail)
+        );
+      });
+      if (matched?.id) {
+        const { error: updErr } = await supabase
+          .from('pagamentos')
+          .update({
+            id_motorista: refIdNum,
+            chave_pix: chaveVal,
+          })
+          .eq('id', matched.id);
+        return !updErr;
+      }
+    }
+
+    const { error: insErr } = await supabase.from('pagamentos').insert({
+      id_motorista: refIdNum,
+      valor: 0,
+      status: INTERNAL_REFERRAL_LINK_STATUS,
+      chave_pix: chaveVal,
+    });
+    return !insErr;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Normaliza código de indicação: remove espaços e converte para maiúsculo (ex: "jose367 " -> "JOSE367").
  */
@@ -2117,13 +2363,12 @@ export function normalizeReferralCodeInput(rawCode?: string | null): string {
   return String(rawCode || '').replace(/\s+/g, '').toUpperCase();
 }
 
-/**
- * Verifica no Supabase (public.usuarios) se o código de indicação existe antes de salvar o cadastro.
- * Campo vazio retorna válido (sem indicante).
- */
-export async function validateReferralCodeExistsSupabase(rawCode?: string | null): Promise<{
+export async function resolveReferrerByCodeSupabase(rawCode?: string | null): Promise<{
   valid: boolean;
   normalizedCode: string;
+  referrerId?: string;
+  referrerName?: string;
+  referrerEmail?: string;
   error?: string;
 }> {
   const normalizedCode = normalizeReferralCodeInput(rawCode);
@@ -2131,49 +2376,118 @@ export async function validateReferralCodeExistsSupabase(rawCode?: string | null
     return { valid: true, normalizedCode: '' };
   }
 
-  // 1. Verifica codigo_indicacao via RPC SECURITY DEFINER (funciona mesmo antes do login / com RLS ativo)
+  // 1. Verifica direto na tabela usuarios (codigo_indicacao)
   try {
-    const rpcCheck = await supabase.rpc('rpc_check_codigo_indicacao_exists', {
-      p_code: normalizedCode,
-    });
-    if (!rpcCheck.error && typeof rpcCheck.data === 'boolean') {
-      if (rpcCheck.data) {
-        return { valid: true, normalizedCode };
-      }
-      // Caso o usuário tenha informado um WhatsApp (10+ dígitos), verifica se existe em usuarios
-      const onlyPhoneChars = /^[0-9()+\-]+$/.test(normalizedCode);
-      const digitsOnly = normalizedCode.replace(/\D/g, '');
-      if (onlyPhoneChars && digitsOnly.length >= 10) {
-        const phoneExists = await checkWhatsAppExistsSupabase(digitsOnly).catch(() => false);
-        if (phoneExists) {
-          return { valid: true, normalizedCode: digitsOnly };
-        }
-      }
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('id,nome,email,codigo_indicacao')
+      .ilike('codigo_indicacao', normalizedCode)
+      .limit(1);
+
+    if (!error && Array.isArray(data) && data.length > 0 && data[0]) {
       return {
-        valid: false,
+        valid: true,
         normalizedCode,
-        error: INVALID_REFERRAL_CODE_ERROR,
+        referrerId: data[0].id !== undefined && data[0].id !== null ? String(data[0].id) : undefined,
+        referrerName: data[0].nome ? String(data[0].nome) : undefined,
+        referrerEmail: data[0].email ? String(data[0].email).trim().toLowerCase() : undefined,
       };
     }
   } catch {}
 
-  // 2. Fallback caso a RPC não esteja disponível: consulta direta na tabela usuarios
+  // 2. Verifica registro em pagamentos (status = 'codigo_indicacao') caso usuarios ainda não tenha a coluna codigo_indicacao
   try {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select('id, codigo_indicacao')
-      .ilike('codigo_indicacao', normalizedCode)
+    const { data: regRows, error: regErr } = await supabase
+      .from('pagamentos')
+      .select('id_motorista,chave_pix')
+      .eq('status', INTERNAL_REFERRAL_CODE_STATUS)
+      .ilike('chave_pix', normalizedCode)
       .limit(1);
 
-    if (!error && Array.isArray(data) && data.length > 0) {
+    if (!regErr && Array.isArray(regRows) && regRows.length > 0 && regRows[0]) {
+      const refId =
+        regRows[0].id_motorista !== undefined && regRows[0].id_motorista !== null
+          ? String(regRows[0].id_motorista)
+          : undefined;
+      let referrerName: string | undefined;
+      let referrerEmail: string | undefined;
+      if (refId && /^\d+$/.test(refId)) {
+        try {
+          const { data: uRows } = await selectSafeUsuariosRows((q) => q.eq('id', Number(refId)).limit(1));
+          if (uRows && uRows[0]) {
+            referrerName = uRows[0].nome ? String(uRows[0].nome) : undefined;
+            referrerEmail = String(uRows[0]['e-mail'] || uRows[0].email || '').trim().toLowerCase() || undefined;
+          }
+        } catch {}
+      }
+      return {
+        valid: true,
+        normalizedCode,
+        referrerId: refId,
+        referrerName,
+        referrerEmail,
+      };
+    }
+  } catch {}
+
+  // 2b. Verifica índice público em Storage (avatars/referrals/codes/<CODE>.json - funciona inclusive ANON antes do signup)
+  try {
+    const pubCode = await fetchPublicReferralCodeFile(normalizedCode);
+    if (pubCode?.code === normalizedCode) {
+      let referrerEmail: string | undefined;
+      let referrerName = pubCode.name;
+      if (pubCode.referrerId && /^\d+$/.test(pubCode.referrerId)) {
+        try {
+          const { data: uRows } = await selectSafeUsuariosRows((q) =>
+            q.eq('id', Number(pubCode.referrerId)).limit(1)
+          );
+          if (uRows && uRows[0]) {
+            referrerName = referrerName || (uRows[0].nome ? String(uRows[0].nome) : undefined);
+            referrerEmail = String(uRows[0]['e-mail'] || uRows[0].email || '').trim().toLowerCase() || undefined;
+          }
+        } catch {}
+      }
+      return {
+        valid: true,
+        normalizedCode,
+        referrerId: pubCode.referrerId,
+        referrerName,
+        referrerEmail,
+      };
+    }
+  } catch {}
+
+  // 3. Verifica codigo_indicacao via RPC SECURITY DEFINER (funciona mesmo com RLS ativo)
+  try {
+    const rpcCheck = await supabase.rpc('rpc_check_codigo_indicacao_exists', {
+      p_code: normalizedCode,
+    });
+    if (!rpcCheck.error && typeof rpcCheck.data === 'boolean' && rpcCheck.data) {
       return { valid: true, normalizedCode };
     }
   } catch {}
 
-  // Também checa WhatsApp se aplicável
+  // 4. Caso o usuário tenha informado um WhatsApp (10+ dígitos), verifica em usuarios / RPC
   const onlyPhoneChars = /^[0-9()+\-]+$/.test(normalizedCode);
   const digitsOnly = normalizedCode.replace(/\D/g, '');
   if (onlyPhoneChars && digitsOnly.length >= 10) {
+    try {
+      const allUsersRes = await selectSafeUsuariosRows();
+      const phoneMatch = (allUsersRes.data || []).find((u: any) => {
+        const w = normalizePhoneDigitsOnly(u.whatsapp || '');
+        const c = normalizePhoneDigitsOnly(u.celular || '');
+        return (w && w.endsWith(digitsOnly)) || (c && c.endsWith(digitsOnly));
+      });
+      if (phoneMatch) {
+        return {
+          valid: true,
+          normalizedCode: digitsOnly,
+          referrerId: phoneMatch.id !== undefined && phoneMatch.id !== null ? String(phoneMatch.id) : undefined,
+          referrerName: phoneMatch.nome ? String(phoneMatch.nome) : undefined,
+          referrerEmail: String(phoneMatch['e-mail'] || phoneMatch.email || '').trim().toLowerCase() || undefined,
+        };
+      }
+    } catch {}
     const phoneExists = await checkWhatsAppExistsSupabase(digitsOnly).catch(() => false);
     if (phoneExists) {
       return { valid: true, normalizedCode: digitsOnly };
@@ -2188,7 +2502,26 @@ export async function validateReferralCodeExistsSupabase(rawCode?: string | null
 }
 
 /**
- * Garante que usuários antigos ou sem código recebam automaticamente um codigo_indicacao único ao abrir o app.
+ * Verifica no Supabase (public.usuarios / registro de códigos) se o código de indicação existe antes de salvar o cadastro.
+ * Campo vazio retorna válido (sem indicante).
+ */
+export async function validateReferralCodeExistsSupabase(rawCode?: string | null): Promise<{
+  valid: boolean;
+  normalizedCode: string;
+  referrerId?: string;
+  error?: string;
+}> {
+  const res = await resolveReferrerByCodeSupabase(rawCode);
+  return {
+    valid: res.valid,
+    normalizedCode: res.normalizedCode,
+    referrerId: res.referrerId,
+    error: res.error,
+  };
+}
+
+/**
+ * Garante que usuários antigos ou sem código recebam automaticamente um codigo_indicacao único e sincronizado no Supabase.
  */
 export async function ensureUserReferralCodeSupabase(params: {
   id?: string | number;
@@ -2197,25 +2530,92 @@ export async function ensureUserReferralCodeSupabase(params: {
   currentCode?: string;
 }): Promise<string> {
   const existingProp = String(params.currentCode || '').trim().toUpperCase();
-  if (existingProp) return existingProp;
-
   const cleanEmail = String(params.email || '').trim().toLowerCase();
   const cleanName = String(params.name || '').trim();
-  const numericId =
+  let numericId =
     params.id !== undefined && params.id !== null && /^\d+$/.test(String(params.id).trim())
       ? Number(String(params.id).trim())
       : null;
 
+  const syncCodeToSupabase = async (codeToSync: string, targetNumericId: number | null) => {
+    const cleanCode = normalizeReferralCodeInput(codeToSync);
+    if (!cleanCode) return;
+    let persistedInUsuarios = false;
+    try {
+      const knownCols = await getUsuariosTableColumns();
+      if (!knownCols || knownCols.size === 0 || knownCols.has('codigo_indicacao')) {
+        if (targetNumericId) {
+          const { error } = await supabase
+            .from('usuarios')
+            .update({ codigo_indicacao: cleanCode })
+            .eq('id', targetNumericId);
+          if (!error) persistedInUsuarios = true;
+        } else if (cleanEmail) {
+          const { error } = await supabase
+            .from('usuarios')
+            .update({ codigo_indicacao: cleanCode })
+            .eq('email', cleanEmail);
+          if (!error) persistedInUsuarios = true;
+        }
+      }
+    } catch {}
+
+    if (targetNumericId) {
+      await upsertReferralCodeRegistryInPagamentos(targetNumericId, cleanCode, cleanName).catch(() => false);
+    } else if (!persistedInUsuarios && cleanEmail) {
+      const foundRow = await getUsuarioSupabase(cleanEmail).catch(() => null);
+      if (foundRow?.id && /^\d+$/.test(String(foundRow.id))) {
+        await upsertReferralCodeRegistryInPagamentos(
+          Number(foundRow.id),
+          cleanCode,
+          String(foundRow.nome || cleanName || '').trim()
+        ).catch(() => false);
+      }
+    }
+  };
+
   try {
+    let existingRow: any = null;
+    if (cleanEmail) {
+      existingRow = await getUsuarioSupabase(cleanEmail).catch(() => null);
+    } else if (numericId) {
+      const { data: idRows } = await selectSafeUsuariosRows((q) => q.eq('id', numericId).limit(1));
+      existingRow = idRows?.[0] || null;
+    }
+    if (!numericId && existingRow?.id && /^\d+$/.test(String(existingRow.id))) {
+      numericId = Number(existingRow.id);
+    }
+
+    if (existingProp) {
+      await syncCodeToSupabase(existingProp, numericId);
+      return existingProp;
+    }
+
     // 1. Verifica direto na tabela usuarios se já possui código salvo
     let dbName = cleanName;
-    if (numericId || cleanEmail) {
-      const existingRow = cleanEmail ? await getUsuarioSupabase(cleanEmail).catch(() => null) : null;
-      if (existingRow) {
-        dbName = String(existingRow.nome || dbName || 'RACE').trim();
-        const dbCode = String(existingRow.codigo_indicacao || '').trim().toUpperCase();
-        if (dbCode) return dbCode;
+    if (existingRow) {
+      dbName = String(existingRow.nome || dbName || 'RACE').trim();
+      const dbCode = String(existingRow.codigo_indicacao || '').trim().toUpperCase();
+      if (dbCode) {
+        await syncCodeToSupabase(dbCode, numericId);
+        return dbCode;
       }
+    }
+
+    // 1a. Verifica se já foi registrado na tabela pagamentos (fallback quando usuarios não tem codigo_indicacao)
+    if (numericId) {
+      try {
+        const { data: regRows } = await supabase
+          .from('pagamentos')
+          .select('chave_pix')
+          .eq('status', INTERNAL_REFERRAL_CODE_STATUS)
+          .eq('id_motorista', numericId)
+          .limit(1);
+        const regCode = String(regRows?.[0]?.chave_pix || '').trim().toUpperCase();
+        if (regCode) {
+          return regCode;
+        }
+      } catch {}
     }
 
     // 1b. Verifica user_metadata do Auth caso já tenha sido salvo anteriormente
@@ -2236,6 +2636,7 @@ export async function ensureUserReferralCodeSupabase(params: {
       });
       if (!rpcRes.error && typeof rpcRes.data === 'string' && rpcRes.data.trim()) {
         const rpcCode = rpcRes.data.trim().toUpperCase();
+        await syncCodeToSupabase(rpcCode, numericId);
         try {
           await supabase.auth.updateUser({ data: { codigo_indicacao: rpcCode } });
         } catch {}
@@ -2244,28 +2645,13 @@ export async function ensureUserReferralCodeSupabase(params: {
     } catch {}
 
     if (authMetaCode) {
+      await syncCodeToSupabase(authMetaCode, numericId);
       return authMetaCode;
     }
 
-    // 3. Fallback direto cliente: gera único e salva em usuarios.codigo_indicacao + auth metadata
+    // 3. Fallback direto cliente: gera único e salva em usuarios.codigo_indicacao + pagamentos + auth metadata
     const newCode = await generateUniqueReferralCodeSupabase(dbName || cleanName || cleanEmail || 'RACE');
-    let persistedInTable = false;
-
-    if (numericId) {
-      const { error } = await supabase
-        .from('usuarios')
-        .update({ codigo_indicacao: newCode })
-        .eq('id', numericId);
-      if (!error) persistedInTable = true;
-    }
-
-    if (!persistedInTable && cleanEmail) {
-      const { error } = await supabase
-        .from('usuarios')
-        .update({ codigo_indicacao: newCode })
-        .eq('email', cleanEmail);
-      if (!error) persistedInTable = true;
-    }
+    await syncCodeToSupabase(newCode, numericId);
 
     try {
       await supabase.auth.updateUser({ data: { codigo_indicacao: newCode } });
@@ -2273,7 +2659,7 @@ export async function ensureUserReferralCodeSupabase(params: {
 
     return newCode;
   } catch {
-    return generateReferralCodeCandidate(cleanName || cleanEmail || 'RACE');
+    return existingProp || generateReferralCodeCandidate(cleanName || cleanEmail || 'RACE');
   }
 }
 
@@ -2316,6 +2702,7 @@ export async function insertUsuarioSupabase(params: {
   documentos_aceitos?: boolean;
   data_aceite?: string;
   indicado_por?: string;
+  codigo_usado?: string;
   codigo_indicacao?: string;
   indicado_por_codigo?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
@@ -2335,13 +2722,17 @@ export async function insertUsuarioSupabase(params: {
     }
 
     const rawReferralToValidate = normalizeReferralCodeInput(
-      params.indicado_por_codigo || params.indicado_por || ''
+      params.codigo_usado || params.indicado_por_codigo || params.indicado_por || ''
     );
+    let resolvedReferrerId = '';
+    let resolvedReferrerCode = '';
     if (rawReferralToValidate) {
-      const refCheck = await validateReferralCodeExistsSupabase(rawReferralToValidate);
+      const refCheck = await resolveReferrerByCodeSupabase(rawReferralToValidate);
       if (!refCheck.valid) {
         return { success: false, error: refCheck.error || INVALID_REFERRAL_CODE_ERROR };
       }
+      resolvedReferrerCode = refCheck.normalizedCode;
+      resolvedReferrerId = refCheck.referrerId ? String(refCheck.referrerId).trim() : '';
     }
 
     if (params.exigencias_confirmadas === true) {
@@ -2392,15 +2783,20 @@ export async function insertUsuarioSupabase(params: {
         ? 'driver'
         : 'passenger';
 
-    const rawIndicadoInput = String(params.indicado_por_codigo || params.indicado_por || '').trim();
+    const rawIndicadoInput = String(
+      resolvedReferrerCode || params.codigo_usado || params.indicado_por_codigo || params.indicado_por || ''
+    ).trim();
     const cleanIndicadoDigits = normalizeReferralDigits(rawIndicadoInput);
-    const normalizedIndicadoPor =
-      cleanIndicadoDigits.length >= 8
+    const normalizedReferralCodeValue =
+      resolvedReferrerCode ||
+      (cleanIndicadoDigits.length >= 8
         ? cleanIndicadoDigits
         : rawIndicadoInput.includes('@')
         ? rawIndicadoInput.toLowerCase()
-        : rawIndicadoInput.toUpperCase();
-    const normalizedIndicadoPorCodigo = normalizedIndicadoPor;
+        : rawIndicadoInput.toUpperCase());
+    const normalizedIndicadoPor = resolvedReferrerId || normalizedReferralCodeValue;
+    const normalizedCodigoUsado = normalizedReferralCodeValue;
+    const normalizedIndicadoPorCodigo = normalizedReferralCodeValue;
 
     const myCodigoIndicacao = String(params.codigo_indicacao || '').trim().toUpperCase() ||
       (await generateUniqueReferralCodeSupabase(params.nome));
@@ -2416,7 +2812,13 @@ export async function insertUsuarioSupabase(params: {
           tipo: tipoStr,
           role: authRole,
           codigo_indicacao: myCodigoIndicacao,
-          ...(normalizedIndicadoPor ? { indicado_por: normalizedIndicadoPor, indicado_por_codigo: normalizedIndicadoPorCodigo } : {}),
+          ...(normalizedReferralCodeValue
+            ? {
+                indicado_por: normalizedIndicadoPor,
+                codigo_usado: normalizedCodigoUsado,
+                indicado_por_codigo: normalizedIndicadoPorCodigo,
+              }
+            : {}),
         },
       },
     });
@@ -2572,6 +2974,9 @@ export async function insertUsuarioSupabase(params: {
       if (normalizedIndicadoPor && knownCols.has('indicado_por')) {
         row.indicado_por = normalizedIndicadoPor;
       }
+      if (normalizedCodigoUsado && knownCols.has('codigo_usado')) {
+        row.codigo_usado = normalizedCodigoUsado;
+      }
       if (normalizedIndicadoPorCodigo && knownCols.has('indicado_por_codigo')) {
         row.indicado_por_codigo = normalizedIndicadoPorCodigo;
       }
@@ -2583,6 +2988,7 @@ export async function insertUsuarioSupabase(params: {
       }
     } else {
       if (normalizedIndicadoPor) row.indicado_por = normalizedIndicadoPor;
+      if (normalizedCodigoUsado) row.codigo_usado = normalizedCodigoUsado;
       if (normalizedIndicadoPorCodigo) row.indicado_por_codigo = normalizedIndicadoPorCodigo;
       if (myCodigoIndicacao) row.codigo_indicacao = myCodigoIndicacao;
       row.bonus_pago = false;
@@ -2591,6 +2997,60 @@ export async function insertUsuarioSupabase(params: {
     delete row.id;
     delete row.password;
     filterPayloadToExistingColumns(row, knownCols, new Set(['nome', 'tipo', 'email', 'e-mail']));
+
+    const finalizeReferralPersistenceAfterInsert = async (insertedData: any) => {
+      let resolvedId = insertedData?.id !== undefined && insertedData?.id !== null ? String(insertedData.id) : '';
+      if (!resolvedId && cleanEmail) {
+        try {
+          const { data: idLookup } = await selectSafeUsuariosRows((q) =>
+            q.eq(useEmailCol, cleanEmail).limit(1)
+          );
+          if (idLookup && idLookup[0]?.id !== undefined && idLookup[0]?.id !== null) {
+            resolvedId = String(idLookup[0].id);
+          }
+        } catch {}
+      }
+
+      const numInsertedId = resolvedId && /^\d+$/.test(resolvedId) ? Number(resolvedId) : null;
+      if (numInsertedId && myCodigoIndicacao) {
+        await upsertReferralCodeRegistryInPagamentos(
+          numInsertedId,
+          myCodigoIndicacao,
+          params.nome.trim()
+        ).catch(() => false);
+      }
+
+      if (normalizedReferralCodeValue) {
+        // Garante gravação nas 3 colunas (se existirem) E no vínculo em pagamentos
+        const hasAllThreeColsInTable = Boolean(
+          knownCols &&
+            knownCols.has('indicado_por') &&
+            knownCols.has('codigo_usado') &&
+            knownCols.has('indicado_por_codigo')
+        );
+        if (!hasAllThreeColsInTable || resolvedReferrerId || normalizedReferralCodeValue) {
+          await upsertReferralLinkInPagamentos({
+            referrerId: resolvedReferrerId || null,
+            indicatedId: resolvedId || null,
+            indicatedEmail: cleanEmail,
+            referralCode: normalizedReferralCodeValue,
+          }).catch(() => false);
+        }
+      }
+
+      return stripSensitiveUserFields({
+        ...(insertedData || {}),
+        ...(resolvedId ? { id: insertedData?.id ?? resolvedId } : {}),
+        codigo_indicacao: insertedData?.codigo_indicacao || myCodigoIndicacao,
+        ...(normalizedReferralCodeValue
+          ? {
+              indicado_por: insertedData?.indicado_por || normalizedIndicadoPor,
+              codigo_usado: insertedData?.codigo_usado || normalizedCodigoUsado,
+              indicado_por_codigo: insertedData?.indicado_por_codigo || normalizedIndicadoPorCodigo,
+            }
+          : {}),
+      });
+    };
 
     let returnCols = buildSafeReturnCols(knownCols);
     let lastSupabaseError = 'Erro desconhecido ao inserir em public.usuarios.';
@@ -2602,7 +3062,8 @@ export async function insertUsuarioSupabase(params: {
 
       const { data, error } = await supabase.from('usuarios').insert([row]).select(selectClause);
       if (!error) {
-        return { success: true, data: stripSensitiveUserFields(data?.[0] || row) };
+        const enriched = await finalizeReferralPersistenceAfterInsert(data?.[0] || row);
+        return { success: true, data: enriched };
       }
 
       const msg = error.message || '';
@@ -2611,7 +3072,8 @@ export async function insertUsuarioSupabase(params: {
       if (error.code === '42501' || msg.toLowerCase().includes('row-level security')) {
         const plainInsert = await supabase.from('usuarios').insert([row]);
         if (!plainInsert.error) {
-          return { success: true, data: stripSensitiveUserFields(row) };
+          const enriched = await finalizeReferralPersistenceAfterInsert(row);
+          return { success: true, data: enriched };
         }
         if (signedAuthUserId) {
           const rpcProfile = await supabase.rpc('rpc_complete_signup_profile', {
@@ -2633,7 +3095,8 @@ export async function insertUsuarioSupabase(params: {
             p_indicado_por_codigo: normalizedIndicadoPorCodigo || '',
           });
           if (!rpcProfile.error && rpcProfile.data) {
-            return { success: true, data: stripSensitiveUserFields(rpcProfile.data) };
+            const enriched = await finalizeReferralPersistenceAfterInsert(rpcProfile.data);
+            return { success: true, data: enriched };
           }
         }
       }
@@ -2685,7 +3148,8 @@ export async function insertUsuarioSupabase(params: {
         // Último fallback para erro 42703 em .select(): faz insert sem .select()
         const plainInsert = await supabase.from('usuarios').insert([row]);
         if (!plainInsert.error) {
-          return { success: true, data: stripSensitiveUserFields(row) };
+          const enriched = await finalizeReferralPersistenceAfterInsert(row);
+          return { success: true, data: enriched };
         }
         if (isMissingColumnError(plainInsert.error)) {
           const m2 = extractMissingColumnFromSupabaseError(plainInsert.error.message || '');
@@ -4945,7 +5409,15 @@ export async function deleteUserCompleteAdminSupabase(params: {
             (targetEmail &&
               (pChavePix === `INDICADO_EMAIL:${targetEmail}` || pComp.includes(targetEmail))));
 
-        if (isPayeeMatch || isIndicatedBonusMatch) {
+        const parsedLink =
+          isInternalReferralMetaRow(p) ? parseReferralLinkChavePix(pChavePix) : null;
+        const isInternalReferralMatch = Boolean(
+          parsedLink &&
+            ((targetId !== null && parsedLink.indicatedId === String(targetId)) ||
+              (targetEmail && parsedLink.email === targetEmail))
+        );
+
+        if (isPayeeMatch || isIndicatedBonusMatch || isInternalReferralMatch) {
           if (p.id !== undefined && p.id !== null) {
             matchingPayIds.push(Number(p.id));
           }
@@ -4967,7 +5439,20 @@ export async function deleteUserCompleteAdminSupabase(params: {
       }
 
       if (matchingPayIds.length > 0) {
+        for (const p of allPayRows || []) {
+          if (
+            String(p?.status || '').trim().toLowerCase() === INTERNAL_REFERRAL_CODE_STATUS &&
+            targetId !== null &&
+            Number(p?.id_motorista) === targetId &&
+            p?.chave_pix
+          ) {
+            await removePublicReferralCodeFile(String(p.chave_pix));
+          }
+        }
         await supabase.from('pagamentos').delete().in('id', matchingPayIds);
+      }
+      if (targetRow?.codigo_indicacao) {
+        await removePublicReferralCodeFile(String(targetRow.codigo_indicacao));
       }
       if (targetId !== null) {
         await supabase.from('pagamentos').delete().eq('id_motorista', targetId);
@@ -4992,15 +5477,17 @@ export async function deleteUserCompleteAdminSupabase(params: {
 
     // 2c. Apaga corridas do usuário (como passageiro ou motorista/motoboy)
     try {
-      if (targetId !== null) {
-        await supabase.from('corridas').delete().eq('passageiro_id', targetId);
-        await supabase.from('corridas').delete().eq('id_passageiro', targetId);
-        await supabase.from('corridas').delete().eq('motorista_id', targetId);
-        await supabase.from('corridas').delete().eq('id_motorista', targetId);
-      }
-      if (targetEmail) {
-        await supabase.from('corridas').delete().ilike('email_passageiro', targetEmail);
-        await supabase.from('corridas').delete().ilike('email_motorista', targetEmail);
+      for (const corridasTbl of ['corridas', 'Corridas']) {
+        if (targetId !== null) {
+          await supabase.from(corridasTbl).delete().eq('passageiro_id', targetId);
+          await supabase.from(corridasTbl).delete().eq('id_passageiro', targetId);
+          await supabase.from(corridasTbl).delete().eq('motorista_id', targetId);
+          await supabase.from(corridasTbl).delete().eq('id_motorista', targetId);
+        }
+        if (targetEmail) {
+          await supabase.from(corridasTbl).delete().ilike('email_passageiro', targetEmail);
+          await supabase.from(corridasTbl).delete().ilike('email_motorista', targetEmail);
+        }
       }
     } catch {}
 
@@ -6335,10 +6822,10 @@ export async function getAllPagamentosSupabase(): Promise<SupabasePagamentoRow[]
     if (error) {
       const retry = await supabase.from('pagamentos').select('*');
       if (retry.error || !retry.data) return [];
-      return retry.data as SupabasePagamentoRow[];
+      return (retry.data as SupabasePagamentoRow[]).filter((p) => !isInternalReferralMetaRow(p));
     }
 
-    return (data || []) as SupabasePagamentoRow[];
+    return ((data || []) as SupabasePagamentoRow[]).filter((p) => !isInternalReferralMetaRow(p));
   } catch {
     return [];
   }
@@ -6378,7 +6865,16 @@ export async function getPagamentosSupabase(currentUser: AppUser | null): Promis
         ? baseQuery.eq('id_motorista', Number(currentUser.id))
         : baseQuery.eq('email_motorista', cleanEmail);
 
-    const { data, error } = await filtered.order('data', { ascending: false });
+    let { data, error } = await filtered.order('data', { ascending: false });
+
+    if (error && isMissingColumnError(error) && hasNumericId) {
+      const retry = await supabase
+        .from('pagamentos')
+        .select('*')
+        .eq('id_motorista', Number(currentUser.id));
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       console.warn('Aviso ao consultar pagamentos no Supabase:', error.message);
@@ -6387,8 +6883,9 @@ export async function getPagamentosSupabase(currentUser: AppUser | null): Promis
 
     return ((data || []) as SupabasePagamentoRow[]).filter(
       (row) =>
-        (cleanEmail && String(row.email_motorista || '').trim().toLowerCase() === cleanEmail) ||
-        (hasNumericId && String(row.id_motorista || '') === String(currentUser.id))
+        !isInternalReferralMetaRow(row) &&
+        ((cleanEmail && String(row.email_motorista || '').trim().toLowerCase() === cleanEmail) ||
+          (hasNumericId && String(row.id_motorista || '') === String(currentUser.id)))
     );
   } catch {
     return [];
@@ -6716,6 +7213,8 @@ export interface ReferralCandidateItem {
 
 export interface AdminReferralItem extends ReferralCandidateItem {
   indicadoPor: string;
+  indicadoPorId?: string;
+  codigoUsado?: string;
 }
 
 /**
@@ -6863,7 +7362,7 @@ export async function checkAndAwardReferralBonusSupabase(params: {
       if (idRows && idRows.length > 0) indicatedRow = idRows[0];
     }
     const rawIndCode = String(
-      indicatedRow?.indicado_por_codigo || indicatedRow?.indicado_por || ''
+      indicatedRow?.indicado_por_codigo || indicatedRow?.codigo_usado || indicatedRow?.indicado_por || ''
     ).trim();
     if (!indicatedRow || !rawIndCode) {
       return { awarded: false };
@@ -6877,18 +7376,10 @@ export async function checkAndAwardReferralBonusSupabase(params: {
     const requiredRides = isPassenger ? PASSENGER_REFERRAL_REQUIRED_RIDES : REFERRAL_REQUIRED_RIDES;
     const bonusAmount = isPassenger ? PASSENGER_REFERRAL_BONUS_AMOUNT : REFERRAL_BONUS_AMOUNT;
     const indicatedId = Number(indicatedRow.id || numericId || 0);
-    const indicatedEmail = String(indicatedRow.email || cleanEmail || '').trim().toLowerCase();
+    const indicatedEmail = String(indicatedRow.email || indicatedRow['e-mail'] || cleanEmail || '').trim().toLowerCase();
 
-    const ridesQuery = isPassenger
-      ? indicatedId
-        ? supabase.from('corridas').select('id,status').eq('status', 'finalizada').or(`id_passageiro.eq.${indicatedId},passageiro_id.eq.${indicatedId}${indicatedEmail ? `,email_passageiro.eq.${indicatedEmail}` : ''}`)
-        : supabase.from('corridas').select('id,status').eq('status', 'finalizada').eq('email_passageiro', indicatedEmail)
-      : indicatedId
-      ? supabase.from('corridas').select('id,status').eq('status', 'finalizada').or(`id_motorista.eq.${indicatedId},motorista_id.eq.${indicatedId}${indicatedEmail ? `,email_motorista.eq.${indicatedEmail}` : ''}`)
-      : supabase.from('corridas').select('id,status').eq('status', 'finalizada').eq('email_motorista', indicatedEmail);
-
-    const { data: ridesData } = await ridesQuery;
-    const ridesCount = Array.isArray(ridesData) ? ridesData.length : 0;
+    const ridesRows = await fetchFinalizedCorridasRawForReferralsSupabase();
+    const ridesCount = countCompletedRidesForUserInRows(ridesRows, String(indicatedId || ''), indicatedEmail, isPassenger);
     if (ridesCount < requiredRides) {
       return { awarded: false, ridesCount, amount: bonusAmount };
     }
@@ -6911,9 +7402,10 @@ export async function checkAndAwardReferralBonusSupabase(params: {
     const lowerCode = rawIndCode.toLowerCase();
     const { data: allCandidates } = await selectSafeUsuariosRows((q) => q.neq('id', indicatedId));
     const referrerRow = (allCandidates || []).find((u: any) => {
+      if (String(u.id || '') === String(indicatedRow.indicado_por || '').trim()) return true;
       const uCode = String(u.codigo_indicacao || '').trim().toUpperCase();
       if (uCode && uCode === upperCode) return true;
-      const uEmail = String(u.email || '').trim().toLowerCase();
+      const uEmail = String(u['e-mail'] || u.email || '').trim().toLowerCase();
       const uLogin = String(u.login || '').trim().toLowerCase();
       if (uEmail === lowerCode || uLogin === lowerCode) return true;
       if (normDigits.length >= 8) {
@@ -6928,7 +7420,7 @@ export async function checkAndAwardReferralBonusSupabase(params: {
       return { awarded: false, ridesCount, amount: bonusAmount };
     }
 
-    const referrerEmail = String(referrerRow.email || '').trim().toLowerCase();
+    const referrerEmail = String(referrerRow['e-mail'] || referrerRow.email || '').trim().toLowerCase();
     const indicatedName = String(
       indicatedRow.nome || (isPassenger ? 'Passageiro indicado' : 'Motorista indicado')
     ).trim();
@@ -6970,54 +7462,430 @@ export async function checkAndAwardReferralBonusSupabase(params: {
   return { awarded: false };
 }
 
+async function fetchFinalizedCorridasRawForReferralsSupabase(): Promise<any[]> {
+  for (const tableName of ['corridas', 'Corridas']) {
+    try {
+      const { data, error } = await supabase.from(tableName).select('*').limit(1000);
+      if (!error && Array.isArray(data)) {
+        return data.filter((c: any) => {
+          const st = String(c?.status || '').trim().toLowerCase();
+          return st === 'finalizada' || st === 'completed';
+        });
+      }
+    } catch {}
+  }
+  return [];
+}
+
+function countCompletedRidesForUserInRows(
+  ridesRows: any[],
+  uid: string,
+  uEmail: string,
+  isPassenger: boolean
+): number {
+  const cleanUid = String(uid || '').trim();
+  const cleanEmail = String(uEmail || '').trim().toLowerCase();
+  return ridesRows.filter((c: any) => {
+    if (isPassenger) {
+      const pid = String(c?.passageiro_id ?? c?.id_passageiro ?? '').trim();
+      const pmail = String(c?.email_passageiro || '').trim().toLowerCase();
+      return Boolean((cleanUid && pid === cleanUid) || (cleanEmail && pmail === cleanEmail));
+    }
+    const did = String(c?.motorista_id ?? c?.id_motorista ?? '').trim();
+    const dmail = String(c?.email_motorista || '').trim().toLowerCase();
+    return Boolean((cleanUid && did === cleanUid) || (cleanEmail && dmail === cleanEmail));
+  }).length;
+}
+
+async function fetchReferralMetadataFromPagamentosSupabase(): Promise<{
+  codeByUserId: Map<string, string>;
+  linkByIndicatedId: Map<string, { referrerId: string; code: string }>;
+  linkByIndicatedEmail: Map<string, { referrerId: string; code: string }>;
+  paidBonusIds: Set<string>;
+  paidBonusEmails: Set<string>;
+}> {
+  const codeByUserId = new Map<string, string>();
+  const linkByIndicatedId = new Map<string, { referrerId: string; code: string }>();
+  const linkByIndicatedEmail = new Map<string, { referrerId: string; code: string }>();
+  const paidBonusIds = new Set<string>();
+  const paidBonusEmails = new Set<string>();
+
+  try {
+    const { data, error } = await supabase.from('pagamentos').select('*').limit(1500);
+    if (error || !Array.isArray(data)) {
+      return { codeByUserId, linkByIndicatedId, linkByIndicatedEmail, paidBonusIds, paidBonusEmails };
+    }
+
+    for (const p of data) {
+      const st = String(p?.status || '').trim().toLowerCase();
+      const tipo = String(p?.tipo || '').trim().toLowerCase();
+      const chave = String(p?.chave_pix || '').trim();
+      const refId = p?.id_motorista !== undefined && p?.id_motorista !== null ? String(p.id_motorista).trim() : '';
+
+      if (st === INTERNAL_REFERRAL_CODE_STATUS && refId && chave) {
+        codeByUserId.set(refId, normalizeReferralCodeInput(chave));
+      } else if (st === INTERNAL_REFERRAL_LINK_STATUS && chave) {
+        const parsed = parseReferralLinkChavePix(chave);
+        const entry = {
+          referrerId: refId && refId !== '0' ? refId : '',
+          code: parsed.code,
+        };
+        if (parsed.indicatedId) linkByIndicatedId.set(parsed.indicatedId, entry);
+        if (parsed.email) linkByIndicatedEmail.set(parsed.email, entry);
+      } else if (tipo === 'bonus_indicacao') {
+        if (chave.startsWith('INDICADO:')) {
+          paidBonusIds.add(chave.slice('INDICADO:'.length).trim());
+        }
+        const meta = parseReferralBonusMeta(p?.comprovante_url, p?.chave_pix, p?.valor);
+        if (meta.indicatedId) paidBonusIds.add(meta.indicatedId);
+        if (meta.indicatedEmail) paidBonusEmails.add(meta.indicatedEmail.toLowerCase());
+      }
+    }
+  } catch {}
+
+  return { codeByUserId, linkByIndicatedId, linkByIndicatedEmail, paidBonusIds, paidBonusEmails };
+}
+
 export async function getDriverReferralsAndBonusesSupabase(
   user: AppUser | null
 ): Promise<ReferralCandidateItem[]> {
   if (!user) return [];
   const whatsapp = user.whatsapp || user.phone || '';
-  const email = (user.email || '').trim().toLowerCase();
+  const email = String(user.email || '').trim().toLowerCase();
+  const myId = user.id !== undefined && user.id !== null && /^\d+$/.test(String(user.id).trim())
+    ? String(user.id).trim()
+    : '';
+  const myDigits = normalizeReferralDigits(whatsapp);
 
+  const myCodes = new Set<string>();
+  const addCode = (c?: string | null) => {
+    const norm = normalizeReferralCodeInput(c);
+    if (norm) myCodes.add(norm);
+  };
+  addCode(user.codigoIndicacao);
+  addCode(user.driverData?.codigoIndicacao);
+
+  const byKey = new Map<string, ReferralCandidateItem>();
+  const addItem = (item: ReferralCandidateItem) => {
+    const k = String(item.id || item.email || '').trim().toLowerCase();
+    if (!k) return;
+    const existing = byKey.get(k);
+    if (!existing) {
+      byKey.set(k, item);
+    } else {
+      byKey.set(k, {
+        ...existing,
+        ...item,
+        foto: item.foto || existing.foto || '',
+        ridesCount: Math.max(Number(existing.ridesCount || 0), Number(item.ridesCount || 0)),
+        bonusPaid: Boolean(existing.bonusPaid || item.bonusPaid),
+      });
+    }
+  };
+
+  // 1. Tenta RPC SECURITY DEFINER se disponível
   try {
     const rpcRes = await supabase.rpc('rpc_get_my_referrals', {
       p_referrer_whatsapp: whatsapp,
       p_referrer_email: email,
     });
     if (!rpcRes.error && Array.isArray(rpcRes.data)) {
-      return rpcRes.data.map((item: any) => ({
-        id: String(item.id || ''),
-        nome: String(item.nome || 'Indicado'),
-        email: String(item.email || ''),
-        tipo: String(item.tipo || 'driver'),
-        foto: String(item.foto || ''),
-        createdAt: String(item.created_at || ''),
-        ridesCount: Number(item.rides_count || 0),
-        bonusPaid: Boolean(item.bonus_paid),
-      }));
+      for (const item of rpcRes.data) {
+        addItem({
+          id: String(item.id || ''),
+          nome: String(item.nome || 'Indicado'),
+          email: String(item.email || ''),
+          tipo: String(item.tipo || 'driver'),
+          foto: String(item.foto || ''),
+          createdAt: String(item.created_at || ''),
+          ridesCount: Number(item.rides_count || 0),
+          bonusPaid: Boolean(item.bonus_paid),
+        });
+      }
     }
   } catch {}
 
-  return [];
+  // 2. Consulta direta nas tabelas usuarios + pagamentos + Corridas (sem cache; garante 0+ corridas e ambos esquemas)
+  try {
+    const [usersRes, meta, ridesRows] = await Promise.all([
+      selectSafeUsuariosRows((q) => q.order('created_at', { ascending: false })),
+      fetchReferralMetadataFromPagamentosSupabase(),
+      fetchFinalizedCorridasRawForReferralsSupabase(),
+    ]);
+
+    if (myId && meta.codeByUserId.has(myId)) {
+      addCode(meta.codeByUserId.get(myId));
+    }
+
+    const users = usersRes.data || [];
+    const meRow = users.find((u: any) => {
+      const uid = u?.id !== undefined && u?.id !== null ? String(u.id).trim() : '';
+      const uEmail = String(u?.['e-mail'] || u?.email || '').trim().toLowerCase();
+      return (myId && uid === myId) || (email && uEmail === email);
+    });
+    const resolvedMyId = myId || (meRow?.id !== undefined && meRow?.id !== null ? String(meRow.id).trim() : '');
+    if (meRow?.codigo_indicacao) addCode(meRow.codigo_indicacao);
+    if (resolvedMyId && meta.codeByUserId.has(resolvedMyId)) {
+      addCode(meta.codeByUserId.get(resolvedMyId));
+    }
+
+    for (const u of users) {
+      const uid = u?.id !== undefined && u?.id !== null ? String(u.id).trim() : '';
+      const uEmail = String(u?.['e-mail'] || u?.email || '').trim().toLowerCase();
+      if (resolvedMyId && uid && uid === resolvedMyId) continue;
+      if (email && uEmail && uEmail === email) continue;
+
+      const uIndPor = String(u?.indicado_por || '').trim();
+      const uCodUsado = normalizeReferralCodeInput(u?.codigo_usado || '');
+      const uIndCod = normalizeReferralCodeInput(u?.indicado_por_codigo || '');
+      const linkEntry =
+        (uid ? meta.linkByIndicatedId.get(uid) : undefined) ||
+        (uEmail ? meta.linkByIndicatedEmail.get(uEmail) : undefined);
+
+      const uDigitsList = [
+        normalizeReferralDigits(uIndPor),
+        normalizeReferralDigits(u?.indicado_por_codigo || ''),
+      ].filter((d) => d.length >= 8);
+
+      const matchedById = Boolean(
+        resolvedMyId &&
+          ((uIndPor && uIndPor === resolvedMyId) || (linkEntry?.referrerId && linkEntry.referrerId === resolvedMyId))
+      );
+      const matchedByCode = Boolean(
+        (uCodUsado && myCodes.has(uCodUsado)) ||
+          (uIndCod && myCodes.has(uIndCod)) ||
+          (uIndPor && myCodes.has(uIndPor.toUpperCase())) ||
+          (linkEntry?.code && myCodes.has(linkEntry.code.toUpperCase()))
+      );
+      const matchedByEmail = Boolean(
+        email &&
+          ((uIndPor && uIndPor.toLowerCase() === email) ||
+            (u?.indicado_por_codigo && String(u.indicado_por_codigo).trim().toLowerCase() === email))
+      );
+      const matchedByDigits = Boolean(
+        myDigits.length >= 8 &&
+          uDigitsList.some((d) => d.endsWith(myDigits) || myDigits.endsWith(d))
+      );
+
+      if (!matchedById && !matchedByCode && !matchedByEmail && !matchedByDigits) continue;
+
+      const isPass = isPassengerReferralRole(u?.tipo);
+      const ridesCount = countCompletedRidesForUserInRows(ridesRows, uid, uEmail, isPass);
+      const bonusPaid = Boolean(
+        u?.bonus_pago ||
+          (uid && meta.paidBonusIds.has(uid)) ||
+          (uEmail && meta.paidBonusEmails.has(uEmail))
+      );
+
+      addItem({
+        id: uid || uEmail,
+        nome: String(u?.nome || u?.login || 'Indicado'),
+        email: uEmail,
+        tipo: String(u?.tipo || 'driver'),
+        foto: extractPhotoFromRow(u),
+        createdAt: String(u?.created_at || ''),
+        ridesCount,
+        bonusPaid,
+      });
+    }
+  } catch {}
+
+  return Array.from(byKey.values());
 }
 
 export async function getAllReferralsAdminSupabase(): Promise<AdminReferralItem[]> {
+  const byKey = new Map<string, AdminReferralItem>();
+  const addAdminItem = (item: AdminReferralItem) => {
+    const k = String(item.id || item.email || '').trim().toLowerCase();
+    if (!k) return;
+    const existing = byKey.get(k);
+    if (!existing) {
+      byKey.set(k, item);
+    } else {
+      byKey.set(k, {
+        ...existing,
+        ...item,
+        foto: item.foto || existing.foto || '',
+        indicadoPor: item.indicadoPor || existing.indicadoPor || '',
+        indicadoPorId: item.indicadoPorId || existing.indicadoPorId || '',
+        codigoUsado: item.codigoUsado || existing.codigoUsado || '',
+        ridesCount: Math.max(Number(existing.ridesCount || 0), Number(item.ridesCount || 0)),
+        bonusPaid: Boolean(existing.bonusPaid || item.bonusPaid),
+      });
+    }
+  };
+
   try {
     const rpcRes = await supabase.rpc('rpc_get_all_referrals_admin');
     if (!rpcRes.error && Array.isArray(rpcRes.data)) {
-      return rpcRes.data.map((item: any) => ({
-        id: String(item.indicated_id || ''),
-        nome: String(item.indicated_name || 'Indicado'),
-        email: String(item.indicated_email || ''),
-        tipo: String(item.indicated_tipo || 'driver'),
-        foto: String(item.foto || ''),
-        indicadoPor: String(item.indicado_por || ''),
-        createdAt: String(item.created_at || ''),
-        ridesCount: Number(item.rides_count || 0),
-        bonusPaid: Boolean(item.bonus_paid),
-      }));
+      for (const item of rpcRes.data) {
+        addAdminItem({
+          id: String(item.indicated_id || ''),
+          nome: String(item.indicated_name || 'Indicado'),
+          email: String(item.indicated_email || ''),
+          tipo: String(item.indicated_tipo || 'driver'),
+          foto: String(item.foto || ''),
+          indicadoPor: String(item.indicado_por || ''),
+          indicadoPorId: item.indicado_por_id ? String(item.indicado_por_id) : '',
+          codigoUsado: item.codigo_usado ? String(item.codigo_usado) : '',
+          createdAt: String(item.created_at || ''),
+          ridesCount: Number(item.rides_count || 0),
+          bonusPaid: Boolean(item.bonus_paid),
+        });
+      }
     }
   } catch {}
 
-  return [];
+  try {
+    const [usersRes, meta, ridesRows] = await Promise.all([
+      selectSafeUsuariosRows((q) => q.order('created_at', { ascending: false })),
+      fetchReferralMetadataFromPagamentosSupabase(),
+      fetchFinalizedCorridasRawForReferralsSupabase(),
+    ]);
+
+    for (const u of usersRes.data || []) {
+      const uid = u?.id !== undefined && u?.id !== null ? String(u.id).trim() : '';
+      const uEmail = String(u?.['e-mail'] || u?.email || '').trim().toLowerCase();
+      const uIndPor = String(u?.indicado_por || '').trim();
+      const uCodUsado = normalizeReferralCodeInput(u?.codigo_usado || '');
+      const uIndCod = normalizeReferralCodeInput(u?.indicado_por_codigo || '');
+      const linkEntry =
+        (uid ? meta.linkByIndicatedId.get(uid) : undefined) ||
+        (uEmail ? meta.linkByIndicatedEmail.get(uEmail) : undefined);
+
+      const resolvedCode = uCodUsado || uIndCod || linkEntry?.code || (!/^\d+$/.test(uIndPor) ? uIndPor : '');
+      const resolvedRefId = (/^\d+$/.test(uIndPor) ? uIndPor : '') || linkEntry?.referrerId || '';
+      const displayIndicadoPor = resolvedCode || resolvedRefId;
+      if (!displayIndicadoPor) continue;
+
+      const isPass = isPassengerReferralRole(u?.tipo);
+      const ridesCount = countCompletedRidesForUserInRows(ridesRows, uid, uEmail, isPass);
+      const bonusPaid = Boolean(
+        u?.bonus_pago ||
+          (uid && meta.paidBonusIds.has(uid)) ||
+          (uEmail && meta.paidBonusEmails.has(uEmail))
+      );
+
+      addAdminItem({
+        id: uid || uEmail,
+        nome: String(u?.nome || u?.login || 'Indicado'),
+        email: uEmail,
+        tipo: String(u?.tipo || 'driver'),
+        foto: extractPhotoFromRow(u),
+        indicadoPor: displayIndicadoPor,
+        indicadoPorId: resolvedRefId || undefined,
+        codigoUsado: resolvedCode || undefined,
+        createdAt: String(u?.created_at || ''),
+        ridesCount,
+        bonusPaid,
+      });
+    }
+  } catch {}
+
+  return Array.from(byKey.values());
+}
+
+/**
+ * ADM corrige/vincula manualmente quem indicou um usuário já cadastrado (ex: Antônio Carlos -> JOSE492 / ID 33).
+ * Salva indicado_por, codigo_usado e indicado_por_codigo no Supabase (usuarios + fallback pagamentos).
+ */
+export async function fixUserReferralAdminSupabase(params: {
+  targetUserId: string | number;
+  targetEmail?: string;
+  referralCode: string;
+}): Promise<{
+  success: boolean;
+  referrerId?: string;
+  referralCode?: string;
+  referrerName?: string;
+  error?: string;
+}> {
+  const cleanCode = normalizeReferralCodeInput(params.referralCode);
+  if (!cleanCode) {
+    return { success: false, error: 'Informe um código de indicação válido (ex: JOSE492).' };
+  }
+
+  const targetIdStr = String(params.targetUserId ?? '').trim();
+  const targetEmailClean = String(params.targetEmail || '').trim().toLowerCase();
+
+  try {
+    const resolved = await resolveReferrerByCodeSupabase(cleanCode);
+    if (!resolved.valid) {
+      return { success: false, error: resolved.error || INVALID_REFERRAL_CODE_ERROR };
+    }
+
+    const refId = resolved.referrerId ? String(resolved.referrerId).trim() : '';
+    const refEmail = resolved.referrerEmail ? String(resolved.referrerEmail).trim().toLowerCase() : '';
+    if ((targetIdStr && refId && targetIdStr === refId) || (targetEmailClean && refEmail && targetEmailClean === refEmail)) {
+      return { success: false, error: 'Um usuário não pode ser vinculado ao próprio código.' };
+    }
+
+    const indicatedPorValue = refId || resolved.normalizedCode;
+    const knownCols = await getUsuariosTableColumns(true);
+
+    const updatePayload: Record<string, any> = {};
+    if (!knownCols || knownCols.size === 0 || knownCols.has('indicado_por')) {
+      updatePayload.indicado_por = indicatedPorValue;
+    }
+    if (!knownCols || knownCols.size === 0 || knownCols.has('codigo_usado')) {
+      updatePayload.codigo_usado = resolved.normalizedCode;
+    }
+    if (!knownCols || knownCols.size === 0 || knownCols.has('indicado_por_codigo')) {
+      updatePayload.indicado_por_codigo = resolved.normalizedCode;
+    }
+
+    if (Object.keys(updatePayload).length > 0 && /^\d+$/.test(targetIdStr)) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (Object.keys(updatePayload).length === 0) break;
+        const { error } = await supabase
+          .from('usuarios')
+          .update(updatePayload)
+          .eq('id', Number(targetIdStr));
+        if (!error) break;
+        if (isMissingColumnError(error)) {
+          const missing = extractMissingColumnFromSupabaseError(error.message || '');
+          if (missing && missing in updatePayload) {
+            delete updatePayload[missing];
+            continue;
+          }
+          for (const k of Object.keys(updatePayload)) {
+            if ((error.message || '').includes(k)) {
+              delete updatePayload[k];
+            }
+          }
+          continue;
+        }
+        break;
+      }
+    }
+
+    const linkSaved = await upsertReferralLinkInPagamentos({
+      referrerId: refId || null,
+      indicatedId: targetIdStr || null,
+      indicatedEmail: targetEmailClean || null,
+      referralCode: resolved.normalizedCode,
+    });
+
+    const wroteUsuarioCols = Object.keys(updatePayload).length > 0;
+    if (!wroteUsuarioCols && !linkSaved) {
+      return {
+        success: false,
+        error: 'Não foi possível salvar o vínculo no Supabase. Verifique permissões/RLS.',
+      };
+    }
+
+    return {
+      success: true,
+      referrerId: refId || undefined,
+      referralCode: resolved.normalizedCode,
+      referrerName: resolved.referrerName,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Erro ao corrigir indicação no Supabase.',
+    };
+  }
 }
 
 /**

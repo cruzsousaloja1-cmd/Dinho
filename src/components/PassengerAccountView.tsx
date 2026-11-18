@@ -126,9 +126,17 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
     if (!currentUser?.email && !currentUser?.id) return;
     setIsLoadingMyReferrals(true);
     try {
+      const effectiveCode = String(
+        referralCode || currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao || ''
+      )
+        .trim()
+        .toUpperCase();
+      const userWithCode: AppUser = effectiveCode
+        ? { ...currentUser, codigoIndicacao: effectiveCode }
+        : currentUser;
       const [refs, payments] = await Promise.all([
-        getDriverReferralsAndBonusesSupabase(currentUser).catch(() => [] as ReferralCandidateItem[]),
-        getPagamentosSupabase(currentUser).catch(() => [] as SupabasePagamentoRow[]),
+        getDriverReferralsAndBonusesSupabase(userWithCode).catch(() => [] as ReferralCandidateItem[]),
+        getPagamentosSupabase(userWithCode).catch(() => [] as SupabasePagamentoRow[]),
       ]);
       setMyReferrals(refs);
       setMyBonusPayments(payments.filter((p) => p.tipo === 'bonus_indicacao'));
@@ -139,7 +147,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
 
   useEffect(() => {
     loadMyPassengerReferrals();
-  }, [currentUser?.id, currentUser?.email]);
+  }, [currentUser?.id, currentUser?.email, referralCode]);
 
   useEffect(() => {
     if (!isEditingProfile && !hasPendingAvatarPreview) {
@@ -227,13 +235,13 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
 
   useEffect(() => {
     let active = true;
-    if (currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao) {
-      setReferralCode(
-        String(currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao || '')
-          .trim()
-          .toUpperCase()
-      );
-      return;
+    const localCode = String(
+      currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao || ''
+    )
+      .trim()
+      .toUpperCase();
+    if (localCode) {
+      setReferralCode(localCode);
     }
     const ensureCode = async () => {
       if (!currentUser?.email && !currentUser?.id) return;

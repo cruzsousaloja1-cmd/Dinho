@@ -894,15 +894,23 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
 
     let mounted = true;
-    const callerForPayments: AppUser = currentUser || {
-      id: drvId,
-      name: currentDriver.name,
-      email: drvEmail,
-      phone: currentDriver.phone || '',
-      role: 'driver',
-      tipo: 'motorista',
-      rating: currentDriver.rating || 0,
-    };
+    const resolvedCode = String(
+      driverReferralCode || currentDriver.codigoIndicacao || currentUser?.codigoIndicacao || ''
+    )
+      .trim()
+      .toUpperCase();
+    const callerForPayments: AppUser = currentUser
+      ? { ...currentUser, codigoIndicacao: resolvedCode || currentUser.codigoIndicacao }
+      : {
+          id: drvId,
+          name: currentDriver.name,
+          email: drvEmail,
+          phone: currentDriver.phone || '',
+          role: 'driver',
+          tipo: 'motorista',
+          rating: currentDriver.rating || 0,
+          codigoIndicacao: resolvedCode || undefined,
+        };
 
     setIsLoadingReferrals(true);
     Promise.all([
@@ -955,28 +963,30 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           .toUpperCase();
         if (existingCode) {
           setDriverReferralCode(existingCode);
-        } else {
-          ensureUserReferralCodeSupabase({
-            id: drvId,
-            email: drvEmail,
-            name: currentDriver.name || currentUser?.name,
-          }).then((ensured) => {
-            if (!mounted || !ensured) return;
-            setDriverReferralCode(ensured);
-            onUpdateDriver({ ...currentDriver, codigoIndicacao: ensured });
-            if (currentUser) {
-              const updatedUser: AppUser = {
-                ...currentUser,
-                codigoIndicacao: ensured,
-                driverData: { ...(currentUser.driverData || currentDriver), codigoIndicacao: ensured },
-              };
-              saveSessionUser(updatedUser);
-              if (onUpdateUserProfile) {
-                onUpdateUserProfile(updatedUser);
-              }
-            }
-          });
         }
+        ensureUserReferralCodeSupabase({
+          id: drvId,
+          email: drvEmail,
+          name: currentDriver.name || currentUser?.name,
+          currentCode: existingCode || undefined,
+        }).then((ensured) => {
+          if (!mounted || !ensured) return;
+          setDriverReferralCode(ensured);
+          if (ensured !== currentDriver.codigoIndicacao) {
+            onUpdateDriver({ ...currentDriver, codigoIndicacao: ensured });
+          }
+          if (currentUser && ensured !== currentUser.codigoIndicacao) {
+            const updatedUser: AppUser = {
+              ...currentUser,
+              codigoIndicacao: ensured,
+              driverData: { ...(currentUser.driverData || currentDriver), codigoIndicacao: ensured },
+            };
+            saveSessionUser(updatedUser);
+            if (onUpdateUserProfile) {
+              onUpdateUserProfile(updatedUser);
+            }
+          }
+        });
       })
       .finally(() => {
         if (mounted) setIsLoadingReferrals(false);
@@ -3016,15 +3026,23 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   creditBalance={Number(currentUser?.creditBalance || 0)}
                   isLoading={isLoadingReferrals}
                   onRefresh={() => {
-                    const callerForPayments: AppUser = currentUser || {
-                      id: currentDriver.id,
-                      name: currentDriver.name,
-                      email: currentDriver.email,
-                      phone: currentDriver.phone || '',
-                      role: 'driver',
-                      tipo: 'motorista',
-                      rating: currentDriver.rating || 0,
-                    };
+                    const resolvedCode = String(
+                      driverReferralCode || currentDriver.codigoIndicacao || currentUser?.codigoIndicacao || ''
+                    )
+                      .trim()
+                      .toUpperCase();
+                    const callerForPayments: AppUser = currentUser
+                      ? { ...currentUser, codigoIndicacao: resolvedCode || currentUser.codigoIndicacao }
+                      : {
+                          id: currentDriver.id,
+                          name: currentDriver.name,
+                          email: currentDriver.email,
+                          phone: currentDriver.phone || '',
+                          role: 'driver',
+                          tipo: 'motorista',
+                          rating: currentDriver.rating || 0,
+                          codigoIndicacao: resolvedCode || undefined,
+                        };
                     setIsLoadingReferrals(true);
                     Promise.all([
                       getPagamentosSupabase(callerForPayments).catch(() => [] as SupabasePagamentoRow[]),

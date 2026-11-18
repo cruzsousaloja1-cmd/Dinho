@@ -604,10 +604,23 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           : '';
       const resolvedCodigoIndicacao =
         String(supabaseRes.data?.codigo_indicacao || generatedReferralCode).trim().toUpperCase();
+      const resolvedIndicadoPor =
+        String(supabaseRes.data?.indicado_por || normalizedIndicadoPor || '').trim() || undefined;
+      const resolvedIndicadoPorCodigo =
+        String(
+          supabaseRes.data?.codigo_usado ||
+            supabaseRes.data?.indicado_por_codigo ||
+            normalizedIndicadoPor ||
+            ''
+        )
+          .trim()
+          .toUpperCase() || undefined;
 
       if (newDriverObj) {
         newDriverObj.id = supabaseGeneratedId;
         newDriverObj.codigoIndicacao = resolvedCodigoIndicacao;
+        newDriverObj.indicadoPor = resolvedIndicadoPor;
+        newDriverObj.indicadoPorCodigo = resolvedIndicadoPorCodigo;
       }
 
       // Alerta de sucesso: Salvo no Supabase
@@ -630,8 +643,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         avatar: chosenAvatar,
         rating: 0,
         createdAt: supabaseRes.data?.created_at || newDriverObj?.createdAt || new Date().toISOString(),
-        indicadoPor: normalizedIndicadoPor || undefined,
-        indicadoPorCodigo: normalizedIndicadoPor || undefined,
+        indicadoPor: resolvedIndicadoPor,
+        indicadoPorCodigo: resolvedIndicadoPorCodigo,
         codigoIndicacao: resolvedCodigoIndicacao,
         driverData: newDriverObj,
       };
