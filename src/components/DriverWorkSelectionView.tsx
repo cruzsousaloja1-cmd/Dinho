@@ -92,7 +92,7 @@ export const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
       'Seguro obrigatório',
       'Carro limpo, com cinto de segurança para todos os passageiros',
     ],
-    vehiclePhotoLabel: 'Foto do carro (4 lados)',
+    vehiclePhotoLabel: 'Foto do carro (Frente)',
     cnhPhotoLabel: 'Foto da CNH',
     crlvPhotoLabel: 'Foto do CRLV',
   },
@@ -132,7 +132,7 @@ export const WORK_CATEGORIES: Record<WorkCategoryKey, CategoryWorkInfo> = {
       'CRLV em dia, Seguro total',
       'Avaliação mínima 4.8 para continuar no Confort',
     ],
-    vehiclePhotoLabel: 'Foto do carro',
+    vehiclePhotoLabel: 'Foto do carro (Frente)',
     cnhPhotoLabel: 'Foto CNH',
     crlvPhotoLabel: 'Foto CRLV',
   },
@@ -826,7 +826,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           </div>
 
           {isCarCategory ? (
-            /* MOTORISTA ECONÔMICO / CONFORT: Placa, Modelo, Ano, Cor, CNH, CPF, Foto do carro (4 lados), Foto da CNH, Foto do CRLV */
+            /* MOTORISTA ECONÔMICO / CONFORT: Placa, Modelo, Ano, Cor, CNH, CPF, Foto do carro (Frente), Foto da CNH, Foto do CRLV */
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -945,7 +945,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
                     <>
                       <Camera className="w-5 h-5 text-[#ff6a00]" />
                       <span className="text-[11px] font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel}</span>
-                      <span className="text-[10px] text-slate-500">Opcional</span>
+                      <span className="text-[10px] text-slate-500 leading-tight">Opcional - Só 1 foto da frente do carro</span>
                     </>
                   )}
                 </label>

@@ -91,7 +91,7 @@ const CATEGORY_GUIDES: Record<VehicleCategory, CategoryGuideInfo> = {
       'Carro limpo, com cinto de segurança para todos os passageiros',
     ],
     mandatoryEquipment: [
-      'Foto do carro (4 lados), Foto da CNH e Foto do CRLV',
+      'Foto do carro (Frente), Foto da CNH e Foto do CRLV',
       'Cinto de segurança funcional para todos os passageiros',
       'Ar-condicionado funcionando em todas as corridas',
     ],
@@ -122,7 +122,7 @@ const CATEGORY_GUIDES: Record<VehicleCategory, CategoryGuideInfo> = {
       'Carro impecável, sem riscos, limpo, com cheirinho',
     ],
     mandatoryEquipment: [
-      'Foto do carro, Foto CNH e Foto CRLV',
+      'Foto do carro (Frente), Foto CNH e Foto CRLV',
       'Ar-condicionado, vidro elétrico e direção hidráulica em perfeito estado',
     ],
   },
