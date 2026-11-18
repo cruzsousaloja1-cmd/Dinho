@@ -24,6 +24,7 @@ import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { LaunchPromoBanner } from './LaunchPromoBanner';
+import { DriverBenefitsBox } from './DriverBenefitsBox';
 import { getReferralCodeFromUrl, normalizeReferralDigits } from '../services/promoService';
 
 interface DriverLoginScreenProps {
@@ -678,6 +679,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 Escolha abaixo como deseja se cadastrar na plataforma RACE:
               </p>
             </div>
+
+            <DriverBenefitsBox compact />
 
             {/* Os 3 Botões de Cadastro Oficiais */}
             <div className="space-y-3">

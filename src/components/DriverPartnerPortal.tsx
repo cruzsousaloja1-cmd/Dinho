@@ -25,6 +25,7 @@ import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverWorkSelectionView } from './DriverWorkSelectionView';
 import { LaunchPromoBanner } from './LaunchPromoBanner';
+import { DriverBenefitsBox } from './DriverBenefitsBox';
 import { LegalConsentSection } from './LegalConsentSection';
 import { 
   WEEKLY_FEE, 
@@ -2823,6 +2824,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         className="w-40 h-40 sm:w-48 sm:h-48 rounded-3xl object-contain border-2 border-yellow-400 shadow-2xl mx-auto bg-black"
                       />
                     </div>
+
+                    <DriverBenefitsBox />
 
                     <span className="text-[14px] font-bold uppercase tracking-widest text-amber-100 block">
                       SEU CÓDIGO DE INDICAÇÃO
