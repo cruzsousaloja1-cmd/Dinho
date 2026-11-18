@@ -936,43 +936,44 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             </div>
           </div>
 
-          <div className="bg-black/25 border border-white/25 rounded-2xl p-4 text-center space-y-2.5">
-            <span className="text-[11px] font-bold uppercase tracking-widest text-amber-100 block">
-              Seu Código de Indicação
+          <div className="bg-[#9a3412] border-2 border-yellow-400 rounded-2xl p-5 sm:p-6 text-center space-y-4 shadow-xl">
+            <span className="text-[14px] font-bold uppercase tracking-widest text-amber-100 block">
+              SEU CÓDIGO DE INDICAÇÃO
             </span>
-            <div className="text-3xl sm:text-4xl font-mono font-black tracking-[0.2em] text-white select-all py-1">
+            <div className="text-[40px] leading-none font-mono font-bold tracking-[0.16em] text-white text-center select-all py-2 break-all">
               {referralCode}
             </div>
-            <p className="text-[11px] text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/25 rounded-xl p-2.5 border border-white/15 text-left leading-relaxed">
+
+            <div className="flex flex-col gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    navigator.clipboard.writeText(referralCode);
+                  } catch {}
+                  setCopiedCodeCard(true);
+                  setTimeout(() => setCopiedCodeCard(false), 2500);
+                }}
+                className="w-full min-h-[54px] py-3.5 px-5 rounded-xl bg-white text-orange-800 hover:bg-amber-50 font-heading font-black text-base sm:text-lg flex items-center justify-center gap-2.5 cursor-pointer shadow-lg transition-all active:scale-[0.98]"
+              >
+                {copiedCodeCard ? <Check className="w-5 h-5 text-emerald-600" /> : <Copy className="w-5 h-5" />}
+                <span>{copiedCodeCard ? 'Código copiado!' : 'Copiar código'}</span>
+              </button>
+
+              <a
+                href={whatsappShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full min-h-[60px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-[18px] leading-tight flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98]"
+              >
+                <MessageCircle className="w-6 h-6 shrink-0" />
+                <span>Compartilhar para Motorista, Motoboy e Passageiros</span>
+              </a>
+            </div>
+
+            <p className="text-[11px] text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 text-left leading-relaxed">
               {unifiedShareText}
             </p>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                try {
-                  navigator.clipboard.writeText(referralCode);
-                } catch {}
-                setCopiedCodeCard(true);
-                setTimeout(() => setCopiedCodeCard(false), 2500);
-              }}
-              className="w-full py-3 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow transition-all active:scale-[0.98]"
-            >
-              {copiedCodeCard ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-              <span>{copiedCodeCard ? 'Código copiado!' : 'Copiar código'}</span>
-            </button>
-
-            <a
-              href={whatsappShareUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full min-h-[60px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-[18px] leading-tight flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98]"
-            >
-              <MessageCircle className="w-6 h-6 shrink-0" />
-              <span>Compartilhar para Motorista, Motoboy e Passageiros</span>
-            </a>
           </div>
         </div>
         );

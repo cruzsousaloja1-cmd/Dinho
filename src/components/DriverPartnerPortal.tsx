@@ -2810,16 +2810,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </div>
 
                   {/* Código Grande em Destaque */}
-                  <div className="bg-black/30 border-2 border-white/30 rounded-2xl p-4 sm:p-5 text-center space-y-3">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-amber-100 block">
-                      Seu Código de Indicação
+                  <div className="bg-[#9a3412] border-2 border-yellow-400 rounded-2xl p-5 sm:p-6 text-center space-y-4 shadow-xl">
+                    <span className="text-[14px] font-bold uppercase tracking-widest text-amber-100 block">
+                      SEU CÓDIGO DE INDICAÇÃO
                     </span>
-                    <div className="text-4xl sm:text-5xl font-mono font-black tracking-[0.22em] text-white select-all py-1">
+                    <div className="text-[40px] leading-none font-mono font-bold tracking-[0.16em] text-white text-center select-all py-2 break-all">
                       {myPersonalCode || '...'}
                     </div>
-                    <p className="text-xs text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/25 rounded-xl p-3 border border-white/15 text-left leading-relaxed">
-                      {unifiedShareText}
-                    </p>
 
                     <div className="flex flex-col gap-3 pt-1">
                       <button
@@ -2832,9 +2829,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                           setCopiedDriverCode(true);
                           setTimeout(() => setCopiedDriverCode(false), 3000);
                         }}
-                        className="w-full py-3.5 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all active:scale-[0.98]"
+                        className="w-full min-h-[54px] py-3.5 px-5 rounded-xl bg-white text-orange-800 hover:bg-amber-50 font-heading font-black text-base sm:text-lg flex items-center justify-center gap-2.5 cursor-pointer shadow-lg transition-all active:scale-[0.98]"
                       >
-                        {copiedDriverCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                        {copiedDriverCode ? <Check className="w-5 h-5 text-emerald-600" /> : <Copy className="w-5 h-5" />}
                         <span>{copiedDriverCode ? 'Código copiado!' : 'Copiar código'}</span>
                       </button>
 
@@ -2848,6 +2845,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         <span>Compartilhar para Motorista, Motoboy e Passageiros</span>
                       </a>
                     </div>
+
+                    <p className="text-xs text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 text-left leading-relaxed">
+                      {unifiedShareText}
+                    </p>
                   </div>
 
                   <div className="bg-black/20 border border-white/20 rounded-2xl p-4 space-y-2">
