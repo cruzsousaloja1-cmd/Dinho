@@ -4653,16 +4653,17 @@ export function mapSupabaseCorridaToRide(row: SupabaseCorridaRow): Ride {
   const isCredit = rawPayment === 'race_pay' || rawPayment === 'credito';
   const rawStatus = String(row.status || 'completed').toLowerCase().trim();
   const normCategory = normalizeRideCategory(row.categoria);
+  const createdTime = row.created_at || row.data || new Date().toISOString();
   const totalValue = Number(row.valor_total ?? row.valor ?? 0);
+  const fallbackSplit = calculateRideSplitForDriver(totalValue, undefined, createdTime);
   const driverValue =
     row.valor_motorista !== undefined && row.valor_motorista !== null
       ? Number(row.valor_motorista)
-      : Number((totalValue * 0.85).toFixed(2));
+      : fallbackSplit.driverEarnings;
   const raceValue =
     row.valor_race !== undefined && row.valor_race !== null
       ? Number(row.valor_race)
-      : Number((totalValue * 0.15).toFixed(2));
-  const createdTime = row.created_at || row.data || new Date().toISOString();
+      : fallbackSplit.platformFee;
 
   const rawAsaasSt = String(row.asaas_status || '').toUpperCase().trim();
   const hasExplicitAsaasStatus = rawAsaasSt.length > 0 && rawAsaasSt !== 'DINHEIRO';
@@ -5260,9 +5261,10 @@ export async function saveCorridaSupabase(
     }
 
     const totalPrice = Number((ride.price || 0).toFixed(2));
-    const driverEarnings = Number((ride.driverEarnings ?? totalPrice * 0.85).toFixed(2));
-    const raceFee = Number((ride.platformFee ?? totalPrice * 0.15).toFixed(2));
     const nowIso = ride.createdAt || new Date().toISOString();
+    const fallbackSplit = calculateRideSplitForDriver(totalPrice, undefined, nowIso);
+    const driverEarnings = Number((ride.driverEarnings ?? fallbackSplit.driverEarnings).toFixed(2));
+    const raceFee = Number((ride.platformFee ?? fallbackSplit.platformFee).toFixed(2));
 
     const hasCreditMeta =
       (ride.creditUsed !== undefined && ride.creditUsed > 0) ||

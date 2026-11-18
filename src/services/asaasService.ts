@@ -7,6 +7,7 @@
 import QRCode from 'qrcode';
 import { RACE_PIX_KEY } from '../config/pricing';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabase';
+import { calculateRideSplitForDriver } from './promoService';
 
 export interface AsaasCustomer {
   id: string;
@@ -407,8 +408,9 @@ export async function getAsaasFinancialSummary(completedRidesTotal = 0): Promise
   }
 
   const totalReceived = Number((completedRidesTotal || 0).toFixed(2));
-  const raceCommission15 = Number((totalReceived * 0.15).toFixed(2));
-  const repassarSexta85 = Number((totalReceived * 0.85).toFixed(2));
+  const split = calculateRideSplitForDriver(totalReceived);
+  const raceCommission15 = split.platformFee;
+  const repassarSexta85 = split.driverEarnings;
 
   const now = new Date();
   const dayOfWeek = now.getDay();

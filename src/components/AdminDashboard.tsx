@@ -2966,7 +2966,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span>Promoção Indicação R$50 & Taxa 0% Lançamento</span>
               </h3>
               <p className="text-xs sm:text-sm text-amber-50 font-medium">
-                Acompanhe todas as indicações entre motoristas/motoboys e os bônus de R$ 50,00 gerados automaticamente ao completar 10 corridas finalizadas.
+                Acompanhe todas as indicações de Motorista OU Motoboy e os bônus de R$ 50,00 gerados automaticamente ao completar 10 corridas finalizadas.
               </p>
             </div>
             <button

@@ -1,8 +1,14 @@
 export const LAUNCH_PROMO_BANNER_TEXT =
-  '⚡ LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe R$50 por cada Motorista que fizer 10 corridas até 17/12! Depois dessa data, volta para 15% de taxa.';
+  '⚡ LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe R$50 por cada Motorista OU Motoboy que fizer 10 corridas até 17/12! Depois dessa data, volta para 15% de taxa.';
 
 export const LAUNCH_PROMO_EARNINGS_BADGE_TEXT =
-  'Promoção Lançamento: 0% até 17/12 - Você está com 100%!';
+  'PROMOÇÃO DE LANÇAMENTO - Você ganha 100% - 0% de taxa até 17/12/2026 - Pagamento toda sexta';
+
+export const STANDARD_EARNINGS_BADGE_TEXT =
+  'Você ganha 85% - taxa 15% - Pagamento toda sexta';
+
+export const getDriverEarningsStatusText = (isPromoActive: boolean): string =>
+  isPromoActive ? LAUNCH_PROMO_EARNINGS_BADGE_TEXT : STANDARD_EARNINGS_BADGE_TEXT;
 
 // Launch window: 17/11/2026 00:00:00 UTC through end of 17/12/2026 (covering UTC and BRT -03:00)
 export const PROMO_ZERO_FEE_START_MS = new Date('2026-11-17T00:00:00Z').getTime();
@@ -81,7 +87,12 @@ const parseDateMs = (isoOrDate?: string | null): number | null => {
   const brMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
   if (brMatch) {
     const [, dd, mm, yyyy] = brMatch;
-    const ms = new Date(`${yyyy}-${mm}-${dd}T12:00:00Z`).getTime();
+    const ms = new Date(`${yyyy}-${mm}-${dd}T12:00:00-03:00`).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  // Support date-only YYYY-MM-DD in BRT (-03:00)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const ms = new Date(`${trimmed}T12:00:00-03:00`).getTime();
     return Number.isFinite(ms) ? ms : null;
   }
   const ms = new Date(trimmed).getTime();
@@ -89,29 +100,16 @@ const parseDateMs = (isoOrDate?: string | null): number | null => {
 };
 
 /**
- * Promoção 1 — Sem taxa até 17/12/2026:
- * Se a data da corrida for até 17/12/2026 E o motorista foi cadastrado a partir de 17/11/2026,
- * comissão = 0% (motorista fica com 100% / app 0%).
- * Após 17/12/2026, volta automaticamente para 15% (motorista 85% / app 15%).
+ * Taxa por data:
+ * - Até 17/12/2026 (23:59:59 BRT): taxa = 0% (motorista / motoboy ganha 100%).
+ * - Depois de 17/12/2026: taxa = 15% (motorista / motoboy ganha 85%).
  */
 export const isDriverInLaunchZeroFeePromo = (
-  driverCreatedAt?: string | null,
+  _driverCreatedAt?: string | null,
   referenceDateIso?: string | null
 ): boolean => {
   const refMs = parseDateMs(referenceDateIso) ?? Date.now();
-  if (refMs > PROMO_ZERO_FEE_END_MS) {
-    return false;
-  }
-  if (!driverCreatedAt) {
-    // Fallback conservative: if reference date is already during launch and created_at is missing,
-    // treat newly active drivers during the launch window before 17/12/2026 as eligible only if date >= start.
-    return refMs >= PROMO_ZERO_FEE_START_MS && refMs <= PROMO_ZERO_FEE_END_MS;
-  }
-  const createdMs = parseDateMs(driverCreatedAt);
-  if (createdMs === null) {
-    return refMs >= PROMO_ZERO_FEE_START_MS && refMs <= PROMO_ZERO_FEE_END_MS;
-  }
-  return createdMs >= PROMO_ZERO_FEE_START_MS && refMs <= PROMO_ZERO_FEE_END_MS;
+  return refMs <= PROMO_ZERO_FEE_END_MS;
 };
 
 export const calculateRideSplitForDriver = (
@@ -201,7 +199,7 @@ export const parseReferralBonusMeta = (
       if (parsed && typeof parsed === 'object') {
         return {
           indicatedId: String(parsed.indicatedId ?? indicatedId ?? '').trim(),
-          indicatedName: String(parsed.indicatedName || 'Motorista indicado').trim(),
+          indicatedName: String(parsed.indicatedName || 'Motorista OU Motoboy indicado').trim(),
           indicatedEmail: String(parsed.indicatedEmail || '').trim(),
           ridesCount: Number(parsed.ridesCount) || REFERRAL_REQUIRED_RIDES,
         };
@@ -212,14 +210,14 @@ export const parseReferralBonusMeta = (
   }
   return {
     indicatedId,
-    indicatedName: 'Motorista indicado',
+    indicatedName: 'Motorista OU Motoboy indicado',
     indicatedEmail: '',
     ridesCount: REFERRAL_REQUIRED_RIDES,
   };
 };
 
 export const formatReferralBonusMessage = (indicatedName?: string | null): string => {
-  const cleanName = (indicatedName || 'Motorista indicado').trim();
+  const cleanName = (indicatedName || 'Motorista OU Motoboy indicado').trim();
   return `Bônus Indicação: + R$50 - ${cleanName} fez 10 corridas!`;
 };
 
@@ -244,6 +242,8 @@ export const buildReferralWhatsappShareText = (
 ): string => {
   const cleanCode = String(code || '').trim().toUpperCase() || 'RACE100';
   return [
+    'LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe R$50 por cada Motorista OU Motoboy que fizer 10 corridas até 17/12! Depois dessa data, volta para 15% de taxa.',
+    '',
     'PROMOÇÃO DE LANÇAMENTO',
     `*CÓDIGO DE CADASTRO, ${cleanCode}*`,
     '® CADASTRANDO NO APP RACE COMO MOTORISTA OU MOTOBOY USANDO MEU CÓDIGO, GANHA 100% DAS CORRIDAS ATÉ 17/12/2026.',
@@ -394,9 +394,8 @@ export const shareReferralWithLogo = async (
         navigator.canShare({ files: [logoFile] });
       if (canShareFiles) {
         await navigator.share({
-          title: 'RACE - Promoção de Lançamento!',
-          text,
           files: [logoFile],
+          text,
         });
         return 'native_with_logo';
       }

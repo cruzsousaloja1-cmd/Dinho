@@ -249,10 +249,10 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
           </div>
 
           <div className="hidden sm:block text-right">
-            <span className="text-sm text-emerald-700 font-black bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 block">
-              85% Motoboy • 15% Race
+            <span className="text-sm text-purple-800 font-black bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200 block">
+              Entrega Expressa Indaiatuba
             </span>
-            <span className="text-xs text-slate-500 font-medium mt-1 block">Sem mensalidade • Repasse sexta</span>
+            <span className="text-xs text-slate-500 font-medium mt-1 block">Pagamento fácil no app</span>
           </div>
         </div>
       </div>
@@ -590,11 +590,9 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
           </div>
 
           <div className="text-right">
+            <span className="text-[11px] uppercase font-bold text-slate-500 block">Valor Total</span>
             <span className="font-heading font-black text-2xl text-purple-900">
               {formatBRL(fare.totalPrice)}
-            </span>
-            <span className="block text-xs text-emerald-700 font-bold">
-              85% ao Motoboy • 15% Race
             </span>
           </div>
         </div>

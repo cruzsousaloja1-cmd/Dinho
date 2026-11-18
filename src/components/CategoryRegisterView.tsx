@@ -4,6 +4,7 @@ import { WEEKLY_FEE } from '../config/pricing';
 import { saveUserAccount } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
+import { getDriverEarningsStatusText, isDriverInLaunchZeroFeePromo } from '../services/promoService';
 import { LegalConsentSection } from './LegalConsentSection';
 import { checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase } from '../supabase';
 import { 
@@ -594,14 +595,14 @@ export const CategoryRegisterView: React.FC<CategoryRegisterViewProps> = ({
             </div>
           )}
 
-          {/* Informativo do Modelo 85% Motorista / 15% Race */}
+          {/* Informativo do Repasse por Data + Pagamento Sexta */}
           <div className="bg-[#141414] border border-emerald-500/40 rounded-xl p-3 text-xs text-zinc-300 space-y-1">
             <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Sem mensalidade, sem taxa para trabalhar</span>
+              <span>{getDriverEarningsStatusText(isDriverInLaunchZeroFeePromo())}</span>
             </div>
             <p className="text-[11px] text-zinc-300">
-              Você fica com <strong className="text-emerald-400">85%</strong> de cada corrida, Race fica com <strong className="text-[#ff6a00]">15%</strong> — repasse toda sexta-feira direto na sua chave PIX!
+              Seu saldo será pago toda sexta-feira via PIX • Próximo pagamento: Sexta-feira!
             </p>
           </div>
 

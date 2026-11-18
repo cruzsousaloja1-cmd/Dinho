@@ -195,6 +195,10 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   }, [currentUser?.email]);
 
   useEffect(() => {
+    preloadRaceLogoBlob().catch(() => {});
+  }, []);
+
+  useEffect(() => {
     let active = true;
     if (currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao) {
       setReferralCode(
@@ -919,11 +923,11 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
               </h3>
               {isDriverOrMoto ? (
                 <p className="text-xs sm:text-sm font-semibold text-amber-50 leading-relaxed">
-                  ⚡ LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe <strong>R$50</strong> por cada Motorista que fizer <strong>10 corridas</strong> até 17/12! Depois dessa data, volta para 15% de taxa.
+                  ⚡ LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe <strong>R$50</strong> por cada Motorista OU Motoboy que fizer <strong>10 corridas</strong> até 17/12! Depois dessa data, volta para 15% de taxa.
                 </p>
               ) : (
                 <p className="text-xs sm:text-sm font-semibold text-amber-50 leading-relaxed">
-                  Indique 1 Motorista ou Motoboy com seu código <strong>{referralCode}</strong>. Quando ele finalizar 10 corridas, você ganha <strong>R$ 50,00 de crédito</strong> para suas corridas! Indique 1 Passageiro e ganhe <strong>R$ 10,00 de crédito</strong> quando ele fizer a 1ª corrida!
+                  Indique 1 Motorista OU Motoboy com seu código <strong>{referralCode}</strong>. Quando ele finalizar 10 corridas, você ganha <strong>R$ 50,00 de crédito</strong> para suas corridas! Indique 1 Passageiro e ganhe <strong>R$ 10,00 de crédito</strong> quando ele fizer a 1ª corrida!
                 </p>
               )}
               <div className="pt-0.5 flex flex-wrap items-center gap-2">

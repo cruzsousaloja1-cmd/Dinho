@@ -1436,7 +1436,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                   className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium font-mono"
                 />
                 <p className="text-[11px] text-orange-200/80 font-medium">
-                  Se alguém te indicou, informe o código (ex: JOSE123) ou WhatsApp para ele ganhar R$ 50 quando o motorista indicado fizer 10 corridas!
+                  Se alguém te indicou, informe o código (ex: JOSE123) ou WhatsApp para ele ganhar R$ 50 quando o Motorista OU Motoboy indicado fizer 10 corridas!
                 </p>
               </div>
 

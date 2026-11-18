@@ -3,9 +3,9 @@ import React from 'react';
 export const DRIVER_BENEFITS_ITEMS: readonly string[] = [
   '100% das corridas pra você até 17/12/2026 - SEM TAXA',
   'Depois só 15% de taxa - você fica com 85% - SEM MENSALIDADE',
-  'Pagamento toda sexta-feira via PIX',
-  'SEM LIMITE DE INDICAÇÃO ATÉ A DATA 17/12/2026 - indique quantos quiser',
-  'Ganhe R$50 a cada motorista/motoboy indicado que fizer 10 corridas',
+  'Pagamento toda sexta-feira via PIX - normalmente',
+  'SEM LIMITE DE INDICAÇÃO ATÉ A DATA 17/12/2026',
+  'Ganhe R$50 a cada Motorista OU Motoboy indicado que fizer 10 corridas',
   'Ganhe R$10 de crédito a cada passageiro indicado que fizer 1ª corrida',
   'Você trabalha quando quiser - sem chefe, sem horário',
   'Corridas e entregas em Indaiatuba',

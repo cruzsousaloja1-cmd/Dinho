@@ -52,10 +52,11 @@ export const VEHICLE_CATEGORIES: Record<VehicleCategory, CategoryInfo> = {
 };
 
 import { COMMISSION, RACE_COMMISSION_PERCENT, DRIVER_SHARE_PERCENT } from '../config/pricing';
+import { calculateRideSplitForDriver } from './promoService';
 
 export const RACE_COMMISSION_RATE = COMMISSION; // 0.15
 export { RACE_COMMISSION_PERCENT, DRIVER_SHARE_PERCENT };
-// Taxa semanal fixa é ZERO (0) - Race cobra apenas comissão de 15% por corrida
+// Taxa semanal fixa é ZERO (0) - 0% até 17/12/2026, 15% após 17/12/2026
 export const WEEKLY_SUBSCRIPTION_PRICE = 0;
 
 export function calculateFare(
@@ -72,17 +73,13 @@ export function calculateFare(
   const total = Math.max(cat.basePrice + kmCost, cat.basePrice);
   const roundedTotal = Number(total.toFixed(2));
 
-  // NOVO MODELO RACE: 15% Comissão do App Race, 85% Repasse ao Condutor
-  // Ex: R$ 11,20 -> Race R$ 1,68 (15%) | Motorista R$ 9,52 (85%)
-  // Ex: R$ 6,16  -> Race R$ 0,92 (15%) | Motoboy R$ 5,24 (85%)
-  // Ex: R$ 6,90  -> Race R$ 1,03 (15%) | Motoboy R$ 5,87 (85%)
-  const platformFee = Number((roundedTotal * 0.15).toFixed(2));
-  const driverEarnings = Number((roundedTotal - platformFee).toFixed(2));
+  // Até 17/12/2026: taxa = 0% (100% condutor) | Após 17/12/2026: taxa = 15% (85% condutor)
+  const split = calculateRideSplitForDriver(roundedTotal);
 
   return {
     totalPrice: roundedTotal,
-    driverEarnings, // 85%
-    platformFee,    // 15%
+    driverEarnings: split.driverEarnings,
+    platformFee: split.platformFee,
     breakdown: {
       base: cat.basePrice,
       perKm: kmCost,

@@ -7,6 +7,7 @@ import {
   isDriverInLaunchZeroFeePromo,
   calculateRideSplitForDriver,
   LAUNCH_PROMO_EARNINGS_BADGE_TEXT,
+  getDriverEarningsStatusText,
   buildReferralLink,
   buildReferralWhatsappShareText,
   getLaunchPromoCountdownText,
@@ -870,6 +871,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [copiedDriverCode, setCopiedDriverCode] = useState(false);
   const [showDownloadLogoFallback, setShowDownloadLogoFallback] = useState(false);
   const [logoDownloadedNotice, setLogoDownloadedNotice] = useState(false);
+
+  useEffect(() => {
+    preloadRaceLogoBlob().catch(() => {});
+  }, []);
 
   const isPromoZeroFeeActive = isDriverInLaunchZeroFeePromo(
     currentDriver.createdAt || currentDriver.registrationDate || currentUser?.createdAt
@@ -1803,7 +1808,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          <span>Comissão 15% / Ganhos 85%</span>
+          <span>{isPromoZeroFeeActive ? 'Taxa 0% / Ganhos 100%' : 'Comissão 15% / Ganhos 85%'}</span>
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
         </button>
       </div>
@@ -1906,7 +1911,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       {ratingStats.average.toFixed(1)} ★ ({ratingStats.totalReviews} avaliações)
                     </span>
                     <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-black">
-                      85% seu • 15% Race
+                      {isPromoZeroFeeActive ? '100% seu • Taxa 0%' : '85% seu • Taxa 15%'}
                     </span>
                     <span className="text-xs text-slate-500 font-mono">
                       Login: {currentDriver.email}
@@ -2072,19 +2077,17 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 <h4 className={`font-heading font-black text-base sm:text-lg ${
                   isPromoZeroFeeActive ? 'text-orange-950' : 'text-amber-900'
                 }`}>
-                  {isPromoZeroFeeActive ? '100% PARA VOCÊ • 0% RACE (PROMO LANÇAMENTO)' : '85% PARA VOCÊ • 15% RACE'}
+                  {getDriverEarningsStatusText(isPromoZeroFeeActive)}
                 </h4>
                 <p className="text-xs sm:text-sm text-slate-700 font-medium">
-                  {isPromoZeroFeeActive
-                    ? LAUNCH_PROMO_EARNINGS_BADGE_TEXT
-                    : 'Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.'}
+                  Seu saldo será pago toda sexta-feira via PIX • Próximo pagamento: Sexta-feira
                 </p>
               </div>
             </div>
 
             <div className="text-left sm:text-right shrink-0">
               <span className="text-xs text-slate-500 font-mono block font-bold">
-                {isPromoZeroFeeActive ? 'Taxa 0% até 17/12/2026' : 'Modelo Oficial'}
+                {isPromoZeroFeeActive ? 'Taxa 0% até 17/12/2026' : 'Taxa padrão 15%'}
               </span>
               <span className="text-sm font-black flex items-center gap-1 sm:justify-end text-emerald-700">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -2473,7 +2476,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   <div className="text-center py-8 text-slate-600 text-sm">
                     <p>Você está atualmente <strong className="text-rose-600">OFFLINE</strong>.</p>
                     <p className="mt-1 text-slate-500 font-medium">
-                      Clique em "Ficar Online" no topo para receber novas corridas (85% para você, 15% Race).
+                      Clique em "Ficar Online" no topo para receber novas corridas ({isPromoZeroFeeActive ? '100% para você, taxa 0% até 17/12/2026' : '85% para você, taxa 15%'}).
                     </p>
                   </div>
                 )}
@@ -2487,7 +2490,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       Minhas Corridas Atendidas
                     </h4>
                     <p className="text-xs text-slate-500">
-                      Total registrado: {currentDriver.totalRides} corridas • 85% repasse líquido (Comissão Race 15%)
+                      Total registrado: {currentDriver.totalRides} corridas • {isPromoZeroFeeActive ? '100% repasse líquido (Taxa 0% até 17/12/2026)' : '85% repasse líquido (Taxa 15%)'}
                     </p>
                   </div>
                   <span className="text-xs bg-amber-100 text-amber-900 font-bold px-2.5 py-1 rounded-full border border-amber-300">
@@ -2500,7 +2503,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <Car className="w-10 h-10 text-slate-400 mx-auto mb-2" />
                     <p className="text-sm font-bold text-slate-700">Nenhuma corrida finalizada ainda</p>
                     <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                      Suas corridas atendidas aparecerão exclusivamente aqui, com recibo e 85% dos ganhos creditados diretamente no seu saldo (comissão Race 15%).
+                      Suas corridas atendidas aparecerão exclusivamente aqui, com pagamento toda sexta-feira via PIX ({isPromoZeroFeeActive ? '100% sem taxa até 17/12/2026' : '85% repasse líquido, taxa 15%'}).
                     </p>
                   </div>
                 ) : (
@@ -2597,27 +2600,32 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     {isPromoZeroFeeActive ? (
                       <div className="mt-2 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-orange-600/30 to-emerald-600/30 border border-orange-400/70 text-amber-100 text-xs sm:text-sm font-black">
                         <Sparkles className="w-4 h-4 text-[#ff6a00] shrink-0" />
-                        <span>{LAUNCH_PROMO_EARNINGS_BADGE_TEXT}</span>
+                        <span>{getDriverEarningsStatusText(true)}</span>
                       </div>
                     ) : (
-                      <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
+                      <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-bold">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span>Seu saldo: {formatBRL(summary.gross)} - Comissão Race 15% já descontada - Saque toda sexta</span>
+                        <span>{getDriverEarningsStatusText(false)}</span>
                       </div>
                     )}
-                    <p className="text-xs text-zinc-400 mt-2">
-                      {isPromoZeroFeeActive
-                        ? 'Sem mensalidade, sem taxa para trabalhar — você recebe 100% integral das corridas até 17/12/2026 (depois volta ao padrão 85% / 15%).'
-                        : 'Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.'}
-                    </p>
+
+                    <div className="mt-3 rounded-2xl bg-emerald-950/50 border border-emerald-500/50 px-4 py-3 space-y-1">
+                      <p className="text-xs sm:text-sm font-black text-emerald-300 flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>Seu saldo será pago toda sexta-feira via PIX</span>
+                      </p>
+                      <p className="text-xs font-bold text-white pl-6">
+                        Próximo pagamento: Sexta-feira
+                      </p>
+                    </div>
                   </div>
 
                   {/* Divisão de Ganhos */}
                   <div className="bg-zinc-900/90 border border-zinc-700/80 rounded-2xl p-4 space-y-2">
                     <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
                       {isPromoZeroFeeActive
-                        ? 'Divisão de Ganhos: 100% para Você • 0% Race (até 17/12/2026)'
-                        : 'Divisão de Ganhos: 85% para Você • 15% Race'}
+                        ? 'Divisão de Ganhos: 100% para Motorista OU Motoboy • 0% Race (até 17/12/2026)'
+                        : 'Divisão de Ganhos: 85% para Você • taxa 15%'}
                     </span>
                     <div className="grid grid-cols-2 gap-3 pt-1">
                       <div className="p-3 bg-black/40 rounded-xl border border-zinc-800">
@@ -2805,7 +2813,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         Indicar e Ganhar R$ 50,00
                       </h3>
                       <p className="text-xs sm:text-sm font-semibold text-amber-50">
-                        ⚡ LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe <strong>R$50</strong> por cada Motorista que fizer <strong>10 corridas</strong> até 17/12! Depois dessa data, volta para 15% de taxa.
+                        ⚡ LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe <strong>R$50</strong> por cada Motorista OU Motoboy que fizer <strong>10 corridas</strong> até 17/12! Depois dessa data, volta para 15% de taxa.
                       </p>
                       <div className="inline-flex items-center gap-1.5 rounded-xl bg-black/30 border border-white/25 px-3 py-1.5 text-xs font-black text-amber-100">
                         <span>⏳ {countdownText}</span>
@@ -3077,20 +3085,20 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     }`}>
                       {isPromoZeroFeeActive ? 'PROMOÇÃO LANÇAMENTO ATIVA' : 'MODELO OFICIAL RACE'}
                     </span>
-                    <h3 className="font-heading font-black text-2xl text-slate-950">
-                      {isPromoZeroFeeActive ? '100% para Você • 0% Race (até 17/12/2026)' : '85% para Você • 15% Race'}
+                    <h3 className="font-heading font-black text-xl sm:text-2xl text-slate-950">
+                      {getDriverEarningsStatusText(isPromoZeroFeeActive)}
                     </h3>
                   </div>
                   <span className="px-3 py-1 rounded-full text-xs font-heading font-black flex items-center gap-1.5 bg-emerald-100 text-emerald-800 border border-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>SEM TAXA PARA TRABALHAR</span>
+                    <span>{isPromoZeroFeeActive ? '0% DE TAXA ATÉ 17/12/2026' : 'TAXA 15% • GANHA 85%'}</span>
                   </span>
                 </div>
 
                 {isPromoZeroFeeActive && (
                   <div className="p-4 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-xs sm:text-sm shadow-sm flex items-center gap-2.5">
                     <Sparkles className="w-5 h-5 shrink-0" />
-                    <span>{LAUNCH_PROMO_EARNINGS_BADGE_TEXT} Após 17/12/2026 retorna automaticamente para 85% Motorista / 15% Race.</span>
+                    <span>{LAUNCH_PROMO_EARNINGS_BADGE_TEXT}. Após 17/12/2026: Você ganha 85% - taxa 15% - Pagamento toda sexta.</span>
                   </div>
                 )}
 
@@ -3102,18 +3110,22 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-600 font-medium">Repasse líquido atual por corrida:</span>
                     <span className="font-black text-emerald-700">
-                      {isPromoZeroFeeActive ? '100% do valor integral (Sem taxa até 17/12/2026)' : '85% do valor integral'}
+                      {isPromoZeroFeeActive ? '100% do valor integral para Motorista OU Motoboy (0% taxa até 17/12/2026)' : '85% do valor integral'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 font-medium">Comissão Race atual:</span>
+                    <span className="text-slate-600 font-medium">Taxa do aplicativo atual:</span>
                     <span className="font-bold text-amber-700">
                       {isPromoZeroFeeActive ? '0% até 17/12/2026 (depois 15%)' : '15% de intermediação'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 font-medium">Dia do Saque:</span>
-                    <span className="font-bold text-slate-900">Toda sexta-feira via PIX</span>
+                    <span className="text-slate-600 font-medium">Regra de Pagamento:</span>
+                    <span className="font-bold text-slate-900">Seu saldo será pago toda sexta-feira via PIX</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-600 font-medium">Próximo pagamento:</span>
+                    <span className="font-bold text-emerald-700">Sexta-feira</span>
                   </div>
                 </div>
 
@@ -3496,7 +3508,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         Seu saldo: R$ {walletSummary.gross.toFixed(2)}
                       </span>
                       <span className="text-xs text-emerald-700 font-bold block mt-0.5">
-                        Comissão Race 15% já descontada - Saque toda sexta
+                        Seu saldo será pago toda sexta-feira via PIX • Próximo pagamento: Sexta-feira
                       </span>
                     </div>
                   </div>
@@ -3805,7 +3817,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   Selecione a Categoria de Atividade para Cadastro:
                 </span>
                 <span className="text-[11px] font-mono font-bold text-[#ff6a00] bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
-                  85% seu • 15% Race
+                  {isPromoZeroFeeActive ? '100% seu • 0% taxa até 17/12' : '85% seu • taxa 15%'}
                 </span>
               </div>
 
@@ -3912,7 +3924,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   <div className="h-8 w-px bg-slate-200" />
                   <div className="text-left">
                     <span className="text-[10px] uppercase font-bold text-slate-500 block">Repasse</span>
-                    <span className="text-xs font-heading font-black text-emerald-700">85% para Você</span>
+                    <span className="text-xs font-heading font-black text-emerald-700">
+                      {isPromoZeroFeeActive ? '100% para Você (até 17/12)' : '85% para Você'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -3922,20 +3936,22 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-1">
                   <div className="flex items-center gap-2 text-emerald-700 font-heading font-black text-xs uppercase">
                     <DollarSign className="w-4 h-4" />
-                    <span>Você Fica com 85%</span>
+                    <span>{isPromoZeroFeeActive ? 'Você Fica com 100%' : 'Você Fica com 85%'}</span>
                   </div>
                   <p className="text-xs text-slate-700 font-medium">
-                    {selectedGuide.earningsDescription}
+                    {isPromoZeroFeeActive
+                      ? 'PROMOÇÃO DE LANÇAMENTO - Você ganha 100% - 0% de taxa até 17/12/2026 - Pagamento toda sexta'
+                      : selectedGuide.earningsDescription}
                   </p>
                 </div>
 
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-1">
                   <div className="flex items-center gap-2 text-[#ff6a00] font-heading font-black text-xs uppercase">
                     <QrCode className="w-4 h-4" />
-                    <span>Sem Taxa Para Trabalhar</span>
+                    <span>Pagamento Toda Sexta via PIX</span>
                   </div>
                   <p className="text-xs text-slate-700 font-medium">
-                    <strong>Você fica com 85% de cada corrida, Race fica com 15%</strong> - sem mensalidade, sem taxa para trabalhar. Saque toda sexta-feira.
+                    <strong>{getDriverEarningsStatusText(isPromoZeroFeeActive)}</strong>. Seu saldo será pago toda sexta-feira via PIX.
                   </p>
                 </div>
 
@@ -4057,10 +4073,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 <div className="bg-white border-2 border-emerald-300 rounded-2xl p-4 max-w-md mx-auto text-left space-y-2 shadow-xs">
                   <div className="flex items-center justify-between text-xs font-heading font-black text-slate-700">
                     <span>MODELO OFICIAL RACE</span>
-                    <span className="text-emerald-700 font-mono">85% seu • 15% Race</span>
+                    <span className="text-emerald-700 font-mono">
+                      {isPromoZeroFeeActive ? '100% seu • 0% taxa' : '85% seu • 15% taxa'}
+                    </span>
                   </div>
                   <p className="text-xs text-slate-700 font-medium">
-                    Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.
+                    {getDriverEarningsStatusText(isPromoZeroFeeActive)}.
                   </p>
                 </div>
 
@@ -4073,7 +4091,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     }}
                     className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black text-sm sm:text-base px-7 py-3.5 rounded-2xl transition-all cursor-pointer shadow-md border border-amber-400 flex items-center justify-center gap-2 active:scale-95"
                   >
-                    <span>VER DETALHES DE COMISSÃO 85%/15%</span>
+                    <span>{isPromoZeroFeeActive ? 'VER DETALHES TAXA 0% / GANHOS 100%' : 'VER DETALHES DE COMISSÃO 85%/15%'}</span>
                     <ArrowRight className="w-5 h-5" />
                   </button>
                   <button
@@ -4612,11 +4630,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 <span className="text-xs font-mono font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 inline-block mb-1">
                   NOVO MODELO DE REPASSE RACE
                 </span>
-                <h2 className="font-heading font-black text-slate-950 text-2xl sm:text-3xl">
-                  85% para Você • 15% Race
+                <h2 className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
+                  {getDriverEarningsStatusText(isPromoZeroFeeActive)}
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-600 font-medium mt-1">
-                  Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.
+                  Seu saldo será pago toda sexta-feira via PIX • Próximo pagamento: Sexta-feira
                 </p>
               </div>
 
@@ -4635,26 +4653,26 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             <div className="space-y-3">
               <h4 className="font-heading font-black text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-[#ff6a00]" />
-                <span>Simulação Real de Ganhos por Categoria</span>
+                <span>Simulação Real de Ganhos (Corrida de R$ 20,00 e Categorias)</span>
               </h4>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                 {/* Exemplo 1: Motorista Confort */}
                 <div className="p-4 bg-orange-50/60 rounded-2xl border border-orange-200 space-y-2">
                   <span className="text-xs font-heading font-black text-[#ff6a00] uppercase block">
-                    Motorista Confort
+                    Exemplo Corrida R$ 20,00
                   </span>
                   <div className="text-xl font-heading font-black text-slate-900">
-                    Passageiro paga R$ 11,20
+                    Passageiro paga R$ 20,00
                   </div>
                   <div className="space-y-1 text-xs pt-1 border-t border-orange-200">
                     <p className="font-bold text-emerald-700 flex items-center justify-between">
-                      <span>Você recebe (85%):</span>
-                      <span className="font-mono text-sm">R$ 9,52</span>
+                      <span>Você recebe ({isPromoZeroFeeActive ? '100%' : '85%'}):</span>
+                      <span className="font-mono text-sm">{isPromoZeroFeeActive ? 'R$ 20,00' : 'R$ 17,00'}</span>
                     </p>
                     <p className="text-slate-600 flex items-center justify-between">
-                      <span>Comissão Race (15%):</span>
-                      <span className="font-mono">R$ 1,68</span>
+                      <span>Taxa Race ({isPromoZeroFeeActive ? '0%' : '15%'}):</span>
+                      <span className="font-mono">{isPromoZeroFeeActive ? 'R$ 0,00' : 'R$ 3,00'}</span>
                     </p>
                   </div>
                 </div>
@@ -4665,16 +4683,16 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     Motoboy Passageiro
                   </span>
                   <div className="text-xl font-heading font-black text-slate-900">
-                    Passageiro paga R$ 6,16
+                    Passageiro paga R$ 10,00
                   </div>
                   <div className="space-y-1 text-xs pt-1 border-t border-cyan-200">
                     <p className="font-bold text-emerald-700 flex items-center justify-between">
-                      <span>Você recebe (85%):</span>
-                      <span className="font-mono text-sm">R$ 5,24</span>
+                      <span>Você recebe ({isPromoZeroFeeActive ? '100%' : '85%'}):</span>
+                      <span className="font-mono text-sm">{isPromoZeroFeeActive ? 'R$ 10,00' : 'R$ 8,50'}</span>
                     </p>
                     <p className="text-slate-600 flex items-center justify-between">
-                      <span>Comissão Race (15%):</span>
-                      <span className="font-mono">R$ 0,92</span>
+                      <span>Taxa Race ({isPromoZeroFeeActive ? '0%' : '15%'}):</span>
+                      <span className="font-mono">{isPromoZeroFeeActive ? 'R$ 0,00' : 'R$ 1,50'}</span>
                     </p>
                   </div>
                 </div>
@@ -4685,16 +4703,16 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     Motoboy Entregas
                   </span>
                   <div className="text-xl font-heading font-black text-slate-900">
-                    Passageiro paga R$ 6,90
+                    Passageiro paga R$ 12,00
                   </div>
                   <div className="space-y-1 text-xs pt-1 border-t border-amber-200">
                     <p className="font-bold text-emerald-700 flex items-center justify-between">
-                      <span>Você recebe (85%):</span>
-                      <span className="font-mono text-sm">R$ 5,87</span>
+                      <span>Você recebe ({isPromoZeroFeeActive ? '100%' : '85%'}):</span>
+                      <span className="font-mono text-sm">{isPromoZeroFeeActive ? 'R$ 12,00' : 'R$ 10,20'}</span>
                     </p>
                     <p className="text-slate-600 flex items-center justify-between">
-                      <span>Comissão Race (15%):</span>
-                      <span className="font-mono">R$ 1,03</span>
+                      <span>Taxa Race ({isPromoZeroFeeActive ? '0%' : '15%'}):</span>
+                      <span className="font-mono">{isPromoZeroFeeActive ? 'R$ 0,00' : 'R$ 1,80'}</span>
                     </p>
                   </div>
                 </div>
@@ -4709,7 +4727,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   <span>Sua Chave PIX Cadastrada para Recebimento de Saques</span>
                 </label>
                 <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  Repasse Direto 85%
+                  {isPromoZeroFeeActive ? 'Repasse 100% (0% taxa)' : 'Repasse Direto 85%'}
                 </span>
               </div>
               <p className="text-xs text-slate-600 font-medium">

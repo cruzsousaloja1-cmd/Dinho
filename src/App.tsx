@@ -94,7 +94,7 @@ import {
   withPhotoCacheBuster
 } from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
-import { calculateRideSplitForDriver } from './services/promoService';
+import { calculateRideSplitForDriver, getDriverEarningsStatusText, isDriverInLaunchZeroFeePromo } from './services/promoService';
 
 export default function App() {
   const initialSessionRef = React.useRef<AppUser | null | undefined>(undefined);
@@ -1461,7 +1461,7 @@ export default function App() {
       !isConfigured
         ? `Olá ${normalizedDriver.name}! Escolha sua categoria e informe os dados do veículo e documentos.`
         : isApproved
-        ? `Cadastro de ${normalizedDriver.name} aprovado! Você fica com 85% de cada corrida, Race fica com 15%.`
+        ? `Cadastro de ${normalizedDriver.name} aprovado! ${getDriverEarningsStatusText(isDriverInLaunchZeroFeePromo())}.`
         : `Recebemos sua CNH (frente e verso), CRLV e dados do veículo. Assim que o ADM aprovar, você poderá ficar ONLINE.`,
       isApproved ? 'financial' : 'system'
     );
@@ -1571,7 +1571,7 @@ export default function App() {
     }
     triggerPush(
       '🎉 Status Online Ativado!',
-      'Modelo sem taxas fixas: você fica com 85% de cada corrida e a Race com 15%. Sem taxa semanal ou mensalidade!',
+      `${getDriverEarningsStatusText(isDriverInLaunchZeroFeePromo())}. Sem taxa semanal ou mensalidade!`,
       'financial'
     );
     try {
@@ -1699,7 +1699,7 @@ export default function App() {
 
     triggerPush(
       'Cadastro Ativo!',
-      `${driver.name} está ONLINE! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.`,
+      `${driver.name} está ONLINE! ${getDriverEarningsStatusText(isDriverInLaunchZeroFeePromo())}.`,
       'financial'
     );
     try {
@@ -2071,7 +2071,7 @@ export default function App() {
                 ? `Bem-vindo(a), ${targetDriver.name}! Escolha sua modalidade, informe os dados do veículo e envie as fotos da CNH (frente e verso) e CRLV.`
                 : !isApproved
                 ? `Bem-vindo(a), ${targetDriver.name}! Seu cadastro está PENDENTE de aprovação do ADM. Assim que aprovado, você poderá ficar ONLINE.`
-                : `Bem-vindo(a), ${targetDriver.name}! Central de Corridas pronta para receber chamados. Você fica com 85% de cada corrida sem mensalidade!`
+                : `Bem-vindo(a), ${targetDriver.name}! Central de Corridas pronta. ${getDriverEarningsStatusText(isDriverInLaunchZeroFeePromo())}!`
             );
           } else {
             // Passageiro: vai direto para tela de pedir corrida com mapa
@@ -2316,7 +2316,7 @@ export default function App() {
                 }
                 saveSessionUser(user);
                 setLoginSuccessBanner(
-                  `Bem-vindo(a), ${user.name}! Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.`
+                  `Bem-vindo(a), ${user.name}! ${getDriverEarningsStatusText(isDriverInLaunchZeroFeePromo())}.`
                 );
               }}
               onNavigateToRides={() => {
