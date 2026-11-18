@@ -1741,15 +1741,29 @@ export default function App() {
 
   // Admin Management: Remover Motorista Individual
   const handleRemoveDriver = (driverId: string, email: string) => {
-    deleteUserAccount(email, driverId);
-    setDrivers((prev) => prev.filter((d) => d.id !== driverId && normalizeEmail(d.email) !== normalizeEmail(email)));
+    const cleanEmail = normalizeEmail(email);
+    setDrivers((prev) => prev.filter((d) => String(d.id) !== String(driverId) && (!cleanEmail || normalizeEmail(d.email) !== cleanEmail)));
+    setRidesHistory((prev) =>
+      prev.filter(
+        (r) =>
+          String(r.driver?.id || '') !== String(driverId) &&
+          (!cleanEmail || normalizeEmail(r.driver?.email || '') !== cleanEmail)
+      )
+    );
     triggerPush('🗑️ Cadastro Removido', `O cadastro do motorista ${email} foi excluído com sucesso.`, 'system');
   };
 
   // Admin Management: Remover Passageiro Individual
   const handleRemovePassenger = (passengerId: string, email: string) => {
-    deleteUserAccount(email, passengerId);
-    setPassengers((prev) => prev.filter((p) => p.id !== passengerId && normalizeEmail(p.email) !== normalizeEmail(email)));
+    const cleanEmail = normalizeEmail(email);
+    setPassengers((prev) => prev.filter((p) => String(p.id) !== String(passengerId) && (!cleanEmail || normalizeEmail(p.email) !== cleanEmail)));
+    setRidesHistory((prev) =>
+      prev.filter(
+        (r) =>
+          String(r.passengerId || '') !== String(passengerId) &&
+          (!cleanEmail || normalizeEmail(r.passengerEmail || '') !== cleanEmail)
+      )
+    );
     triggerPush('🗑️ Passageiro Removido', `O cadastro do passageiro ${email} foi excluído com sucesso.`, 'system');
   };
 

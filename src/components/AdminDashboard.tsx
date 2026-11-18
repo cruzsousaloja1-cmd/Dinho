@@ -69,6 +69,8 @@ import {
   getDriverReferralsAndBonusesSupabase,
   ensureUserReferralCodeSupabase,
   markReferralBonusPaidByAdminSupabase,
+  deleteUserCompleteAdminSupabase,
+  SELF_ADMIN_DELETE_ERROR,
   ReferralCandidateItem,
   AdminReferralItem,
   DriverApplicationRecord,
@@ -80,7 +82,7 @@ import {
 } from '../services/asaasService';
 import { maskLast4Digits } from '../utils/security';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
-import { isAppUserAdmin } from '../services/userService';
+import { isAppUserAdmin, isAdminTipoValue } from '../services/userService';
 import { MyReferralsControlSection } from './MyReferralsControlSection';
 import {
   calculateRideSplitForDriver,
@@ -319,7 +321,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     id: string;
     name: string;
     email: string;
+    login?: string;
+    authUid?: string;
+    raw?: any;
   } | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [actionToast, setActionToast] = useState<string | null>(null);
 
   // Modal de edição de usuário pelo ADM (com botão SALVAR ALTERAÇÕES no final)
@@ -530,25 +536,169 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showToast(`⛔ Usuário ${u.nome} bloqueado pela administração.`);
   };
 
-  const handleRemoverSupabaseUser = async (u: any) => {
-    const userEmail = (u['e-mail'] || u.email || '').toLowerCase().trim();
-    if (userEmail === 'admin@race.com.br') {
-      showToast('⚠️ A conta principal admin@race.com.br não pode ser removida.');
+  const isSelfOrProtectedAdminTarget = (u: any): boolean => {
+    const raw = u?.raw || u || {};
+    const targetId = String(u?.id ?? raw?.id ?? '').trim();
+    const rawEmail = String(u?.email || raw?.['e-mail'] || raw?.email || '').trim().toLowerCase();
+    const targetEmail = rawEmail === 'sem e-mail' ? '' : rawEmail;
+    const targetLogin = String(u?.login || raw?.login || '').trim().toLowerCase();
+    const targetIsAdmin = u?.userType === 'ADM' || isAdminTipoValue(raw?.tipo);
+
+    const currentId = currentUser?.id !== undefined && currentUser?.id !== null ? String(currentUser.id).trim() : '';
+    const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
+    const currentLogin = String(currentUser?.login || '').trim().toLowerCase();
+
+    if (currentId && targetId && currentId === targetId) return true;
+    if (currentEmail && targetEmail && currentEmail === targetEmail) return true;
+    if (currentLogin && targetLogin && currentLogin === targetLogin) return true;
+    if (targetId === '33' && targetIsAdmin) return true;
+    if (targetEmail === 'admin@race.com.br') return true;
+    return false;
+  };
+
+  const handleRequestExcluirUsuario = (u: any) => {
+    if (isSelfOrProtectedAdminTarget(u)) {
+      showToast(SELF_ADMIN_DELETE_ERROR);
       return;
     }
 
-    try {
-      await supabase.from('usuarios').delete().eq('id', u.id);
-    } catch {}
+    const raw = u?.raw || u || {};
+    const cleanEmail = String(raw?.['e-mail'] || raw?.email || u?.email || '').trim().toLowerCase();
+    const resolvedEmail = cleanEmail === 'sem e-mail' ? '' : cleanEmail;
 
-    setSupabaseUsers((prev) => prev.filter((item) => item.id !== u.id));
-    const isPassenger = u.tipo === 'passenger';
-    if (isPassenger && onRemovePassenger) {
-      onRemovePassenger(String(u.id), userEmail);
-    } else if (!isPassenger && onRemoveDriver) {
-      onRemoveDriver(String(u.id), userEmail);
+    setDeleteConfirmTarget({
+      type: u?.isPassenger ? 'passenger' : 'driver',
+      id: String(u?.id ?? raw?.id ?? ''),
+      name: String(u?.name || raw?.nome || resolvedEmail || 'Usuário').trim(),
+      email: resolvedEmail,
+      login: String(u?.login || raw?.login || '').trim().toLowerCase(),
+      authUid: String(raw?.auth_uid || '').trim(),
+      raw,
+    });
+  };
+
+  const handleConfirmDeleteSingleUser = async () => {
+    if (!deleteConfirmTarget || isDeletingUser) return;
+    if (isSelfOrProtectedAdminTarget(deleteConfirmTarget)) {
+      setDeleteConfirmTarget(null);
+      showToast(SELF_ADMIN_DELETE_ERROR);
+      return;
     }
-    showToast(`🗑️ Usuário ${u.nome || userEmail} removido com sucesso!`);
+
+    const target = deleteConfirmTarget;
+    const targetId = String(target.id || '').trim();
+    const targetEmail = String(target.email || '').trim().toLowerCase();
+
+    setIsDeletingUser(true);
+    try {
+      const res = await deleteUserCompleteAdminSupabase({
+        id: targetId,
+        email: targetEmail,
+        login: target.login,
+        authUid: target.authUid,
+        currentAdmin: {
+          id: currentUser?.id,
+          email: currentUser?.email,
+          login: currentUser?.login,
+        },
+      });
+
+      if (!res.success) {
+        if (res.selfDelete) {
+          setDeleteConfirmTarget(null);
+        }
+        showToast(res.error || 'Erro ao excluir usuário no Supabase.');
+        return;
+      }
+
+      // Atualiza todas as listas e estados na hora, sem precisar sair e entrar
+      setSupabaseUsers((prev) =>
+        prev.filter((item) => {
+          const itemId = String(item?.id ?? '').trim();
+          const itemEmail = String(item?.['e-mail'] || item?.email || '').trim().toLowerCase();
+          if (targetId && itemId && itemId === targetId) return false;
+          if (targetEmail && itemEmail && itemEmail === targetEmail) return false;
+          return true;
+        })
+      );
+
+      setSupabaseCorridas((prev) =>
+        prev.filter((ride) => {
+          const pId = String(ride.passengerId || '').trim();
+          const dId = String(ride.driver?.id || '').trim();
+          const pEmail = String(ride.passengerEmail || '').trim().toLowerCase();
+          const dEmail = String(ride.driver?.email || '').trim().toLowerCase();
+          if (targetId && (pId === targetId || dId === targetId)) return false;
+          if (targetEmail && (pEmail === targetEmail || dEmail === targetEmail)) return false;
+          return true;
+        })
+      );
+
+      setSupabasePagamentos((prev) =>
+        prev.filter((p) => {
+          const payMotoristaId = p.id_motorista !== undefined && p.id_motorista !== null ? String(p.id_motorista).trim() : '';
+          const payEmail = String(p.email_motorista || '').trim().toLowerCase();
+          const chave = String(p.chave_pix || '').trim();
+          const comp = String(p.comprovante_url || '').toLowerCase();
+          if (targetId && (payMotoristaId === targetId || chave === `INDICADO:${targetId}` || comp.includes(`"indicatedid":"${targetId}"`))) {
+            return false;
+          }
+          if (targetEmail && (payEmail === targetEmail || chave === `INDICADO_EMAIL:${targetEmail}` || comp.includes(targetEmail))) {
+            return false;
+          }
+          return true;
+        })
+      );
+
+      setAdminReferrals((prev) =>
+        prev.filter((r) => {
+          const rId = String(r.id || '').trim();
+          const rEmail = String(r.email || '').trim().toLowerCase();
+          if (targetId && rId === targetId) return false;
+          if (targetEmail && rEmail === targetEmail) return false;
+          return true;
+        })
+      );
+
+      setAdmOwnReferrals((prev) =>
+        prev.filter((r) => {
+          const rId = String(r.id || '').trim();
+          const rEmail = String(r.email || '').trim().toLowerCase();
+          if (targetId && rId === targetId) return false;
+          if (targetEmail && rEmail === targetEmail) return false;
+          return true;
+        })
+      );
+
+      setReviewsList((prev) =>
+        prev.filter((r) => {
+          const rDriverId = String(r.driverId || '').trim();
+          const rPassEmail = String(r.passengerEmail || '').trim().toLowerCase();
+          if (targetId && rDriverId === targetId) return false;
+          if (targetEmail && rPassEmail === targetEmail) return false;
+          return true;
+        })
+      );
+
+      setWithdrawalsList((prev) =>
+        prev.filter((w) => {
+          const wDriverId = String(w.driverId || '').trim();
+          return !(targetId && wDriverId === targetId);
+        })
+      );
+
+      if (target.type === 'passenger' && onRemovePassenger) {
+        onRemovePassenger(targetId, targetEmail);
+      } else if (target.type === 'driver' && onRemoveDriver) {
+        onRemoveDriver(targetId, targetEmail);
+      }
+
+      setDeleteConfirmTarget(null);
+      showToast(`🗑️ Cadastro, corridas e bônus de ${target.name} excluídos do Supabase!`);
+      await fetchSupabaseUsuarios();
+    } finally {
+      setIsDeletingUser(false);
+    }
   };
 
   const handleVerAvaliacoes = (userParsed: any) => {
@@ -2988,18 +3138,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span>Bloquear</span>
                       </button>
 
-                      {/* Botão 3: Remover usuário */}
-                      {u.email?.toLowerCase() !== 'admin@race.com.br' && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoverSupabaseUser(u.raw)}
-                          className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                          title="Remover usuário do Supabase e do app"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                          <span>Remover</span>
-                        </button>
-                      )}
+                      {/* Botão 3: Excluir usuário */}
+                      <button
+                        type="button"
+                        onClick={() => handleRequestExcluirUsuario(u)}
+                        className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                        title="Excluir cadastro, corridas, pagamentos e bônus"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Excluir</span>
+                      </button>
 
                       {/* Botão 4: Ver avaliações */}
                       <button
@@ -4511,43 +4659,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Modal de Confirmação: Remover Cadastro Individual */}
+      {/* Modal de Confirmação: Excluir Cadastro Individual */}
       {deleteConfirmTarget && (
         <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-300 animate-scale-up">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border-2 border-rose-500 animate-scale-up">
             <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
               <Trash2 className="w-6 h-6 stroke-[2.5]" />
             </div>
             <div className="text-center space-y-2">
               <h4 className="font-heading font-black text-slate-950 text-lg">
-                Remover Cadastro?
+                Excluir Cadastro?
               </h4>
-              <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed">
-                Deseja realmente excluir o cadastro de <strong>{deleteConfirmTarget.name}</strong> (<span className="text-slate-900 font-mono">{deleteConfirmTarget.email}</span>)? Esta ação não poderá ser desfeita.
+              <p className="text-xs sm:text-sm text-slate-700 font-medium leading-relaxed">
+                Tem certeza que quer remover <strong>{deleteConfirmTarget.name}</strong>? Isso vai apagar o cadastro, as corridas e os bônus dele.
               </p>
+              {deleteConfirmTarget.email && (
+                <p className="text-xs text-slate-500 font-mono">
+                  {deleteConfirmTarget.email}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-3 pt-2">
               <button
                 type="button"
+                disabled={isDeletingUser}
                 onClick={() => setDeleteConfirmTarget(null)}
-                className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer"
+                className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (deleteConfirmTarget.type === 'driver') {
-                    if (onRemoveDriver) onRemoveDriver(deleteConfirmTarget.id, deleteConfirmTarget.email);
-                  } else {
-                    if (onRemovePassenger) onRemovePassenger(deleteConfirmTarget.id, deleteConfirmTarget.email);
-                  }
-                  showToast(`🗑️ Cadastro de ${deleteConfirmTarget.name} removido com sucesso.`);
-                  setDeleteConfirmTarget(null);
-                }}
-                className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95"
+                disabled={isDeletingUser}
+                onClick={handleConfirmDeleteSingleUser}
+                className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 disabled:opacity-60 flex items-center justify-center gap-1.5"
               >
-                Sim, Remover
+                {isDeletingUser ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <span>Sim, Excluir</span>
+                )}
               </button>
             </div>
           </div>
@@ -4861,6 +5015,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {actionToast && (
+        <div
+          role="alert"
+          className={`fixed bottom-5 right-5 left-5 sm:left-auto sm:max-w-md z-[1300] p-4 rounded-2xl flex items-center justify-between gap-3 shadow-2xl border-2 ${
+            actionToast.includes('não pode') || actionToast.toLowerCase().includes('erro')
+              ? 'bg-rose-950 text-white border-rose-500'
+              : 'bg-slate-950 text-white border-[#ff6a00]'
+          }`}
+        >
+          <span className="font-heading font-black text-xs sm:text-sm flex items-center gap-2">
+            {actionToast.includes('não pode') || actionToast.toLowerCase().includes('erro') ? (
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            )}
+            <span>{actionToast}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setActionToast(null)}
+            className="text-zinc-300 hover:text-white p-1 cursor-pointer shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

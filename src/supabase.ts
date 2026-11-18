@@ -1390,6 +1390,178 @@ BEGIN
 END;
 $$;
 
+-- Exclusão individual completa pelo ADM:
+-- Apaga o usuário de usuarios, corridas, pagamentos, bônus (R$10 e R$50), motoristas, avaliacoes e auth.users
+-- Bloqueia exclusão do próprio ADM logado (incluindo ADM José ID 33 e admin@race.com.br)
+CREATE OR REPLACE FUNCTION public.rpc_admin_delete_user_complete(
+  p_target_id bigint DEFAULT NULL,
+  p_target_email text DEFAULT ''
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_caller_email text := lower(trim(coalesce(auth.jwt() ->> 'email', '')));
+  v_caller_uid uuid := auth.uid();
+  v_caller_usuario_id bigint := public.current_usuario_id();
+  v_clean_email text := lower(trim(coalesce(p_target_email, '')));
+  v_target public.usuarios%ROWTYPE;
+  v_target_found boolean := false;
+  v_target_email text := '';
+  v_target_login text := '';
+  v_is_target_admin boolean := false;
+  v_bonus_row RECORD;
+  v_deleted_corridas integer := 0;
+  v_deleted_pagamentos integer := 0;
+  v_deleted_usuarios integer := 0;
+  v_deleted_auth integer := 0;
+BEGIN
+  IF NOT public.is_race_admin() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Acesso negado: apenas ADM pode excluir cadastros.');
+  END IF;
+
+  IF p_target_id IS NOT NULL THEN
+    SELECT * INTO v_target FROM public.usuarios WHERE id = p_target_id LIMIT 1;
+    v_target_found := FOUND;
+  END IF;
+  IF NOT v_target_found AND v_clean_email <> '' THEN
+    SELECT * INTO v_target
+    FROM public.usuarios
+    WHERE lower(coalesce(email, '')) = v_clean_email
+       OR lower(coalesce("e-mail", '')) = v_clean_email
+       OR lower(coalesce(login, '')) = v_clean_email
+    LIMIT 1;
+    v_target_found := FOUND;
+  END IF;
+
+  v_target_email := lower(trim(coalesce(nullif(v_target.email, ''), nullif(v_target."e-mail", ''), v_clean_email, '')));
+  v_target_login := lower(trim(coalesce(v_target.login, '')));
+  v_is_target_admin := (
+    lower(coalesce(v_target.tipo, '')) IN ('adm', 'admin', 'administrador')
+    OR v_target_email = 'admin@race.com.br'
+  );
+
+  -- Impede apagar o próprio ADM logado (ex: ADM José ID 33) ou conta admin@race.com.br
+  IF (
+    (v_target_found AND v_caller_usuario_id IS NOT NULL AND v_target.id = v_caller_usuario_id)
+    OR (v_target_found AND v_target.auth_uid IS NOT NULL AND v_caller_uid IS NOT NULL AND v_target.auth_uid = v_caller_uid)
+    OR (v_caller_email <> '' AND (v_target_email = v_caller_email OR v_target_login = v_caller_email))
+    OR (v_target_found AND v_target.id = 33 AND v_is_target_admin)
+    OR (p_target_id = 33 AND v_is_target_admin)
+    OR v_target_email = 'admin@race.com.br'
+  ) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'selfDelete', true,
+      'error', 'Você não pode apagar seu próprio ADM.'
+    );
+  END IF;
+
+  -- Estorna eventual saldo creditado no indicante por bônus R$10/R$50 desse indicado antes de remover o bônus
+  IF (v_target_found AND v_target.id IS NOT NULL) OR v_target_email <> '' THEN
+    FOR v_bonus_row IN
+      SELECT p.id, p.id_motorista, p.email_motorista, p.valor, p.status
+      FROM public.pagamentos p
+      WHERE p.tipo = 'bonus_indicacao'
+        AND (
+          (v_target_found AND v_target.id IS NOT NULL AND (
+            p.chave_pix = 'INDICADO:' || v_target.id::text
+            OR coalesce(p.comprovante_url, '') LIKE '%"indicatedId":"' || v_target.id::text || '"%'
+          ))
+          OR (v_target_email <> '' AND (
+            p.chave_pix = 'INDICADO_EMAIL:' || v_target_email
+            OR lower(coalesce(p.comprovante_url, '')) LIKE '%' || v_target_email || '%'
+          ))
+        )
+    LOOP
+      IF lower(coalesce(v_bonus_row.status, '')) IN ('pago', 'pago_sexta', 'paid', 'approved') THEN
+        IF v_bonus_row.id_motorista IS NOT NULL THEN
+          UPDATE public.usuarios
+          SET saldo = greatest(0, coalesce(saldo, 0) - coalesce(v_bonus_row.valor, 0))
+          WHERE id = v_bonus_row.id_motorista
+            AND (NOT v_target_found OR id <> v_target.id);
+        ELSIF coalesce(trim(v_bonus_row.email_motorista), '') <> '' THEN
+          UPDATE public.usuarios
+          SET saldo = greatest(0, coalesce(saldo, 0) - coalesce(v_bonus_row.valor, 0))
+          WHERE lower(coalesce(email, '')) = lower(trim(v_bonus_row.email_motorista))
+            AND (NOT v_target_found OR id <> v_target.id);
+        END IF;
+      END IF;
+    END LOOP;
+  END IF;
+
+  -- Apaga avaliações vinculadas ao usuário
+  DELETE FROM public.avaliacoes a
+  WHERE (v_target_found AND v_target.auth_uid IS NOT NULL AND (a.passageiro_id = v_target.auth_uid OR a.motorista_id = v_target.auth_uid))
+     OR (v_target_email <> '' AND (lower(coalesce(a.email_passageiro, '')) = v_target_email OR lower(coalesce(a.email_motorista, '')) = v_target_email));
+
+  -- Apaga todas as corridas do usuário (passageiro ou motorista/motoboy)
+  DELETE FROM public.corridas c
+  WHERE (v_target_found AND v_target.id IS NOT NULL AND (
+          c.passageiro_id = v_target.id
+          OR c.id_passageiro = v_target.id
+          OR c.motorista_id = v_target.id
+          OR c.id_motorista = v_target.id
+        ))
+     OR (v_target_email <> '' AND (
+          lower(coalesce(c.email_passageiro, '')) = v_target_email
+          OR lower(coalesce(c.email_motorista, '')) = v_target_email
+        ))
+     OR (v_target_login <> '' AND (
+          lower(coalesce(c.email_passageiro, '')) = v_target_login
+          OR lower(coalesce(c.email_motorista, '')) = v_target_login
+        ));
+  GET DIAGNOSTICS v_deleted_corridas = ROW_COUNT;
+
+  -- Apaga todos os pagamentos e bônus (R$10 e R$50) vinculados ao usuário (como indicante ou indicado)
+  DELETE FROM public.pagamentos p
+  WHERE (v_target_found AND v_target.id IS NOT NULL AND (
+          p.id_motorista = v_target.id
+          OR p.chave_pix = 'INDICADO:' || v_target.id::text
+          OR coalesce(p.comprovante_url, '') LIKE '%"indicatedId":"' || v_target.id::text || '"%'
+        ))
+     OR (v_target_email <> '' AND (
+          lower(coalesce(p.email_motorista, '')) = v_target_email
+          OR p.chave_pix = 'INDICADO_EMAIL:' || v_target_email
+          OR lower(coalesce(p.comprovante_url, '')) LIKE '%' || v_target_email || '%'
+        ));
+  GET DIAGNOSTICS v_deleted_pagamentos = ROW_COUNT;
+
+  -- Apaga registro operacional de motoristas
+  DELETE FROM public.motoristas m
+  WHERE (v_target_found AND v_target.auth_uid IS NOT NULL AND m.usuario_id = v_target.auth_uid)
+     OR (v_target_email <> '' AND lower(coalesce(m.email, '')) = v_target_email);
+
+  -- Apaga o usuário da tabela public.usuarios
+  IF v_target_found AND v_target.id IS NOT NULL THEN
+    DELETE FROM public.usuarios WHERE id = v_target.id;
+    GET DIAGNOSTICS v_deleted_usuarios = ROW_COUNT;
+  ELSIF v_target_email <> '' THEN
+    DELETE FROM public.usuarios
+    WHERE lower(coalesce(email, '')) = v_target_email
+       OR lower(coalesce("e-mail", '')) = v_target_email;
+    GET DIAGNOSTICS v_deleted_usuarios = ROW_COUNT;
+  END IF;
+
+  -- Apaga o usuário do Supabase Auth (auth.users) para impedir novo login
+  DELETE FROM auth.users au
+  WHERE (v_target_found AND v_target.auth_uid IS NOT NULL AND au.id = v_target.auth_uid)
+     OR (v_target_email <> '' AND lower(coalesce(au.email, '')) = v_target_email)
+     OR (v_target_login <> '' AND lower(coalesce(au.email, '')) = v_target_login);
+  GET DIAGNOSTICS v_deleted_auth = ROW_COUNT;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'deletedUsuarios', v_deleted_usuarios,
+    'deletedCorridas', v_deleted_corridas,
+    'deletedPagamentos', v_deleted_pagamentos,
+    'deletedAuth', v_deleted_auth
+  );
+END;
+$$;
+
 -- ============================================================================
 -- STORAGE BUCKETS PÚBLICOS ('avatars' e 'fotos') + POLÍTICAS DE UPLOAD E LEITURA
 -- Permite INSERT, UPDATE, SELECT para authenticated e anon (fotos de perfil e cadastro)
@@ -2642,13 +2814,21 @@ export async function loginUsuarioSupabase(
         meta.role === 'admin' ||
         metaTipoLower === 'adm' ||
         metaTipoLower === 'admin' ||
-        metaTipoLower === 'administrador';
+        metaTipoLower === 'administrador' ||
+        authEmail === 'admin@race.com.br';
+      if (!isMetaAdmin) {
+        await supabase.auth.signOut().catch(() => {});
+        return {
+          success: false,
+          error: 'E-mail não encontrado, faça cadastro',
+        };
+      }
       foundRow = {
         id: authData.user.id,
         nome: meta.nome || authEmail.split('@')[0],
         email: authEmail,
         login: authEmail,
-        tipo: isMetaAdmin ? 'admin' : (metaTipoLower || 'passenger'),
+        tipo: 'admin',
         foto: metaPhoto,
         avatar: metaPhoto,
       };
@@ -3765,6 +3945,19 @@ export function setLocalDriverApprovalRecord(record: DriverApplicationRecord): v
   } catch {}
 }
 
+export function removeDriverApprovalLocal(email: string): void {
+  if (typeof window === 'undefined') return;
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return;
+  try {
+    const map = getLocalDriverApprovalsMap();
+    if (cleanEmail in map) {
+      delete map[cleanEmail];
+      localStorage.setItem(DRIVER_APPROVALS_STORAGE_KEY, JSON.stringify(map));
+    }
+  } catch {}
+}
+
 function safeJsonParseObject(raw: any): Record<string, any> | null {
   if (!raw) return null;
   if (typeof raw === 'object') return raw;
@@ -4628,27 +4821,236 @@ export async function getAllPassengersFromSupabase(): Promise<AppUser[]> {
     }));
 }
 
-export async function deleteUsuarioSupabase(params: { id?: string | number; email?: string }): Promise<boolean> {
+export const SELF_ADMIN_DELETE_ERROR = 'Você não pode apagar seu próprio ADM.';
+
+export interface DeleteUserCompleteResult {
+  success: boolean;
+  selfDelete?: boolean;
+  authDeleted?: boolean;
+  error?: string;
+}
+
+/**
+ * Exclui completamente 1 cadastro do Supabase (usuarios + corridas + pagamentos + bônus R$10/R$50 + motoristas + avaliacoes + auth.users).
+ * Nunca permite apagar o próprio ADM logado (incluindo ADM José ID 33 / admin@race.com.br).
+ */
+export async function deleteUserCompleteAdminSupabase(params: {
+  id?: string | number;
+  email?: string;
+  login?: string;
+  authUid?: string;
+  currentAdmin?: { id?: string | number; email?: string; login?: string } | null;
+}): Promise<DeleteUserCompleteResult> {
   try {
-    if (params.id !== undefined && params.id !== null && /^\d+$/.test(String(params.id))) {
-      const { error } = await supabase.from('usuarios').delete().eq('id', Number(params.id));
-      if (!error) return true;
+    const cleanEmail = String(params.email || '').trim().toLowerCase();
+    const cleanLogin = String(params.login || '').trim().toLowerCase();
+    const numericId =
+      params.id !== undefined && params.id !== null && /^\d+$/.test(String(params.id).trim())
+        ? Number(String(params.id).trim())
+        : null;
+
+    const currentAdminId = params.currentAdmin?.id !== undefined && params.currentAdmin?.id !== null
+      ? String(params.currentAdmin.id).trim()
+      : '';
+    const currentAdminEmail = String(params.currentAdmin?.email || '').trim().toLowerCase();
+    const currentAdminLogin = String(params.currentAdmin?.login || '').trim().toLowerCase();
+
+    // Busca registro completo no banco para ter id, email, login, auth_uid e tipo exatos
+    let targetRow: any = null;
+    try {
+      if (numericId !== null) {
+        const { data } = await selectSafeUsuariosRows((q) => q.eq('id', numericId).limit(1));
+        if (data && data.length > 0) targetRow = data[0];
+      }
+      if (!targetRow && cleanEmail) {
+        targetRow = await getUsuarioSupabase(cleanEmail).catch(() => null);
+      }
+    } catch {}
+
+    const targetId = targetRow?.id !== undefined && targetRow?.id !== null ? Number(targetRow.id) : numericId;
+    const targetEmail = String(targetRow?.['e-mail'] || targetRow?.email || cleanEmail || '').trim().toLowerCase();
+    const targetLogin = String(targetRow?.login || cleanLogin || '').trim().toLowerCase();
+    const targetAuthUid = String(targetRow?.auth_uid || params.authUid || '').trim();
+    const targetTipoLower = String(targetRow?.tipo || '').trim().toLowerCase();
+    const isTargetAdmin =
+      targetTipoLower === 'adm' ||
+      targetTipoLower === 'admin' ||
+      targetTipoLower === 'administrador' ||
+      targetEmail === 'admin@race.com.br';
+
+    // Verifica também sessão autenticada atual
+    let sessionEmail = currentAdminEmail;
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const authJwtEmail = String(authData?.user?.email || '').trim().toLowerCase();
+      if (authJwtEmail) sessionEmail = authJwtEmail;
+      if (targetAuthUid && authData?.user?.id && targetAuthUid === authData.user.id) {
+        return { success: false, selfDelete: true, error: SELF_ADMIN_DELETE_ERROR };
+      }
+    } catch {}
+
+    if (
+      (currentAdminId && targetId !== null && currentAdminId === String(targetId)) ||
+      (currentAdminEmail && targetEmail && currentAdminEmail === targetEmail) ||
+      (sessionEmail && targetEmail && sessionEmail === targetEmail) ||
+      (currentAdminLogin && targetLogin && currentAdminLogin === targetLogin) ||
+      (targetId === 33 && isTargetAdmin) ||
+      targetEmail === 'admin@race.com.br'
+    ) {
+      return { success: false, selfDelete: true, error: SELF_ADMIN_DELETE_ERROR };
     }
-    if (params.email) {
-      const clean = params.email.trim().toLowerCase();
+
+    // 1. Tenta execução atômica via RPC SECURITY DEFINER (apaga inclusive em auth.users)
+    try {
+      const rpcRes = await supabase.rpc('rpc_admin_delete_user_complete', {
+        p_target_id: targetId,
+        p_target_email: targetEmail || cleanEmail || '',
+      });
+      if (!rpcRes.error && rpcRes.data && typeof rpcRes.data === 'object') {
+        const d = rpcRes.data as any;
+        if (d.selfDelete) {
+          return { success: false, selfDelete: true, error: d.error || SELF_ADMIN_DELETE_ERROR };
+        }
+        if (d.success) {
+          if (targetEmail) {
+            removeDriverApprovalLocal(targetEmail);
+          }
+          return {
+            success: true,
+            authDeleted: Number(d.deletedAuth || 0) > 0,
+          };
+        }
+      }
+    } catch {}
+
+    // 2. Fallback direto autenticado como ADM caso a RPC ainda não esteja publicada no Postgres
+    // 2a. Estorna saldo de eventual bônus R$10/R$50 pago ao indicante e apaga todos pagamentos/bônus ligados ao usuário
+    try {
+      const { data: allPayRows } = await supabase.from('pagamentos').select('*').limit(1000);
+      const matchingPayIds: number[] = [];
+      for (const p of allPayRows || []) {
+        const pIdMotorista = p.id_motorista !== undefined && p.id_motorista !== null ? Number(p.id_motorista) : null;
+        const pEmailMotorista = String(p.email_motorista || '').trim().toLowerCase();
+        const pChavePix = String(p.chave_pix || '').trim();
+        const pComp = String(p.comprovante_url || '').toLowerCase();
+
+        const isPayeeMatch =
+          (targetId !== null && pIdMotorista === targetId) ||
+          (targetEmail && pEmailMotorista === targetEmail);
+
+        const isIndicatedBonusMatch =
+          String(p.tipo || '').toLowerCase() === 'bonus_indicacao' &&
+          ((targetId !== null &&
+            (pChavePix === `INDICADO:${targetId}` || pComp.includes(`"indicatedid":"${targetId}"`))) ||
+            (targetEmail &&
+              (pChavePix === `INDICADO_EMAIL:${targetEmail}` || pComp.includes(targetEmail))));
+
+        if (isPayeeMatch || isIndicatedBonusMatch) {
+          if (p.id !== undefined && p.id !== null) {
+            matchingPayIds.push(Number(p.id));
+          }
+          if (
+            isIndicatedBonusMatch &&
+            ['pago', 'pago_sexta', 'paid', 'approved'].includes(String(p.status || '').toLowerCase())
+          ) {
+            const val = Number(p.valor || 0);
+            if (val > 0 && pIdMotorista !== null && pIdMotorista !== targetId) {
+              const { data: refRows } = await selectSafeUsuariosRows((q) => q.eq('id', pIdMotorista).limit(1));
+              const refUser = refRows?.[0];
+              if (refUser) {
+                const nextSaldo = Number(Math.max(0, Number(refUser.saldo || 0) - val).toFixed(2));
+                await supabase.from('usuarios').update({ saldo: nextSaldo }).eq('id', refUser.id);
+              }
+            }
+          }
+        }
+      }
+
+      if (matchingPayIds.length > 0) {
+        await supabase.from('pagamentos').delete().in('id', matchingPayIds);
+      }
+      if (targetId !== null) {
+        await supabase.from('pagamentos').delete().eq('id_motorista', targetId);
+        await supabase.from('pagamentos').delete().eq('chave_pix', `INDICADO:${targetId}`);
+      }
+      if (targetEmail) {
+        await supabase.from('pagamentos').delete().ilike('email_motorista', targetEmail);
+      }
+    } catch {}
+
+    // 2b. Apaga avaliações ligadas ao usuário
+    try {
+      if (targetEmail) {
+        await supabase.from('avaliacoes').delete().ilike('email_passageiro', targetEmail);
+        await supabase.from('avaliacoes').delete().ilike('email_motorista', targetEmail);
+      }
+      if (targetAuthUid) {
+        await supabase.from('avaliacoes').delete().eq('passageiro_id', targetAuthUid);
+        await supabase.from('avaliacoes').delete().eq('motorista_id', targetAuthUid);
+      }
+    } catch {}
+
+    // 2c. Apaga corridas do usuário (como passageiro ou motorista/motoboy)
+    try {
+      if (targetId !== null) {
+        await supabase.from('corridas').delete().eq('passageiro_id', targetId);
+        await supabase.from('corridas').delete().eq('id_passageiro', targetId);
+        await supabase.from('corridas').delete().eq('motorista_id', targetId);
+        await supabase.from('corridas').delete().eq('id_motorista', targetId);
+      }
+      if (targetEmail) {
+        await supabase.from('corridas').delete().ilike('email_passageiro', targetEmail);
+        await supabase.from('corridas').delete().ilike('email_motorista', targetEmail);
+      }
+    } catch {}
+
+    // 2d. Apaga registro operacional de motoristas
+    try {
+      if (targetEmail) {
+        await supabase.from('motoristas').delete().ilike('email', targetEmail);
+      }
+      if (targetAuthUid) {
+        await supabase.from('motoristas').delete().eq('usuario_id', targetAuthUid);
+      }
+    } catch {}
+
+    // 2e. Apaga o usuário da tabela public.usuarios
+    let usuarioDeleteError: string | null = null;
+    if (targetId !== null) {
+      const { error } = await supabase.from('usuarios').delete().eq('id', targetId);
+      if (error) usuarioDeleteError = error.message;
+    }
+    if (targetEmail) {
       const knownCols = await getUsuariosTableColumns();
       if (!knownCols || knownCols.has('email')) {
-        await supabase.from('usuarios').delete().eq('email', clean);
+        const { error } = await supabase.from('usuarios').delete().ilike('email', targetEmail);
+        if (error && !usuarioDeleteError) usuarioDeleteError = error.message;
       }
       if (knownCols?.has('e-mail')) {
-        await supabase.from('usuarios').delete().eq('e-mail', clean);
+        await supabase.from('usuarios').delete().ilike('e-mail', targetEmail);
       }
-      return true;
     }
-    return false;
-  } catch {
-    return false;
+
+    if (usuarioDeleteError) {
+      return { success: false, error: usuarioDeleteError };
+    }
+
+    if (targetEmail) {
+      removeDriverApprovalLocal(targetEmail);
+    }
+
+    return { success: true, authDeleted: false };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Erro ao excluir usuário no Supabase.',
+    };
   }
+}
+
+export async function deleteUsuarioSupabase(params: { id?: string | number; email?: string }): Promise<boolean> {
+  const res = await deleteUserCompleteAdminSupabase(params);
+  return res.success;
 }
 
 export async function zerarDadosTesteSupabase(): Promise<{ success: boolean; error?: string }> {
