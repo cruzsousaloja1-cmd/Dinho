@@ -898,8 +898,10 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       {referralCode && (() => {
         const isDriverOrMoto = isAppUserDriver(currentUser);
         const countdownText = getLaunchPromoCountdownText();
-        const shareText = buildReferralWhatsappShareText(referralCode, { isDriver: isDriverOrMoto });
-        const shareUrl = buildReferralWhatsappShareUrl(referralCode, { isDriver: isDriverOrMoto });
+        const driverShareText = buildReferralWhatsappShareText(referralCode, { isDriver: true });
+        const driverShareUrl = buildReferralWhatsappShareUrl(referralCode, { isDriver: true });
+        const passengerShareText = buildReferralWhatsappShareText(referralCode, { isDriver: false });
+        const passengerShareUrl = buildReferralWhatsappShareUrl(referralCode, { isDriver: false });
         return (
         <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
           <div className="flex items-start justify-between gap-3">
@@ -936,19 +938,24 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             </div>
           </div>
 
-          <div className="bg-black/25 border border-white/25 rounded-2xl p-4 text-center space-y-2">
+          <div className="bg-black/25 border border-white/25 rounded-2xl p-4 text-center space-y-2.5">
             <span className="text-[11px] font-bold uppercase tracking-widest text-amber-100 block">
               Seu Código de Indicação
             </span>
             <div className="text-3xl sm:text-4xl font-mono font-black tracking-[0.2em] text-white select-all py-1">
               {referralCode}
             </div>
-            <p className="text-[11px] text-amber-100/90 font-medium break-words">
-              {shareText}
-            </p>
+            <div className="space-y-1 text-left bg-black/25 rounded-xl p-2.5 border border-white/15">
+              <p className="text-[11px] text-amber-100/95 font-medium break-words">
+                <strong className="text-white">Para Motorista / Motoboy:</strong> {driverShareText}
+              </p>
+              <p className="text-[11px] text-amber-100/95 font-medium break-words">
+                <strong className="text-white">Para Passageiro:</strong> {passengerShareText}
+              </p>
+            </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2.5">
+          <div className="flex flex-col gap-2.5">
             <button
               type="button"
               onClick={() => {
@@ -958,21 +965,33 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                 setCopiedCodeCard(true);
                 setTimeout(() => setCopiedCodeCard(false), 2500);
               }}
-              className="flex-1 py-3 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow transition-all active:scale-[0.98]"
+              className="w-full py-3 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow transition-all active:scale-[0.98]"
             >
               {copiedCodeCard ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
               <span>{copiedCodeCard ? 'Código copiado!' : 'Copiar código'}</span>
             </button>
 
-            <a
-              href={shareUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow transition-all active:scale-[0.98]"
-            >
-              <MessageCircle className="w-4 h-4" />
-              <span>Compartilhar no WhatsApp</span>
-            </a>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <a
+                href={driverShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow transition-all active:scale-[0.98]"
+              >
+                <MessageCircle className="w-4 h-4 shrink-0" />
+                <span>Compartilhar para Motorista / Motoboy</span>
+              </a>
+
+              <a
+                href={passengerShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-3 px-4 rounded-xl bg-zinc-950 hover:bg-zinc-900 border border-white/25 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow transition-all active:scale-[0.98]"
+              >
+                <MessageCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>Compartilhar para Passageiro</span>
+              </a>
+            </div>
           </div>
         </div>
         );

@@ -89,7 +89,7 @@ const parseDateMs = (isoOrDate?: string | null): number | null => {
 };
 
 /**
- * Promoção 1 — 1º MÊS SEM TAXA:
+ * Promoção 1 — Sem taxa até 17/12/2026:
  * Se a data da corrida for até 17/12/2026 E o motorista foi cadastrado a partir de 17/11/2026,
  * comissão = 0% (motorista fica com 100% / app 0%).
  * Após 17/12/2026, volta automaticamente para 15% (motorista 85% / app 15%).
@@ -246,7 +246,7 @@ export const buildReferralWhatsappShareText = (
   if (options?.isDriver) {
     return `Baixa o RACE para trabalhar! Usa meu código ${cleanCode} e ganha Sem taxa até 17/12/2026! Quanto antes você entrar, mais tempo sem taxa você tem! Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/`;
   }
-  return `Baixa o RACE! Usa meu código ${cleanCode} e ganha 1º mês sem taxa! cruzsousaloja1-cmd.github.io/Dinho/`;
+  return `Baixa o RACE! Usa meu código ${cleanCode}! E você também ganha R$10 de crédito se indicar um Passageiro e ele fizer a 1ª corrida! Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/`;
 };
 
 export const buildReferralWhatsappShareUrl = (

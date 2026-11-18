@@ -2781,7 +2781,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               .toUpperCase();
             const myReferralLink = buildReferralLink(myPersonalCode || myWhatsappCode);
             const driverShareText = buildReferralWhatsappShareText(myPersonalCode, { isDriver: true });
-            const whatsappShareUrl = buildReferralWhatsappShareUrl(myPersonalCode, { isDriver: true });
+            const driverShareUrl = buildReferralWhatsappShareUrl(myPersonalCode, { isDriver: true });
+            const passengerShareText = buildReferralWhatsappShareText(myPersonalCode, { isDriver: false });
+            const passengerShareUrl = buildReferralWhatsappShareUrl(myPersonalCode, { isDriver: false });
             const countdownText = getLaunchPromoCountdownText();
 
             return (
@@ -2810,18 +2812,23 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </div>
 
                   {/* Código Grande em Destaque */}
-                  <div className="bg-black/30 border-2 border-white/30 rounded-2xl p-4 sm:p-5 text-center space-y-2">
+                  <div className="bg-black/30 border-2 border-white/30 rounded-2xl p-4 sm:p-5 text-center space-y-3">
                     <span className="text-[11px] font-bold uppercase tracking-widest text-amber-100 block">
                       Seu Código de Indicação
                     </span>
                     <div className="text-4xl sm:text-5xl font-mono font-black tracking-[0.22em] text-white select-all py-1">
                       {myPersonalCode || '...'}
                     </div>
-                    <p className="text-xs text-amber-100/95 font-medium break-words">
-                      {driverShareText}
-                    </p>
+                    <div className="space-y-1.5 text-left bg-black/25 rounded-xl p-3 border border-white/15">
+                      <p className="text-[11px] text-amber-100/95 font-medium break-words">
+                        <strong className="text-white">Para Motorista / Motoboy:</strong> {driverShareText}
+                      </p>
+                      <p className="text-[11px] text-amber-100/95 font-medium break-words">
+                        <strong className="text-white">Para Passageiro:</strong> {passengerShareText}
+                      </p>
+                    </div>
 
-                    <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+                    <div className="flex flex-col gap-2.5 pt-1">
                       <button
                         type="button"
                         onClick={() => {
@@ -2832,21 +2839,33 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                           setCopiedDriverCode(true);
                           setTimeout(() => setCopiedDriverCode(false), 3000);
                         }}
-                        className="flex-1 py-3.5 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all active:scale-[0.98]"
+                        className="w-full py-3.5 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all active:scale-[0.98]"
                       >
                         {copiedDriverCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                         <span>{copiedDriverCode ? 'Código copiado!' : 'Copiar código'}</span>
                       </button>
 
-                      <a
-                        href={whatsappShareUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
-                      >
-                        <MessageCircle className="w-4 h-4" />
-                        <span>Compartilhar no WhatsApp</span>
-                      </a>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <a
+                          href={driverShareUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
+                        >
+                          <MessageCircle className="w-4 h-4 shrink-0" />
+                          <span>Compartilhar para Motorista / Motoboy</span>
+                        </a>
+
+                        <a
+                          href={passengerShareUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="py-3.5 px-4 rounded-xl bg-zinc-950 hover:bg-zinc-900 border border-white/25 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
+                        >
+                          <MessageCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                          <span>Compartilhar para Passageiro</span>
+                        </a>
+                      </div>
                     </div>
                   </div>
 
@@ -3029,7 +3048,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-600 font-medium">Repasse líquido atual por corrida:</span>
                     <span className="font-black text-emerald-700">
-                      {isPromoZeroFeeActive ? '100% do valor integral (Promoção 1º Mês)' : '85% do valor integral'}
+                      {isPromoZeroFeeActive ? '100% do valor integral (Sem taxa até 17/12/2026)' : '85% do valor integral'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
