@@ -9,8 +9,10 @@ import {
   LAUNCH_PROMO_EARNINGS_BADGE_TEXT,
   buildReferralLink,
   buildReferralWhatsappShareText,
-  buildReferralWhatsappShareUrl,
   getLaunchPromoCountdownText,
+  getRaceLogoPublicUrl,
+  preloadRaceLogoBlob,
+  shareReferralWithLogo,
   normalizeReferralDigits,
   parseReferralBonusMeta,
   formatReferralBonusMessage,
@@ -2781,8 +2783,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               .toUpperCase();
             const myReferralLink = buildReferralLink(myPersonalCode || myWhatsappCode);
             const unifiedShareText = buildReferralWhatsappShareText(myPersonalCode);
-            const whatsappShareUrl = buildReferralWhatsappShareUrl(myPersonalCode);
             const countdownText = getLaunchPromoCountdownText();
+            const raceLogoUrl = getRaceLogoPublicUrl();
 
             return (
               <div className="space-y-4">
@@ -2809,8 +2811,19 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     </div>
                   </div>
 
-                  {/* Código Grande em Destaque */}
+                  {/* Código Grande em Destaque + Logo RACE */}
                   <div className="bg-[#9a3412] border-2 border-yellow-400 rounded-2xl p-5 sm:p-6 text-center space-y-4 shadow-xl">
+                    <div className="flex flex-col items-center gap-2">
+                      <img
+                        src={raceLogoUrl}
+                        alt="Logo RACE"
+                        onLoad={() => {
+                          preloadRaceLogoBlob().catch(() => {});
+                        }}
+                        className="w-28 h-28 sm:w-32 sm:h-32 rounded-3xl object-cover border-2 border-yellow-400 shadow-2xl mx-auto bg-black"
+                      />
+                    </div>
+
                     <span className="text-[14px] font-bold uppercase tracking-widest text-amber-100 block">
                       SEU CÓDIGO DE INDICAÇÃO
                     </span>
@@ -2835,15 +2848,26 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         <span>{copiedDriverCode ? 'Código copiado!' : 'Copiar código'}</span>
                       </button>
 
-                      <a
-                        href={whatsappShareUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full min-h-[60px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-[18px] leading-tight flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98]"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          shareReferralWithLogo(myPersonalCode)
+                            .then((res) => {
+                              if (res === 'whatsapp_with_download' && onTriggerToast) {
+                                onTriggerToast(
+                                  'Logo do RACE baixada!',
+                                  'Abrimos o WhatsApp com sua mensagem. Anexe a logo baixada para enviar junto!',
+                                  'ride'
+                                );
+                              }
+                            })
+                            .catch(() => {});
+                        }}
+                        className="w-full min-h-[60px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-[18px] leading-tight flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98] cursor-pointer"
                       >
                         <MessageCircle className="w-6 h-6 shrink-0" />
                         <span>Compartilhar para Motorista, Motoboy e Passageiros</span>
-                      </a>
+                      </button>
                     </div>
 
                     <p className="text-xs text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 text-left leading-relaxed">

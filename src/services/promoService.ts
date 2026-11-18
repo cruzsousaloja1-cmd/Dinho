@@ -261,3 +261,113 @@ export const buildReferralWhatsappShareUrl = (
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 };
 
+export const getRaceLogoPublicUrl = (): string => {
+  const base =
+    (typeof import.meta !== 'undefined' && (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL) ||
+    '/Dinho/';
+  const normalized = base.endsWith('/') ? base : `${base}/`;
+  return `${normalized}logo.png`;
+};
+
+let cachedRaceLogoBlob: Blob | null = null;
+let cachedRaceLogoPromise: Promise<Blob | null> | null = null;
+
+export const preloadRaceLogoBlob = (): Promise<Blob | null> => {
+  if (cachedRaceLogoBlob) return Promise.resolve(cachedRaceLogoBlob);
+  if (cachedRaceLogoPromise) return cachedRaceLogoPromise;
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') {
+    return Promise.resolve(null);
+  }
+  cachedRaceLogoPromise = fetch(getRaceLogoPublicUrl())
+    .then((res) => (res.ok ? res.blob() : null))
+    .then((blob) => {
+      if (blob) cachedRaceLogoBlob = blob;
+      return blob;
+    })
+    .catch(() => null);
+  return cachedRaceLogoPromise;
+};
+
+const triggerFileDownload = (blob: Blob, filename: string) => {
+  try {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+  } catch {
+    // Fallback URL download
+    const link = document.createElement('a');
+    link.href = getRaceLogoPublicUrl();
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+};
+
+const openExternalUrlSafely = (url: string) => {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+};
+
+export type ShareWithLogoResult = 'native_with_logo' | 'cancelled' | 'whatsapp_with_download';
+
+export const shareReferralWithLogo = async (
+  code?: string | null
+): Promise<ShareWithLogoResult> => {
+  const text = buildReferralWhatsappShareText(code);
+  const whatsappUrl = buildReferralWhatsappShareUrl(code);
+  const logoBlob = cachedRaceLogoBlob || (await preloadRaceLogoBlob());
+
+  if (
+    logoBlob &&
+    typeof navigator !== 'undefined' &&
+    typeof navigator.share === 'function'
+  ) {
+    try {
+      const logoFile = new File([logoBlob], 'logo.png', { type: 'image/png' });
+      const canShareFiles =
+        typeof navigator.canShare !== 'function' ||
+        navigator.canShare({ files: [logoFile], text });
+      if (canShareFiles) {
+        await navigator.share({
+          title: 'RACE - Promoção de Lançamento!',
+          text,
+          files: [logoFile],
+        });
+        return 'native_with_logo';
+      }
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return 'cancelled';
+      }
+      // Fall through to logo download + WhatsApp web/app link
+    }
+  }
+
+  if (logoBlob) {
+    triggerFileDownload(logoBlob, 'logo-race.png');
+  } else {
+    const link = document.createElement('a');
+    link.href = getRaceLogoPublicUrl();
+    link.download = 'logo-race.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  openExternalUrlSafely(whatsappUrl);
+  return 'whatsapp_with_download';
+};
+

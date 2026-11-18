@@ -42,8 +42,10 @@ import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imag
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import {
   buildReferralWhatsappShareText,
-  buildReferralWhatsappShareUrl,
   getLaunchPromoCountdownText,
+  getRaceLogoPublicUrl,
+  preloadRaceLogoBlob,
+  shareReferralWithLogo,
 } from '../services/promoService';
 
 interface PassengerAccountViewProps {
@@ -899,7 +901,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         const isDriverOrMoto = isAppUserDriver(currentUser);
         const countdownText = getLaunchPromoCountdownText();
         const unifiedShareText = buildReferralWhatsappShareText(referralCode);
-        const whatsappShareUrl = buildReferralWhatsappShareUrl(referralCode);
+        const raceLogoUrl = getRaceLogoPublicUrl();
         return (
         <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
           <div className="flex items-start justify-between gap-3">
@@ -937,6 +939,17 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           </div>
 
           <div className="bg-[#9a3412] border-2 border-yellow-400 rounded-2xl p-5 sm:p-6 text-center space-y-4 shadow-xl">
+            <div className="flex flex-col items-center gap-2">
+              <img
+                src={raceLogoUrl}
+                alt="Logo RACE"
+                onLoad={() => {
+                  preloadRaceLogoBlob().catch(() => {});
+                }}
+                className="w-28 h-28 sm:w-32 sm:h-32 rounded-3xl object-cover border-2 border-yellow-400 shadow-2xl mx-auto bg-black"
+              />
+            </div>
+
             <span className="text-[14px] font-bold uppercase tracking-widest text-amber-100 block">
               SEU CÓDIGO DE INDICAÇÃO
             </span>
@@ -960,15 +973,16 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                 <span>{copiedCodeCard ? 'Código copiado!' : 'Copiar código'}</span>
               </button>
 
-              <a
-                href={whatsappShareUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full min-h-[60px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-[18px] leading-tight flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98]"
+              <button
+                type="button"
+                onClick={() => {
+                  shareReferralWithLogo(referralCode).catch(() => {});
+                }}
+                className="w-full min-h-[60px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-[18px] leading-tight flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98] cursor-pointer"
               >
                 <MessageCircle className="w-6 h-6 shrink-0" />
                 <span>Compartilhar para Motorista, Motoboy e Passageiros</span>
-              </a>
+              </button>
             </div>
 
             <p className="text-[11px] text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 text-left leading-relaxed">
