@@ -9,6 +9,7 @@ import {
 } from './utils/imageCompression';
 import {
   calculateRideSplitForDriver,
+  generateReferralCodeCandidate,
   normalizeReferralDigits,
   REFERRAL_BONUS_AMOUNT,
   REFERRAL_REQUIRED_RIDES,
@@ -61,6 +62,9 @@ const SAFE_USUARIO_COLS_LIST = [
   'documentos_aceitos',
   'data_aceite',
   'indicado_por',
+  'codigo_indicacao',
+  'indicado_por_codigo',
+  'bonus_pago',
 ];
 
 const FORBIDDEN_INVENTED_COLS = new Set([
@@ -128,7 +132,11 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   aceitou_contrato BOOLEAN DEFAULT false,
   aceitou_termos BOOLEAN DEFAULT false,
   aceitou_lgpd BOOLEAN DEFAULT false,
-  data_aceite TIMESTAMP WITH TIME ZONE
+  data_aceite TIMESTAMP WITH TIME ZONE,
+  indicado_por TEXT DEFAULT '',
+  codigo_indicacao TEXT DEFAULT '',
+  indicado_por_codigo TEXT DEFAULT '',
+  bonus_pago BOOLEAN DEFAULT false
 );
 
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS auth_uid UUID;
@@ -138,6 +146,9 @@ ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_termos BOOLEAN DEFA
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_lgpd BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS data_aceite TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS indicado_por TEXT DEFAULT '';
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS codigo_indicacao TEXT DEFAULT '';
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS indicado_por_codigo TEXT DEFAULT '';
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS bonus_pago BOOLEAN DEFAULT false;
 
 -- 2. TABELA DE CORRIDAS (Tempo Real via Supabase Realtime)
 CREATE TABLE IF NOT EXISTS public.corridas (
@@ -657,8 +668,87 @@ AS $$
   );
 $$;
 
+CREATE OR REPLACE FUNCTION public.rpc_check_codigo_indicacao_exists(p_code text)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.usuarios
+    WHERE upper(trim(coalesce(codigo_indicacao, ''))) = upper(trim(coalesce(p_code, '')))
+      AND trim(coalesce(p_code, '')) <> ''
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.rpc_ensure_codigo_indicacao(
+  p_email text DEFAULT '',
+  p_nome text DEFAULT ''
+)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_email text := lower(trim(coalesce(nullif(auth.jwt() ->> 'email', ''), p_email, '')));
+  v_row public.usuarios%ROWTYPE;
+  v_existing text := '';
+  v_letters text := '';
+  v_candidate text := '';
+  v_attempt integer := 0;
+BEGIN
+  IF v_email = '' THEN
+    RETURN '';
+  END IF;
+
+  SELECT * INTO v_row
+  FROM public.usuarios
+  WHERE lower(coalesce(email, '')) = v_email
+     OR lower(coalesce("e-mail", '')) = v_email
+     OR lower(coalesce(login, '')) = v_email
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN '';
+  END IF;
+
+  v_existing := upper(trim(coalesce(v_row.codigo_indicacao, '')));
+  IF v_existing <> '' THEN
+    RETURN v_existing;
+  END IF;
+
+  v_letters := upper(regexp_replace(
+    translate(
+      coalesce(nullif(trim(v_row.nome), ''), nullif(trim(p_nome), ''), 'RACE'),
+      'áàãâäÁÀÃÂÄéèêëÉÈÊËíìîïÍÌÎÏóòõôöÓÒÕÔÖúùûüÚÙÛÜçÇñÑ',
+      'aaaaaAAAAAeeeeEEEEiiiiIIIIoooooOOOOOuuuuUUUUcCnN'
+    ),
+    '[^A-Za-z]', '', 'g'
+  ));
+  v_letters := left(rpad(coalesce(nullif(v_letters, ''), 'RACE'), 4, 'RACE'), 4);
+
+  WHILE v_attempt < 30 LOOP
+    v_attempt := v_attempt + 1;
+    v_candidate := v_letters || (floor(100 + random() * 900))::integer::text;
+    IF NOT EXISTS (
+      SELECT 1 FROM public.usuarios u
+      WHERE upper(trim(coalesce(u.codigo_indicacao, ''))) = v_candidate
+    ) THEN
+      UPDATE public.usuarios SET codigo_indicacao = v_candidate WHERE id = v_row.id;
+      RETURN v_candidate;
+    END IF;
+  END LOOP;
+
+  v_candidate := v_letters || lpad((v_row.id % 900 + 100)::text, 3, '0');
+  UPDATE public.usuarios SET codigo_indicacao = v_candidate WHERE id = v_row.id;
+  RETURN v_candidate;
+END;
+$$;
+
 -- Remover função antiga de redefinição de senha em public.usuarios (agora exclusiva do Supabase Auth)
 DROP FUNCTION IF EXISTS public.rpc_redefinir_senha(text, text);
+DROP FUNCTION IF EXISTS public.rpc_complete_signup_profile(uuid, text, text, text, text, text, text, text, text, text, integer, text, text, text);
 
 -- Completa cadastro na tabela public.usuarios SOMENTE quando já existe conta válida recém-criada em auth.users
 CREATE OR REPLACE FUNCTION public.rpc_complete_signup_profile(
@@ -675,7 +765,9 @@ CREATE OR REPLACE FUNCTION public.rpc_complete_signup_profile(
   p_ano integer DEFAULT 2023,
   p_cnh text DEFAULT '',
   p_foto text DEFAULT NULL,
-  p_indicado_por text DEFAULT ''
+  p_indicado_por text DEFAULT '',
+  p_codigo_indicacao text DEFAULT '',
+  p_indicado_por_codigo text DEFAULT ''
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -685,6 +777,9 @@ AS $$
 DECLARE
   v_clean_email text := lower(regexp_replace(coalesce(p_email, ''), '\s+', '', 'g'));
   v_auth_role text;
+  v_code text := upper(trim(coalesce(p_codigo_indicacao, '')));
+  v_letters text := '';
+  v_attempt integer := 0;
   v_row public.usuarios%ROWTYPE;
 BEGIN
   IF p_auth_uid IS NULL OR v_clean_email = '' THEN
@@ -703,7 +798,24 @@ BEGIN
     RAISE EXCEPTION 'Conta Supabase Auth não encontrada para finalizar perfil';
   END IF;
 
-  INSERT INTO public.usuarios (nome, email, celular, whatsapp, login, tipo, categoria, placa, modelo, ano, cnh, foto, indicado_por)
+  IF v_code = '' OR EXISTS (SELECT 1 FROM public.usuarios u WHERE upper(trim(coalesce(u.codigo_indicacao, ''))) = v_code) THEN
+    v_letters := upper(regexp_replace(
+      translate(
+        coalesce(nullif(trim(p_nome), ''), 'RACE'),
+        'áàãâäÁÀÃÂÄéèêëÉÈÊËíìîïÍÌÎÏóòõôöÓÒÕÔÖúùûüÚÙÛÜçÇñÑ',
+        'aaaaaAAAAAeeeeEEEEiiiiIIIIoooooOOOOOuuuuUUUUcCnN'
+      ),
+      '[^A-Za-z]', '', 'g'
+    ));
+    v_letters := left(rpad(coalesce(nullif(v_letters, ''), 'RACE'), 4, 'RACE'), 4);
+    WHILE v_attempt < 30 LOOP
+      v_attempt := v_attempt + 1;
+      v_code := v_letters || (floor(100 + random() * 900))::integer::text;
+      EXIT WHEN NOT EXISTS (SELECT 1 FROM public.usuarios u WHERE upper(trim(coalesce(u.codigo_indicacao, ''))) = v_code);
+    END LOOP;
+  END IF;
+
+  INSERT INTO public.usuarios (nome, email, celular, whatsapp, login, tipo, categoria, placa, modelo, ano, cnh, foto, indicado_por, codigo_indicacao, indicado_por_codigo, bonus_pago)
   VALUES (
     coalesce(nullif(trim(p_nome), ''), split_part(v_clean_email, '@', 1)),
     v_clean_email,
@@ -721,7 +833,10 @@ BEGIN
     coalesce(p_ano, 2023),
     coalesce(p_cnh, ''),
     p_foto,
-    coalesce(nullif(trim(p_indicado_por), ''), '')
+    coalesce(nullif(trim(p_indicado_por), ''), nullif(trim(p_indicado_por_codigo), ''), ''),
+    v_code,
+    coalesce(nullif(trim(p_indicado_por_codigo), ''), nullif(trim(p_indicado_por), ''), ''),
+    false
   )
   RETURNING * INTO v_row;
 
@@ -943,7 +1058,7 @@ BEGIN
   END IF;
 
   v_clean_email := lower(trim(coalesce(v_indicated.email, v_clean_email, '')));
-  v_ind_code := trim(coalesce(v_indicated.indicado_por, ''));
+  v_ind_code := trim(coalesce(nullif(trim(v_indicated.indicado_por_codigo), ''), v_indicated.indicado_por, ''));
   v_ind_digits := regexp_replace(v_ind_code, '[^0-9]', '', 'g');
   IF length(v_ind_digits) >= 12 AND left(v_ind_digits, 2) = '55' THEN
     v_ind_digits := substr(v_ind_digits, 3);
@@ -951,6 +1066,10 @@ BEGIN
 
   IF v_ind_code = '' THEN
     RETURN jsonb_build_object('awarded', false, 'reason', 'no_referrer');
+  END IF;
+
+  IF coalesce(v_indicated.bonus_pago, false) = true THEN
+    RETURN jsonb_build_object('awarded', false, 'alreadyPaid', true);
   END IF;
 
   SELECT count(*)::integer INTO v_rides_count
@@ -970,7 +1089,8 @@ BEGIN
   FROM public.usuarios u
   WHERE u.id <> v_indicated.id
     AND (
-      (length(v_ind_digits) >= 8 AND (
+      (coalesce(u.codigo_indicacao, '') <> '' AND upper(trim(u.codigo_indicacao)) = upper(v_ind_code))
+      OR (length(v_ind_digits) >= 8 AND (
         regexp_replace(coalesce(u.whatsapp, ''), '[^0-9]', '', 'g') LIKE '%' || v_ind_digits
         OR regexp_replace(coalesce(u.celular, ''), '[^0-9]', '', 'g') LIKE '%' || v_ind_digits
       ))
@@ -996,6 +1116,7 @@ BEGIN
   ) INTO v_already_paid;
 
   IF v_already_paid THEN
+    UPDATE public.usuarios SET bonus_pago = true WHERE id = v_indicated.id;
     RETURN jsonb_build_object('awarded', false, 'alreadyPaid', true, 'ridesCount', v_rides_count);
   END IF;
 
@@ -1030,6 +1151,10 @@ BEGIN
   SET saldo = coalesce(saldo, 0) + 50
   WHERE id = v_referrer.id;
 
+  UPDATE public.usuarios
+  SET bonus_pago = true
+  WHERE id = v_indicated.id;
+
   RETURN jsonb_build_object(
     'awarded', true,
     'amount', 50,
@@ -1056,6 +1181,7 @@ DECLARE
   v_caller_email text := lower(trim(coalesce(auth.jwt() ->> 'email', p_referrer_email, '')));
   v_caller public.usuarios%ROWTYPE;
   v_digits text := '';
+  v_caller_code text := '';
   v_result JSONB := '[]'::jsonb;
 BEGIN
   IF auth.role() <> 'authenticated' AND v_caller_email = '' THEN
@@ -1068,12 +1194,13 @@ BEGIN
      OR lower(coalesce(u.login, '')) = v_caller_email
   LIMIT 1;
 
+  v_caller_code := upper(trim(coalesce(v_caller.codigo_indicacao, '')));
   v_digits := regexp_replace(coalesce(v_caller.whatsapp, v_caller.celular, p_referrer_whatsapp, ''), '[^0-9]', '', 'g');
   IF length(v_digits) >= 12 AND left(v_digits, 2) = '55' THEN
     v_digits := substr(v_digits, 3);
   END IF;
 
-  IF v_digits = '' AND v_caller_email = '' THEN
+  IF v_caller_code = '' AND v_digits = '' AND v_caller_email = '' THEN
     RETURN '[]'::jsonb;
   END IF;
 
@@ -1091,18 +1218,31 @@ BEGIN
         WHERE lower(coalesce(c.status, '')) = 'finalizada'
           AND (c.id_motorista = u.id OR c.motorista_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_motorista, '')) = lower(u.email)))
       ),
-      'bonus_paid', EXISTS (
-        SELECT 1 FROM public.pagamentos p
-        WHERE p.tipo = 'bonus_indicacao'
-          AND (p.chave_pix = 'INDICADO:' || u.id::text OR (coalesce(u.email, '') <> '' AND lower(coalesce(p.comprovante_url, '')) LIKE '%' || lower(u.email) || '%'))
+      'bonus_paid', (
+        coalesce(u.bonus_pago, false)
+        OR EXISTS (
+          SELECT 1 FROM public.pagamentos p
+          WHERE p.tipo = 'bonus_indicacao'
+            AND (p.chave_pix = 'INDICADO:' || u.id::text OR (coalesce(u.email, '') <> '' AND lower(coalesce(p.comprovante_url, '')) LIKE '%' || lower(u.email) || '%'))
+        )
       )
     ) AS item
     FROM public.usuarios u
     WHERE u.id <> coalesce(v_caller.id, -1)
-      AND coalesce(u.indicado_por, '') <> ''
+      AND (coalesce(trim(u.indicado_por), '') <> '' OR coalesce(trim(u.indicado_por_codigo), '') <> '')
       AND (
-        (length(v_digits) >= 8 AND regexp_replace(u.indicado_por, '[^0-9]', '', 'g') LIKE '%' || v_digits)
-        OR (v_caller_email <> '' AND lower(trim(u.indicado_por)) = v_caller_email)
+        (v_caller_code <> '' AND (
+          upper(trim(coalesce(u.indicado_por_codigo, ''))) = v_caller_code
+          OR upper(trim(coalesce(u.indicado_por, ''))) = v_caller_code
+        ))
+        OR (length(v_digits) >= 8 AND (
+          regexp_replace(coalesce(u.indicado_por, ''), '[^0-9]', '', 'g') LIKE '%' || v_digits
+          OR regexp_replace(coalesce(u.indicado_por_codigo, ''), '[^0-9]', '', 'g') LIKE '%' || v_digits
+        ))
+        OR (v_caller_email <> '' AND (
+          lower(trim(coalesce(u.indicado_por, ''))) = v_caller_email
+          OR lower(trim(coalesce(u.indicado_por_codigo, ''))) = v_caller_email
+        ))
       )
   ) sub;
 
@@ -1132,21 +1272,25 @@ BEGIN
       'indicated_name', coalesce(u.nome, 'Condutor'),
       'indicated_email', coalesce(u.email, ''),
       'indicated_tipo', coalesce(u.tipo, 'driver'),
-      'indicado_por', coalesce(u.indicado_por, ''),
+      'indicado_por', coalesce(nullif(trim(u.indicado_por_codigo), ''), u.indicado_por, ''),
       'created_at', coalesce(u.created_at, now()),
       'rides_count', (
         SELECT count(*)::integer FROM public.corridas c
         WHERE lower(coalesce(c.status, '')) = 'finalizada'
           AND (c.id_motorista = u.id OR c.motorista_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_motorista, '')) = lower(u.email)))
       ),
-      'bonus_paid', EXISTS (
-        SELECT 1 FROM public.pagamentos p
-        WHERE p.tipo = 'bonus_indicacao'
-          AND (p.chave_pix = 'INDICADO:' || u.id::text OR (coalesce(u.email, '') <> '' AND lower(coalesce(p.comprovante_url, '')) LIKE '%' || lower(u.email) || '%'))
+      'bonus_paid', (
+        coalesce(u.bonus_pago, false)
+        OR EXISTS (
+          SELECT 1 FROM public.pagamentos p
+          WHERE p.tipo = 'bonus_indicacao'
+            AND (p.chave_pix = 'INDICADO:' || u.id::text OR (coalesce(u.email, '') <> '' AND lower(coalesce(p.comprovante_url, '')) LIKE '%' || lower(u.email) || '%'))
+        )
       )
     ) AS item
     FROM public.usuarios u
     WHERE coalesce(trim(u.indicado_por), '') <> ''
+       OR coalesce(trim(u.indicado_por_codigo), '') <> ''
   ) sub;
 
   RETURN coalesce(v_result, '[]'::jsonb);
@@ -1221,6 +1365,9 @@ export interface SupabaseUsuarioRow {
   corrida_divida_id?: string;
   data_cadastro?: string;
   indicado_por?: string;
+  codigo_indicacao?: string;
+  indicado_por_codigo?: string;
+  bonus_pago?: boolean;
 }
 
 export interface SupabaseCorridaRow {
@@ -1447,6 +1594,9 @@ function buildSafeReturnCols(knownCols: Set<string> | null): string[] {
     'rating',
     'saldo',
     'divida',
+    'codigo_indicacao',
+    'indicado_por_codigo',
+    'bonus_pago',
   ];
   if (knownCols && knownCols.size > 0) {
     const filtered = baseReturnCols.filter((c) => knownCols.has(c));
@@ -1655,6 +1805,134 @@ export async function selectSafeUsuariosRows(applyFilter?: (q: any) => any): Pro
 }
 
 /**
+ * Gera código de indicação único (ex: JOSE123) verificando duplicidade em public.usuarios.
+ */
+export async function generateUniqueReferralCodeSupabase(name?: string | null): Promise<string> {
+  const cleanName = String(name || 'RACE').trim() || 'RACE';
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const candidate = generateReferralCodeCandidate(cleanName);
+    let alreadyExists = false;
+
+    try {
+      const rpcCheck = await supabase.rpc('rpc_check_codigo_indicacao_exists', {
+        p_code: candidate,
+      });
+      if (!rpcCheck.error && typeof rpcCheck.data === 'boolean') {
+        alreadyExists = rpcCheck.data;
+        if (!alreadyExists) return candidate;
+        continue;
+      }
+    } catch {}
+
+    try {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('id')
+        .eq('codigo_indicacao', candidate)
+        .limit(1);
+      if (!error && Array.isArray(data) && data.length > 0) {
+        alreadyExists = true;
+      }
+    } catch {}
+
+    if (!alreadyExists) {
+      return candidate;
+    }
+  }
+  return generateReferralCodeCandidate(cleanName);
+}
+
+/**
+ * Garante que usuários antigos ou sem código recebam automaticamente um codigo_indicacao único ao abrir o app.
+ */
+export async function ensureUserReferralCodeSupabase(params: {
+  id?: string | number;
+  email?: string;
+  name?: string;
+  currentCode?: string;
+}): Promise<string> {
+  const existingProp = String(params.currentCode || '').trim().toUpperCase();
+  if (existingProp) return existingProp;
+
+  const cleanEmail = String(params.email || '').trim().toLowerCase();
+  const cleanName = String(params.name || '').trim();
+  const numericId =
+    params.id !== undefined && params.id !== null && /^\d+$/.test(String(params.id).trim())
+      ? Number(String(params.id).trim())
+      : null;
+
+  try {
+    // 1. Verifica direto na tabela usuarios se já possui código salvo
+    let dbName = cleanName;
+    if (numericId || cleanEmail) {
+      const existingRow = cleanEmail ? await getUsuarioSupabase(cleanEmail).catch(() => null) : null;
+      if (existingRow) {
+        dbName = String(existingRow.nome || dbName || 'RACE').trim();
+        const dbCode = String(existingRow.codigo_indicacao || '').trim().toUpperCase();
+        if (dbCode) return dbCode;
+      }
+    }
+
+    // 1b. Verifica user_metadata do Auth caso já tenha sido salvo anteriormente
+    let authMetaCode = '';
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const metaCode = String(authData?.user?.user_metadata?.codigo_indicacao || '').trim().toUpperCase();
+      if (metaCode) {
+        authMetaCode = metaCode;
+      }
+    } catch {}
+
+    // 2. Tenta RPC SECURITY DEFINER (lê e grava codigo_indicacao com garantia de unicidade)
+    try {
+      const rpcRes = await supabase.rpc('rpc_ensure_codigo_indicacao', {
+        p_email: cleanEmail,
+        p_nome: dbName || 'RACE',
+      });
+      if (!rpcRes.error && typeof rpcRes.data === 'string' && rpcRes.data.trim()) {
+        const rpcCode = rpcRes.data.trim().toUpperCase();
+        try {
+          await supabase.auth.updateUser({ data: { codigo_indicacao: rpcCode } });
+        } catch {}
+        return rpcCode;
+      }
+    } catch {}
+
+    if (authMetaCode) {
+      return authMetaCode;
+    }
+
+    // 3. Fallback direto cliente: gera único e salva em usuarios.codigo_indicacao + auth metadata
+    const newCode = await generateUniqueReferralCodeSupabase(dbName || cleanName || cleanEmail || 'RACE');
+    let persistedInTable = false;
+
+    if (numericId) {
+      const { error } = await supabase
+        .from('usuarios')
+        .update({ codigo_indicacao: newCode })
+        .eq('id', numericId);
+      if (!error) persistedInTable = true;
+    }
+
+    if (!persistedInTable && cleanEmail) {
+      const { error } = await supabase
+        .from('usuarios')
+        .update({ codigo_indicacao: newCode })
+        .eq('email', cleanEmail);
+      if (!error) persistedInTable = true;
+    }
+
+    try {
+      await supabase.auth.updateUser({ data: { codigo_indicacao: newCode } });
+    } catch {}
+
+    return newCode;
+  } catch {
+    return generateReferralCodeCandidate(cleanName || cleanEmail || 'RACE');
+  }
+}
+
+/**
  * 1. INSERT DIRETO NO CADASTRO (Novo Cadastro)
  * Insere na tabela 'usuarios' do Supabase usando SOMENTE colunas que realmente existem.
  * Nunca gera erro 42703 por coluna inexistente e nunca envia `id` manual.
@@ -1693,6 +1971,8 @@ export async function insertUsuarioSupabase(params: {
   documentos_aceitos?: boolean;
   data_aceite?: string;
   indicado_por?: string;
+  codigo_indicacao?: string;
+  indicado_por_codigo?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = params.email.replace(/\s+/g, '').trim().toLowerCase();
@@ -1757,10 +2037,18 @@ export async function insertUsuarioSupabase(params: {
         ? 'driver'
         : 'passenger';
 
-    const rawIndicadoInput = String(params.indicado_por || '').trim();
+    const rawIndicadoInput = String(params.indicado_por_codigo || params.indicado_por || '').trim();
     const cleanIndicadoDigits = normalizeReferralDigits(rawIndicadoInput);
     const normalizedIndicadoPor =
-      cleanIndicadoDigits.length >= 8 ? cleanIndicadoDigits : rawIndicadoInput.toLowerCase();
+      cleanIndicadoDigits.length >= 8
+        ? cleanIndicadoDigits
+        : rawIndicadoInput.includes('@')
+        ? rawIndicadoInput.toLowerCase()
+        : rawIndicadoInput.toUpperCase();
+    const normalizedIndicadoPorCodigo = normalizedIndicadoPor;
+
+    const myCodigoIndicacao = String(params.codigo_indicacao || '').trim().toUpperCase() ||
+      (await generateUniqueReferralCodeSupabase(params.nome));
 
     // 1. Cria conta no Supabase Auth (com redirectTo de produção /Dinho/)
     const authSignUpRes = await supabase.auth.signUp({
@@ -1772,7 +2060,8 @@ export async function insertUsuarioSupabase(params: {
           nome: params.nome.trim(),
           tipo: tipoStr,
           role: authRole,
-          ...(normalizedIndicadoPor ? { indicado_por: normalizedIndicadoPor } : {}),
+          codigo_indicacao: myCodigoIndicacao,
+          ...(normalizedIndicadoPor ? { indicado_por: normalizedIndicadoPor, indicado_por_codigo: normalizedIndicadoPorCodigo } : {}),
         },
       },
     });
@@ -1928,8 +2217,20 @@ export async function insertUsuarioSupabase(params: {
       if (normalizedIndicadoPor && knownCols.has('indicado_por')) {
         row.indicado_por = normalizedIndicadoPor;
       }
-    } else if (normalizedIndicadoPor) {
-      row.indicado_por = normalizedIndicadoPor;
+      if (normalizedIndicadoPorCodigo && knownCols.has('indicado_por_codigo')) {
+        row.indicado_por_codigo = normalizedIndicadoPorCodigo;
+      }
+      if (myCodigoIndicacao && knownCols.has('codigo_indicacao')) {
+        row.codigo_indicacao = myCodigoIndicacao;
+      }
+      if (knownCols.has('bonus_pago')) {
+        row.bonus_pago = false;
+      }
+    } else {
+      if (normalizedIndicadoPor) row.indicado_por = normalizedIndicadoPor;
+      if (normalizedIndicadoPorCodigo) row.indicado_por_codigo = normalizedIndicadoPorCodigo;
+      if (myCodigoIndicacao) row.codigo_indicacao = myCodigoIndicacao;
+      row.bonus_pago = false;
     }
 
     delete row.id;
@@ -1973,6 +2274,8 @@ export async function insertUsuarioSupabase(params: {
             p_cnh: row.cnh || '',
             p_foto: finalSignupPhoto || null,
             p_indicado_por: normalizedIndicadoPor || '',
+            p_codigo_indicacao: myCodigoIndicacao,
+            p_indicado_por_codigo: normalizedIndicadoPorCodigo || '',
           });
           if (!rpcProfile.error && rpcProfile.data) {
             return { success: true, data: stripSensitiveUserFields(rpcProfile.data) };
@@ -2405,6 +2708,8 @@ export async function saveUsuarioSupabase(user: {
   documentos_aceitos?: boolean;
   data_aceite?: string;
   indicado_por?: string;
+  codigo_indicacao?: string;
+  indicado_por_codigo?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = user.email.toLowerCase().trim();
@@ -2492,6 +2797,12 @@ export async function saveUsuarioSupabase(user: {
       }
       if (user.data_aceite && allowedCols.has('data_aceite')) {
         updateData.data_aceite = user.data_aceite;
+      }
+      if (user.codigo_indicacao && allowedCols.has('codigo_indicacao')) {
+        updateData.codigo_indicacao = user.codigo_indicacao.trim().toUpperCase();
+      }
+      if (user.indicado_por_codigo && allowedCols.has('indicado_por_codigo')) {
+        updateData.indicado_por_codigo = user.indicado_por_codigo.trim();
       }
 
       const rawProfilePhoto = String(user.foto || user.avatar || '').trim();
@@ -2691,6 +3002,8 @@ export async function saveUsuarioSupabase(user: {
         documentos_aceitos: user.documentos_aceitos,
         data_aceite: user.data_aceite,
         indicado_por: user.indicado_por,
+        codigo_indicacao: user.codigo_indicacao,
+        indicado_por_codigo: user.indicado_por_codigo,
       });
     }
   } catch (err: any) {
@@ -3976,7 +4289,10 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     lng: hasValidLng ? parsedLng : -47.2118,
     registrationDate: u.created_at || u.data_cadastro || '',
     createdAt: u.created_at || u.data_cadastro || '',
-    indicadoPor: u.indicado_por || '',
+    indicadoPor: u.indicado_por || u.indicado_por_codigo || '',
+    codigoIndicacao: u.codigo_indicacao || '',
+    indicadoPorCodigo: u.indicado_por_codigo || u.indicado_por || '',
+    bonusPago: Boolean(u.bonus_pago),
   };
 
   return localApp ? mergeDriverWithApplication(baseDriver, localApp) : baseDriver;

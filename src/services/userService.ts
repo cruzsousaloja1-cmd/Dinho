@@ -32,6 +32,9 @@ export interface StoredUserAccount {
   rides?: Ride[];
   createdAt: string;
   indicadoPor?: string;
+  codigoIndicacao?: string;
+  indicadoPorCodigo?: string;
+  bonusPago?: boolean;
   aceitou_contrato?: boolean;
   aceitou_termos?: boolean;
   aceitou_lgpd?: boolean;
@@ -153,6 +156,12 @@ export function saveSessionUser(user: AppUser | null): void {
       isAdmin: user.isAdmin,
       createdAt: user.createdAt || existingSaved?.createdAt || '',
       indicadoPor: user.indicadoPor !== undefined ? user.indicadoPor : (existingSaved?.indicadoPor || ''),
+      codigoIndicacao: user.codigoIndicacao || user.driverData?.codigoIndicacao || existingSaved?.codigoIndicacao || '',
+      indicadoPorCodigo:
+        user.indicadoPorCodigo !== undefined
+          ? user.indicadoPorCodigo
+          : (existingSaved?.indicadoPorCodigo || ''),
+      bonusPago: user.bonusPago ?? existingSaved?.bonusPago ?? false,
       driverData: sanitizedDriverData,
     };
 
@@ -235,6 +244,9 @@ export function getSessionUser(): AppUser | null {
       rating: Number(parsed.rating || 0),
       createdAt: parsed.createdAt || undefined,
       indicadoPor: parsed.indicadoPor || undefined,
+      codigoIndicacao: parsed.codigoIndicacao || undefined,
+      indicadoPorCodigo: parsed.indicadoPorCodigo || undefined,
+      bonusPago: Boolean(parsed.bonusPago),
       driverData: parsed.driverData,
     };
   } catch {}
@@ -279,7 +291,10 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
     isBlockedDebt: Boolean(cloudUser.bloqueado_divida || Number(cloudUser.divida || 0) > 0),
     debtRideId: cloudUser.corrida_divida_id ? String(cloudUser.corrida_divida_id) : undefined,
     createdAt: cloudUser.created_at || cloudUser.data_cadastro || undefined,
-    indicadoPor: cloudUser.indicado_por || '',
+    indicadoPor: cloudUser.indicado_por || cloudUser.indicado_por_codigo || '',
+    codigoIndicacao: cloudUser.codigo_indicacao || '',
+    indicadoPorCodigo: cloudUser.indicado_por_codigo || cloudUser.indicado_por || '',
+    bonusPago: Boolean(cloudUser.bonus_pago),
   };
 
   return { user: userPayload, driver: driverObj };
@@ -353,6 +368,8 @@ export async function saveUserAccount(
       rating: account.rating || 0,
       saldo: account.driverData?.walletBalance || 0,
       indicado_por: account.indicadoPor || account.driverData?.indicadoPor || undefined,
+      codigo_indicacao: account.codigoIndicacao || account.driverData?.codigoIndicacao || undefined,
+      indicado_por_codigo: account.indicadoPorCodigo || account.driverData?.indicadoPorCodigo || undefined,
       aceitou_contrato: account.aceitou_contrato,
       aceitou_termos: account.aceitou_termos,
       aceitou_lgpd: account.aceitou_lgpd,
@@ -370,6 +387,14 @@ export async function saveUserAccount(
         id: res.data?.id !== undefined && res.data?.id !== null ? String(res.data.id) : currentUserPayload.id,
         createdAt: res.data?.created_at || currentUserPayload.createdAt || account.createdAt,
         indicadoPor: res.data?.indicado_por ?? (account.indicadoPor || currentUserPayload.indicadoPor),
+        codigoIndicacao:
+          res.data?.codigo_indicacao ||
+          account.codigoIndicacao ||
+          currentUserPayload.driverData?.codigoIndicacao ||
+          undefined,
+        indicadoPorCodigo:
+          res.data?.indicado_por_codigo ?? (account.indicadoPorCodigo || currentUserPayload.indicadoPorCodigo),
+        bonusPago: Boolean(res.data?.bonus_pago ?? account.bonusPago),
       });
     }
     return res;

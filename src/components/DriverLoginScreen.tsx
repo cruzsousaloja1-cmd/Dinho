@@ -17,6 +17,8 @@ import {
   mergeDriverWithApplication,
   extractPhotoFromRow,
   withPhotoCacheBuster,
+  generateUniqueReferralCodeSupabase,
+  ensureUserReferralCodeSupabase,
 } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
@@ -262,6 +264,12 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           }
 
           const resolvedAdminAvatar = withPhotoCacheBuster(extractPhotoFromRow(row));
+          const ensuredAdminCode = await ensureUserReferralCodeSupabase({
+            id: row?.id !== undefined && row?.id !== null ? String(row.id) : '',
+            email: rowEmail,
+            name: row.nome || 'Administrador Geral',
+            currentCode: row.codigo_indicacao,
+          });
           const adminUser: AppUser = {
             id: row?.id !== undefined && row?.id !== null ? String(row.id) : '',
             name: row.nome || 'Administrador Geral',
@@ -275,6 +283,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             placa: 'ADMIN-01',
             avatar: resolvedAdminAvatar || undefined,
             rating: 0,
+            codigoIndicacao: ensuredAdminCode,
           };
 
           saveSessionUser(adminUser);
@@ -307,6 +316,12 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         if (cloudAdmin.success && cloudAdmin.data) {
           const row = cloudAdmin.data;
           const resolvedAdminAvatar = withPhotoCacheBuster(extractPhotoFromRow(row));
+          const ensuredAdminCode = await ensureUserReferralCodeSupabase({
+            id: row?.id !== undefined && row?.id !== null ? String(row.id) : '',
+            email: 'admin@race.com.br',
+            name: row.nome || 'Administrador Geral',
+            currentCode: row.codigo_indicacao,
+          });
           const adminUser: AppUser = {
             id: row?.id !== undefined && row?.id !== null ? String(row.id) : '',
             name: row.nome || 'Administrador Geral',
@@ -320,6 +335,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             placa: 'ADMIN-01',
             avatar: resolvedAdminAvatar || undefined,
             rating: 0,
+            codigoIndicacao: ensuredAdminCode,
           };
           saveSessionUser(adminUser);
           setLoginSuccessMessage('Acesso ADM liberado!');
@@ -354,10 +370,17 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         : mappedDriver?.avatar
         ? withPhotoCacheBuster(mappedDriver.avatar)
         : '';
+      const ensuredCodigoIndicacao = await ensureUserReferralCodeSupabase({
+        id: mappedUser.id,
+        email: mappedUser.email,
+        name: mappedUser.name,
+        currentCode: mappedUser.codigoIndicacao || row.codigo_indicacao,
+      });
       let driverObj: Driver | undefined = mappedDriver
         ? {
             ...mappedDriver,
             avatar: resolvedPhoto || mappedDriver.avatar || '',
+            codigoIndicacao: ensuredCodigoIndicacao,
           }
         : undefined;
       if (driverObj && driverObj.email) {
@@ -372,6 +395,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const userPayload: AppUser = {
         ...mappedUser,
         avatar: resolvedPhoto || driverObj?.avatar || undefined,
+        codigoIndicacao: ensuredCodigoIndicacao,
         driverData: driverObj,
       };
       saveSessionUser(userPayload);
@@ -454,7 +478,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const isDriverRole = regRole === 'driver';
       const isMotoboyRole = regRole === 'motoboy';
       const chosenAvatar = await compressImageToMax200KB(regAvatar);
-      const rawReferralCode = !isPassengerRole ? regIndicadoPor.trim() : '';
+      const rawReferralCode = regIndicadoPor.trim();
       const cleanReferralDigits = normalizeReferralDigits(rawReferralCode);
       const cleanWhatsAppDigits = normalizeReferralDigits(cleanWhatsApp);
       if (
@@ -465,8 +489,14 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         setRegErrorMessage('Você não pode usar o seu próprio WhatsApp ou e-mail como código de indicação.');
         return;
       }
-      const normalizedIndicadoPor =
-        cleanReferralDigits.length >= 8 ? cleanReferralDigits : rawReferralCode.toLowerCase();
+      const normalizedIndicadoPor = !rawReferralCode
+        ? ''
+        : cleanReferralDigits.length >= 8
+        ? cleanReferralDigits
+        : rawReferralCode.includes('@')
+        ? rawReferralCode.toLowerCase()
+        : rawReferralCode.toUpperCase();
+      const generatedReferralCode = await generateUniqueReferralCodeSupabase(cleanName);
       const nowIso = new Date().toISOString();
 
       // Condutor inicia sem documentos aceitos (completará modalidade + documentos + 4 checkboxes dentro do app)
@@ -511,6 +541,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           registrationDate: nowIso,
           createdAt: nowIso,
           indicadoPor: normalizedIndicadoPor || undefined,
+          indicadoPorCodigo: normalizedIndicadoPor || undefined,
+          codigoIndicacao: generatedReferralCode,
         };
       }
 
@@ -527,6 +559,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         avatar: chosenAvatar || '',
         documentos_aceitos: isPassengerRole ? true : false,
         indicado_por: normalizedIndicadoPor || undefined,
+        indicado_por_codigo: normalizedIndicadoPor || undefined,
+        codigo_indicacao: generatedReferralCode,
       });
 
       if (!supabaseRes.success) {
@@ -548,16 +582,19 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         supabaseRes.data?.id !== undefined && supabaseRes.data?.id !== null
           ? String(supabaseRes.data.id)
           : '';
+      const resolvedCodigoIndicacao =
+        String(supabaseRes.data?.codigo_indicacao || generatedReferralCode).trim().toUpperCase();
 
       if (newDriverObj) {
         newDriverObj.id = supabaseGeneratedId;
+        newDriverObj.codigoIndicacao = resolvedCodigoIndicacao;
       }
 
       // Alerta de sucesso: Salvo no Supabase
       setRegSuccessMessage(
         isPassengerRole
-          ? 'Salvo no Supabase'
-          : 'Conta criada! Complete sua modalidade e documentos dentro do app para trabalhar.'
+          ? `Salvo no Supabase! Seu código de indicação: ${resolvedCodigoIndicacao}`
+          : `Conta criada! Seu código de indicação: ${resolvedCodigoIndicacao}`
       );
 
       const newUser: AppUser = {
@@ -574,6 +611,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         rating: 0,
         createdAt: supabaseRes.data?.created_at || newDriverObj?.createdAt || new Date().toISOString(),
         indicadoPor: normalizedIndicadoPor || undefined,
+        indicadoPorCodigo: normalizedIndicadoPor || undefined,
+        codigoIndicacao: resolvedCodigoIndicacao,
         driverData: newDriverObj,
       };
 
@@ -1381,24 +1420,22 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                 </div>
               </div>
 
-              {regRole !== 'passenger' && (
-                <div className="space-y-1.5 p-3.5 rounded-2xl bg-orange-950/30 border border-orange-500/40">
-                  <label className="text-orange-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
-                    <Gift className="w-3.5 h-3.5 text-[#ff6a00] shrink-0" />
-                    <span>Código de quem indicou (WhatsApp de quem indicou)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={regIndicadoPor}
-                    onChange={(e) => setRegIndicadoPor(e.target.value)}
-                    placeholder="Opcional — Ex: (19) 99999-9999"
-                    className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium font-mono"
-                  />
-                  <p className="text-[11px] text-orange-200/80 font-medium">
-                    Se outro motorista/motoboy te indicou, informe o WhatsApp dele para ele ganhar R$ 50 quando você fizer 10 corridas!
-                  </p>
-                </div>
-              )}
+              <div className="space-y-1.5 p-3.5 rounded-2xl bg-orange-950/30 border border-orange-500/40">
+                <label className="text-orange-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <Gift className="w-3.5 h-3.5 text-[#ff6a00] shrink-0" />
+                  <span>Código de quem indicou (opcional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={regIndicadoPor}
+                  onChange={(e) => setRegIndicadoPor(e.target.value)}
+                  placeholder="Ex: JOSE123 ou WhatsApp (19) 99999-9999"
+                  className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium font-mono"
+                />
+                <p className="text-[11px] text-orange-200/80 font-medium">
+                  Se alguém te indicou, informe o código (ex: JOSE123) ou WhatsApp para ele ganhar R$ 50 quando o motorista indicado fizer 10 corridas!
+                </p>
+              </div>
 
               {regRole === 'passenger' && (
                 <div className="p-3 bg-emerald-950/30 border border-emerald-500/40 rounded-2xl text-[11px] text-emerald-200 flex items-center gap-2">

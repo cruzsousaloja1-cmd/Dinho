@@ -88,6 +88,7 @@ import {
   mergeDriverWithApplication,
   checkAndAwardReferralBonusSupabase,
   syncDriverWalletSaldoSupabase,
+  ensureUserReferralCodeSupabase,
   supabase,
   withPhotoCacheBuster
 } from './supabase';
@@ -325,11 +326,24 @@ export default function App() {
         if (resolvedAvatar) {
           console.log('fotoUrl carregada:', resolvedAvatar);
         }
+        const ensuredCodigoIndicacao = await ensureUserReferralCodeSupabase({
+          id: hydratedUser.id,
+          email: hydratedUser.email,
+          name: hydratedUser.name,
+          currentCode: hydratedUser.codigoIndicacao || session.codigoIndicacao,
+        });
+        if (!active) return;
+
         const mergedUser: AppUser = {
           ...hydratedUser,
           avatar: resolvedAvatar,
+          codigoIndicacao: ensuredCodigoIndicacao,
           driverData: hydratedDriver
-            ? { ...hydratedDriver, avatar: resolvedAvatar || hydratedDriver.avatar }
+            ? {
+                ...hydratedDriver,
+                avatar: resolvedAvatar || hydratedDriver.avatar,
+                codigoIndicacao: ensuredCodigoIndicacao,
+              }
             : hydratedUser.driverData,
         };
         setCurrentUser(mergedUser);
@@ -1971,6 +1985,7 @@ export default function App() {
               requirementsConfirmed: targetDriver.requirementsConfirmed === true,
               walletBalance: currentBal,
               weeklyPlanActive: isConfigured,
+              codigoIndicacao: targetDriver.codigoIndicacao || user.codigoIndicacao || undefined,
               status:
                 isConfigured && isApproved && targetDriver.status === 'online'
                   ? 'online'

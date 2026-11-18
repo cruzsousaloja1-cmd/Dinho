@@ -21,7 +21,9 @@ import {
   X,
   Check,
   MessageCircle,
-  Car
+  Car,
+  Copy,
+  Gift
 } from 'lucide-react';
 import { requestCurrentLocationFast } from '../services/addressSearchService';
 import { saveSessionUser, isAppUserAdmin } from '../services/userService';
@@ -32,9 +34,14 @@ import {
   supabase,
   uploadProfilePhotoSupabase,
   withPhotoCacheBuster,
+  ensureUserReferralCodeSupabase,
 } from '../supabase';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
+import {
+  buildReferralWhatsappShareText,
+  buildReferralWhatsappShareUrl,
+} from '../services/promoService';
 
 interface PassengerAccountViewProps {
   currentUser: AppUser | null;
@@ -82,6 +89,11 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   const [profileSuccessMsg, setProfileSuccessMsg] = useState<string | null>(null);
   const [profileErrorMsg, setProfileErrorMsg] = useState<string | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [referralCode, setReferralCode] = useState<string>(
+    currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao || ''
+  );
+  const [copiedCodeHeader, setCopiedCodeHeader] = useState(false);
+  const [copiedCodeCard, setCopiedCodeCard] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -152,6 +164,46 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       active = false;
     };
   }, [currentUser?.email]);
+
+  useEffect(() => {
+    let active = true;
+    if (currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao) {
+      setReferralCode(
+        String(currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao || '')
+          .trim()
+          .toUpperCase()
+      );
+      return;
+    }
+    const ensureCode = async () => {
+      if (!currentUser?.email && !currentUser?.id) return;
+      const ensured = await ensureUserReferralCodeSupabase({
+        id: currentUser.id,
+        email: currentUser.email,
+        name: currentUser.name,
+        currentCode: currentUser.codigoIndicacao,
+      });
+      if (!active || !ensured) return;
+      setReferralCode(ensured);
+      if (ensured !== currentUser.codigoIndicacao) {
+        const updatedUser: AppUser = {
+          ...currentUser,
+          codigoIndicacao: ensured,
+          driverData: currentUser.driverData
+            ? { ...currentUser.driverData, codigoIndicacao: ensured }
+            : currentUser.driverData,
+        };
+        saveSessionUser(updatedUser);
+        if (onUpdateProfile) {
+          onUpdateProfile(updatedUser);
+        }
+      }
+    };
+    ensureCode();
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.id, currentUser?.email, currentUser?.codigoIndicacao]);
 
   const handleOpenEditProfile = () => {
     setDraftName(currentUser?.name || '');
@@ -513,6 +565,31 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
               <span>•</span>
               <span className="font-mono text-slate-500">ID: {currentUser?.id || '-'}</span>
             </div>
+
+            {referralCode && (
+              <div className="mt-2.5 inline-flex items-center gap-2 flex-wrap bg-orange-50 border border-orange-300 rounded-xl px-3 py-1.5">
+                <span className="text-xs font-bold text-slate-800">
+                  Seu código de indicação:{' '}
+                  <strong className="font-mono font-black text-[#ff6a00] tracking-wider">
+                    {referralCode}
+                  </strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      navigator.clipboard.writeText(referralCode);
+                    } catch {}
+                    setCopiedCodeHeader(true);
+                    setTimeout(() => setCopiedCodeHeader(false), 2500);
+                  }}
+                  className="px-2.5 py-0.5 rounded-lg bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-[11px] inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                >
+                  {copiedCodeHeader ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedCodeHeader ? 'Copiado!' : 'Copiar'}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -783,6 +860,67 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           </p>
         </div>
       </div>
+
+      {/* 3B. INDICAR E GANHAR (CÓDIGO DE INDICAÇÃO) */}
+      {referralCode && (
+        <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <span className="text-[11px] font-black uppercase tracking-widest bg-black/25 px-3 py-1 rounded-full inline-block">
+                Indicação Premiada RACE
+              </span>
+              <h3 className="text-xl sm:text-2xl font-heading font-black leading-tight">
+                Indicar e Ganhar R$ 50,00
+              </h3>
+              <p className="text-xs sm:text-sm font-semibold text-amber-50">
+                Indique 1 Motorista ou Motoboy com seu código. Quando ele finalizar <strong>10 corridas</strong>, você ganha <strong>R$ 50,00</strong>!
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-black/20 border border-white/30 flex items-center justify-center shrink-0">
+              <Gift className="w-6 h-6 text-white" />
+            </div>
+          </div>
+
+          <div className="bg-black/25 border border-white/25 rounded-2xl p-4 text-center space-y-2">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-amber-100 block">
+              Seu Código de Indicação
+            </span>
+            <div className="text-3xl sm:text-4xl font-mono font-black tracking-[0.2em] text-white select-all py-1">
+              {referralCode}
+            </div>
+            <p className="text-[11px] text-amber-100/90 font-medium break-words">
+              {buildReferralWhatsappShareText(referralCode)}
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  navigator.clipboard.writeText(referralCode);
+                } catch {}
+                setCopiedCodeCard(true);
+                setTimeout(() => setCopiedCodeCard(false), 2500);
+              }}
+              className="flex-1 py-3 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow transition-all active:scale-[0.98]"
+            >
+              {copiedCodeCard ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+              <span>{copiedCodeCard ? 'Código copiado!' : 'Copiar código'}</span>
+            </button>
+
+            <a
+              href={buildReferralWhatsappShareUrl(referralCode)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow transition-all active:scale-[0.98]"
+            >
+              <MessageCircle className="w-4 h-4" />
+              <span>Compartilhar no WhatsApp</span>
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* 4. ATALHOS RÁPIDOS */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

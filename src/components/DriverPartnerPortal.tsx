@@ -2,12 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser } from '../services/userService';
-import { savePagamentoSupabase, getPagamentosSupabase, getSearchingCorridasSupabase, getCorridaByIdSupabase, fetchRideCounterpartProfileSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow, getUsuarioSupabase, checkAndAwardReferralBonusSupabase, getDriverReferralsAndBonusesSupabase, syncDriverWalletSaldoSupabase, ReferralCandidateItem, SupabasePagamentoRow, supabase, withPhotoCacheBuster } from '../supabase';
+import { savePagamentoSupabase, getPagamentosSupabase, getSearchingCorridasSupabase, getCorridaByIdSupabase, fetchRideCounterpartProfileSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow, getUsuarioSupabase, checkAndAwardReferralBonusSupabase, getDriverReferralsAndBonusesSupabase, syncDriverWalletSaldoSupabase, ensureUserReferralCodeSupabase, ReferralCandidateItem, SupabasePagamentoRow, supabase, withPhotoCacheBuster } from '../supabase';
 import {
   isDriverInLaunchZeroFeePromo,
   calculateRideSplitForDriver,
   LAUNCH_PROMO_EARNINGS_BADGE_TEXT,
   buildReferralLink,
+  buildReferralWhatsappShareText,
+  buildReferralWhatsappShareUrl,
   normalizeReferralDigits,
   parseReferralBonusMeta,
   formatReferralBonusMessage,
@@ -244,7 +246,8 @@ import {
   User,
   Pencil,
   Gift,
-  Users
+  Users,
+  MessageCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
@@ -854,6 +857,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [isLoadingReferrals, setIsLoadingReferrals] = useState(false);
   const [copiedReferralLink, setCopiedReferralLink] = useState(false);
   const [copiedReferralWhatsapp, setCopiedReferralWhatsapp] = useState(false);
+  const [driverReferralCode, setDriverReferralCode] = useState<string>(
+    currentDriver.codigoIndicacao || currentUser?.codigoIndicacao || ''
+  );
+  const [copiedDriverCode, setCopiedDriverCode] = useState(false);
 
   const isPromoZeroFeeActive = isDriverInLaunchZeroFeePromo(
     currentDriver.createdAt || currentDriver.registrationDate || currentUser?.createdAt
@@ -920,6 +927,39 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           if (cloudSaldo > localBal) {
             setDriverBalance(drvId, cloudSaldo);
           }
+        }
+
+        const existingCode = String(
+          cloudRow?.codigo_indicacao ||
+            currentDriver.codigoIndicacao ||
+            currentUser?.codigoIndicacao ||
+            ''
+        )
+          .trim()
+          .toUpperCase();
+        if (existingCode) {
+          setDriverReferralCode(existingCode);
+        } else {
+          ensureUserReferralCodeSupabase({
+            id: drvId,
+            email: drvEmail,
+            name: currentDriver.name || currentUser?.name,
+          }).then((ensured) => {
+            if (!mounted || !ensured) return;
+            setDriverReferralCode(ensured);
+            onUpdateDriver({ ...currentDriver, codigoIndicacao: ensured });
+            if (currentUser) {
+              const updatedUser: AppUser = {
+                ...currentUser,
+                codigoIndicacao: ensured,
+                driverData: { ...(currentUser.driverData || currentDriver), codigoIndicacao: ensured },
+              };
+              saveSessionUser(updatedUser);
+              if (onUpdateUserProfile) {
+                onUpdateUserProfile(updatedUser);
+              }
+            }
+          });
         }
       })
       .finally(() => {
@@ -1824,6 +1864,30 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       ? `${currentDriver.vehicleModel} ${currentDriver.vehicleYear ? `(${currentDriver.vehicleYear})` : ''} • ${currentDriver.vehiclePlate}`
                       : 'Categoria e veículo ainda não cadastrados'}
                   </p>
+                  {(driverReferralCode || currentDriver.codigoIndicacao || currentUser?.codigoIndicacao) && (
+                    <div className="mt-1.5 inline-flex items-center gap-2 flex-wrap bg-orange-50 border border-orange-300 rounded-xl px-2.5 py-1">
+                      <span className="text-xs font-bold text-slate-800">
+                        Seu código de indicação:{' '}
+                        <strong className="font-mono font-black text-[#ff6a00] tracking-wider">
+                          {driverReferralCode || currentDriver.codigoIndicacao || currentUser?.codigoIndicacao}
+                        </strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const code = driverReferralCode || currentDriver.codigoIndicacao || currentUser?.codigoIndicacao || '';
+                          if (!code) return;
+                          try { navigator.clipboard.writeText(code); } catch {}
+                          setCopiedDriverCode(true);
+                          setTimeout(() => setCopiedDriverCode(false), 2500);
+                        }}
+                        className="px-2 py-0.5 rounded-lg bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-[11px] inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                      >
+                        {copiedDriverCode ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedDriverCode ? 'Copiado!' : 'Copiar'}</span>
+                      </button>
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-2 mt-1">
                     <span className="text-sm text-slate-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                       {ratingStats.average.toFixed(1)} ★ ({ratingStats.totalReviews} avaliações)
@@ -2700,8 +2764,16 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           {dashboardSection === 'indicar' && (() => {
             const myWhatsappRaw = currentDriver.phone || currentUser?.whatsapp || currentUser?.phone || '';
             const myWhatsappCode = normalizeReferralDigits(myWhatsappRaw) || currentUser?.email || currentDriver.email || '';
-            const myReferralLink = buildReferralLink(myWhatsappCode);
-            const shareMessage = `Cadastre-se como Motorista ou Motoboy na RACE com taxa 0% no 1º mês (até 17/12/2026) usando meu código de indicação: ${myWhatsappCode} ou acesse: ${myReferralLink}`;
+            const myPersonalCode = (
+              driverReferralCode ||
+              currentDriver.codigoIndicacao ||
+              currentUser?.codigoIndicacao ||
+              myWhatsappCode
+            )
+              .trim()
+              .toUpperCase();
+            const myReferralLink = buildReferralLink(myPersonalCode || myWhatsappCode);
+            const whatsappShareUrl = buildReferralWhatsappShareUrl(myPersonalCode);
 
             return (
               <div className="space-y-4">
@@ -2723,18 +2795,54 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     </div>
                   </div>
 
-                  <div className="bg-black/25 border border-white/25 rounded-2xl p-4 space-y-2">
+                  {/* Código Grande em Destaque */}
+                  <div className="bg-black/30 border-2 border-white/30 rounded-2xl p-4 sm:p-5 text-center space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-amber-100 block">
+                      Seu Código de Indicação
+                    </span>
+                    <div className="text-4xl sm:text-5xl font-mono font-black tracking-[0.22em] text-white select-all py-1">
+                      {myPersonalCode || '...'}
+                    </div>
+                    <p className="text-xs text-amber-100/95 font-medium break-words">
+                      {buildReferralWhatsappShareText(myPersonalCode)}
+                    </p>
+
+                    <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!myPersonalCode) return;
+                          try {
+                            navigator.clipboard.writeText(myPersonalCode);
+                          } catch {}
+                          setCopiedDriverCode(true);
+                          setTimeout(() => setCopiedDriverCode(false), 3000);
+                        }}
+                        className="flex-1 py-3.5 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all active:scale-[0.98]"
+                      >
+                        {copiedDriverCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                        <span>{copiedDriverCode ? 'Código copiado!' : 'Copiar código'}</span>
+                      </button>
+
+                      <a
+                        href={whatsappShareUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        <span>Compartilhar no WhatsApp</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div className="bg-black/20 border border-white/20 rounded-2xl p-4 space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-amber-100 block">
-                      Seu Código (WhatsApp) e Link de Indicação
+                      Link Direto com Seu Código Preenchido
                     </span>
                     <div className="bg-black/40 rounded-xl px-3.5 py-2.5 font-mono text-xs sm:text-sm text-white break-all border border-white/15">
                       {myReferralLink}
                     </div>
-                    {myWhatsappCode && (
-                      <p className="text-xs font-mono text-amber-100">
-                        Seu WhatsApp para código: <strong className="text-white">{myWhatsappCode}</strong>
-                      </p>
-                    )}
 
                     <div className="flex flex-col sm:flex-row gap-2 pt-1">
                       <button
@@ -2746,10 +2854,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                           setCopiedReferralLink(true);
                           setTimeout(() => setCopiedReferralLink(false), 3000);
                         }}
-                        className="flex-1 py-3 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow transition-all active:scale-[0.98]"
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-black/30 hover:bg-black/45 border border-white/30 text-white font-heading font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
                       >
-                        {copiedReferralLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                        <span>{copiedReferralLink ? 'Link copiado!' : 'Copiar meu link / meu WhatsApp'}</span>
+                        {copiedReferralLink ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                        <span>{copiedReferralLink ? 'Link copiado!' : 'Copiar meu link'}</span>
                       </button>
 
                       {myWhatsappCode && (
@@ -2762,22 +2870,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                             setCopiedReferralWhatsapp(true);
                             setTimeout(() => setCopiedReferralWhatsapp(false), 3000);
                           }}
-                          className="py-3 px-4 rounded-xl bg-black/30 hover:bg-black/45 border border-white/30 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-all"
+                          className="py-2.5 px-4 rounded-xl bg-black/30 hover:bg-black/45 border border-white/30 text-white font-heading font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
                         >
                           {copiedReferralWhatsapp ? <Check className="w-4 h-4 text-emerald-300" /> : <Phone className="w-4 h-4" />}
                           <span>{copiedReferralWhatsapp ? 'WhatsApp copiado!' : 'Copiar WhatsApp'}</span>
                         </button>
                       )}
-
-                      <a
-                        href={`https://wa.me/?text=${encodeURIComponent(shareMessage)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow transition-all"
-                      >
-                        <Share2 className="w-4 h-4" />
-                        <span>Enviar no WhatsApp</span>
-                      </a>
                     </div>
                   </div>
                 </div>
@@ -3038,6 +3136,30 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <div>
                       <h3 className="font-heading font-black text-xl text-slate-950">{currentDriver.name}</h3>
                       <p className="text-xs sm:text-sm text-slate-500 font-mono">{currentDriver.email}</p>
+                      {(driverReferralCode || currentDriver.codigoIndicacao || currentUser?.codigoIndicacao) && (
+                        <div className="mt-2 inline-flex items-center gap-2 flex-wrap bg-orange-50 border border-orange-300 rounded-xl px-3 py-1">
+                          <span className="text-xs font-bold text-slate-800">
+                            Seu código de indicação:{' '}
+                            <strong className="font-mono font-black text-[#ff6a00] tracking-wider">
+                              {driverReferralCode || currentDriver.codigoIndicacao || currentUser?.codigoIndicacao}
+                            </strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const code = driverReferralCode || currentDriver.codigoIndicacao || currentUser?.codigoIndicacao || '';
+                              if (!code) return;
+                              try { navigator.clipboard.writeText(code); } catch {}
+                              setCopiedDriverCode(true);
+                              setTimeout(() => setCopiedDriverCode(false), 2500);
+                            }}
+                            className="px-2 py-0.5 rounded-lg bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-[11px] inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                          >
+                            {copiedDriverCode ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedDriverCode ? 'Copiado!' : 'Copiar'}</span>
+                          </button>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <button
                           type="button"

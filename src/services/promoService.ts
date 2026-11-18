@@ -177,3 +177,29 @@ export const formatReferralBonusMessage = (indicatedName?: string | null): strin
   const cleanName = (indicatedName || 'Motorista indicado').trim();
   return `Bônus Indicação: + R$50 - ${cleanName} fez 10 corridas!`;
 };
+
+/**
+ * Gera candidato de código de indicação:
+ * Nome sem acento, 4 primeiras letras maiúsculas + 3 números aleatórios (100-999). Ex: JOSE123
+ */
+export const generateReferralCodeCandidate = (name?: string | null): string => {
+  const normalizedLetters = String(name || 'RACE')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z]/g, '')
+    .toUpperCase();
+  const prefix = normalizedLetters.padEnd(4, 'RACE').slice(0, 4);
+  const digits = Math.floor(100 + Math.random() * 900);
+  return `${prefix}${digits}`;
+};
+
+export const buildReferralWhatsappShareText = (code?: string | null): string => {
+  const cleanCode = String(code || '').trim().toUpperCase() || 'RACE100';
+  return `Baixa o RACE! Usa meu código ${cleanCode} e ganha 1º mês sem taxa! cruzsousaloja1-cmd.github.io/Dinho/`;
+};
+
+export const buildReferralWhatsappShareUrl = (code?: string | null): string => {
+  const text = buildReferralWhatsappShareText(code);
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+};
+

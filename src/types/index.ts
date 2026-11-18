@@ -35,6 +35,9 @@ export interface AppUser {
   debtRideId?: string;
   createdAt?: string;
   indicadoPor?: string;
+  codigoIndicacao?: string;
+  indicadoPorCodigo?: string;
+  bonusPago?: boolean;
 }
 
 export interface CategoryInfo {
@@ -115,6 +118,9 @@ export interface Driver {
   categoryConfigured?: boolean; // Indica se o motorista já escolheu sua categoria e preencheu os dados do veículo dentro do app
   createdAt?: string;
   indicadoPor?: string;
+  codigoIndicacao?: string;
+  indicadoPorCodigo?: string;
+  bonusPago?: boolean;
 }
 
 export interface WithdrawalRequest {
