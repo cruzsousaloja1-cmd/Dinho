@@ -240,13 +240,10 @@ export const generateReferralCodeCandidate = (name?: string | null): string => {
 
 export const buildReferralWhatsappShareText = (
   code?: string | null,
-  options?: { isDriver?: boolean }
+  _options?: { isDriver?: boolean }
 ): string => {
   const cleanCode = String(code || '').trim().toUpperCase() || 'RACE100';
-  if (options?.isDriver) {
-    return `Baixa o RACE para trabalhar! Usa meu código ${cleanCode} e ganha Sem taxa até 17/12/2026! Quanto antes você entrar, mais tempo sem taxa você tem! Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/`;
-  }
-  return `Baixa o RACE! Usa meu código ${cleanCode}! E você também ganha R$10 de crédito se indicar um Passageiro e ele fizer a 1ª corrida! Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/`;
+  return `Baixe o app RACE com meu código ${cleanCode}, se vc indicar passageiros ganha R$10 de crédito na primeira corrida dele e se indicar para motorista ou motoboy vc ganha R$50 de crédito quando completar 10 corridas. Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/`;
 };
 
 export const buildReferralWhatsappShareUrl = (

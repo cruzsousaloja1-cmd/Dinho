@@ -2780,9 +2780,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               .trim()
               .toUpperCase();
             const myReferralLink = buildReferralLink(myPersonalCode || myWhatsappCode);
-            const driverShareText = buildReferralWhatsappShareText(myPersonalCode, { isDriver: true });
+            const unifiedShareText = buildReferralWhatsappShareText(myPersonalCode);
             const driverShareUrl = buildReferralWhatsappShareUrl(myPersonalCode, { isDriver: true });
-            const passengerShareText = buildReferralWhatsappShareText(myPersonalCode, { isDriver: false });
             const passengerShareUrl = buildReferralWhatsappShareUrl(myPersonalCode, { isDriver: false });
             const countdownText = getLaunchPromoCountdownText();
 
@@ -2819,14 +2818,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <div className="text-4xl sm:text-5xl font-mono font-black tracking-[0.22em] text-white select-all py-1">
                       {myPersonalCode || '...'}
                     </div>
-                    <div className="space-y-1.5 text-left bg-black/25 rounded-xl p-3 border border-white/15">
-                      <p className="text-[11px] text-amber-100/95 font-medium break-words">
-                        <strong className="text-white">Para Motorista / Motoboy:</strong> {driverShareText}
-                      </p>
-                      <p className="text-[11px] text-amber-100/95 font-medium break-words">
-                        <strong className="text-white">Para Passageiro:</strong> {passengerShareText}
-                      </p>
-                    </div>
+                    <p className="text-xs text-amber-100/95 font-medium break-words bg-black/25 rounded-xl p-3 border border-white/15 text-left">
+                      {unifiedShareText}
+                    </p>
 
                     <div className="flex flex-col gap-2.5 pt-1">
                       <button

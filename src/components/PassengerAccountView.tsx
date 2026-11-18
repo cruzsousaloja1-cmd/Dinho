@@ -898,9 +898,8 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       {referralCode && (() => {
         const isDriverOrMoto = isAppUserDriver(currentUser);
         const countdownText = getLaunchPromoCountdownText();
-        const driverShareText = buildReferralWhatsappShareText(referralCode, { isDriver: true });
+        const unifiedShareText = buildReferralWhatsappShareText(referralCode);
         const driverShareUrl = buildReferralWhatsappShareUrl(referralCode, { isDriver: true });
-        const passengerShareText = buildReferralWhatsappShareText(referralCode, { isDriver: false });
         const passengerShareUrl = buildReferralWhatsappShareUrl(referralCode, { isDriver: false });
         return (
         <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
@@ -945,14 +944,9 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             <div className="text-3xl sm:text-4xl font-mono font-black tracking-[0.2em] text-white select-all py-1">
               {referralCode}
             </div>
-            <div className="space-y-1 text-left bg-black/25 rounded-xl p-2.5 border border-white/15">
-              <p className="text-[11px] text-amber-100/95 font-medium break-words">
-                <strong className="text-white">Para Motorista / Motoboy:</strong> {driverShareText}
-              </p>
-              <p className="text-[11px] text-amber-100/95 font-medium break-words">
-                <strong className="text-white">Para Passageiro:</strong> {passengerShareText}
-              </p>
-            </div>
+            <p className="text-[11px] text-amber-100/95 font-medium break-words bg-black/25 rounded-xl p-2.5 border border-white/15 text-left">
+              {unifiedShareText}
+            </p>
           </div>
 
           <div className="flex flex-col gap-2.5">
