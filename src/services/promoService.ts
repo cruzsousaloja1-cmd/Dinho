@@ -282,15 +282,30 @@ export const buildReferralWhatsappShareText = (
 ): string => {
   const cleanCode = String(code || '').trim().toUpperCase() || 'RACE100';
   return [
-    'LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe R$50 por cada Motorista OU Motoboy que fizer 10 corridas até 17/12! Depois dessa data, volta para 15% de taxa.',
+    '🏁 LANÇAMENTO RACE!',
+    'Sem taxa até 17/12/2026!',
+    'Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha!',
     '',
-    'PROMOÇÃO DE LANÇAMENTO',
-    `*CÓDIGO DE CADASTRO, ${cleanCode}*`,
-    '® CADASTRANDO NO APP RACE COMO MOTORISTA OU MOTOBOY USANDO MEU CÓDIGO, GANHA 100% DAS CORRIDAS ATÉ 17/12/2026.',
-    '® INDICANDO MOTOBOY OU MOTORISTA USANDO SEU CÓDIGO GANHA R$50 QUANDO SEU INDICADO COMPLETAR 10 CORRIDAS.',
-    '® INDICANDO PASSAGEIROS COM SEU CÓDIGO GANHA R$10 DE CRÉDITOS SOMENTE NA PRIMEIRA VIAGEM DO SEU INDICADO',
-    'SEM LIMITE DE INDICAÇÃO ATÉ A DATA 17/12/2026',
-    'Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/',
+    '━━━━━━━━━━━━━',
+    '🚗 PARA VOCÊ QUE VAI CADASTRAR COMO MOTORISTA OU MOTOBOY',
+    '✅ Ganhe 100% das corridas até 17/12/2026',
+    '✅ Depois volta para 15% de taxa - você fica com 85%',
+    '✅ Pagamento toda sexta-feira via PIX',
+    '',
+    '━━━━━━━━━━━━━',
+    '👥 PARA VOCÊ QUE INDICA MOTORISTA OU MOTOBOY',
+    '💰 Ganhe R$50 por cada Motorista OU Motoboy que fizer 10 corridas até 17/12',
+    '',
+    '━━━━━━━━━━━━━',
+    '🧑 PARA VOCÊ QUE INDICA PASSAGEIRO',
+    '🎁 Ganhe R$10 de crédito por cada passageiro que fizer a 1ª corrida',
+    '',
+    '━━━━━━━━━━━━━',
+    '♾️ SEM LIMITE DE INDICAÇÃO ATÉ 17/12/2026',
+    'Quanto mais você indicar, mais você ganha!',
+    '',
+    `🔑 CÓDIGO DE CADASTRO: ${cleanCode}`,
+    '👉 Baixe aqui: cruzsousaloja1-cmd.github.io/Dinho/',
   ].join('\n');
 };
 

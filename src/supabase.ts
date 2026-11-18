@@ -2586,11 +2586,6 @@ export async function ensureUserReferralCodeSupabase(params: {
       numericId = Number(existingRow.id);
     }
 
-    if (existingProp) {
-      await syncCodeToSupabase(existingProp, numericId);
-      return existingProp;
-    }
-
     // 1. Verifica direto na tabela usuarios se já possui código salvo
     let dbName = cleanName;
     if (existingRow) {
@@ -2613,20 +2608,33 @@ export async function ensureUserReferralCodeSupabase(params: {
           .limit(1);
         const regCode = String(regRows?.[0]?.chave_pix || '').trim().toUpperCase();
         if (regCode) {
+          await publishPublicReferralCodeFile(numericId, regCode, dbName || cleanName).catch(() => false);
           return regCode;
         }
       } catch {}
     }
 
-    // 1b. Verifica user_metadata do Auth caso já tenha sido salvo anteriormente
+    // 1b. Verifica user_metadata do Auth caso pertença ao usuário atual e já tenha sido salvo anteriormente
     let authMetaCode = '';
     try {
       const { data: authData } = await supabase.auth.getUser();
+      const authUserEmail = String(authData?.user?.email || '').trim().toLowerCase();
       const metaCode = String(authData?.user?.user_metadata?.codigo_indicacao || '').trim().toUpperCase();
-      if (metaCode) {
+      if (metaCode && (!cleanEmail || !authUserEmail || authUserEmail === cleanEmail)) {
         authMetaCode = metaCode;
       }
     } catch {}
+
+    if (authMetaCode) {
+      await syncCodeToSupabase(authMetaCode, numericId);
+      return authMetaCode;
+    }
+
+    // 1c. Se já veio código na sessão atual e não há código prévio na nuvem, sincroniza ele
+    if (existingProp) {
+      await syncCodeToSupabase(existingProp, numericId);
+      return existingProp;
+    }
 
     // 2. Tenta RPC SECURITY DEFINER (lê e grava codigo_indicacao com garantia de unicidade)
     try {
@@ -2643,11 +2651,6 @@ export async function ensureUserReferralCodeSupabase(params: {
         return rpcCode;
       }
     } catch {}
-
-    if (authMetaCode) {
-      await syncCodeToSupabase(authMetaCode, numericId);
-      return authMetaCode;
-    }
 
     // 3. Fallback direto cliente: gera único e salva em usuarios.codigo_indicacao + pagamentos + auth metadata
     const newCode = await generateUniqueReferralCodeSupabase(dbName || cleanName || cleanEmail || 'RACE');

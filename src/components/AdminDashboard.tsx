@@ -83,7 +83,7 @@ import {
 } from '../services/asaasService';
 import { maskLast4Digits } from '../utils/security';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
-import { isAppUserAdmin, isAdminTipoValue } from '../services/userService';
+import { isAppUserAdmin, isAdminTipoValue, saveSessionUser } from '../services/userService';
 import { MyReferralsControlSection } from './MyReferralsControlSection';
 import {
   calculateRideSplitForDriver,
@@ -151,7 +151,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [beneficiaryFilterDate, setBeneficiaryFilterDate] = useState('');
   const [markingBonusPaidId, setMarkingBonusPaidId] = useState<string | null>(null);
   const [admReferralCode, setAdmReferralCode] = useState<string>(
-    String(currentUser?.codigoIndicacao || 'JOSE367').trim().toUpperCase()
+    String(
+      currentUser?.codigoIndicacao && currentUser.codigoIndicacao.toUpperCase() !== 'JOSE367'
+        ? currentUser.codigoIndicacao
+        : 'JOSE492'
+    )
+      .trim()
+      .toUpperCase()
   );
   const [admOwnReferrals, setAdmOwnReferrals] = useState<ReferralCandidateItem[]>([]);
   const [copiedAdmCode, setCopiedAdmCode] = useState(false);
@@ -173,18 +179,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   useEffect(() => {
     if (!currentUser) return;
     let active = true;
+    const sanitizedLocalCode =
+      currentUser.codigoIndicacao &&
+      currentUser.codigoIndicacao.trim().toUpperCase() !== 'JOSE367'
+        ? currentUser.codigoIndicacao.trim().toUpperCase()
+        : undefined;
     ensureUserReferralCodeSupabase({
       id: currentUser.id,
       email: currentUser.email,
       name: currentUser.name,
-      currentCode: currentUser.codigoIndicacao,
+      currentCode: sanitizedLocalCode,
     })
       .then((code) => {
         if (!active) return;
-        const effectiveCode = String(code || currentUser.codigoIndicacao || 'JOSE367')
+        const effectiveCode = String(code || sanitizedLocalCode || 'JOSE492')
           .trim()
           .toUpperCase();
-        if (effectiveCode) setAdmReferralCode(effectiveCode);
+        if (effectiveCode) {
+          setAdmReferralCode(effectiveCode);
+          if (effectiveCode !== String(currentUser.codigoIndicacao || '').trim().toUpperCase()) {
+            saveSessionUser({ ...currentUser, codigoIndicacao: effectiveCode });
+          }
+        }
         return getDriverReferralsAndBonusesSupabase({
           ...currentUser,
           codigoIndicacao: effectiveCode,
@@ -219,7 +235,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSupabaseUsersError(null);
     try {
       const effectiveAdmCode = String(
-        admReferralCode || currentUser?.codigoIndicacao || 'JOSE367'
+        admReferralCode || currentUser?.codigoIndicacao || 'JOSE492'
       )
         .trim()
         .toUpperCase();
@@ -4237,7 +4253,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="text"
                     value={beneficiaryFilterCode}
                     onChange={(e) => setBeneficiaryFilterCode(e.target.value)}
-                    placeholder="Ex: JOSE367..."
+                    placeholder="Ex: JOSE492..."
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono font-bold text-slate-900 uppercase focus:outline-none focus:border-blue-500"
                   />
                 </div>
