@@ -136,6 +136,12 @@ export default function App() {
   const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
 
   const activeRideStatusLower = String(activeRide?.status || '').toLowerCase();
+  const isSearchingActiveRide =
+    Boolean(activeRide) &&
+    (activeRideStatusLower === '' ||
+      activeRideStatusLower === 'procurando' ||
+      activeRideStatusLower === 'searching' ||
+      activeRideStatusLower === 'procurando_motorista');
   const isRideActivePhase =
     Boolean(activeRide) &&
     activeRideStatusLower !== 'completed' &&
@@ -1129,14 +1135,6 @@ export default function App() {
       read: false,
     };
     setNotifications((prev) => [driverAlert, ...prev]);
-
-    triggerPush(
-      isCreditCovered ? '🎟️ Corrida paga com Crédito RACE!' : '🔍 Procurando motorista...',
-      isCash
-        ? 'Corrida em dinheiro criada no sistema! Buscando motoristas online no mapa.'
-        : 'Buscando motoristas online próximos a você no mapa.',
-      'ride'
-    );
   };
 
   // Complete active ride - fecha mapa e abre modal de Avaliação
@@ -2640,23 +2638,23 @@ export default function App() {
           );
         })()}
 
-      {/* Botão Fixo CANCELAR CORRIDA em TODAS as fases de corrida ativa (Procurando, A caminho, Chegou, Em corrida) */}
+      {/* Botão Fixo CANCELAR CORRIDA: enquanto procura no mapa tela cheia ou fora do mapa tela cheia */}
       {typeof document !== 'undefined' &&
         Boolean(currentUser) &&
         isRideActivePhase &&
         !isRatingModalOpen &&
-        (isFullMapOpen || activeTab !== 'driver_portal') &&
+        (isFullMapOpen ? isSearchingActiveRide : activeTab !== 'driver_portal') &&
         createPortal(
           <button
             type="button"
             onClick={handleRequestCancelRide}
             style={{
               position: 'fixed',
-              bottom: '80px',
+              bottom: isFullMapOpen ? '20px' : '80px',
               left: '16px',
               right: '16px',
               zIndex: 999,
-              height: '56px',
+              height: '52px',
             }}
             className="bg-red-600 hover:bg-red-700 active:scale-[0.99] text-white font-heading font-black text-base uppercase tracking-wider rounded-2xl shadow-[0_8px_24px_rgba(220,38,38,0.45)] border-2 border-red-400 flex items-center justify-center gap-2 cursor-pointer transition-all"
           >

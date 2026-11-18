@@ -20,6 +20,7 @@ import {
   Phone,
   Loader2,
   User,
+  XCircle,
 } from 'lucide-react';
 import { 
   INDAIATUBA_CENTER_COORDS, 
@@ -146,31 +147,24 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
   const [hydratedDriverAvatar, setHydratedDriverAvatar] = useState<string>(
     effectiveDriver.avatar || ''
   );
-  const [hydratedPassengerAvatar, setHydratedPassengerAvatar] = useState<string>(
-    activeRide?.passengerAvatar || currentUserAvatar || ''
-  );
 
   useEffect(() => {
     const knownDriverPhoto = effectiveDriver.avatar || activeDriver?.avatar || '';
-    const knownPassengerPhoto = activeRide?.passengerAvatar || currentUserAvatar || '';
     if (knownDriverPhoto) setHydratedDriverAvatar(knownDriverPhoto);
-    if (knownPassengerPhoto) setHydratedPassengerAvatar(knownPassengerPhoto);
-
-    if (knownDriverPhoto && knownPassengerPhoto) return;
+    if (knownDriverPhoto) return;
 
     let cancelled = false;
-    const loadMissingPhotos = async () => {
+    const loadMissingDriverPhoto = async () => {
       if (activeRide) {
         try {
           const [hydrated] = await hydrateRidesWithUserPhotosSupabase([activeRide]);
-          if (!cancelled && hydrated) {
-            if (hydrated.driver?.avatar) setHydratedDriverAvatar(hydrated.driver.avatar);
-            if (hydrated.passengerAvatar) setHydratedPassengerAvatar(hydrated.passengerAvatar);
+          if (!cancelled && hydrated?.driver?.avatar) {
+            setHydratedDriverAvatar(hydrated.driver.avatar);
           }
         } catch {}
       }
 
-      if (!knownDriverPhoto && effectiveDriver.name && effectiveDriver.name !== 'Condutor RACE') {
+      if (effectiveDriver.name && effectiveDriver.name !== 'Condutor RACE') {
         try {
           const photo = await fetchUsuarioPhotoByIdentity({
             id: effectiveDriver.id,
@@ -181,42 +175,24 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
           if (!cancelled && photo?.avatar) setHydratedDriverAvatar(photo.avatar);
         } catch {}
       }
-
-      if (!knownPassengerPhoto && (activeRide?.passengerName || currentUserName)) {
-        try {
-          const photo = await fetchUsuarioPhotoByIdentity({
-            phone: activeRide?.passengerPhone,
-            name: activeRide?.passengerName || currentUserName,
-          });
-          if (!cancelled && photo?.avatar) setHydratedPassengerAvatar(photo.avatar);
-        } catch {}
-      }
     };
 
-    loadMissingPhotos();
+    loadMissingDriverPhoto();
     return () => {
       cancelled = true;
     };
   }, [
     activeRide?.id,
     activeRide?.status,
-    activeRide?.passengerAvatar,
-    activeRide?.passengerName,
-    activeRide?.passengerPhone,
     effectiveDriver.id,
     effectiveDriver.email,
     effectiveDriver.phone,
     effectiveDriver.name,
     effectiveDriver.avatar,
     activeDriver?.avatar,
-    currentUserAvatar,
-    currentUserName,
   ]);
 
   const displayDriverAvatar = effectiveDriver.avatar || hydratedDriverAvatar;
-  const displayPassengerName = activeRide?.passengerName || currentUserName || 'Passageiro';
-  const displayPassengerAvatar =
-    activeRide?.passengerAvatar || currentUserAvatar || hydratedPassengerAvatar;
 
   // Rota real consultada via OSRM com ruas e esquinas de Indaiatuba
   const [routeData, setRouteData] = useState<StreetRouteResult>({
@@ -822,88 +798,87 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
       className="fixed inset-0 z-[200] bg-white text-slate-900 flex flex-col w-screen h-screen overflow-hidden select-none touch-none overscroll-none"
       style={{ touchAction: 'none' }}
     >
-      {/* 1. HUD SUPERIOR: MODO PROCURANDO vs MODO A CAMINHO */}
-      <div className="absolute top-3 left-3 right-14 z-[900] flex items-start justify-between gap-2.5 pointer-events-none">
-        {/* Botão VOLTAR */}
-        <button
-          type="button"
-          onClick={() => {
-            if (isSearching) cancelVoiceSpeech();
-            onClose();
-          }}
-          className="pointer-events-auto bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs sm:text-sm py-2.5 px-3.5 rounded-2xl shadow-xl flex items-center gap-1.5 transition-all cursor-pointer border border-[#ff8533]"
-        >
-          <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 stroke-[3]" />
-          <span>VOLTAR</span>
-        </button>
-
+      {/* 1. HUD SUPERIOR: JANELINHA FINA LARGURA TOTAL ENQUANTO PROCURA vs MANOBRA GPS QUANDO ACEITO */}
+      <div className="absolute top-2.5 left-2.5 right-2.5 z-[900] pointer-events-none">
         {isSearching ? (
-          <div className="pointer-events-none flex-1 max-w-md bg-white/95 backdrop-blur-md border-2 border-[#ff6a00] text-slate-900 rounded-2xl p-3 shadow-lg flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#ff6a00] text-white flex items-center justify-center shrink-0 shadow-md">
-              <Loader2 className="w-5 h-5 animate-spin stroke-[3]" />
+          <div className="pointer-events-auto w-full bg-white/95 backdrop-blur-md border-2 border-[#ff6a00] text-slate-900 rounded-2xl px-2.5 py-1.5 shadow-lg flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                cancelVoiceSpeech();
+                onClose();
+              }}
+              className="bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-[11px] sm:text-xs py-1.5 px-2.5 rounded-xl shadow flex items-center gap-1 transition-all cursor-pointer shrink-0 border border-[#ff8533]"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 stroke-[3]" />
+              <span>VOLTAR</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <Loader2 className="w-4 h-4 text-[#ff6a00] animate-spin stroke-[2.75] shrink-0" />
+              <span className="font-heading font-black text-[11px] sm:text-sm text-slate-950 leading-tight">
+                🔍 Procurando motorista... {onlineDrivers.filter((d) => d.status === 'online').length} motorista(s) online
+              </span>
             </div>
-            <div className="overflow-hidden">
-              <h3 className="font-heading font-black text-sm sm:text-base text-slate-950 truncate">
-                Procurando motorista...
-              </h3>
-              <p className="text-[11px] text-slate-600 font-semibold truncate">
-                {onlineDrivers.filter((d) => d.status === 'online').length} motorista(s) online no mapa • Aguardando aceite
-              </p>
-            </div>
+
+            <span className="w-2 h-2 rounded-full bg-[#ff6a00] animate-ping shrink-0 mr-0.5" />
           </div>
         ) : (
-          <div className="pointer-events-none flex-1 max-w-md bg-white/90 backdrop-blur-md border border-slate-200 text-slate-900 rounded-2xl p-2.5 shadow-lg flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#ff6a00] text-white flex items-center justify-center shrink-0 shadow-md">
-              {currentStep.modifier === 'right' ? (
-                <CornerUpRight className="w-5 h-5 stroke-[3]" />
-              ) : currentStep.modifier === 'left' ? (
-                <CornerUpLeft className="w-5 h-5 stroke-[3]" />
-              ) : (
-                <ArrowUp className="w-5 h-5 stroke-[3]" />
-              )}
-            </div>
-            <div className="overflow-hidden">
-              <span className="text-[10px] font-mono font-bold text-[#ff6a00] uppercase block tracking-wider">
-                {distanceRemainingMeters <= 200 ? 'CHEGANDO NO EMBARQUE' : 'MANOBRA GPS'}
-              </span>
-              <h3 className="font-heading font-black text-xs sm:text-sm text-slate-900 truncate">
-                {currentStep.instruction}
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium truncate">
-                {currentStep.street}
-              </p>
+          <div className="flex items-center justify-between gap-2 w-full">
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+              }}
+              className="pointer-events-auto bg-[#ff6a00] hover:bg-[#e05e00] active:scale-95 text-white font-heading font-black text-xs py-2 px-3 rounded-xl shadow-lg flex items-center gap-1 transition-all cursor-pointer shrink-0 border border-[#ff8533]"
+            >
+              <ArrowLeft className="w-4 h-4 stroke-[3]" />
+              <span>VOLTAR</span>
+            </button>
+
+            <div className="pointer-events-none flex-1 bg-white/95 backdrop-blur-md border border-slate-200 text-slate-900 rounded-xl px-3 py-1.5 shadow-md flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-[#ff6a00] text-white flex items-center justify-center shrink-0">
+                {currentStep.modifier === 'right' ? (
+                  <CornerUpRight className="w-4 h-4 stroke-[3]" />
+                ) : currentStep.modifier === 'left' ? (
+                  <CornerUpLeft className="w-4 h-4 stroke-[3]" />
+                ) : (
+                  <ArrowUp className="w-4 h-4 stroke-[3]" />
+                )}
+              </div>
+              <div className="overflow-hidden min-w-0 flex-1">
+                <h3 className="font-heading font-black text-xs text-slate-900 truncate">
+                  {currentStep.instruction}
+                </h3>
+                <p className="text-[10px] text-slate-500 font-medium truncate">
+                  {currentStep.street}
+                </p>
+              </div>
             </div>
           </div>
         )}
-
-        {/* Badge Cidade: Indaiatuba - SP */}
-        <div className="pointer-events-none hidden sm:flex items-center gap-2 bg-white/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-200 text-xs shadow-md">
-          <Navigation className="w-4 h-4 text-[#ff6a00]" />
-          <span className="font-heading font-bold text-slate-900">Indaiatuba - SP</span>
-        </div>
       </div>
 
       {/* TOAST DE FEEDBACK DE ÁUDIO */}
       {audioToast && (
-        <div className="pointer-events-none absolute top-20 left-1/2 -translate-x-1/2 z-[910] bg-slate-950/90 backdrop-blur-md text-white font-heading font-black text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border border-[#ff6a00] flex items-center gap-2 animate-bounce">
+        <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 z-[910] bg-slate-950/90 backdrop-blur-md text-white font-heading font-black text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border border-[#ff6a00] flex items-center gap-2 animate-bounce">
           <span>{audioToast}</span>
         </div>
       )}
 
-      {/* BOTÕES RÁPIDOS LATERAIS */}
-      <div className="absolute top-24 right-2.5 z-[900] flex flex-col gap-2 pointer-events-none">
-        {/* Botão de Som / Voz Ligar/Desligar */}
+      {/* BOTÕES RÁPIDOS LATERAIS (abaixo do zoomControl top-14) */}
+      <div className="absolute top-36 right-2.5 z-[900] flex flex-col gap-2 pointer-events-none">
         <button
           type="button"
           onClick={handleToggleAudio}
-          className={`pointer-events-auto w-10 h-10 border active:scale-95 rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer ${
+          className={`pointer-events-auto w-9 h-9 border active:scale-95 rounded-xl shadow-lg flex items-center justify-center transition-all cursor-pointer ${
             audioEnabled
               ? 'bg-[#ff6a00] text-white border-[#ff8533] hover:bg-[#e05e00]'
               : 'bg-white text-slate-400 border-slate-300 hover:text-slate-600 hover:bg-slate-50'
           }`}
           title={audioEnabled ? 'Áudio ATIVADO (clique para mutar)' : 'Áudio MUTADO (clique para ativar som)'}
         >
-          {audioEnabled ? <Volume2 className="w-5 h-5 stroke-[2.5]" /> : <VolumeX className="w-5 h-5 stroke-[2.5]" />}
+          {audioEnabled ? <Volume2 className="w-4 h-4 stroke-[2.5]" /> : <VolumeX className="w-4 h-4 stroke-[2.5]" />}
         </button>
 
         {isAccepted && (
@@ -911,210 +886,122 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
             <button
               type="button"
               onClick={handleCenterOnCar}
-              className="pointer-events-auto w-10 h-10 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-[#ff6a00] rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer"
+              className="pointer-events-auto w-9 h-9 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-[#ff6a00] rounded-xl shadow-lg flex items-center justify-center transition-all cursor-pointer"
               title="Centralizar no motorista"
             >
-              <Crosshair className="w-5 h-5" />
+              <Crosshair className="w-4 h-4" />
             </button>
 
             <button
               type="button"
               onClick={handleViewFullRoute}
-              className="pointer-events-auto w-10 h-10 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-slate-800 hover:text-[#ff6a00] rounded-2xl shadow-xl flex items-center justify-center transition-all cursor-pointer"
+              className="pointer-events-auto w-9 h-9 bg-white hover:bg-slate-50 border border-slate-300 active:scale-95 text-slate-800 hover:text-[#ff6a00] rounded-xl shadow-lg flex items-center justify-center transition-all cursor-pointer"
               title="Ver percurso inteiro no mapa"
             >
-              <Route className="w-5 h-5" />
+              <Route className="w-4 h-4" />
             </button>
           </>
         )}
       </div>
 
-      {/* MAPA FULLSCREEN LEAFLET COM FUNDO BRANCO E MOVIMENTO LIVRE */}
-      <div 
-        ref={mapContainerRef} 
-        className="w-full h-full flex-1 z-0 bg-white touch-none" 
+      {/* MAPA FULLSCREEN LEAFLET LIMPO */}
+      <div
+        ref={mapContainerRef}
+        className="w-full h-full flex-1 z-0 bg-white touch-none [&_.leaflet-top]:!top-14"
         style={{ width: '100vw', height: '100vh', background: '#ffffff', touchAction: 'none' }}
       />
 
-      {/* 3. CARD EMBAIXO ACIMA DO BOTÃO FIXO CANCELAR CORRIDA: MODO PROCURANDO vs MODO A CAMINHO */}
-      <div className="fixed bottom-[148px] left-4 right-4 max-w-md mx-auto z-[900] pointer-events-none">
-        {isSearching ? (
-          <div
-            style={{ maxHeight: '45vh', overflowY: 'auto' }}
-            className="pointer-events-auto overscroll-contain bg-white/95 backdrop-blur-xl border-2 border-[#ff6a00] text-slate-900 rounded-3xl p-4 shadow-[0_8px_30px_rgba(0,0,0,0.22)] space-y-3"
-          >
-            <div className="flex items-center gap-3">
-              <div className="relative shrink-0">
-                {displayPassengerAvatar ? (
-                  <img
-                    src={displayPassengerAvatar}
-                    alt={displayPassengerName}
-                    className="w-14 h-14 rounded-full object-cover border-2 border-[#ff6a00] shadow-sm"
-                  />
-                ) : (
-                  <div className="w-14 h-14 rounded-full bg-[#ff6a00]/15 text-[#ff6a00] border-2 border-[#ff6a00] flex flex-col items-center justify-center font-heading font-black text-base">
-                    <span>{displayPassengerName.charAt(0).toUpperCase()}</span>
-                    <User className="w-3.5 h-3.5 opacity-75" />
-                  </div>
-                )}
-                <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white border border-[#ff6a00] flex items-center justify-center shadow">
-                  <Loader2 className="w-3 h-3 text-[#ff6a00] animate-spin" />
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <h4 className="font-heading font-black text-base text-slate-950 flex items-center gap-2 truncate">
-                  <span>Procurando motorista...</span>
-                </h4>
-                <p className="text-xs text-slate-700 font-bold truncate">
-                  Passageiro: {displayPassengerName}
-                </p>
-                <p className="text-[11px] text-slate-600 font-semibold truncate">
-                  {onlineDrivers.filter((d) => d.status === 'online').length > 0
-                    ? `${onlineDrivers.filter((d) => d.status === 'online').length} motoristas online parados no mapa aguardando aceite`
-                    : 'Aguardando um motorista aceitar sua solicitação'}
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs space-y-1.5">
-              <p className="text-slate-800 break-words leading-snug">
-                <strong>Embarque:</strong> {activeRide?.pickup?.address || pickup?.address}
-              </p>
-              <p className="text-slate-800 break-words leading-snug">
-                <strong>Destino:</strong> {activeRide?.destination?.address || destination?.address}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div
-            style={{ maxHeight: '45vh', overflowY: 'auto' }}
-            className="pointer-events-auto overscroll-contain bg-white/95 backdrop-blur-xl border border-slate-200 text-slate-900 rounded-2xl p-2.5 sm:p-3 shadow-[0_8px_30px_rgba(0,0,0,0.18)] space-y-2"
-          >
-
-            {/* CAIXA AMARELA GIGANTE NO TOPO DO CARD (SÓ DEPOIS QUE MOTORISTA ACEITAR) */}
-            <div className="bg-amber-300 border-2 border-amber-500 rounded-2xl px-3 py-2.5 text-center shadow-md">
-              <div className="flex items-center justify-center gap-1.5 text-[11px] font-heading font-black text-slate-950 uppercase tracking-wider">
+      {/* 3. CARD PEQUENO EMBAIXO SOMENTE DEPOIS QUE O MOTORISTA / MOTOBOY ACEITAR (APENAS DADOS DELE + CÓDIGO 4 DÍGITOS) */}
+      {!isSearching && (
+        <div className="fixed bottom-4 left-3 right-3 max-w-md mx-auto z-[900] pointer-events-none">
+          <div className="pointer-events-auto bg-white/95 backdrop-blur-xl border-2 border-[#ff6a00] text-slate-900 rounded-2xl p-3 shadow-[0_8px_30px_rgba(0,0,0,0.22)] space-y-2.5">
+            {/* Código de 4 dígitos para iniciar a corrida (compacto, somente após aceite) */}
+            <div className="bg-amber-300 border border-amber-500 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2 shadow-xs">
+              <div className="flex items-center gap-2 min-w-0">
                 <ShieldCheck className="w-4 h-4 text-slate-950 shrink-0" />
-                <span>SEU CÓDIGO DE EMBARQUE</span>
+                <div className="leading-tight">
+                  <span className="text-[10px] font-heading font-black text-slate-900 uppercase block">
+                    Código para iniciar corrida
+                  </span>
+                  <span className="font-mono font-black text-xl text-slate-950 tracking-[0.2em] select-text">
+                    {displayConfirmationCode}
+                  </span>
+                </div>
               </div>
-              <div
-                style={{ fontSize: '48px', lineHeight: 1.05 }}
-                className="font-mono font-black text-slate-950 tracking-[0.2em] my-1 select-text"
-              >
-                {displayConfirmationCode}
-              </div>
-              <p className="text-xs font-extrabold text-slate-900">
-                Mostre esse código para o motorista
-              </p>
               <button
                 type="button"
                 onClick={handleCopyConfirmationCode}
-                className="pointer-events-auto mt-2 inline-flex items-center justify-center gap-1.5 px-4 py-1.5 bg-slate-950 hover:bg-slate-800 active:scale-95 text-white font-heading font-black text-xs rounded-xl cursor-pointer shadow-sm"
+                className="pointer-events-auto px-2.5 py-1 bg-slate-950 hover:bg-slate-800 active:scale-95 text-white font-heading font-black text-[11px] rounded-lg cursor-pointer shrink-0 flex items-center gap-1"
               >
                 {copiedRideCode ? (
                   <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>CÓDIGO COPIADO!</span>
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span>Copiado</span>
                   </>
                 ) : (
-                  <span>COPIAR CÓDIGO</span>
+                  <span>Copiar</span>
                 )}
               </button>
             </div>
-            
-            {/* Header Compacto: Foto grande redonda do Motorista + Nome + Placa + Tempo de chegada */}
+
+            {/* Foto + Nome do Motorista/Motoboy + Veículo (Carro/Moto, Modelo, Cor, Placa) + Chega em X min */}
             <div className="flex items-center justify-between gap-2.5">
-              <div className="flex items-center gap-3 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <div className="relative shrink-0">
                   {displayDriverAvatar ? (
                     <img
                       src={displayDriverAvatar}
                       alt={effectiveDriver.name}
-                      className="w-16 h-16 rounded-full object-cover border-2 border-[#ff6a00] shadow-md"
+                      className="w-14 h-14 rounded-full object-cover border-2 border-[#ff6a00] shadow-sm"
                     />
                   ) : (
-                    <div className="w-16 h-16 rounded-full bg-[#ff6a00]/15 text-[#ff6a00] border-2 border-[#ff6a00] flex flex-col items-center justify-center font-heading font-black text-xl shadow-md">
+                    <div className="w-14 h-14 rounded-full bg-[#ff6a00]/15 text-[#ff6a00] border-2 border-[#ff6a00] flex flex-col items-center justify-center font-heading font-black text-lg shadow-sm">
                       <span>{(effectiveDriver.name || 'M').charAt(0).toUpperCase()}</span>
-                      <User className="w-4 h-4 opacity-75" />
+                      <User className="w-3.5 h-3.5 opacity-75" />
                     </div>
                   )}
-                  <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-[9px] px-1 rounded-full border border-black shadow">
-                    ★ {effectiveDriver.rating.toFixed(1)}
-                  </span>
+                  {effectiveDriver.rating > 0 && (
+                    <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 font-black text-[9px] px-1 rounded-full border border-black shadow">
+                      ★ {effectiveDriver.rating.toFixed(1)}
+                    </span>
+                  )}
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="font-heading font-black text-xs sm:text-sm text-slate-950 truncate">
+
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h4 className="font-heading font-black text-sm text-slate-950 truncate">
                       {effectiveDriver.name}
                     </h4>
-                    <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded border border-amber-300 shrink-0">
-                      {isRideFinished ? 'Chegou' : (minutesLeft > 0 ? `${minutesLeft} min` : 'No local')}
+                    <span className="text-[10px] font-mono font-black bg-emerald-100 text-emerald-900 px-1.5 py-0.5 rounded border border-emerald-300 shrink-0">
+                      {isRideFinished
+                        ? 'Chegou'
+                        : hasDriverArrived || minutesLeft <= 0
+                        ? 'No local'
+                        : `Chega em ${minutesLeft} min`}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-700 font-bold truncate">
-                    {effectiveDriver.vehicleModel || 'Veículo'} {effectiveDriver.vehiclePlate ? `• Placa ${effectiveDriver.vehiclePlate}` : ''} {effectiveDriver.vehicleColor ? `• ${effectiveDriver.vehicleColor}` : ''}
+                  <p className="text-xs text-slate-700 font-bold truncate">
+                    {isMotoboy ? 'Moto' : 'Carro'} • {effectiveDriver.vehicleModel || (isMotoboy ? 'Motocicleta' : 'Automóvel')}
+                    {effectiveDriver.vehicleColor ? ` • ${effectiveDriver.vehicleColor}` : ''}
+                    {effectiveDriver.vehiclePlate ? ` • ${effectiveDriver.vehiclePlate}` : ''}
                   </p>
                 </div>
               </div>
 
-              {/* Distância */}
               <div className="text-right shrink-0">
-                <div className="text-sm sm:text-base font-heading font-black text-[#ff6a00] leading-tight">
+                <div className="text-xs font-heading font-black text-[#ff6a00]">
                   {isRideFinished ? 'Chegou!' : `${distanceKmFormatted} km`}
                 </div>
-                <div className="text-[10px] font-mono text-slate-500 font-bold">
-                  {isRideFinished ? 'Destino' : `${speedKmh} km/h`}
-                </div>
               </div>
             </div>
 
-            {/* Passageiro, Embarque e Destino na chamada */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 space-y-1.5">
-              <div className="flex items-center gap-2.5">
-                {displayPassengerAvatar ? (
-                  <img
-                    src={displayPassengerAvatar}
-                    alt={displayPassengerName}
-                    className="w-11 h-11 rounded-full object-cover border-2 border-emerald-500 shrink-0 shadow-xs"
-                  />
-                ) : (
-                  <div className="w-11 h-11 rounded-full bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shrink-0 flex flex-col items-center justify-center font-heading font-black text-sm shadow-xs">
-                    <span>{displayPassengerName.charAt(0).toUpperCase()}</span>
-                    <User className="w-3 h-3 opacity-75" />
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <span className="text-[10px] font-mono font-bold text-slate-500 uppercase block leading-none">
-                    Passageiro
-                  </span>
-                  <p className="text-xs font-heading font-black text-slate-950 truncate">
-                    {displayPassengerName}
-                  </p>
-                </div>
-              </div>
-              <div className="text-[11px] text-slate-700 space-y-0.5 border-t border-slate-200/80 pt-1.5">
-                <p className="break-words leading-snug">
-                  <strong>Embarque:</strong> {activeRide?.pickup?.address || pickup?.address}
-                </p>
-                <p className="break-words leading-snug">
-                  <strong>Destino:</strong> {activeRide?.destination?.address || destination?.address}
-                </p>
-              </div>
-            </div>
-
-            {/* Status automático compacto + Finalizar viagem */}
-            {!hasDriverArrived && !isRideFinished && (
-              <div className="bg-emerald-50/90 border border-emerald-300 rounded-xl px-2.5 py-1.5 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping shrink-0" />
-                  <span className="font-heading font-black text-[11px] sm:text-xs text-emerald-950 truncate">
-                    {distanceRemainingMeters <= 200
-                      ? (isMotoboy ? 'Motoboy chegando - 200m' : 'Motorista chegando - 200m')
-                      : effectiveDriver.name && effectiveDriver.name !== 'Condutor RACE'
-                      ? `${effectiveDriver.name} aceitou sua corrida!`
-                      : (isMotoboy ? 'Motoboy a caminho!' : 'Motorista a caminho!')}
-                  </span>
-                </div>
+            {/* Aviso quando chegar ou finalizar */}
+            {hasDriverArrived && !isRideFinished && (
+              <div className="bg-emerald-50 border border-emerald-300 rounded-xl px-2.5 py-1.5 flex items-center justify-between gap-2">
+                <span className="text-xs font-heading font-black text-emerald-900 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{isMotoboy ? 'Seu motoboy chegou!' : 'Seu motorista chegou!'}</span>
+                </span>
                 <button
                   type="button"
                   onClick={() => {
@@ -1122,99 +1009,63 @@ export const FullMapView: React.FC<FullMapViewProps> = ({
                     setIsRideFinished(true);
                     setDistanceRemainingMeters(0);
                     setSecondsRemaining(0);
-                    if (onCompleteRide) {
-                      onCompleteRide();
-                    }
+                    if (onCompleteRide) onCompleteRide();
                   }}
-                  className="pointer-events-auto py-1 px-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] sm:text-xs rounded-lg cursor-pointer shrink-0 shadow-xs"
+                  className="pointer-events-auto py-1 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg cursor-pointer shrink-0"
                 >
-                  Finalizar viagem
+                  Finalizar
                 </button>
               </div>
             )}
 
-            {/* Quando Chegar no Local */}
-            {hasDriverArrived && !isRideFinished && (
-              <div className="bg-emerald-50/95 border border-emerald-300 rounded-xl p-2 text-center space-y-1.5">
-                <div className="flex items-center justify-center gap-1.5 text-emerald-800 font-heading font-black text-xs sm:text-sm">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>{isMotoboy ? 'Seu motoboy chegou!' : 'Seu motorista chegou!'}</span>
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleTestAudioArrival}
-                    className="pointer-events-auto py-1 px-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[11px] font-bold rounded-lg flex items-center gap-1 cursor-pointer"
+            {isRideFinished ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onCompleteRide) onCompleteRide();
+                  onClose();
+                }}
+                className="pointer-events-auto w-full py-2.5 px-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wide"
+              >
+                <span>⭐ Avaliar motorista agora</span>
+              </button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200">
+                {effectiveDriver.phone ? (
+                  <a
+                    href={`tel:${effectiveDriver.phone.replace(/\D/g, '')}`}
+                    className="pointer-events-auto py-2 px-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>Ouvir aviso de voz</span>
-                  </button>
+                    <Phone className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Ligar para motorista</span>
+                  </a>
+                ) : (
                   <button
                     type="button"
                     onClick={() => {
-                      setIsRideInProgress(false);
-                      setIsRideFinished(true);
-                      setDistanceRemainingMeters(0);
-                      setSecondsRemaining(0);
-                      if (onCompleteRide) {
-                        onCompleteRide();
-                      }
+                      setAudioToast('Telefone do motorista indisponível');
+                      setTimeout(() => setAudioToast(null), 2500);
                     }}
-                    className="pointer-events-auto py-1 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg cursor-pointer shadow-xs"
+                    className="pointer-events-auto py-2 px-2.5 bg-emerald-600/80 hover:bg-emerald-600 active:scale-95 text-white font-heading font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
-                    Finalizar viagem
+                    <Phone className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Ligar para motorista</span>
                   </button>
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* Finalizada */}
-            {isRideFinished && (
-              <div className="bg-emerald-50/95 border border-emerald-300 rounded-xl p-2 text-center space-y-1.5">
-                <span className="text-xs font-heading font-black text-emerald-900 flex items-center justify-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  Você chegou ao seu destino!
-                </span>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (onCompleteRide) {
-                      onCompleteRide();
-                    }
-                    onClose();
-                  }}
-                  className="pointer-events-auto w-full py-2 px-3 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wide"
+                  onClick={onCancelRide}
+                  className="pointer-events-auto py-2 px-2.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-heading font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <span>⭐ Avaliar motorista agora</span>
+                  <XCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Cancelar Corrida</span>
                 </button>
               </div>
             )}
-
-            {/* Linha de Botões: Ligar para o motorista / Centralizar (Cancelar fica fixo embaixo) */}
-            <div className="flex items-center gap-2 pt-1.5 border-t border-slate-100">
-              {effectiveDriver.phone ? (
-                <a
-                  href={`tel:${effectiveDriver.phone.replace(/\D/g, '')}`}
-                  className="pointer-events-auto flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-emerald-500"
-                  title="Ligar para o motorista"
-                >
-                  <Phone className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Ligar para o motorista</span>
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleCenterOnCar}
-                  className="pointer-events-auto flex-1 py-2 px-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 border border-slate-300 font-heading font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Crosshair className="w-3.5 h-3.5 text-[#ff6a00]" />
-                  <span>Centralizar</span>
-                </button>
-              )}
-            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
