@@ -33,6 +33,8 @@ export interface AppUser {
   debtAmount?: number;
   isBlockedDebt?: boolean;
   debtRideId?: string;
+  createdAt?: string;
+  indicadoPor?: string;
 }
 
 export interface CategoryInfo {
@@ -111,6 +113,8 @@ export interface Driver {
   comfortEligibilityReason?: string;
   trunkType?: string; // Tipo de baú para motoboy de entregas
   categoryConfigured?: boolean; // Indica se o motorista já escolheu sua categoria e preencheu os dados do veículo dentro do app
+  createdAt?: string;
+  indicadoPor?: string;
 }
 
 export interface WithdrawalRequest {

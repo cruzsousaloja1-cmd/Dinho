@@ -31,6 +31,7 @@ export interface StoredUserAccount {
   driverData?: Driver;
   rides?: Ride[];
   createdAt: string;
+  indicadoPor?: string;
   aceitou_contrato?: boolean;
   aceitou_termos?: boolean;
   aceitou_lgpd?: boolean;
@@ -150,6 +151,8 @@ export function saveSessionUser(user: AppUser | null): void {
       placa: user.placa || existingSaved?.placa || '',
       rating: user.rating ?? existingSaved?.rating ?? 0,
       isAdmin: user.isAdmin,
+      createdAt: user.createdAt || existingSaved?.createdAt || '',
+      indicadoPor: user.indicadoPor !== undefined ? user.indicadoPor : (existingSaved?.indicadoPor || ''),
       driverData: sanitizedDriverData,
     };
 
@@ -230,6 +233,8 @@ export function getSessionUser(): AppUser | null {
       placa: parsed.placa || '',
       avatar: parsed.foto || parsed.avatar || '',
       rating: Number(parsed.rating || 0),
+      createdAt: parsed.createdAt || undefined,
+      indicadoPor: parsed.indicadoPor || undefined,
       driverData: parsed.driverData,
     };
   } catch {}
@@ -273,6 +278,8 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
     debtAmount: Number(cloudUser.divida || 0),
     isBlockedDebt: Boolean(cloudUser.bloqueado_divida || Number(cloudUser.divida || 0) > 0),
     debtRideId: cloudUser.corrida_divida_id ? String(cloudUser.corrida_divida_id) : undefined,
+    createdAt: cloudUser.created_at || cloudUser.data_cadastro || undefined,
+    indicadoPor: cloudUser.indicado_por || '',
   };
 
   return { user: userPayload, driver: driverObj };
@@ -345,6 +352,7 @@ export async function saveUserAccount(
       avatar: account.avatar || '',
       rating: account.rating || 0,
       saldo: account.driverData?.walletBalance || 0,
+      indicado_por: account.indicadoPor || account.driverData?.indicadoPor || undefined,
       aceitou_contrato: account.aceitou_contrato,
       aceitou_termos: account.aceitou_termos,
       aceitou_lgpd: account.aceitou_lgpd,
@@ -360,6 +368,8 @@ export async function saveUserAccount(
       saveSessionUser({
         ...currentUserPayload,
         id: res.data?.id !== undefined && res.data?.id !== null ? String(res.data.id) : currentUserPayload.id,
+        createdAt: res.data?.created_at || currentUserPayload.createdAt || account.createdAt,
+        indicadoPor: res.data?.indicado_por ?? (account.indicadoPor || currentUserPayload.indicadoPor),
       });
     }
     return res;

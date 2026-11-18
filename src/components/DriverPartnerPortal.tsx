@@ -2,7 +2,18 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser } from '../services/userService';
-import { savePagamentoSupabase, getPagamentosSupabase, getSearchingCorridasSupabase, getCorridaByIdSupabase, fetchRideCounterpartProfileSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow, getUsuarioSupabase, supabase, withPhotoCacheBuster } from '../supabase';
+import { savePagamentoSupabase, getPagamentosSupabase, getSearchingCorridasSupabase, getCorridaByIdSupabase, fetchRideCounterpartProfileSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow, getUsuarioSupabase, checkAndAwardReferralBonusSupabase, getDriverReferralsAndBonusesSupabase, syncDriverWalletSaldoSupabase, ReferralCandidateItem, SupabasePagamentoRow, supabase, withPhotoCacheBuster } from '../supabase';
+import {
+  isDriverInLaunchZeroFeePromo,
+  calculateRideSplitForDriver,
+  LAUNCH_PROMO_EARNINGS_BADGE_TEXT,
+  buildReferralLink,
+  normalizeReferralDigits,
+  parseReferralBonusMeta,
+  formatReferralBonusMessage,
+  REFERRAL_REQUIRED_RIDES,
+  REFERRAL_BONUS_AMOUNT,
+} from '../services/promoService';
 import { compressImageToMax200KB, validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
@@ -231,12 +242,15 @@ import {
   ArrowDownCircle,
   XCircle,
   User,
-  Pencil
+  Pencil,
+  Gift,
+  Users
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DriverGpsNavigationModal } from './DriverGpsNavigationModal';
 import { 
   getDriverBalance, 
+  setDriverBalance,
   addDriverEarnings,
   calculateWalletSummary, 
   requestWithdrawal, 
@@ -284,7 +298,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   onTriggerToast,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'login' | 'register' | 'subscription'>('dashboard');
-  const [dashboardSection, setDashboardSection] = useState<'corridas' | 'ganhos' | 'assinatura' | 'perfil'>('corridas');
+  const [dashboardSection, setDashboardSection] = useState<'corridas' | 'ganhos' | 'indicar' | 'assinatura' | 'perfil'>('corridas');
   const [isOnline, setIsOnline] = useState(currentDriver.status === 'online');
   const [acceptedRideNotice, setAcceptedRideNotice] = useState<string | null>(null);
   const [comfortWarning, setComfortWarning] = useState<string | null>(null);
@@ -835,12 +849,24 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     );
   });
 
-  // Carrega exclusivamente os saques do motorista logado direto do Supabase
+  const [referralBonuses, setReferralBonuses] = useState<SupabasePagamentoRow[]>([]);
+  const [referredDrivers, setReferredDrivers] = useState<ReferralCandidateItem[]>([]);
+  const [isLoadingReferrals, setIsLoadingReferrals] = useState(false);
+  const [copiedReferralLink, setCopiedReferralLink] = useState(false);
+  const [copiedReferralWhatsapp, setCopiedReferralWhatsapp] = useState(false);
+
+  const isPromoZeroFeeActive = isDriverInLaunchZeroFeePromo(
+    currentDriver.createdAt || currentDriver.registrationDate || currentUser?.createdAt
+  );
+
+  // Carrega exclusivamente os saques, bônus de indicação e indicados do motorista logado direto do Supabase
   useEffect(() => {
     const drvId = currentDriver?.id || currentUser?.id || '';
     const drvEmail = (currentDriver?.email || currentUser?.email || '').trim().toLowerCase();
     if (!drvId && !drvEmail) {
       setDriverWithdrawals([]);
+      setReferralBonuses([]);
+      setReferredDrivers([]);
       return;
     }
 
@@ -855,8 +881,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       rating: currentDriver.rating || 0,
     };
 
-    getPagamentosSupabase(callerForPayments)
-      .then((rows) => {
+    setIsLoadingReferrals(true);
+    Promise.all([
+      getPagamentosSupabase(callerForPayments).catch(() => [] as SupabasePagamentoRow[]),
+      getDriverReferralsAndBonusesSupabase(callerForPayments).catch(() => [] as ReferralCandidateItem[]),
+      drvEmail ? getUsuarioSupabase(drvEmail).catch(() => null) : Promise.resolve(null),
+    ])
+      .then(([rows, refs, cloudRow]) => {
         if (!mounted) return;
         const ownWithdrawals: WithdrawalRequest[] = rows
           .filter((p) => p.tipo === 'saque')
@@ -867,8 +898,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             driverEmail: (p.email_motorista || drvEmail).toLowerCase(),
             driverPhone: currentDriver.phone || '',
             pixKey: p.chave_pix || '',
-            grossAmount: Number(((Number(p.valor || 0)) / 0.85).toFixed(2)),
-            platformFee15: Number((((Number(p.valor || 0)) / 0.85) * 0.15).toFixed(2)),
+            grossAmount: isPromoZeroFeeActive
+              ? Number(Number(p.valor || 0).toFixed(2))
+              : Number(((Number(p.valor || 0)) / 0.85).toFixed(2)),
+            platformFee15: isPromoZeroFeeActive
+              ? 0
+              : Number((((Number(p.valor || 0)) / 0.85) * 0.15).toFixed(2)),
             weeklyFeeDeducted: 0,
             netAmount: Number(p.valor || 0),
             status: (p.status === 'paid' || p.status === 'pago' || p.status === 'approved') ? 'paid' : 'pending',
@@ -876,13 +911,25 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             paidAt: (p.status === 'paid' || p.status === 'pago' || p.status === 'approved') ? p.data : undefined,
           }));
         setDriverWithdrawals(ownWithdrawals);
+        setReferralBonuses(rows.filter((p) => p.tipo === 'bonus_indicacao'));
+        setReferredDrivers(refs);
+
+        if (cloudRow && typeof cloudRow.saldo === 'number' && drvId) {
+          const cloudSaldo = Number(cloudRow.saldo);
+          const localBal = getDriverBalance(drvId, currentDriver.walletBalance || 0);
+          if (cloudSaldo > localBal) {
+            setDriverBalance(drvId, cloudSaldo);
+          }
+        }
       })
-      .catch(() => {});
+      .finally(() => {
+        if (mounted) setIsLoadingReferrals(false);
+      });
 
     return () => {
       mounted = false;
     };
-  }, [currentUser?.id, currentUser?.email, currentDriver?.id, currentDriver?.email]);
+  }, [currentUser?.id, currentUser?.email, currentDriver?.id, currentDriver?.email, dashboardSection]);
 
   useEffect(() => {
     if (currentDriver && currentDriver.id) {
@@ -1037,10 +1084,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   // Conta sempre liberada (sem bloqueio por mensalidade)
   const subStatus = { isActive: true, label: 'Conta Liberada • Saque toda sexta' };
 
-  // Economia vs Uber/99 (comissão média de ~28% vs 15% Race)
+  // Economia vs Uber/99 (comissão média de ~28% vs 0% na Promoção Lançamento ou 15% Race)
   const weeklyEarnings = currentDriver.earningsWeek || 0;
   const uberCut = Math.round(weeklyEarnings * 0.28);
-  const raceFee = Math.round(weeklyEarnings * 0.15);
+  const raceFee = isPromoZeroFeeActive ? 0 : Math.round(weeklyEarnings * 0.15);
   const driverSavingsVsUber99 = Math.max(0, uberCut - raceFee);
 
   const toggleOnline = () => {
@@ -1438,8 +1485,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
 
   const acceptIncomingRideHandler = async (rideToAccept: Ride) => {
     const price = rideToAccept.price || 0;
-    const driverEarns = rideToAccept.driverEarnings || Number((price * 0.85).toFixed(2));
-    const raceCommission = rideToAccept.platformFee || Number((price * 0.15).toFixed(2));
+    const split = calculateRideSplitForDriver(price, currentDriver, rideToAccept.createdAt);
+    const driverEarns = split.driverEarnings;
+    const raceCommission = split.platformFee;
     const isCash =
       rideToAccept.paymentMethod === 'money' ||
       rideToAccept.paymentMethod === 'dinheiro';
@@ -1494,6 +1542,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
 
     const acceptedRideObj: Ride = {
       ...hydratedRideToAccept,
+      driverEarnings: driverEarns,
+      platformFee: raceCommission,
       driver: driverForRide,
       status: 'aceita',
     };
@@ -1504,8 +1554,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
     setAcceptedRideNotice(
       isCash
-        ? `Corrida em dinheiro aceita! Receber ${formatBRL(price)} em dinheiro no final da corrida (85% seu: ${formatBRL(driverEarns)} • Race 15%: ${formatBRL(raceCommission)})`
-        : `Corrida aceita! Você receberá ${formatBRL(driverEarns)} (85%) • Comissão Race 15%: ${formatBRL(raceCommission)}`
+        ? `Corrida em dinheiro aceita! Receber ${formatBRL(price)} em dinheiro no final da corrida (${split.driverSharePercent}% seu: ${formatBRL(driverEarns)} • Race ${split.commissionPercent}%: ${formatBRL(raceCommission)})`
+        : `Corrida aceita! Você receberá ${formatBRL(driverEarns)} (${split.driverSharePercent}%) • Comissão Race ${split.commissionPercent}%: ${formatBRL(raceCommission)}`
     );
     setIsDriverGpsOpen(true);
     try {
@@ -1525,7 +1575,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       {/* ALERTA GRANDE GLOBAL EM TEMPO REAL NA TELA DO MOTORISTA ONLINE */}
       {openIncomingRide && (() => {
         const alertPrice = openIncomingRide.price || 0;
-        const driverNetAlert = openIncomingRide.driverEarnings || Number((alertPrice * 0.85).toFixed(2));
+        const alertSplit = calculateRideSplitForDriver(alertPrice, currentDriver, openIncomingRide.createdAt);
+        const driverNetAlert = alertSplit.driverEarnings;
         const isCashAlert =
           openIncomingRide.paymentMethod === 'money' ||
           openIncomingRide.paymentMethod === 'dinheiro';
@@ -1926,26 +1977,38 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             />
           )}
 
-          {/* 85% / 15% Earnings Model Banner (exibido quando categoria já está configurada) */}
+          {/* Promoção Lançamento / Modelo Oficial Banner */}
           {isCategoryConfigured && !isEditingCategory && (
             <>
-          <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 border-2 border-amber-400 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className={`border-2 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm ${
+            isPromoZeroFeeActive
+              ? 'bg-gradient-to-r from-orange-500/15 via-amber-500/20 to-emerald-500/15 border-orange-500'
+              : 'bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 border-amber-400'
+          }`}>
             <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 font-black flex items-center justify-center shrink-0 shadow-sm">
+              <div className={`w-12 h-12 rounded-2xl font-black flex items-center justify-center shrink-0 shadow-sm ${
+                isPromoZeroFeeActive ? 'bg-[#ff6a00] text-white' : 'bg-amber-500 text-slate-950'
+              }`}>
                 <Zap className="w-6 h-6" />
               </div>
               <div>
-                <h4 className="font-heading font-black text-amber-900 text-base sm:text-lg">
-                  85% PARA VOCÊ • 15% RACE
+                <h4 className={`font-heading font-black text-base sm:text-lg ${
+                  isPromoZeroFeeActive ? 'text-orange-950' : 'text-amber-900'
+                }`}>
+                  {isPromoZeroFeeActive ? '100% PARA VOCÊ • 0% RACE (PROMO LANÇAMENTO)' : '85% PARA VOCÊ • 15% RACE'}
                 </h4>
                 <p className="text-xs sm:text-sm text-slate-700 font-medium">
-                  Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.
+                  {isPromoZeroFeeActive
+                    ? LAUNCH_PROMO_EARNINGS_BADGE_TEXT
+                    : 'Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.'}
                 </p>
               </div>
             </div>
 
             <div className="text-left sm:text-right shrink-0">
-              <span className="text-xs text-slate-500 font-mono block font-bold">Modelo Oficial</span>
+              <span className="text-xs text-slate-500 font-mono block font-bold">
+                {isPromoZeroFeeActive ? 'Taxa 0% até 17/12/2026' : 'Modelo Oficial'}
+              </span>
               <span className="text-sm font-black flex items-center gap-1 sm:justify-end text-emerald-700">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 {subStatus.label}
@@ -1953,8 +2016,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             </div>
           </div>
 
-          {/* Navegação entre as 4 Seções do Dashboard do Condutor */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+          {/* Navegação entre as 5 Seções do Dashboard do Condutor */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
             <button
               type="button"
               onClick={() => setDashboardSection('corridas')}
@@ -1964,7 +2027,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/60'
               }`}
             >
-              <Car className="w-4 h-4" />
+              <Car className="w-4 h-4 shrink-0" />
               <span>Minhas corridas</span>
             </button>
             <button
@@ -1976,8 +2039,20 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/60'
               }`}
             >
-              <Wallet className="w-4 h-4" />
+              <Wallet className="w-4 h-4 shrink-0" />
               <span>Meu Saldo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDashboardSection('indicar')}
+              className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                dashboardSection === 'indicar'
+                  ? 'bg-[#ff6a00] text-white shadow-sm'
+                  : 'text-orange-700 hover:text-orange-950 hover:bg-orange-50'
+              }`}
+            >
+              <Gift className="w-4 h-4 shrink-0" />
+              <span>Indicar e Ganhar</span>
             </button>
             <button
               type="button"
@@ -1988,19 +2063,19 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/60'
               }`}
             >
-              <CreditCard className="w-4 h-4" />
-              <span>Comissões (85%/15%)</span>
+              <CreditCard className="w-4 h-4 shrink-0" />
+              <span>{isPromoZeroFeeActive ? 'Taxa 0%' : 'Comissões'}</span>
             </button>
             <button
               type="button"
               onClick={() => setDashboardSection('perfil')}
-              className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 col-span-2 sm:col-span-1 ${
                 dashboardSection === 'perfil'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/60'
               }`}
             >
-              <UserCheck className="w-4 h-4" />
+              <UserCheck className="w-4 h-4 shrink-0" />
               <span>Meu perfil</span>
             </button>
           </div>
@@ -2029,7 +2104,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       const incomingPickupAddress = incomingRideSnapshot.pickup?.address || '';
                       const incomingDestAddress = incomingRideSnapshot.destination?.address || '';
                       const incomingPrice = incomingRideSnapshot.price || 0;
-                      const incomingDriverEarns = incomingRideSnapshot.driverEarnings || Number((incomingPrice * 0.85).toFixed(2));
+                      const incomingSplit = calculateRideSplitForDriver(incomingPrice, currentDriver, incomingRideSnapshot.createdAt);
+                      const incomingDriverEarns = incomingSplit.driverEarnings;
                       const isCashCall =
                         incomingRideSnapshot.paymentMethod === 'money' ||
                         incomingRideSnapshot.paymentMethod === 'dinheiro';
@@ -2067,10 +2143,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                                 {formatBRL(incomingDriverEarns)}
                               </span>
                               <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full inline-block">
-                                Total: {formatBRL(incomingPrice)} • 85% seu
+                                Total: {formatBRL(incomingPrice)} • {incomingSplit.driverSharePercent}% seu
                               </span>
                               <span className="text-[11px] font-mono text-slate-500 block">
-                                Comissão Race 15%: {formatBRL(Number((incomingPrice * 0.15).toFixed(2)))}
+                                Comissão Race {incomingSplit.commissionPercent}%: {formatBRL(incomingSplit.platformFee)}
                               </span>
                             </div>
                           </div>
@@ -2354,8 +2430,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     {rides
                       .filter((r) => (currentDriver.id && r.driver?.id === currentDriver.id) || (currentDriver.email && r.driver?.email?.toLowerCase() === currentDriver.email.toLowerCase()))
                       .map((ride) => {
-                        const driverEarns = ride.driverEarnings || Number((ride.price * 0.85).toFixed(2));
-                        const raceCommission = ride.platformFee || Number((ride.price * 0.15).toFixed(2));
+                        const rSplit = calculateRideSplitForDriver(ride.price, currentDriver, ride.createdAt);
+                        const driverEarns = rSplit.driverEarnings;
+                        const raceCommission = rSplit.platformFee;
                         return (
                           <div key={ride.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
                             <div className="space-y-1">
@@ -2371,10 +2448,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                             <div className="text-right shrink-0 space-y-0.5">
                               <span className="text-base font-heading font-black text-slate-900 block">{formatBRL(ride.price)}</span>
                               <span className="text-xs text-emerald-700 font-bold block">
-                                Ganho (85%): {formatBRL(driverEarns)}
+                                Ganho ({rSplit.driverSharePercent}%): {formatBRL(driverEarns)}
                               </span>
                               <span className="text-[10px] text-slate-500 font-mono block">
-                                Race (15%): {formatBRL(raceCommission)}
+                                Race ({rSplit.commissionPercent}%): {formatBRL(raceCommission)}
                               </span>
                             </div>
                           </div>
@@ -2389,6 +2466,29 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
           {/* SEÇÃO 2: MEU SALDO (CARTEIRA DO MOTORISTA) */}
           {dashboardSection === 'ganhos' && (() => {
             const summary = calculateWalletSummary(currentDriver);
+            const totalReferralBonusesValue = referralBonuses.reduce(
+              (acc, b) => acc + Number(b.valor || REFERRAL_BONUS_AMOUNT),
+              0
+            );
+            const ownDriverRides = rides.filter(
+              (r) =>
+                (currentDriver.id && r.driver?.id === currentDriver.id) ||
+                (currentDriver.email && r.driver?.email?.toLowerCase() === currentDriver.email.toLowerCase())
+            );
+            const computedRaceFee = isPromoZeroFeeActive
+              ? 0
+              : ownDriverRides.length > 0
+              ? Number(
+                  ownDriverRides
+                    .reduce(
+                      (acc, r) => acc + calculateRideSplitForDriver(r.price, currentDriver, r.createdAt).platformFee,
+                      0
+                    )
+                    .toFixed(2)
+                )
+              : summary.gross > 0
+              ? Number(((summary.gross / 0.85) * 0.15).toFixed(2))
+              : 0;
 
             return (
               <div className="space-y-4">
@@ -2407,7 +2507,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       </div>
                     </div>
                     <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 rounded-full">
-                      Corridas Pagas no App
+                      {isPromoZeroFeeActive ? 'Taxa 0% Lançamento' : 'Corridas Pagas no App'}
                     </span>
                   </div>
 
@@ -2416,36 +2516,81 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <div className="text-4xl sm:text-5xl font-heading font-black text-[#ff6a00] mt-1 tracking-tight">
                       {formatBRL(summary.gross)}
                     </div>
-                    <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span>Seu saldo: {formatBRL(summary.gross)} - Comissão Race 15% já descontada - Saque toda sexta</span>
-                    </div>
+                    {isPromoZeroFeeActive ? (
+                      <div className="mt-2 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-orange-600/30 to-emerald-600/30 border border-orange-400/70 text-amber-100 text-xs sm:text-sm font-black">
+                        <Sparkles className="w-4 h-4 text-[#ff6a00] shrink-0" />
+                        <span>{LAUNCH_PROMO_EARNINGS_BADGE_TEXT}</span>
+                      </div>
+                    ) : (
+                      <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Seu saldo: {formatBRL(summary.gross)} - Comissão Race 15% já descontada - Saque toda sexta</span>
+                      </div>
+                    )}
                     <p className="text-xs text-zinc-400 mt-2">
-                      Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.
+                      {isPromoZeroFeeActive
+                        ? 'Sem mensalidade, sem taxa para trabalhar — você recebe 100% integral das corridas até 17/12/2026 (depois volta ao padrão 85% / 15%).'
+                        : 'Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar.'}
                     </p>
                   </div>
 
-                  {/* Modelo 85% Motorista / 15% Race */}
+                  {/* Divisão de Ganhos */}
                   <div className="bg-zinc-900/90 border border-zinc-700/80 rounded-2xl p-4 space-y-2">
                     <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
-                      Divisão de Ganhos: 85% para Você • 15% Race
+                      {isPromoZeroFeeActive
+                        ? 'Divisão de Ganhos: 100% para Você • 0% Race (até 17/12/2026)'
+                        : 'Divisão de Ganhos: 85% para Você • 15% Race'}
                     </span>
                     <div className="grid grid-cols-2 gap-3 pt-1">
                       <div className="p-3 bg-black/40 rounded-xl border border-zinc-800">
-                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">Seu Ganho Líquido (85%)</span>
+                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">
+                          Seu Ganho Líquido ({isPromoZeroFeeActive ? '100%' : '85%'})
+                        </span>
                         <span className="text-base sm:text-lg font-heading font-black text-emerald-400">{formatBRL(summary.gross)}</span>
                       </div>
                       <div className="p-3 bg-black/40 rounded-xl border border-zinc-800">
-                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">Comissão Race (15%)</span>
+                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">
+                          Comissão Race ({isPromoZeroFeeActive ? '0%' : '15%'})
+                        </span>
                         <span className="text-base sm:text-lg font-heading font-black text-amber-400">
-                          {formatBRL(summary.gross > 0 ? Number((summary.gross / 0.85 * 0.15).toFixed(2)) : 0)}
+                          {formatBRL(computedRaceFee)}
                         </span>
                       </div>
                     </div>
-                    <p className="text-xs text-zinc-400">
-                      Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar. Saque toda sexta-feira via PIX.
-                    </p>
                   </div>
+
+                  {/* Bônus de Indicação Recebidos */}
+                  {referralBonuses.length > 0 && (
+                    <div className="bg-emerald-950/50 border border-emerald-500/60 rounded-2xl p-4 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-heading font-black text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <Gift className="w-4 h-4 text-[#ff6a00]" />
+                          <span>Bônus de Indicação ({referralBonuses.length})</span>
+                        </span>
+                        <span className="text-xs font-mono font-black text-emerald-300">
+                          +{formatBRL(totalReferralBonusesValue)}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {referralBonuses.map((bonus, idx) => {
+                          const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix);
+                          return (
+                            <div
+                              key={bonus.id || `bonus-${idx}`}
+                              className="p-3 rounded-xl bg-black/40 border border-emerald-500/40 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <span className="font-bold text-emerald-200">
+                                {formatReferralBonusMessage(meta.indicatedName)}
+                              </span>
+                              <span className="font-mono font-black text-emerald-400 shrink-0">
+                                +{formatBRL(Number(bonus.valor || REFERRAL_BONUS_AMOUNT))}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Feedback de Sucesso */}
                   {withdrawalSuccessMessage && (
@@ -2530,7 +2675,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                               </span>
                             </div>
                             <p className="text-xs text-slate-500 mt-0.5">
-                              Valor Líquido (85%): {formatBRL(w.netAmount)} &bull; Chave PIX: {w.pixKey}
+                              Valor Líquido ({isPromoZeroFeeActive ? '100%' : '85%'}): {formatBRL(w.netAmount)} &bull; Chave PIX: {w.pixKey}
                             </p>
                             <p className="text-[10px] text-slate-400 font-mono">
                               Solicitado em: {new Date(w.requestedAt).toLocaleString('pt-BR')}
@@ -2551,16 +2696,205 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             );
           })()}
 
-          {/* SEÇÃO 3: COMISSÕES & MODELO 85% / 15% */}
+          {/* SEÇÃO NOVA: INDICAR E GANHAR (R$50 POR INDICAÇÃO) */}
+          {dashboardSection === 'indicar' && (() => {
+            const myWhatsappRaw = currentDriver.phone || currentUser?.whatsapp || currentUser?.phone || '';
+            const myWhatsappCode = normalizeReferralDigits(myWhatsappRaw) || currentUser?.email || currentDriver.email || '';
+            const myReferralLink = buildReferralLink(myWhatsappCode);
+            const shareMessage = `Cadastre-se como Motorista ou Motoboy na RACE com taxa 0% no 1º mês (até 17/12/2026) usando meu código de indicação: ${myWhatsappCode} ou acesse: ${myReferralLink}`;
+
+            return (
+              <div className="space-y-4">
+                <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-black uppercase tracking-widest bg-black/25 px-3 py-1 rounded-full inline-block">
+                        Indicação Premiada RACE
+                      </span>
+                      <h3 className="text-2xl sm:text-3xl font-heading font-black leading-tight">
+                        Indicar e Ganhar R$ 50,00
+                      </h3>
+                      <p className="text-xs sm:text-sm font-semibold text-amber-50">
+                        Indique 1 Motorista ou Motoboy para trabalhar na RACE. Assim que ele finalizar <strong>10 corridas</strong>, você ganha <strong>R$ 50,00</strong> direto no seu saldo!
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-black/20 border border-white/30 flex items-center justify-center shrink-0">
+                      <Gift className="w-6 h-6 text-white" />
+                    </div>
+                  </div>
+
+                  <div className="bg-black/25 border border-white/25 rounded-2xl p-4 space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-100 block">
+                      Seu Código (WhatsApp) e Link de Indicação
+                    </span>
+                    <div className="bg-black/40 rounded-xl px-3.5 py-2.5 font-mono text-xs sm:text-sm text-white break-all border border-white/15">
+                      {myReferralLink}
+                    </div>
+                    {myWhatsappCode && (
+                      <p className="text-xs font-mono text-amber-100">
+                        Seu WhatsApp para código: <strong className="text-white">{myWhatsappCode}</strong>
+                      </p>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            navigator.clipboard.writeText(myReferralLink);
+                          } catch {}
+                          setCopiedReferralLink(true);
+                          setTimeout(() => setCopiedReferralLink(false), 3000);
+                        }}
+                        className="flex-1 py-3 px-4 rounded-xl bg-white text-orange-700 hover:bg-amber-50 font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow transition-all active:scale-[0.98]"
+                      >
+                        {copiedReferralLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                        <span>{copiedReferralLink ? 'Link copiado!' : 'Copiar meu link / meu WhatsApp'}</span>
+                      </button>
+
+                      {myWhatsappCode && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              navigator.clipboard.writeText(myWhatsappCode);
+                            } catch {}
+                            setCopiedReferralWhatsapp(true);
+                            setTimeout(() => setCopiedReferralWhatsapp(false), 3000);
+                          }}
+                          className="py-3 px-4 rounded-xl bg-black/30 hover:bg-black/45 border border-white/30 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-all"
+                        >
+                          {copiedReferralWhatsapp ? <Check className="w-4 h-4 text-emerald-300" /> : <Phone className="w-4 h-4" />}
+                          <span>{copiedReferralWhatsapp ? 'WhatsApp copiado!' : 'Copiar WhatsApp'}</span>
+                        </button>
+                      )}
+
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(shareMessage)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow transition-all"
+                      >
+                        <Share2 className="w-4 h-4" />
+                        <span>Enviar no WhatsApp</span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bônus já creditados */}
+                {referralBonuses.length > 0 && (
+                  <div className="bg-white border border-emerald-300 rounded-3xl p-5 shadow-md space-y-3">
+                    <h4 className="font-heading font-black text-emerald-900 text-base flex items-center gap-2">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                      <span>Meus Bônus de Indicação Creditados</span>
+                    </h4>
+                    <div className="space-y-2">
+                      {referralBonuses.map((bonus, idx) => {
+                        const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix);
+                        return (
+                          <div
+                            key={bonus.id || `ind-bonus-${idx}`}
+                            className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3"
+                          >
+                            <span className="text-xs sm:text-sm font-bold text-emerald-950">
+                              {formatReferralBonusMessage(meta.indicatedName)}
+                            </span>
+                            <span className="font-mono font-black text-emerald-700 text-sm shrink-0">
+                              +{formatBRL(Number(bonus.valor || REFERRAL_BONUS_AMOUNT))}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Lista de indicados e progresso */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
+                      <Users className="w-5 h-5 text-[#ff6a00]" />
+                      <span>Motoristas / Motoboys Indicados ({referredDrivers.length})</span>
+                    </h4>
+                    <span className="text-xs font-mono font-bold text-slate-500">Meta: {REFERRAL_REQUIRED_RIDES} corridas</span>
+                  </div>
+
+                  {isLoadingReferrals ? (
+                    <div className="py-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-[#ff6a00]" />
+                      <span>Carregando suas indicações...</span>
+                    </div>
+                  ) : referredDrivers.length === 0 ? (
+                    <div className="py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 p-4 space-y-1">
+                      <Gift className="w-8 h-8 text-orange-400 mx-auto" />
+                      <p className="text-sm font-bold text-slate-700">Nenhum motorista indicado ainda</p>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                        Copie seu link ou WhatsApp acima e envie para amigos motoristas e motoboys informarem no cadastro!
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {referredDrivers.map((refDriver) => {
+                        const pct = Math.min(100, Math.round((refDriver.ridesCount / REFERRAL_REQUIRED_RIDES) * 100));
+                        return (
+                          <div
+                            key={refDriver.id}
+                            className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="font-heading font-black text-slate-950 text-sm">
+                                  {refDriver.nome}
+                                </p>
+                                <p className="text-[11px] font-mono text-slate-500">
+                                  {refDriver.tipo === 'motoboy' ? 'Motoboy' : 'Motorista'} • {refDriver.ridesCount} / {REFERRAL_REQUIRED_RIDES} corridas finalizadas
+                                </p>
+                              </div>
+                              {refDriver.bonusPaid ? (
+                                <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-black shrink-0">
+                                  ✓ Bônus +R$ 50 Pago!
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold shrink-0">
+                                  Faltam {Math.max(0, REFERRAL_REQUIRED_RIDES - refDriver.ridesCount)} corridas
+                                </span>
+                              )}
+                            </div>
+                            <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  refDriver.bonusPaid ? 'bg-emerald-500' : 'bg-[#ff6a00]'
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* SEÇÃO 3: COMISSÕES & PROMOÇÃO LANÇAMENTO */}
           {dashboardSection === 'assinatura' && (
             <div className="space-y-4">
               <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-md space-y-5">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-wrap gap-2">
                   <div>
-                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 uppercase tracking-wider inline-block mb-1">
-                      MODELO OFICIAL RACE
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border uppercase tracking-wider inline-block mb-1 ${
+                      isPromoZeroFeeActive
+                        ? 'text-orange-700 bg-orange-50 border-orange-300'
+                        : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                    }`}>
+                      {isPromoZeroFeeActive ? 'PROMOÇÃO LANÇAMENTO ATIVA' : 'MODELO OFICIAL RACE'}
                     </span>
-                    <h3 className="font-heading font-black text-2xl text-slate-950">85% para Você • 15% Race</h3>
+                    <h3 className="font-heading font-black text-2xl text-slate-950">
+                      {isPromoZeroFeeActive ? '100% para Você • 0% Race (até 17/12/2026)' : '85% para Você • 15% Race'}
+                    </h3>
                   </div>
                   <span className="px-3 py-1 rounded-full text-xs font-heading font-black flex items-center gap-1.5 bg-emerald-100 text-emerald-800 border border-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -2568,46 +2902,33 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   </span>
                 </div>
 
+                {isPromoZeroFeeActive && (
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-xs sm:text-sm shadow-sm flex items-center gap-2.5">
+                    <Sparkles className="w-5 h-5 shrink-0" />
+                    <span>{LAUNCH_PROMO_EARNINGS_BADGE_TEXT} Após 17/12/2026 retorna automaticamente para 85% Motorista / 15% Race.</span>
+                  </div>
+                )}
+
                 <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-600 font-medium">Taxa para trabalhar / mensalidade:</span>
                     <span className="font-bold text-emerald-700">R$ 0,00 (Sem mensalidade)</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 font-medium">Repasse líquido por corrida:</span>
-                    <span className="font-black text-emerald-700">85% do valor integral</span>
+                    <span className="text-slate-600 font-medium">Repasse líquido atual por corrida:</span>
+                    <span className="font-black text-emerald-700">
+                      {isPromoZeroFeeActive ? '100% do valor integral (Promoção 1º Mês)' : '85% do valor integral'}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 font-medium">Comissão Race:</span>
-                    <span className="font-bold text-amber-700">15% de intermediação</span>
+                    <span className="text-slate-600 font-medium">Comissão Race atual:</span>
+                    <span className="font-bold text-amber-700">
+                      {isPromoZeroFeeActive ? '0% até 17/12/2026 (depois 15%)' : '15% de intermediação'}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-600 font-medium">Dia do Saque:</span>
                     <span className="font-bold text-slate-900">Toda sexta-feira via PIX</span>
-                  </div>
-                </div>
-
-                {/* Tabela de Exemplos */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-heading font-black text-slate-700 uppercase tracking-wider">
-                    Exemplos Reais de Ganhos:
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                    <div className="p-3 bg-orange-50/70 border border-orange-200 rounded-xl space-y-1">
-                      <span className="font-black text-orange-800 block">Confort (R$ 11,20)</span>
-                      <p className="text-emerald-700 font-bold">Você recebe: R$ 9,52</p>
-                      <p className="text-slate-500">Race 15%: R$ 1,68</p>
-                    </div>
-                    <div className="p-3 bg-cyan-50/70 border border-cyan-200 rounded-xl space-y-1">
-                      <span className="font-black text-cyan-800 block">Motoboy Passageiro (R$ 6,16)</span>
-                      <p className="text-emerald-700 font-bold">Você recebe: R$ 5,24</p>
-                      <p className="text-slate-500">Race 15%: R$ 0,92</p>
-                    </div>
-                    <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-1">
-                      <span className="font-black text-amber-800 block">Motoboy Entregas (R$ 6,90)</span>
-                      <p className="text-emerald-700 font-bold">Você recebe: R$ 5,87</p>
-                      <p className="text-slate-500">Race 15%: R$ 1,03</p>
-                    </div>
                   </div>
                 </div>
 
@@ -4250,32 +4571,60 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             const isCash =
               targetRide?.paymentMethod === 'money' || targetRide?.paymentMethod === 'dinheiro';
             const totalRideVal = targetRide?.price || 0;
-            const driverEarns = Number((totalRideVal * 0.85).toFixed(2));
+            const split = calculateRideSplitForDriver(totalRideVal, currentDriver, targetRide?.createdAt);
+            const driverEarns = split.driverEarnings;
+            const raceCommission = split.platformFee;
             const didPassengerNotPay = Boolean(finishedRide?.nonPaymentReported);
+            let updatedWalletSaldo = getDriverBalance(currentDriver.id, currentDriver.walletBalance || 0);
 
             if (isCash && didPassengerNotPay && targetRide) {
               reportPassengerCashNonPaymentSupabase({
                 ride: targetRide,
                 driver: currentDriver,
               }).catch(() => {});
-              addDriverEarnings(currentDriver.id, driverEarns);
+              updatedWalletSaldo = addDriverEarnings(currentDriver.id, driverEarns);
+              syncDriverWalletSaldoSupabase({
+                driverId: currentDriver.id,
+                driverEmail: currentDriver.email,
+                saldo: updatedWalletSaldo,
+              }).catch(() => {});
               if (onTriggerToast) {
                 onTriggerToast(
-                  'Calote registrado • 85% garantido!',
-                  `Dívida de ${formatBRL(totalRideVal)} registrada no passageiro. A Race garante seu repasse de 85% (${formatBRL(driverEarns)}) na sexta-feira mesmo assim!`,
+                  `Calote registrado • ${split.driverSharePercent}% garantido!`,
+                  `Dívida de ${formatBRL(totalRideVal)} registrada no passageiro. A Race garante seu repasse de ${split.driverSharePercent}% (${formatBRL(driverEarns)}) na sexta-feira mesmo assim!`,
                   'financial'
                 );
               }
-            } else if (rid) {
-              updateCorridaStatusSupabase(
-                rid,
-                isCash ? 'finalizada' : 'completed',
-                isCash ? 'dinheiro' : undefined
-              ).catch(() => {});
+            } else {
+              if (rid) {
+                updateCorridaStatusSupabase(
+                  rid,
+                  'finalizada',
+                  isCash ? 'dinheiro' : undefined,
+                  {
+                    valor_motorista: driverEarns,
+                    valor_race: raceCommission,
+                  }
+                ).catch(() => {});
+              }
+              if (!isCash && driverEarns > 0) {
+                updatedWalletSaldo = addDriverEarnings(currentDriver.id, driverEarns);
+                syncDriverWalletSaldoSupabase({
+                  driverId: currentDriver.id,
+                  driverEmail: currentDriver.email,
+                  saldo: updatedWalletSaldo,
+                }).catch(() => {});
+              }
             }
+
+            checkAndAwardReferralBonusSupabase({
+              driverId: currentDriver.id,
+              driverEmail: currentDriver.email,
+            }).catch(() => {});
 
             onUpdateDriver({
               ...currentDriver,
+              walletBalance: updatedWalletSaldo,
               earningsToday: currentDriver.earningsToday + driverEarns,
               earningsWeek: currentDriver.earningsWeek + driverEarns,
               totalRides: currentDriver.totalRides + 1,
@@ -4283,9 +4632,9 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             setAcceptedRideNotice(
               isCash
                 ? didPassengerNotPay
-                  ? `Passageiro NÃO pagou (${formatBRL(totalRideVal)}). Dívida bloqueou o passageiro no app e a Race paga seus 85% (${formatBRL(driverEarns)}) na sexta-feira mesmo assim!`
-                  : `Corrida finalizada! Recebido ${formatBRL(totalRideVal)} em dinheiro do passageiro (Comissão Race 15%: ${formatBRL(Number((totalRideVal * 0.15).toFixed(2)))}).`
-                : `Corrida finalizada! Você recebeu ${formatBRL(driverEarns)} (85% líquido).`
+                  ? `Passageiro NÃO pagou (${formatBRL(totalRideVal)}). Dívida bloqueou o passageiro no app e a Race paga seus ${split.driverSharePercent}% (${formatBRL(driverEarns)}) na sexta-feira mesmo assim!`
+                  : `Corrida finalizada! Recebido ${formatBRL(totalRideVal)} em dinheiro do passageiro (Comissão Race ${split.commissionPercent}%: ${formatBRL(raceCommission)}).`
+                : `Corrida finalizada! Você recebeu ${formatBRL(driverEarns)} (${split.driverSharePercent}% líquido).`
             );
             setAcceptedDriverRide(null);
             setIsDriverGpsOpen(false);

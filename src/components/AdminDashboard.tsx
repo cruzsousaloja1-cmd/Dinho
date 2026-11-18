@@ -41,7 +41,8 @@ import {
   KeyRound,
   Camera,
   Pencil,
-  Loader2
+  Loader2,
+  Gift
 } from 'lucide-react';
 import { getWithdrawals, markWithdrawalAsPaid, setWithdrawalsFromSupabase } from '../services/walletService';
 import { WithdrawalRequest } from '../types';
@@ -61,6 +62,8 @@ import {
   approveOrRejectDriverSupabase,
   uploadProfilePhotoSupabase,
   extractPhotoFromRow,
+  getAllReferralsAdminSupabase,
+  AdminReferralItem,
   DriverApplicationRecord,
   SupabasePagamentoRow
 } from '../supabase';
@@ -71,6 +74,13 @@ import {
 import { maskLast4Digits } from '../utils/security';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isAppUserAdmin } from '../services/userService';
+import {
+  calculateRideSplitForDriver,
+  parseReferralBonusMeta,
+  formatReferralBonusMessage,
+  REFERRAL_BONUS_AMOUNT,
+  REFERRAL_REQUIRED_RIDES,
+} from '../services/promoService';
 
 interface AdminDashboardProps {
   currentUser?: AppUser | null;
@@ -107,7 +117,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onApproveDriverApplication,
   onRejectDriverApplication,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'pending_drivers' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'reports' | 'reviews' | 'supabase'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'pending_drivers' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'referrals' | 'reports' | 'reviews' | 'supabase'>('overview');
   const [cadastrosSubTab, setCadastrosSubTab] = useState<'all' | 'drivers' | 'passengers'>('all');
   const [driverFilterCategory, setDriverFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -118,6 +128,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [supabaseUsers, setSupabaseUsers] = useState<any[]>([]);
   const [supabaseCorridas, setSupabaseCorridas] = useState<Ride[]>(rides);
   const [supabasePagamentos, setSupabasePagamentos] = useState<SupabasePagamentoRow[]>([]);
+  const [adminReferrals, setAdminReferrals] = useState<AdminReferralItem[]>([]);
   const [driverApplicationsMap, setDriverApplicationsMap] = useState<Record<string, DriverApplicationRecord>>({});
   const [rejectionReasonInputs, setRejectionReasonInputs] = useState<Record<string, string>>({});
   const [processingApprovalEmail, setProcessingApprovalEmail] = useState<string | null>(null);
@@ -136,6 +147,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setSupabaseUsers([]);
       setSupabaseCorridas([]);
       setSupabasePagamentos([]);
+      setAdminReferrals([]);
       setDriverApplicationsMap({});
       setIsLoadingUsers(false);
       return;
@@ -143,11 +155,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsLoadingUsers(true);
     setSupabaseUsersError(null);
     try {
-      const [usersRes, corridasData, pagamentosData, appsMap] = await Promise.all([
+      const [usersRes, corridasData, pagamentosData, appsMap, referralsData] = await Promise.all([
         selectSafeUsuariosRows((q) => q.order('created_at', { ascending: false })),
         getAllCorridasForAdminSupabase(),
         getAllPagamentosSupabase(),
         fetchDriverApplicationsSupabase().catch(() => ({} as Record<string, DriverApplicationRecord>)),
+        getAllReferralsAdminSupabase().catch(() => [] as AdminReferralItem[]),
       ]);
 
       if (usersRes.error) {
@@ -159,6 +172,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       setSupabaseCorridas(corridasData);
       setSupabasePagamentos(pagamentosData);
+      setAdminReferrals(referralsData);
       setDriverApplicationsMap(appsMap);
 
       // Hidrata saques reais da tabela pagamentos
@@ -805,20 +819,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Financial calculations - Soma EXCLUSIVA das tabelas pagamentos e corridas do Supabase (zero valores fixos)
+  // Financial calculations - Soma EXCLUSIVA das tabelas pagamentos e corridas do Supabase (considera Promo 0% quando aplicável)
   const activeWeeklySubs = approvedApprovalsList.filter((d) => d.online).length;
+  const referralBonusesAdmin = supabasePagamentos.filter((p) => p.tipo === 'bonus_indicacao');
   const paidPaymentsTotal = supabasePagamentos
     .filter((p) => {
       const st = String(p.status || '').toLowerCase();
-      return p.tipo !== 'saque' && p.tipo !== 'cadastro_motorista' && (st === 'pago' || st === 'paid' || st === 'confirmed' || st === 'received' || st === 'approved');
+      return (
+        p.tipo !== 'saque' &&
+        p.tipo !== 'cadastro_motorista' &&
+        p.tipo !== 'bonus_indicacao' &&
+        (st === 'pago' || st === 'paid' || st === 'confirmed' || st === 'received' || st === 'approved')
+      );
     })
     .reduce((acc, p) => acc + Number(p.valor || 0), 0);
 
   const ridesTotalFromSupabase = supabaseCorridas.reduce((acc, r) => acc + Number(r.price || 0), 0);
   const totalRidesAdmin = supabaseCorridas.length;
   const totalArrecadadoAdmin = Number((paidPaymentsTotal > 0 ? paidPaymentsTotal : ridesTotalFromSupabase).toFixed(2));
-  const raceCommissionAdmin = Number((totalArrecadadoAdmin * 0.15).toFixed(2));
-  const repasseMotoristasAdmin = Number((totalArrecadadoAdmin * 0.85).toFixed(2));
+  const raceCommissionAdmin = Number(
+    supabaseCorridas.length > 0
+      ? supabaseCorridas
+          .reduce(
+            (acc, r) =>
+              acc +
+              (typeof r.platformFee === 'number'
+                ? r.platformFee
+                : calculateRideSplitForDriver(r.price, r.driver, r.createdAt).platformFee),
+            0
+          )
+          .toFixed(2)
+      : (totalArrecadadoAdmin * 0.15).toFixed(2)
+  );
+  const repasseMotoristasAdmin = Number(
+    Math.max(0, totalArrecadadoAdmin - raceCommissionAdmin).toFixed(2)
+  );
 
   // Dados Financeiros (Saldo, Total Recebido, Comissão 15% Race, Repasse 85% Motoristas)
   const [asaasData, setAsaasData] = useState<AsaasBalanceInfo>({
@@ -1058,6 +1093,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           Monitor de Corridas
+        </button>
+        <button
+          onClick={() => setActiveTab('referrals')}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'referrals'
+              ? 'bg-[#ff6a00] text-white shadow'
+              : 'text-orange-700 hover:text-orange-950 hover:bg-orange-50'
+          }`}
+        >
+          <Gift className="w-4 h-4 shrink-0" />
+          <span>Indicações & Bônus ({referralBonusesAdmin.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('reports')}
@@ -1359,8 +1405,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   );
                   const driverRidesCount = driverRides.length;
                   const driverTotalArrecadado = Number(driverRides.reduce((acc, r) => acc + Number(r.price || 0), 0).toFixed(2));
-                  const driverEarnings85 = Number((driverTotalArrecadado * 0.85).toFixed(2));
-                  const driverCommission15 = Number((driverTotalArrecadado * 0.15).toFixed(2));
+                  const driverEarnings85 = Number(
+                    driverRides
+                      .reduce(
+                        (acc, r) =>
+                          acc +
+                          (typeof r.driverEarnings === 'number'
+                            ? r.driverEarnings
+                            : calculateRideSplitForDriver(r.price, driver.raw ? { createdAt: driver.raw.created_at } : null, r.createdAt).driverEarnings),
+                        0
+                      )
+                      .toFixed(2)
+                  );
+                  const driverCommission15 = Number(
+                    Math.max(0, driverTotalArrecadado - driverEarnings85).toFixed(2)
+                  );
                   const driverSaldoRepassar = driverEarnings85 || driver.saldo || 0;
 
                   return (
@@ -2526,12 +2585,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="font-heading font-black text-slate-950 text-lg">
                         {formatBRL(ride.price)}
                       </div>
-                      <span className="text-xs text-emerald-700 block font-extrabold">
-                        Condutor (85%): {formatBRL(ride.driverEarnings || Number((ride.price * 0.85).toFixed(2)))}
-                      </span>
-                      <span className="text-xs text-amber-700 font-bold">
-                        Comissão Race (15%): {formatBRL(ride.platformFee || Number((ride.price * 0.15).toFixed(2)))}
-                      </span>
+                      {(() => {
+                        const split = calculateRideSplitForDriver(ride.price, ride.driver, ride.createdAt);
+                        const dEarns = typeof ride.driverEarnings === 'number' ? ride.driverEarnings : split.driverEarnings;
+                        const pFee = typeof ride.platformFee === 'number' ? ride.platformFee : split.platformFee;
+                        const isZeroFee = pFee === 0;
+                        return (
+                          <>
+                            <span className="text-xs text-emerald-700 block font-extrabold">
+                              Condutor ({isZeroFee ? '100%' : '85%'}): {formatBRL(dEarns)}
+                            </span>
+                            <span className="text-xs text-amber-700 font-bold">
+                              Comissão Race ({isZeroFee ? '0% Promo' : '15%'}): {formatBRL(pFee)}
+                            </span>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))
@@ -2883,6 +2952,124 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: INDICAÇÕES & BÔNUS R$50 */}
+      {activeTab === 'referrals' && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="font-heading font-black text-xl sm:text-2xl flex items-center gap-2">
+                <Gift className="w-6 h-6" />
+                <span>Promoção Indicação R$50 & Taxa 0% Lançamento</span>
+              </h3>
+              <p className="text-xs sm:text-sm text-amber-50 font-medium">
+                Acompanhe todas as indicações entre motoristas/motoboys e os bônus de R$ 50,00 gerados automaticamente ao completar 10 corridas finalizadas.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchSupabaseUsuarios}
+              className="px-4 py-2.5 rounded-xl bg-black/25 hover:bg-black/40 border border-white/30 text-white text-xs font-heading font-black flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Atualizar Dados</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold uppercase text-slate-500 block">Indicados Cadastrados</span>
+              <span className="text-3xl font-heading font-black text-slate-950">{adminReferrals.length}</span>
+            </div>
+            <div className="bg-white border border-emerald-200 rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold uppercase text-emerald-700 block">Bônus Pagos (R$50)</span>
+              <span className="text-3xl font-heading font-black text-emerald-700">{referralBonusesAdmin.length}</span>
+            </div>
+            <div className="bg-white border border-orange-200 rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold uppercase text-orange-700 block">Total em Bônus Creditados</span>
+              <span className="text-3xl font-heading font-black text-[#ff6a00]">
+                {formatBRL(referralBonusesAdmin.reduce((acc, p) => acc + Number(p.valor || REFERRAL_BONUS_AMOUNT), 0))}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+            <h4 className="font-heading font-black text-slate-950 text-base">
+              Indicações Registradas ({adminReferrals.length})
+            </h4>
+            {adminReferrals.length === 0 ? (
+              <p className="text-xs text-slate-500 py-6 text-center">
+                Nenhuma indicação registrada ainda em public.usuarios.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {adminReferrals.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-heading font-black text-slate-950 text-sm">{item.nome}</span>
+                        <span className="text-[11px] font-mono bg-white border border-slate-300 px-2 py-0.5 rounded text-slate-700">
+                          {item.tipo}
+                        </span>
+                        {item.bonusPaid ? (
+                          <span className="text-[11px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full">
+                            ✓ Bônus R$50 Creditado
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full">
+                            Progresso: {item.ridesCount}/{REFERRAL_REQUIRED_RIDES} corridas
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        E-mail: <strong>{item.email}</strong> &bull; Indicado por WhatsApp/Código: <strong className="font-mono text-[#ff6a00]">{item.indicadoPor}</strong>
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+            <h4 className="font-heading font-black text-slate-950 text-base">
+              Histórico de Bônus Pago (tipo = bonus_indicacao)
+            </h4>
+            {referralBonusesAdmin.length === 0 ? (
+              <p className="text-xs text-slate-500 py-6 text-center">
+                Nenhum bônus de indicação criado em public.pagamentos ainda.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {referralBonusesAdmin.map((bonus, idx) => {
+                  const meta = parseReferralBonusMeta(bonus.comprovante_url, bonus.chave_pix);
+                  return (
+                    <div
+                      key={bonus.id || `adm-bonus-${idx}`}
+                      className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div>
+                        <p className="text-xs font-black text-emerald-950">
+                          Indicador: {bonus.nome_motorista || bonus.email_motorista}
+                        </p>
+                        <p className="text-xs text-emerald-800 font-medium">
+                          {formatReferralBonusMessage(meta.indicatedName)}
+                        </p>
+                      </div>
+                      <span className="font-mono font-black text-emerald-700 text-base shrink-0">
+                        +{formatBRL(Number(bonus.valor || REFERRAL_BONUS_AMOUNT))}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

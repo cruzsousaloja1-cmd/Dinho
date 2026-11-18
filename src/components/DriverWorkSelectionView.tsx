@@ -27,6 +27,7 @@ import {
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isBasicPopularOneLiterModel } from '../services/vehicleValidationService';
 import { LegalConsentSection } from './LegalConsentSection';
+import { LaunchPromoBanner } from './LaunchPromoBanner';
 
 export type WorkCategoryKey =
   | 'motorista_economico'
@@ -604,6 +605,9 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             </button>
           ) : null}
         </div>
+
+        {/* Banner Lançamento RACE no topo da tela de escolha */}
+        <LaunchPromoBanner />
 
         {/* Cabeçalho e Título Principal */}
         <div className="bg-zinc-950 text-white rounded-3xl p-6 sm:p-7 border-2 border-[#ff6a00] shadow-2xl space-y-4 text-center">

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Driver, AppUser } from '../types';
-import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera, Gift } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
   saveSessionUser,
@@ -21,6 +21,8 @@ import {
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { LaunchPromoBanner } from './LaunchPromoBanner';
+import { getReferralCodeFromUrl, normalizeReferralDigits } from '../services/promoService';
 
 interface DriverLoginScreenProps {
   drivers: Driver[];
@@ -75,6 +77,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [regLogin, setRegLogin] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [regIndicadoPor, setRegIndicadoPor] = useState<string>(() => getReferralCodeFromUrl());
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regErrorMessage, setRegErrorMessage] = useState<string | null>(null);
   const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
@@ -451,6 +454,20 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
       const isDriverRole = regRole === 'driver';
       const isMotoboyRole = regRole === 'motoboy';
       const chosenAvatar = await compressImageToMax200KB(regAvatar);
+      const rawReferralCode = !isPassengerRole ? regIndicadoPor.trim() : '';
+      const cleanReferralDigits = normalizeReferralDigits(rawReferralCode);
+      const cleanWhatsAppDigits = normalizeReferralDigits(cleanWhatsApp);
+      if (
+        rawReferralCode &&
+        ((cleanReferralDigits && cleanWhatsAppDigits && cleanReferralDigits === cleanWhatsAppDigits) ||
+          rawReferralCode.toLowerCase() === cleanEmail)
+      ) {
+        setRegErrorMessage('Você não pode usar o seu próprio WhatsApp ou e-mail como código de indicação.');
+        return;
+      }
+      const normalizedIndicadoPor =
+        cleanReferralDigits.length >= 8 ? cleanReferralDigits : rawReferralCode.toLowerCase();
+      const nowIso = new Date().toISOString();
 
       // Condutor inicia sem documentos aceitos (completará modalidade + documentos + 4 checkboxes dentro do app)
       let newDriverObj: Driver | undefined = undefined;
@@ -491,7 +508,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           criminalRecordClear: true,
           lat: -23.0842,
           lng: -47.2118,
-          registrationDate: new Date().toISOString(),
+          registrationDate: nowIso,
+          createdAt: nowIso,
+          indicadoPor: normalizedIndicadoPor || undefined,
         };
       }
 
@@ -507,6 +526,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         foto: chosenAvatar || '',
         avatar: chosenAvatar || '',
         documentos_aceitos: isPassengerRole ? true : false,
+        indicado_por: normalizedIndicadoPor || undefined,
       });
 
       if (!supabaseRes.success) {
@@ -552,6 +572,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         placa: '',
         avatar: chosenAvatar,
         rating: 0,
+        createdAt: supabaseRes.data?.created_at || newDriverObj?.createdAt || new Date().toISOString(),
+        indicadoPor: normalizedIndicadoPor || undefined,
         driverData: newDriverObj,
       };
 
@@ -602,6 +624,9 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             Indaiatuba - SP
           </p>
         </div>
+
+        {/* Banner Lançamento RACE no topo da tela preta */}
+        <LaunchPromoBanner />
 
         {/* 1. TELA PRINCIPAL: ESCOLHER ENTRE OS 3 CADASTROS OU ENTRAR */}
         {viewMode === 'selection' && (
@@ -1355,6 +1380,25 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
                   />
                 </div>
               </div>
+
+              {regRole !== 'passenger' && (
+                <div className="space-y-1.5 p-3.5 rounded-2xl bg-orange-950/30 border border-orange-500/40">
+                  <label className="text-orange-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                    <Gift className="w-3.5 h-3.5 text-[#ff6a00] shrink-0" />
+                    <span>Código de quem indicou (WhatsApp de quem indicou)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={regIndicadoPor}
+                    onChange={(e) => setRegIndicadoPor(e.target.value)}
+                    placeholder="Opcional — Ex: (19) 99999-9999"
+                    className="w-full bg-[#121212] border border-[#2a2a2a] text-white placeholder-zinc-500 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff6a00] transition-colors font-medium font-mono"
+                  />
+                  <p className="text-[11px] text-orange-200/80 font-medium">
+                    Se outro motorista/motoboy te indicou, informe o WhatsApp dele para ele ganhar R$ 50 quando você fizer 10 corridas!
+                  </p>
+                </div>
+              )}
 
               {regRole === 'passenger' && (
                 <div className="p-3 bg-emerald-950/30 border border-emerald-500/40 rounded-2xl text-[11px] text-emerald-200 flex items-center gap-2">

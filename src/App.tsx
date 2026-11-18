@@ -86,10 +86,13 @@ import {
   signOutSupabase,
   fetchDriverApplicationsSupabase,
   mergeDriverWithApplication,
+  checkAndAwardReferralBonusSupabase,
+  syncDriverWalletSaldoSupabase,
   supabase,
   withPhotoCacheBuster
 } from './supabase';
 import { generateUniqueRideConfirmationCode } from './services/pricingService';
+import { calculateRideSplitForDriver } from './services/promoService';
 
 export default function App() {
   const initialSessionRef = React.useRef<AppUser | null | undefined>(undefined);
@@ -1057,9 +1060,18 @@ export default function App() {
   const handleCompleteRide = () => {
     if (!activeRide) return;
     const isCash = activeRide.paymentMethod === 'money' || activeRide.paymentMethod === 'dinheiro';
-    const finalStatus = isCash ? 'finalizada' : 'completed';
+    const finalStatus = 'finalizada';
+    const targetDriver = activeRide.driver || currentDriver;
+    const split = calculateRideSplitForDriver(
+      activeRide.price,
+      targetDriver,
+      activeRide.createdAt
+    );
+
     const updatedRide: Ride = {
       ...activeRide,
+      driverEarnings: split.driverEarnings,
+      platformFee: split.platformFee,
       paymentMethod: isCash ? 'dinheiro' : activeRide.paymentMethod,
       status: finalStatus,
       completedAt: new Date().toISOString(),
@@ -1071,20 +1083,44 @@ export default function App() {
     notifyRideFinished();
 
     if (activeRide.id && /^\d+$/.test(String(activeRide.id))) {
-      updateCorridaStatusSupabase(activeRide.id, finalStatus, isCash ? 'dinheiro' : undefined).catch(() => {});
+      updateCorridaStatusSupabase(
+        activeRide.id,
+        finalStatus,
+        isCash ? 'dinheiro' : undefined,
+        {
+          valor_motorista: split.driverEarnings,
+          valor_race: split.platformFee,
+        }
+      ).catch(() => {});
     }
 
-    // Credita o valor da corrida na carteira do motorista
+    // Credita o valor líquido da corrida (100% na Promo Lançamento ou 85% normal) na carteira do motorista
     if (activeRide.driver?.id) {
-      const updatedBalance = addDriverEarnings(activeRide.driver.id, activeRide.price);
+      const updatedBalance = !isCash
+        ? addDriverEarnings(activeRide.driver.id, split.driverEarnings)
+        : getDriverBalance(activeRide.driver.id, activeRide.driver.walletBalance || 0);
+
+      if (!isCash) {
+        syncDriverWalletSaldoSupabase({
+          driverId: activeRide.driver.id,
+          driverEmail: activeRide.driver.email,
+          saldo: updatedBalance,
+        }).catch(() => {});
+      }
+
+      checkAndAwardReferralBonusSupabase({
+        driverId: activeRide.driver.id,
+        driverEmail: activeRide.driver.email,
+      }).catch(() => {});
+
       setCurrentDriver((prev) => {
         if (!prev) return prev;
         if (prev.id === activeRide.driver?.id) {
           return {
             ...prev,
             walletBalance: updatedBalance,
-            earningsToday: (prev.earningsToday || 0) + activeRide.price,
-            earningsWeek: (prev.earningsWeek || 0) + activeRide.price,
+            earningsToday: (prev.earningsToday || 0) + split.driverEarnings,
+            earningsWeek: (prev.earningsWeek || 0) + split.driverEarnings,
           };
         }
         return prev;
@@ -1095,8 +1131,8 @@ export default function App() {
             ? {
                 ...d,
                 walletBalance: updatedBalance,
-                earningsToday: d.earningsToday + activeRide.price,
-                earningsWeek: d.earningsWeek + activeRide.price,
+                earningsToday: d.earningsToday + split.driverEarnings,
+                earningsWeek: d.earningsWeek + split.driverEarnings,
               }
             : d
         )
@@ -1107,7 +1143,7 @@ export default function App() {
       '🏁 Viagem Finalizada!',
       isCash
         ? `Corrida em dinheiro (R$ ${activeRide.price.toFixed(2).replace('.', ',')}) finalizada! Avalie seu condutor.`
-        : `Total de R$ ${activeRide.price.toFixed(2)} creditado no saldo do motorista! Avalie seu condutor.`,
+        : `Total de R$ ${split.driverEarnings.toFixed(2).replace('.', ',')} (${split.driverSharePercent}%) creditado ao motorista! Avalie seu condutor.`,
       'ride'
     );
   };

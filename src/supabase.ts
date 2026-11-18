@@ -7,6 +7,12 @@ import {
   dataUrlToJpegBlob,
   validatePhotoMax2MB,
 } from './utils/imageCompression';
+import {
+  calculateRideSplitForDriver,
+  normalizeReferralDigits,
+  REFERRAL_BONUS_AMOUNT,
+  REFERRAL_REQUIRED_RIDES,
+} from './services/promoService';
 
 export const SUPABASE_URL = 'https://catljaosibqsqexzkrrv.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_FLS7sl0xEJ2StmxWfsJQ3Q_y_GiYKoM';
@@ -54,6 +60,7 @@ const SAFE_USUARIO_COLS_LIST = [
   'aceitou_lgpd',
   'documentos_aceitos',
   'data_aceite',
+  'indicado_por',
 ];
 
 const FORBIDDEN_INVENTED_COLS = new Set([
@@ -130,6 +137,7 @@ ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_contrato BOOLEAN DE
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_termos BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS aceitou_lgpd BOOLEAN DEFAULT false;
 ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS data_aceite TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS indicado_por TEXT DEFAULT '';
 
 -- 2. TABELA DE CORRIDAS (Tempo Real via Supabase Realtime)
 CREATE TABLE IF NOT EXISTS public.corridas (
@@ -666,7 +674,8 @@ CREATE OR REPLACE FUNCTION public.rpc_complete_signup_profile(
   p_modelo text DEFAULT '',
   p_ano integer DEFAULT 2023,
   p_cnh text DEFAULT '',
-  p_foto text DEFAULT NULL
+  p_foto text DEFAULT NULL,
+  p_indicado_por text DEFAULT ''
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -694,7 +703,7 @@ BEGIN
     RAISE EXCEPTION 'Conta Supabase Auth não encontrada para finalizar perfil';
   END IF;
 
-  INSERT INTO public.usuarios (nome, email, celular, whatsapp, login, tipo, categoria, placa, modelo, ano, cnh, foto)
+  INSERT INTO public.usuarios (nome, email, celular, whatsapp, login, tipo, categoria, placa, modelo, ano, cnh, foto, indicado_por)
   VALUES (
     coalesce(nullif(trim(p_nome), ''), split_part(v_clean_email, '@', 1)),
     v_clean_email,
@@ -711,7 +720,8 @@ BEGIN
     coalesce(p_modelo, ''),
     coalesce(p_ano, 2023),
     coalesce(p_cnh, ''),
-    p_foto
+    p_foto,
+    coalesce(nullif(trim(p_indicado_por), ''), '')
   )
   RETURNING * INTO v_row;
 
@@ -896,6 +906,253 @@ BEGIN
 END;
 $$;
 
+-- Processa bônus automático de R$ 50 quando motorista/motoboy indicado completa 10 corridas finalizadas
+CREATE OR REPLACE FUNCTION public.rpc_process_referral_bonus(
+  p_indicated_id bigint DEFAULT NULL,
+  p_indicated_email text DEFAULT ''
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_clean_email text := lower(trim(coalesce(p_indicated_email, '')));
+  v_indicated public.usuarios%ROWTYPE;
+  v_ind_code text := '';
+  v_ind_digits text := '';
+  v_referrer public.usuarios%ROWTYPE;
+  v_referrer_email text := '';
+  v_rides_count integer := 0;
+  v_dedup_key text := '';
+  v_already_paid boolean := false;
+BEGIN
+  IF p_indicated_id IS NOT NULL THEN
+    SELECT * INTO v_indicated FROM public.usuarios WHERE id = p_indicated_id LIMIT 1;
+  END IF;
+  IF NOT FOUND AND v_clean_email <> '' THEN
+    SELECT * INTO v_indicated
+    FROM public.usuarios
+    WHERE lower(coalesce(email, '')) = v_clean_email
+       OR lower(coalesce("e-mail", '')) = v_clean_email
+    LIMIT 1;
+  END IF;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('awarded', false, 'reason', 'indicated_not_found');
+  END IF;
+
+  v_clean_email := lower(trim(coalesce(v_indicated.email, v_clean_email, '')));
+  v_ind_code := trim(coalesce(v_indicated.indicado_por, ''));
+  v_ind_digits := regexp_replace(v_ind_code, '[^0-9]', '', 'g');
+  IF length(v_ind_digits) >= 12 AND left(v_ind_digits, 2) = '55' THEN
+    v_ind_digits := substr(v_ind_digits, 3);
+  END IF;
+
+  IF v_ind_code = '' THEN
+    RETURN jsonb_build_object('awarded', false, 'reason', 'no_referrer');
+  END IF;
+
+  SELECT count(*)::integer INTO v_rides_count
+  FROM public.corridas c
+  WHERE lower(coalesce(c.status, '')) = 'finalizada'
+    AND (
+      c.id_motorista = v_indicated.id
+      OR c.motorista_id = v_indicated.id
+      OR (v_clean_email <> '' AND lower(coalesce(c.email_motorista, '')) = v_clean_email)
+    );
+
+  IF v_rides_count < 10 THEN
+    RETURN jsonb_build_object('awarded', false, 'reason', 'not_enough_rides', 'ridesCount', v_rides_count);
+  END IF;
+
+  SELECT * INTO v_referrer
+  FROM public.usuarios u
+  WHERE u.id <> v_indicated.id
+    AND (
+      (length(v_ind_digits) >= 8 AND (
+        regexp_replace(coalesce(u.whatsapp, ''), '[^0-9]', '', 'g') LIKE '%' || v_ind_digits
+        OR regexp_replace(coalesce(u.celular, ''), '[^0-9]', '', 'g') LIKE '%' || v_ind_digits
+      ))
+      OR lower(coalesce(u.email, '')) = lower(v_ind_code)
+      OR lower(coalesce(u.login, '')) = lower(v_ind_code)
+    )
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('awarded', false, 'reason', 'referrer_not_found', 'ridesCount', v_rides_count);
+  END IF;
+
+  v_referrer_email := lower(trim(coalesce(v_referrer.email, '')));
+  v_dedup_key := 'INDICADO:' || v_indicated.id::text;
+
+  SELECT EXISTS (
+    SELECT 1 FROM public.pagamentos p
+    WHERE p.tipo = 'bonus_indicacao'
+      AND (
+        p.chave_pix = v_dedup_key
+        OR (v_clean_email <> '' AND lower(coalesce(p.comprovante_url, '')) LIKE '%' || v_clean_email || '%')
+      )
+  ) INTO v_already_paid;
+
+  IF v_already_paid THEN
+    RETURN jsonb_build_object('awarded', false, 'alreadyPaid', true, 'ridesCount', v_rides_count);
+  END IF;
+
+  INSERT INTO public.pagamentos (
+    id_motorista,
+    nome_motorista,
+    email_motorista,
+    valor,
+    tipo,
+    status,
+    chave_pix,
+    comprovante_url,
+    data
+  ) VALUES (
+    v_referrer.id,
+    coalesce(v_referrer.nome, 'Motorista'),
+    v_referrer_email,
+    50,
+    'bonus_indicacao',
+    'pago',
+    v_dedup_key,
+    jsonb_build_object(
+      'indicatedId', v_indicated.id::text,
+      'indicatedName', coalesce(v_indicated.nome, 'Motorista indicado'),
+      'indicatedEmail', v_clean_email,
+      'ridesCount', v_rides_count
+    )::text,
+    now()
+  );
+
+  UPDATE public.usuarios
+  SET saldo = coalesce(saldo, 0) + 50
+  WHERE id = v_referrer.id;
+
+  RETURN jsonb_build_object(
+    'awarded', true,
+    'amount', 50,
+    'ridesCount', v_rides_count,
+    'referrerId', v_referrer.id,
+    'referrerName', v_referrer.nome,
+    'referrerEmail', v_referrer_email,
+    'indicatedName', v_indicated.nome
+  );
+END;
+$$;
+
+-- Lista os indicados do usuário autenticado (e contagem de corridas finalizadas) sem expor outros usuários
+CREATE OR REPLACE FUNCTION public.rpc_get_my_referrals(
+  p_referrer_whatsapp text DEFAULT '',
+  p_referrer_email text DEFAULT ''
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_caller_email text := lower(trim(coalesce(auth.jwt() ->> 'email', p_referrer_email, '')));
+  v_caller public.usuarios%ROWTYPE;
+  v_digits text := '';
+  v_result JSONB := '[]'::jsonb;
+BEGIN
+  IF auth.role() <> 'authenticated' AND v_caller_email = '' THEN
+    RETURN '[]'::jsonb;
+  END IF;
+
+  SELECT * INTO v_caller
+  FROM public.usuarios u
+  WHERE lower(coalesce(u.email, '')) = v_caller_email
+     OR lower(coalesce(u.login, '')) = v_caller_email
+  LIMIT 1;
+
+  v_digits := regexp_replace(coalesce(v_caller.whatsapp, v_caller.celular, p_referrer_whatsapp, ''), '[^0-9]', '', 'g');
+  IF length(v_digits) >= 12 AND left(v_digits, 2) = '55' THEN
+    v_digits := substr(v_digits, 3);
+  END IF;
+
+  IF v_digits = '' AND v_caller_email = '' THEN
+    RETURN '[]'::jsonb;
+  END IF;
+
+  SELECT coalesce(jsonb_agg(item ORDER BY (item->>'created_at') DESC), '[]'::jsonb)
+  INTO v_result
+  FROM (
+    SELECT jsonb_build_object(
+      'id', u.id::text,
+      'nome', split_part(coalesce(u.nome, 'Condutor'), ' ', 1) || CASE WHEN position(' ' in trim(coalesce(u.nome, ''))) > 0 THEN ' ' || split_part(u.nome, ' ', 2) ELSE '' END,
+      'email', coalesce(u.email, ''),
+      'tipo', coalesce(u.tipo, 'driver'),
+      'created_at', coalesce(u.created_at, now()),
+      'rides_count', (
+        SELECT count(*)::integer FROM public.corridas c
+        WHERE lower(coalesce(c.status, '')) = 'finalizada'
+          AND (c.id_motorista = u.id OR c.motorista_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_motorista, '')) = lower(u.email)))
+      ),
+      'bonus_paid', EXISTS (
+        SELECT 1 FROM public.pagamentos p
+        WHERE p.tipo = 'bonus_indicacao'
+          AND (p.chave_pix = 'INDICADO:' || u.id::text OR (coalesce(u.email, '') <> '' AND lower(coalesce(p.comprovante_url, '')) LIKE '%' || lower(u.email) || '%'))
+      )
+    ) AS item
+    FROM public.usuarios u
+    WHERE u.id <> coalesce(v_caller.id, -1)
+      AND coalesce(u.indicado_por, '') <> ''
+      AND (
+        (length(v_digits) >= 8 AND regexp_replace(u.indicado_por, '[^0-9]', '', 'g') LIKE '%' || v_digits)
+        OR (v_caller_email <> '' AND lower(trim(u.indicado_por)) = v_caller_email)
+      )
+  ) sub;
+
+  RETURN coalesce(v_result, '[]'::jsonb);
+END;
+$$;
+
+-- Lista todas indicações para o painel ADM
+CREATE OR REPLACE FUNCTION public.rpc_get_all_referrals_admin()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_result JSONB := '[]'::jsonb;
+BEGIN
+  IF NOT public.is_race_admin() THEN
+    RETURN '[]'::jsonb;
+  END IF;
+
+  SELECT coalesce(jsonb_agg(item ORDER BY (item->>'created_at') DESC), '[]'::jsonb)
+  INTO v_result
+  FROM (
+    SELECT jsonb_build_object(
+      'indicated_id', u.id::text,
+      'indicated_name', coalesce(u.nome, 'Condutor'),
+      'indicated_email', coalesce(u.email, ''),
+      'indicated_tipo', coalesce(u.tipo, 'driver'),
+      'indicado_por', coalesce(u.indicado_por, ''),
+      'created_at', coalesce(u.created_at, now()),
+      'rides_count', (
+        SELECT count(*)::integer FROM public.corridas c
+        WHERE lower(coalesce(c.status, '')) = 'finalizada'
+          AND (c.id_motorista = u.id OR c.motorista_id = u.id OR (coalesce(u.email, '') <> '' AND lower(coalesce(c.email_motorista, '')) = lower(u.email)))
+      ),
+      'bonus_paid', EXISTS (
+        SELECT 1 FROM public.pagamentos p
+        WHERE p.tipo = 'bonus_indicacao'
+          AND (p.chave_pix = 'INDICADO:' || u.id::text OR (coalesce(u.email, '') <> '' AND lower(coalesce(p.comprovante_url, '')) LIKE '%' || lower(u.email) || '%'))
+      )
+    ) AS item
+    FROM public.usuarios u
+    WHERE coalesce(trim(u.indicado_por), '') <> ''
+  ) sub;
+
+  RETURN coalesce(v_result, '[]'::jsonb);
+END;
+$$;
+
 -- ============================================================================
 -- STORAGE BUCKETS PÚBLICOS ('avatars' e 'fotos') + POLÍTICAS DE UPLOAD E LEITURA
 -- Permite INSERT, UPDATE, SELECT para authenticated e anon (fotos de perfil e cadastro)
@@ -963,6 +1220,7 @@ export interface SupabaseUsuarioRow {
   bloqueado_divida?: boolean;
   corrida_divida_id?: string;
   data_cadastro?: string;
+  indicado_por?: string;
 }
 
 export interface SupabaseCorridaRow {
@@ -1434,6 +1692,7 @@ export async function insertUsuarioSupabase(params: {
   aceitou_lgpd?: boolean;
   documentos_aceitos?: boolean;
   data_aceite?: string;
+  indicado_por?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = params.email.replace(/\s+/g, '').trim().toLowerCase();
@@ -1498,6 +1757,11 @@ export async function insertUsuarioSupabase(params: {
         ? 'driver'
         : 'passenger';
 
+    const rawIndicadoInput = String(params.indicado_por || '').trim();
+    const cleanIndicadoDigits = normalizeReferralDigits(rawIndicadoInput);
+    const normalizedIndicadoPor =
+      cleanIndicadoDigits.length >= 8 ? cleanIndicadoDigits : rawIndicadoInput.toLowerCase();
+
     // 1. Cria conta no Supabase Auth (com redirectTo de produção /Dinho/)
     const authSignUpRes = await supabase.auth.signUp({
       email: cleanEmail,
@@ -1508,6 +1772,7 @@ export async function insertUsuarioSupabase(params: {
           nome: params.nome.trim(),
           tipo: tipoStr,
           role: authRole,
+          ...(normalizedIndicadoPor ? { indicado_por: normalizedIndicadoPor } : {}),
         },
       },
     });
@@ -1660,6 +1925,11 @@ export async function insertUsuarioSupabase(params: {
       if (params.data_aceite && knownCols.has('data_aceite')) {
         row.data_aceite = params.data_aceite;
       }
+      if (normalizedIndicadoPor && knownCols.has('indicado_por')) {
+        row.indicado_por = normalizedIndicadoPor;
+      }
+    } else if (normalizedIndicadoPor) {
+      row.indicado_por = normalizedIndicadoPor;
     }
 
     delete row.id;
@@ -1702,6 +1972,7 @@ export async function insertUsuarioSupabase(params: {
             p_ano: Number(row.ano) || 2023,
             p_cnh: row.cnh || '',
             p_foto: finalSignupPhoto || null,
+            p_indicado_por: normalizedIndicadoPor || '',
           });
           if (!rpcProfile.error && rpcProfile.data) {
             return { success: true, data: stripSensitiveUserFields(rpcProfile.data) };
@@ -2133,6 +2404,7 @@ export async function saveUsuarioSupabase(user: {
   aceitou_lgpd?: boolean;
   documentos_aceitos?: boolean;
   data_aceite?: string;
+  indicado_por?: string;
 }): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const cleanEmail = user.email.toLowerCase().trim();
@@ -2418,6 +2690,7 @@ export async function saveUsuarioSupabase(user: {
         aceitou_lgpd: user.aceitou_lgpd,
         documentos_aceitos: user.documentos_aceitos,
         data_aceite: user.data_aceite,
+        indicado_por: user.indicado_por,
       });
     }
   } catch (err: any) {
@@ -3702,6 +3975,8 @@ export function mapSupabaseRowToDriver(u: any): Driver {
     lat: hasValidLat ? parsedLat : -23.0842,
     lng: hasValidLng ? parsedLng : -47.2118,
     registrationDate: u.created_at || u.data_cadastro || '',
+    createdAt: u.created_at || u.data_cadastro || '',
+    indicadoPor: u.indicado_por || '',
   };
 
   return localApp ? mergeDriverWithApplication(baseDriver, localApp) : baseDriver;
@@ -4908,13 +5183,22 @@ export async function acceptCorridaSupabase(
 export async function updateCorridaStatusSupabase(
   rideId: string | number,
   status: string,
-  formaPagamento?: string
+  formaPagamento?: string,
+  splitOverride?: { valor_motorista?: number; valor_race?: number }
 ): Promise<boolean> {
   if (!rideId || !/^\d+$/.test(String(rideId))) return false;
   try {
     const updatePayload: Record<string, any> = { status };
     if (formaPagamento) {
       updatePayload.forma_pagamento = formaPagamento;
+    }
+    if (splitOverride) {
+      if (typeof splitOverride.valor_motorista === 'number') {
+        updatePayload.valor_motorista = Number(splitOverride.valor_motorista.toFixed(2));
+      }
+      if (typeof splitOverride.valor_race === 'number') {
+        updatePayload.valor_race = Number(splitOverride.valor_race.toFixed(2));
+      }
     }
     const { error } = await supabase
       .from('corridas')
@@ -5197,7 +5481,8 @@ export async function reportPassengerCashNonPaymentSupabase(params: {
   driver: Driver;
 }): Promise<{ success: boolean; driverGuaranteed85: number; debtAmount: number }> {
   const totalValue = Number((params.ride.price || 0).toFixed(2));
-  const driverGuaranteed85 = Number((totalValue * 0.85).toFixed(2));
+  const split = calculateRideSplitForDriver(totalValue, params.driver, params.ride.createdAt);
+  const driverGuaranteed85 = split.driverEarnings;
 
   try {
     // 1. Atualiza corrida em public.corridas
@@ -5264,7 +5549,7 @@ export async function reportPassengerCashNonPaymentSupabase(params: {
       }
     }
 
-    // 3. Garante os 85% do motorista na sexta-feira em public.pagamentos (Race cobre o valor)
+    // 3. Garante o repasse do motorista (100% na Promoção Lançamento ou 85% padrão) na sexta-feira em public.pagamentos
     await savePagamentoSupabase({
       id_motorista: params.driver.id,
       nome_motorista: params.driver.name,
@@ -5273,7 +5558,7 @@ export async function reportPassengerCashNonPaymentSupabase(params: {
       tipo: 'repasse_garantido',
       status: 'pago',
       chave_pix: params.driver.pixKey || params.driver.cpf || '',
-      comprovante_url: `GARANTIA RACE 85% (Corrida #${params.ride.id || '-'} não paga em dinheiro pelo passageiro)`,
+      comprovante_url: `GARANTIA RACE ${split.driverSharePercent}% (Corrida #${params.ride.id || '-'} não paga em dinheiro pelo passageiro)`,
     });
 
     return { success: true, driverGuaranteed85, debtAmount: totalValue };
@@ -5490,3 +5775,165 @@ export async function testSupabaseConnection(): Promise<{
 
   return result;
 }
+
+export interface ReferralCandidateItem {
+  id: string;
+  nome: string;
+  email: string;
+  tipo: string;
+  createdAt: string;
+  ridesCount: number;
+  bonusPaid: boolean;
+}
+
+export interface AdminReferralItem extends ReferralCandidateItem {
+  indicadoPor: string;
+}
+
+/**
+ * Sincroniza saldo da carteira do motorista diretamente em public.usuarios.
+ */
+export async function syncDriverWalletSaldoSupabase(params: {
+  driverId?: string | number;
+  driverEmail?: string;
+  saldo: number;
+}): Promise<boolean> {
+  try {
+    const cleanEmail = String(params.driverEmail || '').trim().toLowerCase();
+    const numericId = params.driverId && /^\d+$/.test(String(params.driverId)) ? Number(params.driverId) : null;
+    if (!cleanEmail && !numericId) return false;
+
+    const newSaldo = Number(Math.max(0, Number(params.saldo || 0)).toFixed(2));
+    if (numericId) {
+      const { error } = await supabase
+        .from('usuarios')
+        .update({ saldo: newSaldo })
+        .eq('id', numericId);
+      if (!error) return true;
+    }
+    if (cleanEmail) {
+      const { error } = await supabase
+        .from('usuarios')
+        .update({ saldo: newSaldo })
+        .eq('email', cleanEmail);
+      if (!error) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Promoção 2 — Indicação R$50:
+ * Verifica se o motorista/motoboy indicado já completou 10 corridas com status = 'finalizada'
+ * e cria o bônus de R$50 em public.pagamentos (tipo = 'bonus_indicacao') para quem indicou,
+ * garantindo que nunca seja pago duas vezes para o mesmo indicado.
+ */
+export async function checkAndAwardReferralBonusSupabase(params: {
+  driverId?: string | number;
+  driverEmail?: string;
+}): Promise<{
+  awarded: boolean;
+  alreadyPaid?: boolean;
+  ridesCount?: number;
+  referrerName?: string;
+  referrerEmail?: string;
+  indicatedName?: string;
+  amount?: number;
+}> {
+  const numericId =
+    params.driverId !== undefined && params.driverId !== null && /^\d+$/.test(String(params.driverId))
+      ? Number(params.driverId)
+      : null;
+  const cleanEmail = String(params.driverEmail || '').trim().toLowerCase();
+  if (!numericId && !cleanEmail) {
+    return { awarded: false };
+  }
+
+  try {
+    const rpcRes = await supabase.rpc('rpc_process_referral_bonus', {
+      p_indicated_id: numericId,
+      p_indicated_email: cleanEmail,
+    });
+    if (!rpcRes.error && rpcRes.data && typeof rpcRes.data === 'object') {
+      const d = rpcRes.data as any;
+      return {
+        awarded: Boolean(d.awarded),
+        alreadyPaid: Boolean(d.alreadyPaid),
+        ridesCount: typeof d.ridesCount === 'number' ? d.ridesCount : undefined,
+        referrerName: d.referrerName || undefined,
+        referrerEmail: d.referrerEmail || undefined,
+        indicatedName: d.indicatedName || undefined,
+        amount: typeof d.amount === 'number' ? d.amount : REFERRAL_BONUS_AMOUNT,
+      };
+    }
+  } catch {}
+
+  // Fallback cliente (funciona caso ADM esteja logado ou RLS permita leitura do indicado)
+  try {
+    const indicatedRow = cleanEmail ? await getUsuarioSupabase(cleanEmail) : null;
+    if (!indicatedRow || !indicatedRow.indicado_por) {
+      return { awarded: false };
+    }
+    const ridesQuery = numericId
+      ? supabase.from('corridas').select('id,status').eq('status', 'finalizada').or(`id_motorista.eq.${numericId},email_motorista.eq.${cleanEmail}`)
+      : supabase.from('corridas').select('id,status').eq('status', 'finalizada').eq('email_motorista', cleanEmail);
+    const { data: ridesData } = await ridesQuery;
+    const ridesCount = Array.isArray(ridesData) ? ridesData.length : 0;
+    if (ridesCount < REFERRAL_REQUIRED_RIDES) {
+      return { awarded: false, ridesCount };
+    }
+  } catch {}
+
+  return { awarded: false };
+}
+
+export async function getDriverReferralsAndBonusesSupabase(
+  user: AppUser | null
+): Promise<ReferralCandidateItem[]> {
+  if (!user) return [];
+  const whatsapp = user.whatsapp || user.phone || '';
+  const email = (user.email || '').trim().toLowerCase();
+
+  try {
+    const rpcRes = await supabase.rpc('rpc_get_my_referrals', {
+      p_referrer_whatsapp: whatsapp,
+      p_referrer_email: email,
+    });
+    if (!rpcRes.error && Array.isArray(rpcRes.data)) {
+      return rpcRes.data.map((item: any) => ({
+        id: String(item.id || ''),
+        nome: String(item.nome || 'Condutor'),
+        email: String(item.email || ''),
+        tipo: String(item.tipo || 'driver'),
+        createdAt: String(item.created_at || ''),
+        ridesCount: Number(item.rides_count || 0),
+        bonusPaid: Boolean(item.bonus_paid),
+      }));
+    }
+  } catch {}
+
+  return [];
+}
+
+export async function getAllReferralsAdminSupabase(): Promise<AdminReferralItem[]> {
+  try {
+    const rpcRes = await supabase.rpc('rpc_get_all_referrals_admin');
+    if (!rpcRes.error && Array.isArray(rpcRes.data)) {
+      return rpcRes.data.map((item: any) => ({
+        id: String(item.indicated_id || ''),
+        nome: String(item.indicated_name || 'Condutor'),
+        email: String(item.indicated_email || ''),
+        tipo: String(item.indicated_tipo || 'driver'),
+        indicadoPor: String(item.indicado_por || ''),
+        createdAt: String(item.created_at || ''),
+        ridesCount: Number(item.rides_count || 0),
+        bonusPaid: Boolean(item.bonus_paid),
+      }));
+    }
+  } catch {}
+
+  return [];
+}
+
