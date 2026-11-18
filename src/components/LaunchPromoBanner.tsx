@@ -1,6 +1,9 @@
 import React from 'react';
-import { Sparkles } from 'lucide-react';
-import { LAUNCH_PROMO_BANNER_TEXT } from '../services/promoService';
+import { Clock, Sparkles } from 'lucide-react';
+import {
+  LAUNCH_PROMO_BANNER_TEXT,
+  getLaunchPromoCountdownText,
+} from '../services/promoService';
 
 interface LaunchPromoBannerProps {
   className?: string;
@@ -11,6 +14,8 @@ export const LaunchPromoBanner: React.FC<LaunchPromoBannerProps> = ({
   className = '',
   compact = false,
 }) => {
+  const countdownText = getLaunchPromoCountdownText();
+
   return (
     <div
       role="region"
@@ -23,9 +28,9 @@ export const LaunchPromoBanner: React.FC<LaunchPromoBannerProps> = ({
         <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-black/20 border border-white/25 text-amber-100">
           <Sparkles className="h-5 w-5" />
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-amber-100/95 mb-0.5">
-            Promoção Oficial de Lançamento
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-100/95">
+            Promoção Oficial de Lançamento • Quanto antes, mais tempo!
           </p>
           <p
             className={`${
@@ -34,6 +39,10 @@ export const LaunchPromoBanner: React.FC<LaunchPromoBannerProps> = ({
           >
             {LAUNCH_PROMO_BANNER_TEXT}
           </p>
+          <div className="inline-flex items-center gap-1.5 rounded-xl bg-black/30 border border-white/25 px-3 py-1.5 text-xs sm:text-sm font-black text-amber-100">
+            <Clock className="h-4 w-4 shrink-0 text-amber-200" />
+            <span>{countdownText}</span>
+          </div>
         </div>
       </div>
     </div>

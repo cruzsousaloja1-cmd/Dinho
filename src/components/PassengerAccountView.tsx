@@ -43,6 +43,7 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import {
   buildReferralWhatsappShareText,
   buildReferralWhatsappShareUrl,
+  getLaunchPromoCountdownText,
 } from '../services/promoService';
 
 interface PassengerAccountViewProps {
@@ -896,33 +897,39 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       {/* 3B. INDICAR E GANHAR (CÓDIGO DE INDICAÇÃO) */}
       {referralCode && (() => {
         const isDriverOrMoto = isAppUserDriver(currentUser);
+        const countdownText = getLaunchPromoCountdownText();
+        const shareText = buildReferralWhatsappShareText(referralCode, { isDriver: isDriverOrMoto });
+        const shareUrl = buildReferralWhatsappShareUrl(referralCode, { isDriver: isDriverOrMoto });
         return (
         <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
           <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <span className="text-[11px] font-black uppercase tracking-widest bg-black/25 px-3 py-1 rounded-full inline-block">
-                Indicação Premiada RACE
+                Indicação Premiada RACE • Quanto antes, mais tempo!
               </span>
               <h3 className="text-xl sm:text-2xl font-heading font-black leading-tight">
                 {isDriverOrMoto ? 'Indicar e Ganhar R$ 50,00' : 'Indicar e Ganhar Crédito!'}
               </h3>
               {isDriverOrMoto ? (
-                <p className="text-xs sm:text-sm font-semibold text-amber-50">
-                  Indique 1 Motorista ou Motoboy com seu código. Quando ele finalizar <strong>10 corridas</strong>, você ganha <strong>R$ 50,00</strong>!
+                <p className="text-xs sm:text-sm font-semibold text-amber-50 leading-relaxed">
+                  ⚡ LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe <strong>R$50</strong> por cada Motorista que fizer <strong>10 corridas</strong> até 17/12! Depois dessa data, volta para 15% de taxa.
                 </p>
               ) : (
                 <p className="text-xs sm:text-sm font-semibold text-amber-50 leading-relaxed">
                   Indique 1 Motorista ou Motoboy com seu código <strong>{referralCode}</strong>. Quando ele finalizar 10 corridas, você ganha <strong>R$ 50,00 de crédito</strong> para suas corridas! Indique 1 Passageiro e ganhe <strong>R$ 10,00 de crédito</strong> quando ele fizer a 1ª corrida!
                 </p>
               )}
-              {!isDriverOrMoto && creditBalance > 0 && (
-                <div className="pt-1">
+              <div className="pt-0.5 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 bg-black/30 border border-white/25 text-amber-100 text-xs font-black px-3 py-1 rounded-full">
+                  <span>⏳ {countdownText}</span>
+                </span>
+                {!isDriverOrMoto && creditBalance > 0 && (
                   <span className="inline-flex items-center gap-1.5 bg-emerald-950/60 border border-emerald-300/60 text-emerald-100 text-xs font-black px-3 py-1 rounded-full">
                     <Wallet className="w-3.5 h-3.5 text-emerald-300" />
                     <span>Seu crédito disponível: {formatBRL(creditBalance)}</span>
                   </span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             <div className="w-11 h-11 rounded-2xl bg-black/20 border border-white/30 flex items-center justify-center shrink-0">
               <Gift className="w-6 h-6 text-white" />
@@ -937,7 +944,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
               {referralCode}
             </div>
             <p className="text-[11px] text-amber-100/90 font-medium break-words">
-              {buildReferralWhatsappShareText(referralCode)}
+              {shareText}
             </p>
           </div>
 
@@ -958,7 +965,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             </button>
 
             <a
-              href={buildReferralWhatsappShareUrl(referralCode)}
+              href={shareUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow transition-all active:scale-[0.98]"

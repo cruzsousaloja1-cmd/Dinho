@@ -10,6 +10,7 @@ import {
   buildReferralLink,
   buildReferralWhatsappShareText,
   buildReferralWhatsappShareUrl,
+  getLaunchPromoCountdownText,
   normalizeReferralDigits,
   parseReferralBonusMeta,
   formatReferralBonusMessage,
@@ -21,6 +22,7 @@ import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/secur
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverWorkSelectionView } from './DriverWorkSelectionView';
+import { LaunchPromoBanner } from './LaunchPromoBanner';
 import { LegalConsentSection } from './LegalConsentSection';
 import { 
   WEEKLY_FEE, 
@@ -2778,22 +2780,29 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               .trim()
               .toUpperCase();
             const myReferralLink = buildReferralLink(myPersonalCode || myWhatsappCode);
-            const whatsappShareUrl = buildReferralWhatsappShareUrl(myPersonalCode);
+            const driverShareText = buildReferralWhatsappShareText(myPersonalCode, { isDriver: true });
+            const whatsappShareUrl = buildReferralWhatsappShareUrl(myPersonalCode, { isDriver: true });
+            const countdownText = getLaunchPromoCountdownText();
 
             return (
               <div className="space-y-4">
+                <LaunchPromoBanner />
+
                 <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <span className="text-[11px] font-black uppercase tracking-widest bg-black/25 px-3 py-1 rounded-full inline-block">
-                        Indicação Premiada RACE
+                        Indicação Premiada RACE • Quanto antes, mais tempo!
                       </span>
                       <h3 className="text-2xl sm:text-3xl font-heading font-black leading-tight">
                         Indicar e Ganhar R$ 50,00
                       </h3>
                       <p className="text-xs sm:text-sm font-semibold text-amber-50">
-                        Indique 1 Motorista ou Motoboy para trabalhar na RACE. Assim que ele finalizar <strong>10 corridas</strong>, você ganha <strong>R$ 50,00</strong> direto no seu saldo!
+                        ⚡ LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe <strong>R$50</strong> por cada Motorista que fizer <strong>10 corridas</strong> até 17/12! Depois dessa data, volta para 15% de taxa.
                       </p>
+                      <div className="inline-flex items-center gap-1.5 rounded-xl bg-black/30 border border-white/25 px-3 py-1.5 text-xs font-black text-amber-100">
+                        <span>⏳ {countdownText}</span>
+                      </div>
                     </div>
                     <div className="w-12 h-12 rounded-2xl bg-black/20 border border-white/30 flex items-center justify-center shrink-0">
                       <Gift className="w-6 h-6 text-white" />
@@ -2809,7 +2818,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                       {myPersonalCode || '...'}
                     </div>
                     <p className="text-xs text-amber-100/95 font-medium break-words">
-                      {buildReferralWhatsappShareText(myPersonalCode)}
+                      {driverShareText}
                     </p>
 
                     <div className="flex flex-col sm:flex-row gap-2.5 pt-2">

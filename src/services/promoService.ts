@@ -1,5 +1,5 @@
 export const LAUNCH_PROMO_BANNER_TEXT =
-  '🎉 LANÇAMENTO RACE! 1º MÊS SEM TAXA - Você fica com 100% até 17/12/2026! + Indica 1 Motorista / Motoboy e ganha R$50 quando ele fizer 10 corridas!';
+  '⚡ LANÇAMENTO RACE! Sem taxa até 17/12/2026! Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha! Indique agora e ganhe R$50 por cada Motorista que fizer 10 corridas até 17/12! Depois dessa data, volta para 15% de taxa.';
 
 export const LAUNCH_PROMO_EARNINGS_BADGE_TEXT =
   'Promoção Lançamento: 0% até 17/12 - Você está com 100%!';
@@ -7,6 +7,26 @@ export const LAUNCH_PROMO_EARNINGS_BADGE_TEXT =
 // Launch window: 17/11/2026 00:00:00 UTC through end of 17/12/2026 (covering UTC and BRT -03:00)
 export const PROMO_ZERO_FEE_START_MS = new Date('2026-11-17T00:00:00Z').getTime();
 export const PROMO_ZERO_FEE_END_MS = new Date('2026-12-18T02:59:59.999Z').getTime();
+
+export const getLaunchPromoDaysRemaining = (now: Date = new Date()): number => {
+  const endUtcDay = Date.UTC(2026, 11, 17); // 17/12/2026 (month 11 = Dezembro)
+  const todayUtcDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((endUtcDay - todayUtcDay) / (1000 * 60 * 60 * 24));
+};
+
+export const getLaunchPromoCountdownText = (now: Date = new Date()): string => {
+  const days = getLaunchPromoDaysRemaining(now);
+  if (days > 1) {
+    return `Faltam ${days} dias para acabar a promoção!`;
+  }
+  if (days === 1) {
+    return 'Falta 1 dia para acabar a promoção!';
+  }
+  if (days === 0) {
+    return 'Último dia! A promoção acaba hoje (17/12/2026)!';
+  }
+  return 'Promoção encerrada em 17/12/2026 (taxa padrão 15%).';
+};
 
 export const STANDARD_COMMISSION_RATE = 0.15;
 export const REFERRAL_REQUIRED_RIDES = 10;
@@ -218,13 +238,22 @@ export const generateReferralCodeCandidate = (name?: string | null): string => {
   return `${prefix}${digits}`;
 };
 
-export const buildReferralWhatsappShareText = (code?: string | null): string => {
+export const buildReferralWhatsappShareText = (
+  code?: string | null,
+  options?: { isDriver?: boolean }
+): string => {
   const cleanCode = String(code || '').trim().toUpperCase() || 'RACE100';
+  if (options?.isDriver) {
+    return `Baixa o RACE para trabalhar! Usa meu código ${cleanCode} e ganha Sem taxa até 17/12/2026! Quanto antes você entrar, mais tempo sem taxa você tem! Promoção até 17/12/2026! cruzsousaloja1-cmd.github.io/Dinho/`;
+  }
   return `Baixa o RACE! Usa meu código ${cleanCode} e ganha 1º mês sem taxa! cruzsousaloja1-cmd.github.io/Dinho/`;
 };
 
-export const buildReferralWhatsappShareUrl = (code?: string | null): string => {
-  const text = buildReferralWhatsappShareText(code);
+export const buildReferralWhatsappShareUrl = (
+  code?: string | null,
+  options?: { isDriver?: boolean }
+): string => {
+  const text = buildReferralWhatsappShareText(code, options);
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 };
 
