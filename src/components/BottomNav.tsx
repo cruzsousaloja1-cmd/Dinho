@@ -106,7 +106,59 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     );
   }
 
-  // 2. BARRA DO MOTORISTA / MOTOBOY / ADMIN (Mantém barra com Motorista, Ganhos, etc.)
+  // 1B. BARRA EXCLUSIVA DO ADM: SÓ 2 BOTÕES (ADM e CONTA) - Nunca exibe aba Motorista para ADM
+  if (isAdmin) {
+    const adminTabs = [
+      {
+        id: 'admin' as TabType,
+        label: 'ADM',
+        sublabel: 'Gestão Geral',
+        icon: ShieldCheck,
+      },
+      {
+        id: 'passenger_account' as TabType,
+        label: 'CONTA',
+        sublabel: 'Perfil & Sair',
+        icon: User,
+      },
+    ];
+
+    return (
+      <nav className="fixed bottom-0 left-0 right-0 z-[100] pointer-events-auto bg-white border-t border-slate-200 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
+        <div className="w-full max-w-md mx-auto grid grid-cols-2 gap-2 items-stretch">
+          {adminTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onChangeTab(tab.id)}
+                className={`relative pointer-events-auto touch-manipulation flex flex-col items-center justify-center w-full min-w-0 py-2 px-2 rounded-2xl transition-colors duration-200 cursor-pointer ${
+                  isActive
+                    ? 'text-amber-700 bg-amber-50 font-black border border-amber-300 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
+                }`}
+              >
+                <div className={`flex items-center justify-center ${isActive ? 'text-amber-600' : 'text-slate-600'}`}>
+                  <Icon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.25]" />
+                </div>
+                <span className="text-[12px] sm:text-sm font-heading font-black mt-1 uppercase whitespace-nowrap shrink-0 leading-tight">
+                  {tab.label}
+                </span>
+                <span className="text-[10px] sm:text-xs text-slate-500 font-medium leading-none hidden sm:inline">
+                  {tab.sublabel}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    );
+  }
+
+  // 2. BARRA DO MOTORISTA / MOTOBOY (Sem acesso ao painel ADM)
   const driverTabs = [
     {
       id: 'rides' as TabType,
@@ -128,16 +180,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       sublabel: 'Ganhos & Corridas',
       icon: History,
     },
-    ...(isAdmin
-      ? [
-          {
-            id: 'admin' as TabType,
-            label: 'Admin',
-            sublabel: 'Gestão Geral',
-            icon: ShieldCheck,
-          },
-        ]
-      : []),
     {
       id: 'passenger_account' as TabType,
       label: 'CONTA',

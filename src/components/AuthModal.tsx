@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
-import { verifyUserLoginAsync, saveUserAccount } from '../services/userService';
+import { verifyUserLoginAsync, saveUserAccount, isAppUserAdmin } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { LegalConsentSection } from './LegalConsentSection';
@@ -143,6 +143,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         const res = await verifyUserLoginAsync(email, password);
         if (!res.success || !res.user) {
           setErrorMessage(res.error || 'Login ou senha incorretos.');
+          return;
+        }
+        if (role === 'driver' && isAppUserAdmin(res.user)) {
+          setErrorMessage('Esta conta é de ADM. Para ser motorista, crie uma conta de motorista.');
           return;
         }
         try {

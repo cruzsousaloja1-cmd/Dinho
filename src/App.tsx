@@ -175,6 +175,17 @@ export default function App() {
 
   // 1. Authentication & Session (salvo em race_usuario_logado + sincronizado no Supabase)
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => initialUser);
+  const ADMIN_DRIVER_BLOCK_MESSAGE =
+    'Esta conta é de ADM. Para ser motorista, crie uma conta de motorista.';
+
+  // Garante isolamento de abas para ADM: apenas ADM e CONTA (nunca Motorista/Corridas)
+  useEffect(() => {
+    if (currentUser && isAppUserAdmin(currentUser)) {
+      if (activeTab !== 'admin' && activeTab !== 'passenger_account') {
+        setActiveTab('admin');
+      }
+    }
+  }, [currentUser, activeTab]);
   const [passengerDebt, setPassengerDebt] = useState<{
     debtAmount: number;
     isBlocked: boolean;
@@ -2208,6 +2219,13 @@ export default function App() {
             : 'passenger'
         }
         onChangeRole={(role) => {
+          if (isAppUserAdmin(currentUser)) {
+            if (role === 'driver') {
+              triggerPush('Acesso restrito', ADMIN_DRIVER_BLOCK_MESSAGE, 'ride');
+            }
+            setActiveTab('admin');
+            return;
+          }
           if (role === 'passenger') setActiveTab('rides');
           if (role === 'driver') setActiveTab('driver_portal');
           if (role === 'admin') {
@@ -2285,7 +2303,22 @@ export default function App() {
 
         {/* 3. Condutor & Cadastro (85% para você, 15% Race - Sem mensalidade) */}
         <div {...getTabPanelProps('driver_portal')}>
-          {isUserDriver ? (
+          {isAppUserAdmin(currentUser) ? (
+            <div className="text-center py-12 p-6 bg-zinc-950 border-2 border-[#ff6a00] rounded-3xl text-white space-y-3 shadow-xl">
+              <AlertTriangle className="w-12 h-12 text-[#ff6a00] mx-auto" />
+              <h3 className="text-xl font-heading font-black text-white">Acesso Bloqueado</h3>
+              <p className="text-sm text-zinc-200 max-w-md mx-auto font-bold">
+                {ADMIN_DRIVER_BLOCK_MESSAGE}
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveTab('admin')}
+                className="mt-4 px-6 py-2.5 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-sm rounded-xl cursor-pointer"
+              >
+                Voltar para o Painel ADM
+              </button>
+            </div>
+          ) : isUserDriver ? (
             <DriverPartnerPortal
               currentDriver={currentDriver}
               currentUser={currentUser}
@@ -2488,7 +2521,14 @@ export default function App() {
               }
             }}
             onOpenPrivacyPage={openPrivacyPage}
-            onWantToBeDriver={() => setActiveTab('driver_portal')}
+            onWantToBeDriver={() => {
+              if (isAppUserAdmin(currentUser)) {
+                triggerPush('Acesso restrito', ADMIN_DRIVER_BLOCK_MESSAGE, 'ride');
+                setActiveTab('admin');
+                return;
+              }
+              setActiveTab('driver_portal');
+            }}
           />
         </div>
 
@@ -2589,6 +2629,17 @@ export default function App() {
       <BottomNav
         activeTab={activeTab}
         onChangeTab={(tab) => {
+          if (isAppUserAdmin(currentUser)) {
+            if (tab === 'driver_portal') {
+              triggerPush('Acesso restrito', ADMIN_DRIVER_BLOCK_MESSAGE, 'ride');
+              setActiveTab('admin');
+              return;
+            }
+            if (tab !== 'admin' && tab !== 'passenger_account') {
+              setActiveTab('admin');
+              return;
+            }
+          }
           if (tab === 'admin') {
             if (!isAppUserAdmin(currentUser)) return;
           }

@@ -60,7 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
           <div 
             className="flex items-center gap-2 sm:gap-2.5 group cursor-pointer" 
-            onClick={() => onChangeRole('passenger')}
+            onClick={() => onChangeRole(isAdmin ? 'admin' : 'passenger')}
           >
             <div className="relative flex items-center justify-center w-9 h-9 sm:w-12 sm:h-12 rounded-2xl bg-slate-950 text-white font-black shadow-md border border-slate-800 shrink-0">
               <span className="font-heading text-lg sm:text-2xl tracking-tighter italic font-black">R</span>
@@ -85,17 +85,19 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Quick Role Switcher in Header (Desktop md+) */}
         {(isUserDriver || isAdmin) && (
           <div className="hidden lg:flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-sm font-bold shadow-inner">
-            <button
-              onClick={() => onChangeRole('passenger')}
-              className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
-                activeRole === 'passenger'
-                  ? 'bg-slate-950 text-white font-extrabold shadow'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-              }`}
-            >
-              Sou passageiro
-            </button>
-            {isUserDriver && (
+            {!isAdmin && (
+              <button
+                onClick={() => onChangeRole('passenger')}
+                className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
+                  activeRole === 'passenger'
+                    ? 'bg-slate-950 text-white font-extrabold shadow'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                }`}
+              >
+                Sou passageiro
+              </button>
+            )}
+            {isUserDriver && !isAdmin && (
               <button
                 onClick={() => onChangeRole('driver')}
                 className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
