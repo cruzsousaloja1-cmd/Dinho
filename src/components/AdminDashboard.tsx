@@ -648,7 +648,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ...prev,
       [userId]: {
         status: 'liberado',
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
       },
     }));
 
@@ -665,7 +664,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
     } catch {}
 
-    showToast(`✅ Acesso de 7 dias liberado com sucesso para ${u.nome}!`);
+    showToast(`✅ Acesso ativado com sucesso para ${u.nome}!`);
   };
 
   const handleBloquear = async (u: any) => {
@@ -918,7 +917,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const currentStatus = userStatusMap[String(u.id)] || {
       status: u.status === 'bloqueado' ? 'bloqueado' : isPassenger ? 'passageiro' : (u.plano_ativo ? 'liberado' : 'pendente'),
-      expiresAt: u.plano_ativo ? 'Ativo 7 dias' : undefined,
     };
 
     const maskedCnh = maskLast4Digits(u.cnh || '');
@@ -3442,15 +3440,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                       )}
 
-                      {/* Botão 1: Ativar / Liberar 7 dias */}
+                      {/* Botão 1: Ativar */}
                       <button
                         type="button"
                         onClick={() => handleLiberar7Dias(u.raw)}
                         className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                        title="Ativar usuário e liberar 7 dias"
+                        title="Ativar usuário"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Ativar / 7 dias</span>
+                        <span>Ativar</span>
                       </button>
 
                       {/* Botão 2: Bloquear */}

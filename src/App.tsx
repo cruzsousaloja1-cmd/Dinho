@@ -1687,12 +1687,11 @@ export default function App() {
 
   const handleApproveWeeklyPayment = (driver: Driver) => {
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const updated: Driver = {
       ...driver,
       weeklyFeePaidAt: now.toISOString(),
-      weeklyFeeExpiresAt: expiresAt.toISOString(),
-      weeklyPlanExpiresAt: expiresAt.toISOString(),
+      weeklyFeeExpiresAt: null,
+      weeklyPlanExpiresAt: null,
       weeklyPlanActive: true,
       weeklyPlanPrice: WEEKLY_FEE,
       status: 'online',
