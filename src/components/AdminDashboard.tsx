@@ -120,6 +120,8 @@ interface AdminDashboardProps {
   onRemoveAllAccounts?: () => void;
   onApproveDriverApplication?: (email: string, updatedDriver?: Driver) => void;
   onRejectDriverApplication?: (email: string, reason: string) => void;
+  requestedSection?: { tab: 'overview' | 'pending_drivers' | 'drivers' | 'rides' | 'referrals'; seq: number } | null;
+  onActiveTabChange?: (tab: string) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -138,8 +140,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRemoveAllAccounts,
   onApproveDriverApplication,
   onRejectDriverApplication,
+  requestedSection,
+  onActiveTabChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'pending_drivers' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'referrals' | 'beneficiaries' | 'reports' | 'reviews' | 'supabase'>('overview');
+
+  useEffect(() => {
+    if (requestedSection?.tab) {
+      setActiveTab(requestedSection.tab);
+    }
+  }, [requestedSection?.seq, requestedSection?.tab]);
+
+  useEffect(() => {
+    onActiveTabChange?.(activeTab);
+  }, [activeTab, onActiveTabChange]);
   const [cadastrosSubTab, setCadastrosSubTab] = useState<'all' | 'drivers' | 'passengers'>('all');
   const [driverFilterCategory, setDriverFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');

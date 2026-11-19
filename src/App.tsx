@@ -178,7 +178,13 @@ export default function App() {
   const ADMIN_DRIVER_BLOCK_MESSAGE =
     'Esta conta é de ADM. Para ser motorista, crie uma conta de motorista.';
 
-  // Garante isolamento de abas para ADM: apenas ADM e CONTA (nunca Motorista/Corridas)
+  // Garante isolamento de abas para ADM: apenas ADM e CONTA (nunca entra online como motorista)
+  const [adminSectionRequest, setAdminSectionRequest] = useState<{
+    tab: 'overview' | 'pending_drivers' | 'drivers' | 'rides' | 'referrals';
+    seq: number;
+  } | null>(null);
+  const [adminCurrentSubTab, setAdminCurrentSubTab] = useState<string>('overview');
+
   useEffect(() => {
     if (currentUser && isAppUserAdmin(currentUser)) {
       if (activeTab !== 'admin' && activeTab !== 'passenger_account') {
@@ -2587,6 +2593,8 @@ export default function App() {
               onRemoveAllAccounts={handleRemoveAllAccounts}
               onApproveDriverApplication={handleApproveDriverApplication}
               onRejectDriverApplication={handleRejectDriverApplication}
+              requestedSection={adminSectionRequest}
+              onActiveTabChange={setAdminCurrentSubTab}
             />
           ) : (
             <div className="text-center py-12 p-6 bg-zinc-950 border-2 border-[#ff6a00] rounded-3xl text-white space-y-3 shadow-xl">
@@ -2664,6 +2672,15 @@ export default function App() {
       {/* Ergonomic Bottom Navigation Bar */}
       <BottomNav
         activeTab={activeTab}
+        activeAdminSubTab={adminCurrentSubTab}
+        onSelectAdminSection={(section) => {
+          if (!isAppUserAdmin(currentUser)) return;
+          setActiveTab('admin');
+          setAdminSectionRequest((prev) => ({
+            tab: section,
+            seq: (prev?.seq || 0) + 1,
+          }));
+        }}
         onChangeTab={(tab) => {
           if (isAppUserAdmin(currentUser)) {
             if (tab === 'driver_portal') {
