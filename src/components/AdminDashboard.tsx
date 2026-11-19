@@ -102,6 +102,7 @@ import { MyReferralsControlSection } from './MyReferralsControlSection';
 import { MapRealtime } from './MapRealtime';
 import {
   calculateRideSplitForDriver,
+  isDriverInLaunchZeroFeePromo,
   parseReferralBonusMeta,
   formatReferralBonusMessage,
   formatPassengerReferralBonusMessage,
@@ -2275,6 +2276,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     })
     .reduce((acc, p) => acc + Number(p.valor || 0), 0);
 
+  const isPromoZeroFeeNow = isDriverInLaunchZeroFeePromo();
   const ridesTotalFromSupabase = supabaseCorridas.reduce((acc, r) => acc + Number(r.price || 0), 0);
   const totalRidesAdmin = supabaseCorridas.length;
   const totalArrecadadoAdmin = Number((paidPaymentsTotal > 0 ? paidPaymentsTotal : ridesTotalFromSupabase).toFixed(2));
@@ -2283,20 +2285,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ? supabaseCorridas
           .reduce(
             (acc, r) =>
-              acc +
-              (typeof r.platformFee === 'number'
-                ? r.platformFee
-                : calculateRideSplitForDriver(r.price, r.driver, r.createdAt).platformFee),
+              acc + calculateRideSplitForDriver(r.price, r.driver, r.createdAt).platformFee,
             0
           )
           .toFixed(2)
-      : (totalArrecadadoAdmin * 0.15).toFixed(2)
+      : calculateRideSplitForDriver(totalArrecadadoAdmin).platformFee.toFixed(2)
   );
   const repasseMotoristasAdmin = Number(
     Math.max(0, totalArrecadadoAdmin - raceCommissionAdmin).toFixed(2)
   );
 
-  // Dados Financeiros (Saldo, Total Recebido, Comissão 15% Race, Repasse 85% Motoristas)
+  // Dados Financeiros (Saldo, Total Recebido, Comissão Race, Repasse Motoristas)
   const [asaasData, setAsaasData] = useState<AsaasBalanceInfo>({
     balance: 0,
     totalReceived: 0,
@@ -2334,7 +2333,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const exportReportCSV = () => {
     const rows = [
-      ['ID', 'Nome', 'Categoria', 'Placa', 'Avaliação', 'Status Conta', 'Ganhos Líquidos (85%)'],
+      ['ID', 'Nome', 'Categoria', 'Placa', 'Avaliação', 'Status Conta', isPromoZeroFeeNow ? 'Ganhos Líquidos (100%)' : 'Ganhos Líquidos (85%)'],
       ...drivers.map((d) => [
         d.id,
         d.name,
@@ -2452,16 +2451,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
               <div>
                 <span className="font-heading font-black text-sm text-white block">
-                  Comissão Race 15% - Total arrecadado: {formatBRL(asaasData.raceCommission15)}
+                  {isPromoZeroFeeNow
+                    ? `Comissão Race 0% (Promoção até 17/12) - Total arrecadado: ${formatBRL(asaasData.raceCommission15)}`
+                    : `Comissão Race 15% - Total arrecadado: ${formatBRL(asaasData.raceCommission15)}`}
                 </span>
                 <span className="text-zinc-400 font-mono text-[11px]">
-                  Total recebido no app: <strong className="text-white">{formatBRL(asaasData.totalReceived)}</strong> &bull; Repasse 85% aos condutores toda sexta-feira
+                  Total recebido no app: <strong className="text-white">{formatBRL(asaasData.totalReceived)}</strong> &bull; Repasse {isPromoZeroFeeNow ? '100%' : '85%'} aos condutores toda sexta-feira
                 </span>
               </div>
             </div>
             <div className="text-left sm:text-right shrink-0">
               <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 px-3 py-1 rounded-full font-mono text-xs font-bold">
-                85% Motorista • 15% Race • Sem Mensalidade
+                {isPromoZeroFeeNow
+                  ? '100% Motorista • 0% Race até 17/12 • Sem Mensalidade'
+                  : '85% Motorista • 15% Race • Sem Mensalidade'}
               </span>
             </div>
           </div>
@@ -2765,24 +2768,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </p>
               </div>
 
-              {/* 3. Comissão Race 15% - Total arrecadado */}
+              {/* 3. Comissão Race - Total arrecadado */}
               <div className="bg-zinc-900/80 border border-amber-500/30 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-amber-400 font-bold uppercase tracking-wider font-mono">Comissão Race 15%</span>
+                  <span className="text-xs text-amber-400 font-bold uppercase tracking-wider font-mono">
+                    {isPromoZeroFeeNow ? 'Comissão Race 0%' : 'Comissão Race 15%'}
+                  </span>
                   <TrendingUp className="w-4 h-4 text-amber-400" />
                 </div>
                 <div className="text-2xl sm:text-3xl font-heading font-black text-amber-400">
                   {formatBRL(asaasData.raceCommission15)}
                 </div>
                 <p className="text-[11px] text-amber-300/80 mt-1 font-medium">
-                  Comissão Race 15% - Total arrecadado
+                  {isPromoZeroFeeNow
+                    ? 'Promoção até 17/12 (0% Race • depois 15%)'
+                    : 'Comissão Race 15% - Total arrecadado'}
                 </p>
               </div>
 
-              {/* 4. Valor a Repassar Sexta para Motoristas (85%) */}
+              {/* 4. Valor a Repassar Sexta para Motoristas */}
               <div className="bg-zinc-900/80 border border-emerald-500/40 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-emerald-400 font-bold uppercase tracking-wider font-mono">Repassar Sexta (85%)</span>
+                  <span className="text-xs text-emerald-400 font-bold uppercase tracking-wider font-mono">
+                    {isPromoZeroFeeNow ? 'Repassar Sexta (100%)' : 'Repassar Sexta (85%)'}
+                  </span>
                   <Calendar className="w-4 h-4 text-emerald-400" />
                 </div>
                 <div className="text-2xl sm:text-3xl font-heading font-black text-emerald-300">
@@ -2831,16 +2840,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* Painel Direto: Quem Ganhou Quanto (85% Motorista / 15% Race) */}
+          {/* Painel Direto: Quem Ganhou Quanto (100% Motorista / 0% Race até 17/12, depois 85% / 15%) */}
           <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg flex items-center gap-2">
                   <Users className="w-5 h-5 text-amber-600" />
-                  <span>Quem Ganhou Quanto • Repasse 85% e Comissão Race 15%</span>
+                  <span>
+                    {isPromoZeroFeeNow
+                      ? 'Quem Ganhou Quanto • Repasse 100% Motorista / 0% Race - PROMOÇÃO ATÉ 17/12'
+                      : 'Quem Ganhou Quanto • Repasse 85% e Comissão Race 15%'}
+                  </span>
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Acompanhe corridas feitas, total arrecadado, ganho do condutor (85%) e comissão retida pela Race (15%).
+                  {isPromoZeroFeeNow
+                    ? 'Acompanhe corridas feitas, total arrecadado, ganho do condutor (100%) e comissão retida pela Race (0% até 17/12; depois volta para 85% / 15%).'
+                    : 'Acompanhe corridas feitas, total arrecadado, ganho do condutor (85%) e comissão retida pela Race (15%).'}
                 </p>
               </div>
               <button
@@ -2870,22 +2885,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   );
                   const driverRidesCount = driverRides.length;
                   const driverTotalArrecadado = Number(driverRides.reduce((acc, r) => acc + Number(r.price || 0), 0).toFixed(2));
-                  const driverEarnings85 = Number(
+                  const driverEarningsNet = Number(
                     driverRides
                       .reduce(
                         (acc, r) =>
                           acc +
-                          (typeof r.driverEarnings === 'number'
-                            ? r.driverEarnings
-                            : calculateRideSplitForDriver(r.price, driver.raw ? { createdAt: driver.raw.created_at } : null, r.createdAt).driverEarnings),
+                          calculateRideSplitForDriver(
+                            r.price,
+                            driver.raw ? { createdAt: driver.raw.created_at } : null,
+                            r.createdAt
+                          ).driverEarnings,
                         0
                       )
                       .toFixed(2)
                   );
-                  const driverCommission15 = Number(
-                    Math.max(0, driverTotalArrecadado - driverEarnings85).toFixed(2)
+                  const driverCommissionRace = Number(
+                    Math.max(0, driverTotalArrecadado - driverEarningsNet).toFixed(2)
                   );
-                  const driverSaldoRepassar = driverEarnings85 || driver.saldo || 0;
+                  const driverSaldoRepassar = driverEarningsNet || driver.saldo || 0;
 
                   return (
                     <div
@@ -2936,7 +2953,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 justify-between md:justify-end border-t md:border-t-0 pt-2 md:pt-0 border-slate-200">
-                        {/* Quem Ganhou Quanto: Corridas, Total, Ganho 85%, Race 15%, Saldo */}
+                        {/* Quem Ganhou Quanto: Corridas, Total, Ganho 100%/85%, Race 0%/15%, Saldo */}
                         <div className="grid grid-cols-5 gap-2 text-center bg-white p-2.5 rounded-xl border border-slate-200 text-xs shadow-xs">
                           <div className="px-1">
                             <span className="text-[10px] text-slate-400 font-bold uppercase block">Corridas</span>
@@ -2947,12 +2964,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <span className="font-heading font-black text-slate-900">{formatBRL(driverTotalArrecadado)}</span>
                           </div>
                           <div className="px-1 border-l border-slate-100">
-                            <span className="text-[10px] text-emerald-700 font-bold uppercase block">Ganho 85%</span>
-                            <span className="font-heading font-black text-emerald-600">{formatBRL(driverEarnings85)}</span>
+                            <span className="text-[10px] text-emerald-700 font-bold uppercase block">
+                              {isPromoZeroFeeNow ? 'GANHO 100%' : 'GANHO 85%'}
+                            </span>
+                            <span className="font-heading font-black text-emerald-600">{formatBRL(driverEarningsNet)}</span>
                           </div>
                           <div className="px-1 border-l border-slate-100">
-                            <span className="text-[10px] text-amber-700 font-bold uppercase block">Race 15%</span>
-                            <span className="font-heading font-black text-amber-600">{formatBRL(driverCommission15)}</span>
+                            <span className="text-[10px] text-amber-700 font-bold uppercase block">
+                              {isPromoZeroFeeNow ? 'RACE 0%' : 'RACE 15%'}
+                            </span>
+                            <span className="font-heading font-black text-amber-600">{formatBRL(driverCommissionRace)}</span>
                           </div>
                           <div className="px-1 border-l border-slate-100">
                             <span className="text-[10px] text-blue-700 font-bold uppercase block">Saldo</span>
@@ -2960,7 +2981,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                         </div>
 
-                        {/* Botões: Editar, Liberar 7 dias, Bloquear, Ver avaliações */}
+                        {/* Botões: Editar, Ativar (para sempre), Bloquear, Ver avaliações */}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <button
                             type="button"
@@ -2976,10 +2997,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             type="button"
                             onClick={() => handleLiberar7Dias(driver.raw)}
                             className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                            title="Liberar 7 dias e ativar condutor"
+                            title="Ativar condutor permanentemente"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Liberar 7 dias</span>
+                            <span>Ativar</span>
                           </button>
 
                           <button
@@ -3402,18 +3423,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Detalhes Financeiros: Saldo Acumulado (85%), Comissão Race 15% Já Descontada, Valor do PIX */}
+                  {/* Detalhes Financeiros: Saldo Acumulado, Comissão Race, Valor do PIX */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                      <span className="text-slate-500 block font-medium">Saldo Acumulado (85%):</span>
+                      <span className="text-slate-500 block font-medium">
+                        {isPromoZeroFeeNow ? 'Saldo Acumulado (100%):' : 'Saldo Acumulado (85%):'}
+                      </span>
                       <span className="font-heading font-black text-slate-900 text-sm">
                         {formatBRL(w.grossAmount)}
                       </span>
                     </div>
                     <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
-                      <span className="text-amber-800 block font-medium">Comissão Race 15%:</span>
+                      <span className="text-amber-800 block font-medium">
+                        {isPromoZeroFeeNow ? 'Comissão Race 0% (até 17/12):' : 'Comissão Race 15%:'}
+                      </span>
                       <span className="font-heading font-black text-amber-900 text-sm">
-                        Já descontada na corrida
+                        {isPromoZeroFeeNow ? 'Promoção 0% até 17/12' : 'Já descontada na corrida'}
                       </span>
                     </div>
                     <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
@@ -3626,7 +3651,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="w-full sm:w-auto px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
                       >
                         <CheckCircle2 className="w-4 h-4 text-emerald-200" />
-                        <span>Aprovar - Libera 7 dias</span>
+                        <span>Ativar</span>
                       </button>
                     </div>
                   </div>
@@ -3682,7 +3707,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onClick={() => {
                   if (onActivateAllDrivers) {
                     onActivateAllDrivers();
-                    showToast('✅ Todos os motoristas foram ativados com 7 dias liberados e status ONLINE!');
+                    showToast('✅ Todos os motoristas foram ativados permanentemente e liberados para ficar ONLINE!');
                   }
                 }}
                 className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
@@ -3986,6 +4011,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             ? '⛔ Bloqueado'
                             : u.isPassenger
                             ? 'Passageiro'
+                            : isPromoZeroFeeNow
+                            ? '100% Motorista / 0% Race até 17/12'
                             : '85% Motorista / 15% Race'}
                         </span>
                       </div>
@@ -4298,10 +4325,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-2">
-              <span className="text-xs text-slate-500 uppercase font-black block">Comissão Race 15% - Total arrecadado</span>
-              <p className="text-emerald-700 text-sm font-bold">85% Motorista • 15% Race • Sem Mensalidade</p>
+              <span className="text-xs text-slate-500 uppercase font-black block">
+                {isPromoZeroFeeNow
+                  ? 'Promoção até 17/12 - 0% Comissão Race'
+                  : 'Comissão Race 15% - Total arrecadado'}
+              </span>
+              <p className="text-emerald-700 text-sm font-bold">
+                {isPromoZeroFeeNow
+                  ? '100% Motorista • 0% Race até 17/12 • Sem Mensalidade'
+                  : '85% Motorista • 15% Race • Sem Mensalidade'}
+              </p>
               <p className="text-slate-700 text-xs font-medium">
-                Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar. Repasse toda sexta-feira.
+                {isPromoZeroFeeNow
+                  ? 'Até 17/12 o motorista ganha 100% e a Race cobra 0%. Depois de 17/12 volta automaticamente para 85% Motorista / 15% Race. Repasse toda sexta-feira.'
+                  : 'Você fica com 85% de cada corrida, Race fica com 15% - sem mensalidade, sem taxa para trabalhar. Repasse toda sexta-feira.'}
               </p>
             </div>
 

@@ -1667,12 +1667,16 @@ export default function App() {
     const target = driverTarget || currentDriver;
     if (!target) return;
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const updated: Driver = {
       ...target,
+      approvalStatus: 'aprovado',
+      rejectionReason: '',
+      approvedAt: target.approvedAt || now.toISOString(),
+      cnhVerified: true,
+      vehicleVerified: true,
       weeklyFeePaidAt: now.toISOString(),
-      weeklyFeeExpiresAt: expiresAt.toISOString(),
-      weeklyPlanExpiresAt: expiresAt.toISOString(),
+      weeklyFeeExpiresAt: null,
+      weeklyPlanExpiresAt: null,
       weeklyPlanActive: true,
       weeklyPlanPrice: WEEKLY_FEE,
       status: 'online',
@@ -1702,6 +1706,8 @@ export default function App() {
               approvedAt: new Date().toISOString(),
               cnhVerified: true,
               vehicleVerified: true,
+              weeklyFeeExpiresAt: null,
+              weeklyPlanExpiresAt: null,
               weeklyPlanActive: true,
               status: d.status === 'pending_approval' ? 'offline' : d.status,
             }
@@ -1784,6 +1790,11 @@ export default function App() {
     const now = new Date();
     const updated: Driver = {
       ...driver,
+      approvalStatus: 'aprovado',
+      rejectionReason: '',
+      approvedAt: driver.approvedAt || now.toISOString(),
+      cnhVerified: true,
+      vehicleVerified: true,
       weeklyFeePaidAt: now.toISOString(),
       weeklyFeeExpiresAt: null,
       weeklyPlanExpiresAt: null,
@@ -1888,7 +1899,7 @@ export default function App() {
     setDrivers(updated);
     triggerPush(
       '✅ Todos os Cadastros Ativados',
-      `Todos os ${updated.length} condutores foram ativados com 7 dias liberados e status ONLINE!`,
+      `Todos os ${updated.length} condutores foram ativados permanentemente e liberados para ficar ONLINE!`,
       'financial'
     );
     try {

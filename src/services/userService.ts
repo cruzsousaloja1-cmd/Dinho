@@ -568,15 +568,14 @@ export async function deleteAllUserAccounts(): Promise<void> {
  */
 export function activateAllDriverAccounts(currentDrivers: Driver[]): Driver[] {
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const updatedDrivers = currentDrivers.map((driver) => {
     const isApproved = driver.approvalStatus === 'aprovado';
     const updated: Driver = {
       ...driver,
       weeklyFeePaidAt: now.toISOString(),
-      weeklyFeeExpiresAt: expiresAt.toISOString(),
-      weeklyPlanExpiresAt: expiresAt.toISOString(),
+      weeklyFeeExpiresAt: null,
+      weeklyPlanExpiresAt: null,
       weeklyPlanActive: true,
       weeklyPlanPrice: 0,
       status: isApproved ? 'online' : driver.approvalStatus === 'reprovado' ? 'offline' : 'pending_approval',
