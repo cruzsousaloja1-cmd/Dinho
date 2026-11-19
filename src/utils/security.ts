@@ -3,7 +3,7 @@
  */
 export function isValidEmail(email: string): boolean {
   const clean = String(email || '').trim().toLowerCase();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(clean);
+  return /^[^\s@]+@[^\s@]+\.com(\.[a-z]{2,})?$/i.test(clean);
 }
 
 /**

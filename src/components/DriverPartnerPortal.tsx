@@ -24,6 +24,7 @@ import {
 } from '../services/promoService';
 import { compressImageToMax200KB, validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
+import { validateCPF, validateCNH, validatePlate } from '../utils/documentValidation';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverWorkSelectionView } from './DriverWorkSelectionView';
@@ -540,14 +541,6 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [draftDriverAvatar, setDraftDriverAvatar] = useState<string>(
     currentDriver.avatar || currentUser?.avatar || ''
   );
-  const [draftDocCnhFront, setDraftDocCnhFront] = useState<string>(
-    currentDriver.cnhFrontPhoto || currentDriver.cnhPhoto || ''
-  );
-  const [draftDocCnhBack, setDraftDocCnhBack] = useState<string>(currentDriver.cnhBackPhoto || '');
-  const [draftDocCrlv, setDraftDocCrlv] = useState<string>(currentDriver.crlvPhoto || '');
-  const [draftDocVehicle, setDraftDocVehicle] = useState<string>(currentDriver.vehiclePhoto || '');
-  const [hasPendingDriverDocs, setHasPendingDriverDocs] = useState(false);
-  const [previewDriverDocModal, setPreviewDriverDocModal] = useState<{ url: string; title: string } | null>(null);
   const [pendingDriverPhotoFile, setPendingDriverPhotoFile] = useState<File | null>(null);
   const [hasPendingDriverAvatar, setHasPendingDriverAvatar] = useState(false);
   const [isSavingDriverProfile, setIsSavingDriverProfile] = useState(false);
@@ -560,11 +553,6 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       setDraftDriverEmail(currentDriver.email || '');
       setDraftDriverPhone(currentDriver.phone || '');
       setDraftDriverAvatar(currentDriver.avatar || currentUser?.avatar || '');
-      setDraftDocCnhFront(currentDriver.cnhFrontPhoto || currentDriver.cnhPhoto || '');
-      setDraftDocCnhBack(currentDriver.cnhBackPhoto || '');
-      setDraftDocCrlv(currentDriver.crlvPhoto || '');
-      setDraftDocVehicle(currentDriver.vehiclePhoto || '');
-      setHasPendingDriverDocs(false);
       setPendingDriverPhotoFile(null);
     }
   }, [
@@ -650,11 +638,6 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     setDraftDriverEmail(currentDriver.email || '');
     setDraftDriverPhone(currentDriver.phone || '');
     setDraftDriverAvatar(currentDriver.avatar || currentUser?.avatar || '');
-    setDraftDocCnhFront(currentDriver.cnhFrontPhoto || currentDriver.cnhPhoto || '');
-    setDraftDocCnhBack(currentDriver.cnhBackPhoto || '');
-    setDraftDocCrlv(currentDriver.crlvPhoto || '');
-    setDraftDocVehicle(currentDriver.vehiclePhoto || '');
-    setHasPendingDriverDocs(false);
     setPendingDriverPhotoFile(null);
     setHasPendingDriverAvatar(false);
     setDriverProfileErrorMsg(null);
@@ -668,44 +651,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     setDraftDriverEmail(currentDriver.email || '');
     setDraftDriverPhone(currentDriver.phone || '');
     setDraftDriverAvatar(currentDriver.avatar || currentUser?.avatar || '');
-    setDraftDocCnhFront(currentDriver.cnhFrontPhoto || currentDriver.cnhPhoto || '');
-    setDraftDocCnhBack(currentDriver.cnhBackPhoto || '');
-    setDraftDocCrlv(currentDriver.crlvPhoto || '');
-    setDraftDocVehicle(currentDriver.vehiclePhoto || '');
-    setHasPendingDriverDocs(false);
     setPendingDriverPhotoFile(null);
     setHasPendingDriverAvatar(false);
     setDriverProfileErrorMsg(null);
     setIsEditingDriverProfile(false);
-  };
-
-  const handleDriverEditDocUpload = async (
-    docField: 'cnhFront' | 'cnhBack' | 'crlv' | 'vehicle',
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const sizeErr = validatePhotoMax2MB(file);
-    if (sizeErr) {
-      setDriverProfileErrorMsg(sizeErr);
-      if (e.target) e.target.value = '';
-      return;
-    }
-    try {
-      const { dataUrl } = await validateAndCompressPhotoFile(file);
-      if (dataUrl) {
-        if (docField === 'cnhFront') setDraftDocCnhFront(dataUrl);
-        if (docField === 'cnhBack') setDraftDocCnhBack(dataUrl);
-        if (docField === 'crlv') setDraftDocCrlv(dataUrl);
-        if (docField === 'vehicle') setDraftDocVehicle(dataUrl);
-        setHasPendingDriverDocs(true);
-        setDriverProfileErrorMsg(null);
-      }
-    } catch (err: any) {
-      setDriverProfileErrorMsg(err?.message || 'Não foi possível processar a imagem do documento.');
-    } finally {
-      if (e.target) e.target.value = '';
-    }
   };
 
   const handleDriverAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -753,8 +702,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       setDriverProfileErrorMsg('Informe seu nome completo.');
       return;
     }
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setDriverProfileErrorMsg('Informe um e-mail válido.');
+    if (!isValidEmail(cleanEmail)) {
+      setDriverProfileErrorMsg('E-mail inválido. Digite um e-mail válido com @ e .com.');
+      return;
+    }
+    if (cleanPhone && !isValidWhatsApp11(cleanPhone)) {
+      setDriverProfileErrorMsg('WhatsApp inválido! Digite exatamente 11 dígitos com DDD + 9.');
       return;
     }
 
@@ -832,12 +785,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       const fotoUrlBusted = returnedPhotoRaw ? withPhotoCacheBuster(returnedPhotoRaw) : '';
       console.log('fotoUrl carregada:', fotoUrlBusted);
 
-      const finalCnhFront = draftDocCnhFront || currentDriver.cnhFrontPhoto || currentDriver.cnhPhoto || '';
-      const finalCnhBack = draftDocCnhBack || currentDriver.cnhBackPhoto || '';
-      const finalCrlv = draftDocCrlv || currentDriver.crlvPhoto || '';
-      const finalVehicle = draftDocVehicle || currentDriver.vehiclePhoto || '';
+      const finalCnhFront = currentDriver.cnhFrontPhoto || currentDriver.cnhPhoto || '';
+      const finalCnhBack = currentDriver.cnhBackPhoto || '';
+      const finalCrlv = currentDriver.crlvPhoto || '';
+      const finalVehicle = currentDriver.vehiclePhoto || '';
 
-      if (hasPendingDriverDocs || finalCnhFront || finalCnhBack || finalCrlv || finalVehicle) {
+      if (finalCnhFront || finalCnhBack || finalCrlv || finalVehicle) {
         await saveDriverApplicationSupabase({
           id: currentDriver.id || currentUser?.id,
           email: cleanEmail,
@@ -867,11 +820,6 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         email: cleanEmail,
         phone: cleanPhone,
         avatar: fotoUrlBusted,
-        cnhPhoto: finalCnhFront || currentDriver.cnhPhoto,
-        cnhFrontPhoto: finalCnhFront || currentDriver.cnhFrontPhoto,
-        cnhBackPhoto: finalCnhBack || currentDriver.cnhBackPhoto,
-        crlvPhoto: finalCrlv || currentDriver.crlvPhoto,
-        vehiclePhoto: finalVehicle || currentDriver.vehiclePhoto,
       };
       onUpdateDriver(updatedDriver);
 
@@ -895,9 +843,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       setDraftDriverAvatar(fotoUrlBusted);
       setPendingDriverPhotoFile(null);
       setHasPendingDriverAvatar(false);
-      setHasPendingDriverDocs(false);
       setIsEditingDriverProfile(false);
-      setDriverProfileSuccessMsg(isChangingPhoto || hasPendingDriverDocs ? 'Fotos e alterações salvas!' : 'Perfil atualizado com sucesso!');
+      setDriverProfileSuccessMsg(isChangingPhoto ? 'Foto e alterações salvas!' : 'Perfil atualizado com sucesso!');
       setTimeout(() => setDriverProfileSuccessMsg(null), 6000);
     } catch (err: any) {
       setDriverProfileErrorMsg(err?.message || 'Falha ao salvar perfil. Tente novamente.');
@@ -1400,12 +1347,30 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
     }
 
     if (!isValidEmail(cleanEmail)) {
-      setRegError('E-mail inválido! Informe um e-mail válido (ex: nome@dominio.com).');
+      setRegError('E-mail inválido! Informe um e-mail válido com @ e .com (ex: nome@dominio.com).');
       return;
     }
 
     if (!isValidWhatsApp11(cleanWhatsApp)) {
       setRegError('WhatsApp inválido! Digite exatamente 11 dígitos com DDD + 9 (ex: 19999999999).');
+      return;
+    }
+
+    const cpfCheck = validateCPF(regCpf);
+    if (!cpfCheck.valid) {
+      setRegError(cpfCheck.error || 'CPF inválido. Digite o CPF correto.');
+      return;
+    }
+
+    const cnhCheck = validateCNH(regCnh);
+    if (!cnhCheck.valid) {
+      setRegError(cnhCheck.error || 'CNH inválida.');
+      return;
+    }
+
+    const plateCheck = validatePlate(regPlate);
+    if (!plateCheck.valid) {
+      setRegError(plateCheck.error || 'Placa inválida. Digite ABC-1234 ou ABC1D23.');
       return;
     }
 
@@ -1450,6 +1415,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       return;
     }
 
+    const validatedCpf = cpfCheck.normalized || regCpf;
+    const validatedCnh = cnhCheck.normalized || regCnh;
+    const validatedPlate = plateCheck.normalized || regPlate.toUpperCase();
+
     setIsRegistering(true);
     try {
       const dupCheck = await checkDuplicateRegistrationSupabase({
@@ -1472,8 +1441,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         avatar: regAvatar,
         phone: cleanWhatsApp,
         email: cleanEmail,
-        cpf: regCpf,
-        cnh: regCnh ? `${regCnh} (EAR Ativo)` : '',
+        cpf: validatedCpf,
+        cnh: validatedCnh ? `${validatedCnh} (EAR Ativo)` : '',
         category: finalCategory,
         categoryConfigured: true,
         requirementsConfirmed: true,
@@ -1481,7 +1450,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         documentosAceitos: true,
         dataAceite: confirmedNow,
         vehicleModel: regModel,
-        vehiclePlate: regPlate.toUpperCase(),
+        vehiclePlate: validatedPlate,
         vehicleColor: regColor.trim(),
         vehicleYear: yearNum,
         cnhPhoto: regCnhFrontPhoto,
@@ -3483,106 +3452,6 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                         </div>
                       </div>
                     </div>
-
-                    {/* Seção 📄 DOCUMENTOS acima de SALVAR ALTERAÇÕES */}
-                    <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 space-y-3">
-                      <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
-                        <h5 className="font-heading font-black text-slate-950 text-xs sm:text-sm uppercase tracking-wider">
-                          📄 DOCUMENTOS
-                        </h5>
-                        <span className="text-[11px] font-bold text-slate-500">
-                          Toque na foto para ampliar
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        {[
-                          { key: 'cnhFront' as const, label: 'CNH Frente', url: draftDocCnhFront },
-                          { key: 'cnhBack' as const, label: 'CNH Verso', url: draftDocCnhBack },
-                          { key: 'crlv' as const, label: 'CRLV', url: draftDocCrlv },
-                          {
-                            key: 'vehicle' as const,
-                            label:
-                              currentDriver.category === 'moto_passageiro' ||
-                              currentDriver.category === 'moto_entrega'
-                                ? 'Foto da moto'
-                                : 'Foto do carro (Frente)',
-                            url: draftDocVehicle,
-                          },
-                        ].map((doc) => (
-                          <div
-                            key={doc.key}
-                            className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 flex flex-col gap-2"
-                          >
-                            <span className="text-[11px] font-heading font-black text-slate-800 text-center">
-                              {doc.label}
-                            </span>
-                            {doc.url ? (
-                              <button
-                                type="button"
-                                onClick={() => setPreviewDriverDocModal({ url: doc.url, title: doc.label })}
-                                className="w-full relative rounded-xl overflow-hidden border border-slate-300 group cursor-pointer"
-                              >
-                                <img
-                                  src={doc.url}
-                                  alt={doc.label}
-                                  className="w-full h-24 object-cover group-hover:scale-105 transition-transform"
-                                />
-                                <span className="absolute bottom-1 right-1 bg-slate-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
-                                  Ampliar
-                                </span>
-                              </button>
-                            ) : (
-                              <div className="w-full h-24 rounded-xl bg-rose-50 border border-dashed border-rose-300 flex items-center justify-center text-xs font-heading font-black text-rose-600 text-center px-2">
-                                Não enviada
-                              </div>
-                            )}
-                            <label className="w-full py-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-all">
-                              <Camera className="w-3 h-3 text-[#ff6a00]" />
-                              <span>Trocar foto</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => handleDriverEditDocUpload(doc.key, e)}
-                              />
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {previewDriverDocModal && (
-                      <div className="fixed inset-0 z-[1400] bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4">
-                        <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-300">
-                          <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                            <h4 className="font-heading font-black text-slate-950 text-base">
-                              {previewDriverDocModal.title}
-                            </h4>
-                            <button
-                              type="button"
-                              onClick={() => setPreviewDriverDocModal(null)}
-                              className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer"
-                            >
-                              <XCircle className="w-5 h-5" />
-                            </button>
-                          </div>
-                          <div className="max-h-[65vh] overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-2 text-center">
-                            <img
-                              src={previewDriverDocModal.url}
-                              alt={previewDriverDocModal.title}
-                              className="max-w-full h-auto object-contain rounded-xl mx-auto shadow-sm"
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setPreviewDriverDocModal(null)}
-                            className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-sm cursor-pointer"
-                          >
-                            Fechar
-                          </button>
-                        </div>
-                      </div>
-                    )}
 
                     {driverProfileErrorMsg && (
                       <div className="bg-rose-50 border border-rose-300 text-rose-900 rounded-xl p-3 text-xs font-bold">

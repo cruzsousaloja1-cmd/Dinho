@@ -30,6 +30,7 @@ import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isBasicPopularOneLiterModel } from '../services/vehicleValidationService';
 import { LegalConsentSection } from './LegalConsentSection';
 import { LaunchPromoBanner } from './LaunchPromoBanner';
+import { validateCPF, validateCNH, validatePlate } from '../utils/documentValidation';
 
 export type WorkCategoryKey =
   | 'motorista_economico'
@@ -461,6 +462,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       return;
     }
 
+    const plateCheck = validatePlate(cleanPlate);
+    if (!plateCheck.valid) {
+      setErrorMessage(plateCheck.error || 'Placa inválida. Digite ABC-1234 ou ABC1D23.');
+      return;
+    }
+
     if (yearNum < selectedCategory.minYear) {
       setErrorMessage(selectedCategory.yearAlertMessage);
       return;
@@ -478,6 +485,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       return;
     }
 
+    const cpfCheck = validateCPF(cleanCpf);
+    if (!cpfCheck.valid) {
+      setErrorMessage(cpfCheck.error || 'CPF inválido. Digite o CPF correto.');
+      return;
+    }
+
     if (!cleanCnh) {
       setErrorMessage(
         isCarCategory
@@ -486,6 +499,16 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       );
       return;
     }
+
+    const cnhCheck = validateCNH(cleanCnh);
+    if (!cnhCheck.valid) {
+      setErrorMessage(cnhCheck.error || 'CNH inválida.');
+      return;
+    }
+
+    const validatedPlate = plateCheck.normalized || cleanPlate;
+    const validatedCpf = cpfCheck.normalized || cleanCpf;
+    const validatedCnh = cnhCheck.normalized || cleanCnh;
 
     if (isDeliveryMoto && hasTrunk !== 'Sim') {
       setErrorMessage('Motoboy Entregas exige baú fixo de no mínimo 90L.');
@@ -527,8 +550,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         avatar: finalAvatarUrl,
         phone: currentUser.phone,
         email: currentUser.email,
-        cpf: cleanCpf,
-        cnh: cleanCnh,
+        cpf: validatedCpf,
+        cnh: validatedCnh,
         category: selectedCategory.vehicleCategory,
         categoryConfigured: true,
         requirementsConfirmed: true,
@@ -536,7 +559,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         documentosAceitos: true,
         dataAceite: confirmedTimestamp,
         vehicleModel: cleanModel,
-        vehiclePlate: cleanPlate,
+        vehiclePlate: validatedPlate,
         vehicleColor: cleanColor,
         vehicleYear: yearNum,
         vehiclePhoto: vehiclePhoto || undefined,

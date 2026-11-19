@@ -451,7 +451,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     }
 
     if (!isValidEmail(cleanEmail)) {
-      setRegErrorMessage('E-mail inválido. Digite um e-mail completo (ex: seu.nome@gmail.com).');
+      setRegErrorMessage('E-mail inválido. Digite um e-mail válido com @ e .com (ex: seu.nome@gmail.com).');
       return;
     }
 
@@ -550,7 +550,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
           weeklyPlanPrice: 0,
           weeklyPlanExpiresAt: null,
           weeklyFeeExpiresAt: null,
-          status: 'offline',
+          status: 'pending_approval',
           earningsToday: 0,
           earningsWeek: 0,
           cnhVerified: false,

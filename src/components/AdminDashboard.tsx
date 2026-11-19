@@ -89,6 +89,13 @@ import {
   AsaasBalanceInfo
 } from '../services/asaasService';
 import { maskLast4Digits } from '../utils/security';
+import {
+  validateCPF,
+  validateCNH,
+  validatePlate,
+  validateEmailCom,
+  validateWhatsAppBR,
+} from '../utils/documentValidation';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isAppUserAdmin, isAdminTipoValue, saveSessionUser } from '../services/userService';
 import { MyReferralsControlSection } from './MyReferralsControlSection';
@@ -546,13 +553,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editUserEmail, setEditUserEmail] = useState('');
   const [editUserPhone, setEditUserPhone] = useState('');
   const [editUserAvatar, setEditUserAvatar] = useState('');
+  const [editUserCategory, setEditUserCategory] = useState('economica');
   const [editUserModel, setEditUserModel] = useState('');
+  const [editUserColor, setEditUserColor] = useState('');
   const [editUserPlate, setEditUserPlate] = useState('');
-  const [editDocCnhFront, setEditDocCnhFront] = useState('');
-  const [editDocCnhBack, setEditDocCnhBack] = useState('');
-  const [editDocCrlv, setEditDocCrlv] = useState('');
-  const [editDocVehicle, setEditDocVehicle] = useState('');
-  const [hasPendingEditDocs, setHasPendingEditDocs] = useState(false);
+  const [editUserYear, setEditUserYear] = useState('');
+  const [editUserCpf, setEditUserCpf] = useState('');
+  const [editUserCnh, setEditUserCnh] = useState('');
+  const [editUserPixKey, setEditUserPixKey] = useState('');
   const [editUserPhotoFile, setEditUserPhotoFile] = useState<File | null>(null);
   const [hasPendingEditAvatar, setHasPendingEditAvatar] = useState(false);
   const [isSavingAdminUser, setIsSavingAdminUser] = useState(false);
@@ -724,10 +732,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditUserEmail(cleanEm);
     setEditUserPhone(u.phone === 'Não informado' ? '' : (u.phone || ''));
     setEditUserAvatar(u.avatar || extractPhotoFromRow(u.raw) || '');
-    setEditUserModel(u.model || '');
-    setEditUserPlate(u.plate || '');
 
-    // Carrega os 4 documentos salvos (CNH Frente, CNH Verso, CRLV, Foto do carro Frente)
     const appRec =
       (emKey ? driverApplicationsMap[emKey] : undefined) ||
       mergedDriverApplications.find(
@@ -740,49 +745,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         (emKey && (d.email || '').toLowerCase().trim() === emKey) ||
         (u.id && String(d.id) === String(u.id))
     );
-    const initialCnhFront =
-      appRec?.cnhFrontPhoto ||
-      matchedDriver?.cnhFrontPhoto ||
-      matchedDriver?.cnhPhoto ||
-      u.raw?.cnh_frente ||
-      u.raw?.cnhFrontPhoto ||
-      '';
-    const initialCnhBack =
-      appRec?.cnhBackPhoto ||
-      matchedDriver?.cnhBackPhoto ||
-      u.raw?.cnh_verso ||
-      u.raw?.cnhBackPhoto ||
-      '';
-    const initialCrlv =
-      appRec?.crlvPhoto ||
-      matchedDriver?.crlvPhoto ||
-      u.raw?.crlv ||
-      u.raw?.crlvPhoto ||
-      '';
-    const initialVehicle =
-      appRec?.vehiclePhoto ||
-      matchedDriver?.vehiclePhoto ||
-      u.raw?.foto_veiculo ||
-      u.raw?.vehiclePhoto ||
-      '';
 
-    setEditDocCnhFront(initialCnhFront);
-    setEditDocCnhBack(initialCnhBack);
-    setEditDocCrlv(initialCrlv);
-    setEditDocVehicle(initialVehicle);
-    setHasPendingEditDocs(false);
+    const resolvedCategory =
+      appRec?.category ||
+      matchedDriver?.category ||
+      u.raw?.categoria ||
+      (u.isMotoboy ? 'moto_passageiro' : 'economica');
+    const resolvedModel = appRec?.vehicleModel || matchedDriver?.vehicleModel || u.model || '';
+    const resolvedColor = appRec?.vehicleColor || matchedDriver?.vehicleColor || u.raw?.cor || u.raw?.cor_veiculo || '';
+    const resolvedPlate = appRec?.vehiclePlate || matchedDriver?.vehiclePlate || u.plate || '';
+    const resolvedYear = String(appRec?.vehicleYear || matchedDriver?.vehicleYear || u.year || '');
+    const resolvedCpf = appRec?.cpf || matchedDriver?.cpf || u.cpf || '';
+    const resolvedCnh = appRec?.cnh || matchedDriver?.cnh || u.cnh || '';
+    const resolvedPix = appRec?.pixKey || matchedDriver?.pixKey || u.raw?.chave_pix || u.raw?.pix || '';
 
-    // Garante leitura atualizada das fotos de documentos no Supabase se algum ainda estiver vazio
-    if (!u.isPassenger && !u.isAdminRow && emKey && (!initialCnhFront || !initialCnhBack || !initialCrlv || !initialVehicle)) {
+    setEditUserCategory(String(resolvedCategory || 'economica'));
+    setEditUserModel(resolvedModel);
+    setEditUserColor(resolvedColor);
+    setEditUserPlate(resolvedPlate);
+    setEditUserYear(resolvedYear === '0' ? '' : resolvedYear);
+    setEditUserCpf(resolvedCpf);
+    setEditUserCnh(resolvedCnh);
+    setEditUserPixKey(resolvedPix);
+
+    if (!u.isPassenger && !u.isAdminRow && emKey && (!resolvedColor || !resolvedPix || !resolvedCpf || !resolvedCnh)) {
       fetchDriverApplicationsSupabase(emKey)
         .then((freshMap) => {
           const fresh = freshMap?.[emKey];
           if (!fresh) return;
           setDriverApplicationsMap((prev) => ({ ...prev, [emKey]: { ...(prev[emKey] || {}), ...fresh } }));
-          if (fresh.cnhFrontPhoto) setEditDocCnhFront((prev) => prev || fresh.cnhFrontPhoto || '');
-          if (fresh.cnhBackPhoto) setEditDocCnhBack((prev) => prev || fresh.cnhBackPhoto || '');
-          if (fresh.crlvPhoto) setEditDocCrlv((prev) => prev || fresh.crlvPhoto || '');
-          if (fresh.vehiclePhoto) setEditDocVehicle((prev) => prev || fresh.vehiclePhoto || '');
+          if (fresh.vehicleColor) setEditUserColor((prev) => prev || fresh.vehicleColor || '');
+          if (fresh.vehicleYear) setEditUserYear((prev) => prev || String(fresh.vehicleYear));
+          if (fresh.cpf) setEditUserCpf((prev) => (prev && !prev.includes('*') ? prev : fresh.cpf || prev));
+          if (fresh.cnh) setEditUserCnh((prev) => (prev && !prev.includes('*') ? prev : fresh.cnh || prev));
+          if (fresh.pixKey) setEditUserPixKey((prev) => prev || fresh.pixKey || '');
         })
         .catch(() => {});
     }
@@ -790,35 +786,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditUserPhotoFile(null);
     setHasPendingEditAvatar(false);
     setEditUserError(null);
-  };
-
-  const handleAdminEditDocPhotoChange = async (
-    docField: 'cnhFront' | 'cnhBack' | 'crlv' | 'vehicle',
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const sizeErr = validatePhotoMax2MB(file);
-    if (sizeErr) {
-      setEditUserError(sizeErr);
-      if (e.target) e.target.value = '';
-      return;
-    }
-    try {
-      const { dataUrl } = await validateAndCompressPhotoFile(file);
-      if (dataUrl) {
-        if (docField === 'cnhFront') setEditDocCnhFront(dataUrl);
-        if (docField === 'cnhBack') setEditDocCnhBack(dataUrl);
-        if (docField === 'crlv') setEditDocCrlv(dataUrl);
-        if (docField === 'vehicle') setEditDocVehicle(dataUrl);
-        setHasPendingEditDocs(true);
-        setEditUserError(null);
-      }
-    } catch (err: any) {
-      setEditUserError(err?.message || 'Não foi possível processar a imagem do documento.');
-    } finally {
-      if (e.target) e.target.value = '';
-    }
   };
 
   const handleAdminEditAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -851,15 +818,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const cleanName = editUserName.trim();
     const cleanEmail = editUserEmail.trim().toLowerCase();
     const cleanPhone = editUserPhone.trim();
+    const isConductor = !editingAdminUser.isPassenger && !editingAdminUser.isAdminRow;
 
     if (!cleanName) {
       setEditUserError('Informe o nome completo do usuário.');
       return;
     }
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setEditUserError('Informe um e-mail válido.');
+    const emailCheck = validateEmailCom(cleanEmail);
+    if (!emailCheck.valid) {
+      setEditUserError(emailCheck.error || 'E-mail inválido. Digite um e-mail com @ e .com.');
       return;
     }
+    if (cleanPhone) {
+      const phoneCheck = validateWhatsAppBR(cleanPhone);
+      if (!phoneCheck.valid) {
+        setEditUserError(phoneCheck.error || 'WhatsApp inválido! Digite exatamente 11 dígitos com DDD + 9.');
+        return;
+      }
+    }
+
+    let validatedPlate = editUserPlate.trim().toUpperCase();
+    let validatedCpf = editUserCpf.trim();
+    let validatedCnh = editUserCnh.trim();
+    const cleanColor = editUserColor.trim();
+    const cleanModel = editUserModel.trim();
+    const cleanPix = editUserPixKey.trim();
+    const parsedYear = parseInt(editUserYear.trim(), 10);
+
+    if (isConductor) {
+      if (validatedPlate) {
+        const plateCheck = validatePlate(validatedPlate);
+        if (!plateCheck.valid) {
+          setEditUserError(plateCheck.error || 'Placa inválida. Digite ABC-1234 ou ABC1D23.');
+          return;
+        }
+        validatedPlate = plateCheck.normalized || validatedPlate;
+      }
+      if (validatedCpf && !validatedCpf.includes('*')) {
+        const cpfCheck = validateCPF(validatedCpf);
+        if (!cpfCheck.valid) {
+          setEditUserError(cpfCheck.error || 'CPF inválido. Digite o CPF correto.');
+          return;
+        }
+        validatedCpf = cpfCheck.normalized || validatedCpf;
+      }
+      if (validatedCnh && !validatedCnh.includes('*')) {
+        const cnhCheck = validateCNH(validatedCnh);
+        if (!cnhCheck.valid) {
+          setEditUserError(cnhCheck.error || 'CNH inválida.');
+          return;
+        }
+        validatedCnh = cnhCheck.normalized || validatedCnh;
+      }
+    }
+
+    const normalizedPhone = cleanPhone ? cleanPhone.replace(/\D/g, '') : '';
 
     setIsSavingAdminUser(true);
     setEditUserError(null);
@@ -889,13 +902,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         previousEmail: editingAdminUser.email,
         nome: cleanName,
         email: cleanEmail,
-        celular: cleanPhone,
-        whatsapp: cleanPhone,
+        celular: normalizedPhone,
+        whatsapp: normalizedPhone,
         login: editingAdminUser.login,
         tipo: editingAdminUser.raw?.tipo,
-        categoria: editingAdminUser.raw?.categoria,
-        modelo: !editingAdminUser.isPassenger && editUserModel.trim() ? editUserModel.trim() : undefined,
-        placa: !editingAdminUser.isPassenger && editUserPlate.trim() ? editUserPlate.trim().toUpperCase() : undefined,
+        categoria: isConductor ? editUserCategory || editingAdminUser.raw?.categoria : editingAdminUser.raw?.categoria,
+        modelo: isConductor && cleanModel ? cleanModel : undefined,
+        cor: isConductor && cleanColor ? cleanColor : undefined,
+        placa: isConductor && validatedPlate ? validatedPlate : undefined,
+        ano: isConductor && !Number.isNaN(parsedYear) && parsedYear > 1990 ? parsedYear : undefined,
+        cpf: isConductor && validatedCpf && !validatedCpf.includes('*') ? validatedCpf : undefined,
+        cnh: isConductor && validatedCnh && !validatedCnh.includes('*') ? validatedCnh : undefined,
         foto: photoToSave || undefined,
         avatar: photoToSave || undefined,
       });
@@ -911,32 +928,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       const returnedPhoto = extractPhotoFromRow(res.data) || photoToSave || '';
 
-      // Salva / mantém fotos dos documentos do motorista no Supabase sem apagar fotos existentes
-      if (
-        !editingAdminUser.isPassenger &&
-        !editingAdminUser.isAdminRow &&
-        (hasPendingEditDocs || editDocCnhFront || editDocCnhBack || editDocCrlv || editDocVehicle)
-      ) {
+      // Mantém intactas todas as fotos de documentos já salvas no Supabase ao editar dados cadastrais
+      if (isConductor) {
         const existingApp = driverApplicationsMap[cleanEmail];
         const savedAppRes = await saveDriverApplicationSupabase({
           id: editingAdminUser.id,
           email: cleanEmail,
           name: cleanName,
-          phone: cleanPhone,
-          whatsapp: cleanPhone,
-          category: (editingAdminUser.categoryKey as any) || existingApp?.category || 'economica',
-          vehicleModel: editUserModel.trim() || existingApp?.vehicleModel || editingAdminUser.model || '',
-          vehicleColor: existingApp?.vehicleColor || '',
-          vehiclePlate: (editUserPlate.trim() || existingApp?.vehiclePlate || editingAdminUser.plate || '').toUpperCase(),
-          vehicleYear: existingApp?.vehicleYear || Number(editingAdminUser.year) || 2023,
-          cnh: existingApp?.cnh || editingAdminUser.raw?.cnh || '',
-          cpf: existingApp?.cpf || editingAdminUser.raw?.cpf || '',
-          pixKey: existingApp?.pixKey || '',
+          phone: normalizedPhone,
+          whatsapp: normalizedPhone,
+          category: (editUserCategory as any) || existingApp?.category || 'economica',
+          vehicleModel: cleanModel || existingApp?.vehicleModel || editingAdminUser.model || '',
+          vehicleColor: cleanColor || existingApp?.vehicleColor || '',
+          vehiclePlate: validatedPlate || existingApp?.vehiclePlate || editingAdminUser.plate || '',
+          vehicleYear: (!Number.isNaN(parsedYear) && parsedYear > 1990 ? parsedYear : undefined) || existingApp?.vehicleYear || Number(editingAdminUser.year) || 2023,
+          cnh: (validatedCnh && !validatedCnh.includes('*') ? validatedCnh : undefined) || existingApp?.cnh || '',
+          cpf: (validatedCpf && !validatedCpf.includes('*') ? validatedCpf : undefined) || existingApp?.cpf || '',
+          pixKey: cleanPix || existingApp?.pixKey || '',
           avatar: returnedPhoto || existingApp?.avatar || '',
-          cnhFrontPhoto: editDocCnhFront || existingApp?.cnhFrontPhoto || undefined,
-          cnhBackPhoto: editDocCnhBack || existingApp?.cnhBackPhoto || undefined,
-          crlvPhoto: editDocCrlv || existingApp?.crlvPhoto || undefined,
-          vehiclePhoto: editDocVehicle || existingApp?.vehiclePhoto || undefined,
+          cnhFrontPhoto: existingApp?.cnhFrontPhoto || undefined,
+          cnhBackPhoto: existingApp?.cnhBackPhoto || undefined,
+          crlvPhoto: existingApp?.crlvPhoto || undefined,
+          vehiclePhoto: existingApp?.vehiclePhoto || undefined,
           preserveExistingApproval: true,
         }).catch(() => null);
         if (savedAppRes?.record) {
@@ -955,10 +968,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 nome: cleanName,
                 email: cleanEmail,
                 'e-mail': cleanEmail,
-                celular: cleanPhone,
-                whatsapp: cleanPhone,
-                modelo: !editingAdminUser.isPassenger && editUserModel.trim() ? editUserModel.trim() : row.modelo,
-                placa: !editingAdminUser.isPassenger && editUserPlate.trim() ? editUserPlate.trim().toUpperCase() : row.placa,
+                celular: normalizedPhone,
+                whatsapp: normalizedPhone,
+                categoria: isConductor && editUserCategory ? editUserCategory : row.categoria,
+                modelo: isConductor && cleanModel ? cleanModel : row.modelo,
+                cor: isConductor && cleanColor ? cleanColor : row.cor,
+                placa: isConductor && validatedPlate ? validatedPlate : row.placa,
+                ano: isConductor && !Number.isNaN(parsedYear) && parsedYear > 1990 ? parsedYear : row.ano,
                 foto: returnedPhoto || row.foto,
                 avatar: returnedPhoto || row.avatar,
               }
@@ -973,27 +989,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 ...prev,
                 name: cleanName,
                 email: cleanEmail,
-                phone: cleanPhone || 'Não informado',
-                model: !editingAdminUser.isPassenger && editUserModel.trim() ? editUserModel.trim() : prev.model,
-                plate: !editingAdminUser.isPassenger && editUserPlate.trim() ? editUserPlate.trim().toUpperCase() : prev.plate,
+                phone: normalizedPhone || 'Não informado',
+                model: isConductor && cleanModel ? cleanModel : prev.model,
+                plate: isConductor && validatedPlate ? validatedPlate : prev.plate,
+                year: isConductor && !Number.isNaN(parsedYear) && parsedYear > 1990 ? parsedYear : prev.year,
                 avatar: returnedPhoto || prev.avatar,
               }
             : null
         );
         setDetailUserMeta((prev) => ({
           ...prev,
-          cnhFrontPhoto: editDocCnhFront || prev.cnhFrontPhoto,
-          cnhBackPhoto: editDocCnhBack || prev.cnhBackPhoto,
-          crlvPhoto: editDocCrlv || prev.crlvPhoto,
-          vehiclePhoto: editDocVehicle || prev.vehiclePhoto,
+          vehicleColor: cleanColor || prev.vehicleColor,
+          vehicleYear: !Number.isNaN(parsedYear) && parsedYear > 1990 ? String(parsedYear) : prev.vehicleYear,
+          pixKey: cleanPix || prev.pixKey,
+          cpf: validatedCpf || prev.cpf,
+          cnh: validatedCnh || prev.cnh,
         }));
       }
 
       setEditingAdminUser(null);
       setEditUserPhotoFile(null);
       setHasPendingEditAvatar(false);
-      setHasPendingEditDocs(false);
-      showToast(isChangingPhoto || hasPendingEditDocs ? 'Fotos e alterações salvas!' : 'Perfil atualizado com sucesso!');
+      showToast(isChangingPhoto ? 'Foto e alterações salvas!' : 'Perfil atualizado com sucesso!');
       fetchSupabaseUsuarios().catch(() => {});
     } catch (err: any) {
       setEditUserError(err?.message || 'Falha ao salvar alterações no Supabase.');
@@ -1516,6 +1533,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleApprovePendingDriver = async (app: DriverApplicationRecord) => {
+    const hasAll5Photos = Boolean(
+      app.avatar && app.cnhFrontPhoto && app.cnhBackPhoto && app.crlvPhoto && app.vehiclePhoto
+    );
+    if (!hasAll5Photos) {
+      showToast('⚠️ Não é possível ativar: aguarde todas as 5 fotos obrigatórias estarem enviadas.');
+      return;
+    }
     setProcessingApprovalEmail(app.email);
     try {
       const matchedDriver = drivers.find(
@@ -2998,11 +3022,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {
                     label:
                       app.category === 'moto_passageiro' || app.category === 'moto_entrega'
-                        ? '5. Moto'
-                        : '5. Carro (Frente)',
+                        ? '5. Foto da moto'
+                        : '5. Foto do carro (Frente)',
                     url: app.vehiclePhoto,
                   },
                 ];
+                const hasAll5Photos = docItems.every((d) => Boolean(d.url));
+                const matchedPendingUser = parsedUsers.find(
+                  (pu) =>
+                    (pu.email && app.email && pu.email.toLowerCase() === app.email.toLowerCase()) ||
+                    (app.id && String(pu.id) === String(app.id))
+                );
+                const fallbackPendingRaw = matchedPendingUser?.raw || {
+                  id: app.id || app.email,
+                  nome: app.name || 'Condutor RACE',
+                  email: app.email,
+                  'e-mail': app.email,
+                  celular: app.whatsapp || app.phone || '',
+                  whatsapp: app.whatsapp || app.phone || '',
+                };
+                const fallbackPendingParsed = matchedPendingUser || {
+                  id: app.id || app.email,
+                  name: app.name || 'Condutor RACE',
+                  email: app.email,
+                  login: app.email,
+                  isPassenger: false,
+                  raw: fallbackPendingRaw,
+                };
                 return (
                   <div
                     key={app.email}
@@ -3079,11 +3125,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* 5 Fotos Lado a Lado (Clique para ampliar) */}
+                    {/* 5 Fotos Lado a Lado (Único local com fotos dos documentos • Clique para ampliar) */}
                     <div className="space-y-2">
-                      <span className="text-xs font-heading font-black text-slate-700 uppercase tracking-wider block">
-                        5 Fotos Enviadas Lado a Lado (Toque na foto para ampliar):
-                      </span>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-xs font-heading font-black text-slate-700 uppercase tracking-wider block">
+                          5 Fotos Obrigatórias (Toque em qualquer foto para ampliar):
+                        </span>
+                        {!hasAll5Photos && (
+                          <span className="text-[11px] font-heading font-black text-rose-700 bg-rose-50 border border-rose-300 px-2.5 py-0.5 rounded-full">
+                            Ativar bloqueado até todas as 5 fotos estarem OK
+                          </span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                         {docItems.map((doc) => (
                           <div
@@ -3109,7 +3162,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </span>
                               </button>
                             ) : (
-                              <div className="w-full h-28 rounded-xl bg-slate-100 border border-dashed border-slate-300 flex items-center justify-center text-[11px] font-bold text-slate-400 text-center px-2">
+                              <div className="w-full h-28 rounded-xl bg-rose-50 border border-dashed border-rose-300 flex items-center justify-center text-xs font-heading font-black text-rose-600 text-center px-2">
                                 Não enviada
                               </div>
                             )}
@@ -3118,45 +3171,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Documento + Motivo de reprovação e Botões ✅ Ativar / ❌ Reprovar */}
-                    <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5 pt-2 border-t border-slate-200">
-                      <select
-                        value={rejectedDocInputs[app.email] || 'CNH Frente'}
-                        onChange={(e) =>
-                          setRejectedDocInputs((prev) => ({
-                            ...prev,
-                            [app.email]: e.target.value,
-                          }))
-                        }
-                        className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:border-rose-500 cursor-pointer"
-                        title="Documento a reprovar"
-                      >
-                        <option value="CNH Frente">Doc: CNH Frente</option>
-                        <option value="CNH Verso">Doc: CNH Verso</option>
-                        <option value="CRLV">Doc: CRLV</option>
-                        <option value="Foto de Perfil">Doc: Foto de Perfil</option>
-                        <option value="Foto do carro (Frente)">Doc: Foto do carro (Frente)</option>
-                      </select>
+                    {/* Documento + Motivo de reprovação e Botões Ativar, Reprovar, Bloquear e Excluir */}
+                    <div className="space-y-2.5 pt-2 border-t border-slate-200">
+                      <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
+                        <select
+                          value={rejectedDocInputs[app.email] || 'CNH Frente'}
+                          onChange={(e) =>
+                            setRejectedDocInputs((prev) => ({
+                              ...prev,
+                              [app.email]: e.target.value,
+                            }))
+                          }
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:border-rose-500 cursor-pointer"
+                          title="Documento a reprovar"
+                        >
+                          <option value="CNH Frente">Doc: CNH Frente</option>
+                          <option value="CNH Verso">Doc: CNH Verso</option>
+                          <option value="CRLV">Doc: CRLV</option>
+                          <option value="Foto de Perfil">Doc: Foto de Perfil</option>
+                          <option value="Foto do carro (Frente)">Doc: Foto do carro (Frente)</option>
+                        </select>
 
-                      <input
-                        type="text"
-                        value={rejectionReasonInputs[app.email] || ''}
-                        onChange={(e) =>
-                          setRejectionReasonInputs((prev) => ({
-                            ...prev,
-                            [app.email]: e.target.value,
-                          }))
-                        }
-                        placeholder="Motivo opcional da reprovação (ex: foto borrada)"
-                        className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-amber-500"
-                      />
+                        <input
+                          type="text"
+                          value={rejectionReasonInputs[app.email] || ''}
+                          onChange={(e) =>
+                            setRejectionReasonInputs((prev) => ({
+                              ...prev,
+                              [app.email]: e.target.value,
+                            }))
+                          }
+                          placeholder="Motivo da reprovação (ex: foto borrada)"
+                          className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
 
-                      <div className="flex items-center gap-2.5 shrink-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isBusy || !hasAll5Photos}
+                          onClick={() => handleApprovePendingDriver(app)}
+                          title={
+                            hasAll5Photos
+                              ? 'Ativar motorista'
+                              : 'Bloqueado: aguarde todas as 5 fotos obrigatórias estarem enviadas'
+                          }
+                          className="flex-1 min-w-[115px] px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-300 disabled:text-slate-600 disabled:cursor-not-allowed text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
+                        >
+                          {isBusy ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <span>{hasAll5Photos ? '✅ Ativar' : '🔒 Ativar (5 fotos)'}</span>
+                          )}
+                        </button>
+
                         <button
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleRejectPendingDriver(app)}
-                          className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                          className="flex-1 min-w-[115px] px-4 py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                         >
                           <span>❌ Reprovar</span>
                         </button>
@@ -3164,14 +3237,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <button
                           type="button"
                           disabled={isBusy}
-                          onClick={() => handleApprovePendingDriver(app)}
-                          className="flex-1 sm:flex-none px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                          onClick={() => handleBloquear(fallbackPendingRaw)}
+                          className="flex-1 min-w-[105px] px-4 py-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                         >
-                          {isBusy ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <span>✅ Ativar</span>
-                          )}
+                          <XCircle className="w-4 h-4 text-amber-600" />
+                          <span>Bloquear</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleRequestExcluirUsuario(fallbackPendingParsed)}
+                          className="flex-1 min-w-[105px] px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>Excluir</span>
                         </button>
                       </div>
                     </div>
@@ -6054,62 +6134,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 )}
 
-                {/* Seção 📄 DOCUMENTOS clicáveis para ampliar */}
-                {!liveUser.isPassenger && !liveUser.isAdminRow && (
-                  <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
-                      <h4 className="font-heading font-black text-slate-950 text-xs sm:text-sm uppercase tracking-wider">
-                        📄 DOCUMENTOS
-                      </h4>
-                      <span className="text-[11px] font-bold text-slate-500">
-                        Clique em qualquer foto para ampliar
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {[
-                        { label: 'CNH Frente', url: detailUserMeta.cnhFrontPhoto },
-                        { label: 'CNH Verso', url: detailUserMeta.cnhBackPhoto },
-                        { label: 'CRLV', url: detailUserMeta.crlvPhoto },
-                        {
-                          label: liveUser.isMotoboy ? 'Foto da moto' : 'Foto do carro (Frente)',
-                          url: detailUserMeta.vehiclePhoto,
-                        },
-                      ].map((doc) => (
-                        <div
-                          key={doc.label}
-                          className="bg-white border border-slate-200 rounded-2xl p-2 flex flex-col gap-1.5"
-                        >
-                          <span className="text-[11px] font-heading font-black text-slate-800 text-center leading-tight">
-                            {doc.label}
-                          </span>
-                          {doc.url ? (
-                            <button
-                              type="button"
-                              onClick={() => openDocumentPreview(doc.url, `${doc.label} — ${liveUser.name}`)}
-                              className="w-full relative rounded-xl overflow-hidden border border-slate-300 group cursor-pointer"
-                              title="Clique para ampliar"
-                            >
-                              <img
-                                src={doc.url}
-                                alt={doc.label}
-                                className="w-full h-24 object-cover group-hover:scale-105 transition-transform"
-                              />
-                              <span className="absolute bottom-1 right-1 bg-slate-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
-                                Ampliar
-                              </span>
-                            </button>
-                          ) : (
-                            <div className="w-full h-24 rounded-xl bg-rose-50 border border-dashed border-rose-300 flex items-center justify-center text-xs font-heading font-black text-rose-600 text-center px-2">
-                              Não enviada
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Botões de Ação ADM */}
                 <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center gap-2">
                   <button
@@ -6559,12 +6583,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <>
                     <div className="space-y-1">
                       <label className="text-xs font-heading font-black text-slate-700 uppercase block">
-                        Veículo / Modelo
+                        Veículo (Categoria)
+                      </label>
+                      <select
+                        value={editUserCategory}
+                        onChange={(e) => setEditUserCategory(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-bold text-sm outline-none cursor-pointer"
+                      >
+                        <option value="economica">Carro Econômico</option>
+                        <option value="confort">Carro Confort</option>
+                        <option value="moto_passageiro">Motoboy Passageiro</option>
+                        <option value="moto_entrega">Motoboy Entregas</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                        Modelo
                       </label>
                       <input
                         type="text"
                         value={editUserModel}
                         onChange={(e) => setEditUserModel(e.target.value)}
+                        placeholder="Ex: Onix, HB20, CG 160"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-bold text-sm outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                        Cor
+                      </label>
+                      <input
+                        type="text"
+                        value={editUserColor}
+                        onChange={(e) => setEditUserColor(e.target.value)}
+                        placeholder="Ex: Prata, Preto, Branco"
                         className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-bold text-sm outline-none"
                       />
                     </div>
@@ -6576,95 +6628,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         type="text"
                         value={editUserPlate}
                         onChange={(e) => setEditUserPlate(e.target.value.toUpperCase())}
+                        placeholder="ABC-1234 ou ABC1D23"
+                        maxLength={8}
                         className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm uppercase outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                        Ano
+                      </label>
+                      <input
+                        type="number"
+                        value={editUserYear}
+                        onChange={(e) => setEditUserYear(e.target.value)}
+                        placeholder="Ex: 2022"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                        CPF
+                      </label>
+                      <input
+                        type="text"
+                        value={editUserCpf}
+                        onChange={(e) => setEditUserCpf(e.target.value)}
+                        placeholder="000.000.000-00"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                        CNH
+                      </label>
+                      <input
+                        type="text"
+                        value={editUserCnh}
+                        onChange={(e) => setEditUserCnh(e.target.value)}
+                        placeholder="11 dígitos da CNH"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-heading font-black text-slate-700 uppercase block">
+                        Chave PIX
+                      </label>
+                      <input
+                        type="text"
+                        value={editUserPixKey}
+                        onChange={(e) => setEditUserPixKey(e.target.value)}
+                        placeholder="CPF, celular, e-mail ou chave aleatória"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-slate-950 font-mono font-bold text-sm outline-none"
                       />
                     </div>
                   </>
                 )}
               </div>
-
-              {/* Seção 📄 DOCUMENTOS (embaixo de PLACA e acima de SALVAR ALTERAÇÕES) */}
-              {!editingAdminUser.isPassenger && !editingAdminUser.isAdminRow && (
-                <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
-                    <h4 className="font-heading font-black text-slate-950 text-xs sm:text-sm uppercase tracking-wider">
-                      📄 DOCUMENTOS
-                    </h4>
-                    <span className="text-[11px] font-bold text-slate-500">
-                      Toque na foto para ampliar
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      {
-                        key: 'cnhFront' as const,
-                        label: 'CNH Frente',
-                        url: editDocCnhFront,
-                      },
-                      {
-                        key: 'cnhBack' as const,
-                        label: 'CNH Verso',
-                        url: editDocCnhBack,
-                      },
-                      {
-                        key: 'crlv' as const,
-                        label: 'CRLV',
-                        url: editDocCrlv,
-                      },
-                      {
-                        key: 'vehicle' as const,
-                        label: editingAdminUser.isMotoboy ? 'Foto da moto' : 'Foto do carro (Frente)',
-                        url: editDocVehicle,
-                      },
-                    ].map((doc) => (
-                      <div
-                        key={doc.key}
-                        className="bg-white border border-slate-200 rounded-2xl p-2.5 flex flex-col gap-2"
-                      >
-                        <span className="text-[11px] font-heading font-black text-slate-800 text-center">
-                          {doc.label}
-                        </span>
-
-                        {doc.url ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openDocumentPreview(doc.url, `${doc.label} — ${editUserName || editingAdminUser.name}`)
-                            }
-                            className="w-full relative rounded-xl overflow-hidden border border-slate-300 group cursor-pointer"
-                            title="Clique para ampliar"
-                          >
-                            <img
-                              src={doc.url}
-                              alt={doc.label}
-                              className="w-full h-24 object-cover group-hover:scale-105 transition-transform"
-                            />
-                            <span className="absolute bottom-1 right-1 bg-slate-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
-                              Ampliar
-                            </span>
-                          </button>
-                        ) : (
-                          <div className="w-full h-24 rounded-xl bg-rose-50 border border-dashed border-rose-300 flex items-center justify-center text-xs font-heading font-black text-rose-600 text-center px-2">
-                            Não enviada
-                          </div>
-                        )}
-
-                        <label className="w-full py-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-all">
-                          <Camera className="w-3 h-3 text-[#ff6a00]" />
-                          <span>Trocar foto</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => handleAdminEditDocPhotoChange(doc.key, e)}
-                          />
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {editUserError && (
                 <div className="bg-rose-50 border border-rose-300 text-rose-900 rounded-xl p-3 text-xs font-bold">

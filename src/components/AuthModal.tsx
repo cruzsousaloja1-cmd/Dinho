@@ -28,6 +28,7 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { verifyUserLoginAsync, saveUserAccount, isAppUserAdmin } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
+import { validateCNH, validatePlate } from '../utils/documentValidation';
 import { LegalConsentSection } from './LegalConsentSection';
 import { checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase } from '../supabase';
 
@@ -173,7 +174,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
       if (!isValidEmail(cleanEmail)) {
-        setErrorMessage('E-mail inválido. Digite um e-mail completo (ex: nome@dominio.com).');
+        setErrorMessage('E-mail inválido. Digite um e-mail válido com @ e .com (ex: nome@dominio.com).');
         return;
       }
       if (!isValidWhatsApp11(cleanPhone)) {
@@ -192,11 +193,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorMessage('Marque os 4 documentos para trabalhar');
         return;
       }
+      let normalizedAuthPlate = vehiclePlate.trim().toUpperCase();
+      let normalizedAuthCnh = cnh.trim();
       if (role === 'driver') {
         if (!vehiclePlate.trim() || !vehicleModel.trim() || !vehicleColor.trim()) {
           setErrorMessage('Informe placa, modelo e cor do veículo para solicitar aprovação.');
           return;
         }
+        const plateCheck = validatePlate(vehiclePlate);
+        if (!plateCheck.valid) {
+          setErrorMessage(plateCheck.error || 'Placa inválida. Digite ABC-1234 ou ABC1D23.');
+          return;
+        }
+        normalizedAuthPlate = plateCheck.normalized || normalizedAuthPlate;
+
+        const cnhCheck = validateCNH(cnh);
+        if (!cnhCheck.valid) {
+          setErrorMessage(cnhCheck.error || 'CNH inválida.');
+          return;
+        }
+        normalizedAuthCnh = cnhCheck.normalized || normalizedAuthCnh;
+
         if (!cnhFrontPhoto || !cnhBackPhoto || !crlvPhoto) {
           setErrorMessage('Envie as fotos da CNH (Frente), CNH (Verso) e CRLV para aprovação do ADM.');
           return;
@@ -246,10 +263,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             phone: cleanPhone,
             email: cleanEmail,
             cpf: '',
-            cnh: cnh ? `${cnh} (EAR Aprovado)` : '',
+            cnh: normalizedAuthCnh ? `${normalizedAuthCnh} (EAR Aprovado)` : '',
             category: finalCategory,
             vehicleModel: vehicleModel.trim(),
-            vehiclePlate: vehiclePlate.trim().toUpperCase(),
+            vehiclePlate: normalizedAuthPlate,
             vehicleColor: vehicleColor.trim(),
             vehicleYear: parseInt(vehicleYear, 10) || 2023,
             cnhPhoto: cnhFrontPhoto,
