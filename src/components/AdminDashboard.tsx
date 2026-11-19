@@ -61,6 +61,7 @@ import {
   getAllCorridasForAdminSupabase,
   getAllPagamentosSupabase,
   fetchDriverApplicationsSupabase,
+  saveDriverApplicationSupabase,
   approveOrRejectDriverSupabase,
   uploadProfilePhotoSupabase,
   extractPhotoFromRow,
@@ -511,6 +512,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editUserAvatar, setEditUserAvatar] = useState('');
   const [editUserModel, setEditUserModel] = useState('');
   const [editUserPlate, setEditUserPlate] = useState('');
+  const [editDocCnhFront, setEditDocCnhFront] = useState('');
+  const [editDocCnhBack, setEditDocCnhBack] = useState('');
+  const [editDocCrlv, setEditDocCrlv] = useState('');
+  const [editDocVehicle, setEditDocVehicle] = useState('');
+  const [hasPendingEditDocs, setHasPendingEditDocs] = useState(false);
   const [editUserPhotoFile, setEditUserPhotoFile] = useState<File | null>(null);
   const [hasPendingEditAvatar, setHasPendingEditAvatar] = useState(false);
   const [isSavingAdminUser, setIsSavingAdminUser] = useState(false);
@@ -525,14 +531,106 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleOpenAdminEditUser = (u: any) => {
     setEditingAdminUser(u);
     setEditUserName(u.name || '');
-    setEditUserEmail(u.email === 'Sem e-mail' ? '' : (u.email || ''));
+    const cleanEm = u.email === 'Sem e-mail' ? '' : String(u.email || '').trim();
+    const emKey = cleanEm.toLowerCase();
+    setEditUserEmail(cleanEm);
     setEditUserPhone(u.phone === 'Não informado' ? '' : (u.phone || ''));
     setEditUserAvatar(u.avatar || extractPhotoFromRow(u.raw) || '');
     setEditUserModel(u.model || '');
     setEditUserPlate(u.plate || '');
+
+    // Carrega os 4 documentos salvos (CNH Frente, CNH Verso, CRLV, Foto do carro Frente)
+    const appRec =
+      (emKey ? driverApplicationsMap[emKey] : undefined) ||
+      mergedDriverApplications.find(
+        (a) =>
+          (emKey && a.email.toLowerCase() === emKey) ||
+          (u.id && a.id && String(a.id) === String(u.id))
+      );
+    const matchedDriver = drivers.find(
+      (d) =>
+        (emKey && (d.email || '').toLowerCase().trim() === emKey) ||
+        (u.id && String(d.id) === String(u.id))
+    );
+    const initialCnhFront =
+      appRec?.cnhFrontPhoto ||
+      matchedDriver?.cnhFrontPhoto ||
+      matchedDriver?.cnhPhoto ||
+      u.raw?.cnh_frente ||
+      u.raw?.cnhFrontPhoto ||
+      '';
+    const initialCnhBack =
+      appRec?.cnhBackPhoto ||
+      matchedDriver?.cnhBackPhoto ||
+      u.raw?.cnh_verso ||
+      u.raw?.cnhBackPhoto ||
+      '';
+    const initialCrlv =
+      appRec?.crlvPhoto ||
+      matchedDriver?.crlvPhoto ||
+      u.raw?.crlv ||
+      u.raw?.crlvPhoto ||
+      '';
+    const initialVehicle =
+      appRec?.vehiclePhoto ||
+      matchedDriver?.vehiclePhoto ||
+      u.raw?.foto_veiculo ||
+      u.raw?.vehiclePhoto ||
+      '';
+
+    setEditDocCnhFront(initialCnhFront);
+    setEditDocCnhBack(initialCnhBack);
+    setEditDocCrlv(initialCrlv);
+    setEditDocVehicle(initialVehicle);
+    setHasPendingEditDocs(false);
+
+    // Garante leitura atualizada das fotos de documentos no Supabase se algum ainda estiver vazio
+    if (!u.isPassenger && !u.isAdminRow && emKey && (!initialCnhFront || !initialCnhBack || !initialCrlv || !initialVehicle)) {
+      fetchDriverApplicationsSupabase(emKey)
+        .then((freshMap) => {
+          const fresh = freshMap?.[emKey];
+          if (!fresh) return;
+          setDriverApplicationsMap((prev) => ({ ...prev, [emKey]: { ...(prev[emKey] || {}), ...fresh } }));
+          if (fresh.cnhFrontPhoto) setEditDocCnhFront((prev) => prev || fresh.cnhFrontPhoto || '');
+          if (fresh.cnhBackPhoto) setEditDocCnhBack((prev) => prev || fresh.cnhBackPhoto || '');
+          if (fresh.crlvPhoto) setEditDocCrlv((prev) => prev || fresh.crlvPhoto || '');
+          if (fresh.vehiclePhoto) setEditDocVehicle((prev) => prev || fresh.vehiclePhoto || '');
+        })
+        .catch(() => {});
+    }
+
     setEditUserPhotoFile(null);
     setHasPendingEditAvatar(false);
     setEditUserError(null);
+  };
+
+  const handleAdminEditDocPhotoChange = async (
+    docField: 'cnhFront' | 'cnhBack' | 'crlv' | 'vehicle',
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const sizeErr = validatePhotoMax2MB(file);
+    if (sizeErr) {
+      setEditUserError(sizeErr);
+      if (e.target) e.target.value = '';
+      return;
+    }
+    try {
+      const { dataUrl } = await validateAndCompressPhotoFile(file);
+      if (dataUrl) {
+        if (docField === 'cnhFront') setEditDocCnhFront(dataUrl);
+        if (docField === 'cnhBack') setEditDocCnhBack(dataUrl);
+        if (docField === 'crlv') setEditDocCrlv(dataUrl);
+        if (docField === 'vehicle') setEditDocVehicle(dataUrl);
+        setHasPendingEditDocs(true);
+        setEditUserError(null);
+      }
+    } catch (err: any) {
+      setEditUserError(err?.message || 'Não foi possível processar a imagem do documento.');
+    } finally {
+      if (e.target) e.target.value = '';
+    }
   };
 
   const handleAdminEditAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -624,6 +722,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
 
       const returnedPhoto = extractPhotoFromRow(res.data) || photoToSave || '';
+
+      // Salva / mantém fotos dos documentos do motorista no Supabase sem apagar fotos existentes
+      if (
+        !editingAdminUser.isPassenger &&
+        !editingAdminUser.isAdminRow &&
+        (hasPendingEditDocs || editDocCnhFront || editDocCnhBack || editDocCrlv || editDocVehicle)
+      ) {
+        const existingApp = driverApplicationsMap[cleanEmail];
+        const savedAppRes = await saveDriverApplicationSupabase({
+          id: editingAdminUser.id,
+          email: cleanEmail,
+          name: cleanName,
+          phone: cleanPhone,
+          whatsapp: cleanPhone,
+          category: (editingAdminUser.categoryKey as any) || existingApp?.category || 'economica',
+          vehicleModel: editUserModel.trim() || existingApp?.vehicleModel || editingAdminUser.model || '',
+          vehicleColor: existingApp?.vehicleColor || '',
+          vehiclePlate: (editUserPlate.trim() || existingApp?.vehiclePlate || editingAdminUser.plate || '').toUpperCase(),
+          vehicleYear: existingApp?.vehicleYear || Number(editingAdminUser.year) || 2023,
+          cnh: existingApp?.cnh || editingAdminUser.raw?.cnh || '',
+          cpf: existingApp?.cpf || editingAdminUser.raw?.cpf || '',
+          pixKey: existingApp?.pixKey || '',
+          avatar: returnedPhoto || existingApp?.avatar || '',
+          cnhFrontPhoto: editDocCnhFront || existingApp?.cnhFrontPhoto || undefined,
+          cnhBackPhoto: editDocCnhBack || existingApp?.cnhBackPhoto || undefined,
+          crlvPhoto: editDocCrlv || existingApp?.crlvPhoto || undefined,
+          vehiclePhoto: editDocVehicle || existingApp?.vehiclePhoto || undefined,
+          preserveExistingApproval: true,
+        }).catch(() => null);
+        if (savedAppRes?.record) {
+          setDriverApplicationsMap((prev) => ({
+            ...prev,
+            [cleanEmail]: savedAppRes.record,
+          }));
+        }
+      }
+
       setSupabaseUsers((prev) =>
         prev.map((row) =>
           String(row.id) === String(editingAdminUser.id)
@@ -646,7 +781,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setEditingAdminUser(null);
       setEditUserPhotoFile(null);
       setHasPendingEditAvatar(false);
-      showToast(isChangingPhoto ? 'Foto salva!' : 'Perfil atualizado com sucesso!');
+      setHasPendingEditDocs(false);
+      showToast(isChangingPhoto || hasPendingEditDocs ? 'Fotos e alterações salvas!' : 'Perfil atualizado com sucesso!');
       fetchSupabaseUsuarios().catch(() => {});
     } catch (err: any) {
       setEditUserError(err?.message || 'Falha ao salvar alterações no Supabase.');
@@ -4950,7 +5086,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Modal de Prévia de Documento / Comprovante Anexo */}
       {previewProofImage && (
-        <div className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[1400] bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-300 animate-scale-up">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <h4 className="font-heading font-black text-slate-950 text-base flex items-center gap-2">
@@ -5456,6 +5592,89 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </>
                 )}
               </div>
+
+              {/* Seção 📄 DOCUMENTOS (embaixo de PLACA e acima de SALVAR ALTERAÇÕES) */}
+              {!editingAdminUser.isPassenger && !editingAdminUser.isAdminRow && (
+                <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                    <h4 className="font-heading font-black text-slate-950 text-xs sm:text-sm uppercase tracking-wider">
+                      📄 DOCUMENTOS
+                    </h4>
+                    <span className="text-[11px] font-bold text-slate-500">
+                      Toque na foto para ampliar
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      {
+                        key: 'cnhFront' as const,
+                        label: 'CNH Frente',
+                        url: editDocCnhFront,
+                      },
+                      {
+                        key: 'cnhBack' as const,
+                        label: 'CNH Verso',
+                        url: editDocCnhBack,
+                      },
+                      {
+                        key: 'crlv' as const,
+                        label: 'CRLV',
+                        url: editDocCrlv,
+                      },
+                      {
+                        key: 'vehicle' as const,
+                        label: editingAdminUser.isMotoboy ? 'Foto da moto' : 'Foto do carro (Frente)',
+                        url: editDocVehicle,
+                      },
+                    ].map((doc) => (
+                      <div
+                        key={doc.key}
+                        className="bg-white border border-slate-200 rounded-2xl p-2.5 flex flex-col gap-2"
+                      >
+                        <span className="text-[11px] font-heading font-black text-slate-800 text-center">
+                          {doc.label}
+                        </span>
+
+                        {doc.url ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openDocumentPreview(doc.url, `${doc.label} — ${editUserName || editingAdminUser.name}`)
+                            }
+                            className="w-full relative rounded-xl overflow-hidden border border-slate-300 group cursor-pointer"
+                            title="Clique para ampliar"
+                          >
+                            <img
+                              src={doc.url}
+                              alt={doc.label}
+                              className="w-full h-24 object-cover group-hover:scale-105 transition-transform"
+                            />
+                            <span className="absolute bottom-1 right-1 bg-slate-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
+                              Ampliar
+                            </span>
+                          </button>
+                        ) : (
+                          <div className="w-full h-24 rounded-xl bg-rose-50 border border-dashed border-rose-300 flex items-center justify-center text-xs font-heading font-black text-rose-600 text-center px-2">
+                            Não enviada
+                          </div>
+                        )}
+
+                        <label className="w-full py-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-all">
+                          <Camera className="w-3 h-3 text-[#ff6a00]" />
+                          <span>Trocar foto</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleAdminEditDocPhotoChange(doc.key, e)}
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {editUserError && (
                 <div className="bg-rose-50 border border-rose-300 text-rose-900 rounded-xl p-3 text-xs font-bold">
