@@ -1338,7 +1338,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       tipoNorm === 'adm' ||
       tipoNorm === 'admin' ||
       tipoNorm === 'administrador' ||
-      email.toLowerCase() === 'admin@race.com.br';
+      isAdminTipoValue(u.tipo) ||
+      isPrimaryAdmEmail(email) ||
+      email.toLowerCase() === 'admin@race.com.br' ||
+      Boolean(
+        currentUser &&
+          isAppUserAdmin(currentUser) &&
+          ((email && currentUser.email && email.toLowerCase() === currentUser.email.toLowerCase().trim()) ||
+            (u.id !== undefined && u.id !== null && String(u.id) === String(currentUser.id)))
+      );
     const userType = isAdminRow ? 'ADM' : isPassenger ? 'Passageiro' : isMotoboy ? 'Motoboy' : 'Motorista';
 
     let categoryLabel = 'Econômico';
@@ -1416,7 +1424,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
   });
 
-  const filteredUsers = parsedUsers.filter((u) => {
+  const adminUserEmails = new Set<string>(['admin@race.com.br']);
+  const adminUserIds = new Set<string>();
+  const passengerUserEmails = new Set<string>();
+  parsedUsers.forEach((u) => {
+    const em = u.email && u.email !== 'Sem e-mail' ? u.email.toLowerCase().trim() : '';
+    if (u.isAdminRow) {
+      if (em) adminUserEmails.add(em);
+      if (u.id) adminUserIds.add(String(u.id).trim());
+    } else if (u.isPassenger && em) {
+      passengerUserEmails.add(em);
+    }
+  });
+  if (currentUser && isAppUserAdmin(currentUser)) {
+    if (currentUser.email) adminUserEmails.add(currentUser.email.toLowerCase().trim());
+    if (currentUser.id) adminUserIds.add(String(currentUser.id).trim());
+  }
+
+  const isAdminEntry = (entry: {
+    id?: string | number;
+    email?: string;
+    vehiclePlate?: string;
+    vehicleModel?: string;
+    tipo?: string;
+  }): boolean => {
+    const em = String(entry.email || '').trim().toLowerCase();
+    const idStr = String(entry.id || '').trim();
+    const plate = String(entry.vehiclePlate || '').trim().toUpperCase();
+    const model = String(entry.vehicleModel || '').trim().toUpperCase();
+    if (entry.tipo && isAdminTipoValue(entry.tipo)) return true;
+    if (em && (adminUserEmails.has(em) || isPrimaryAdmEmail(em))) return true;
+    if (idStr && adminUserIds.has(idStr)) return true;
+    if (plate === 'ADM-2026' || model === 'VEÍCULO ADM RACE' || model === 'VEICULO ADM RACE') return true;
+    return false;
+  };
+
+  const nonAdminUsers = parsedUsers.filter((u) => !u.isAdminRow);
+
+  const filteredUsers = nonAdminUsers.filter((u) => {
     if (cadastrosSubTab === 'drivers' && u.isPassenger) return false;
     if (cadastrosSubTab === 'passengers' && !u.isPassenger) return false;
     if (driverFilterCategory !== 'all' && u.categoryKey !== driverFilterCategory) return false;
@@ -1434,23 +1479,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
 
   const overviewDrivers = parsedUsers.filter((u) => !u.isPassenger && !u.isAdminRow);
+  const nonAdminDrivers = drivers.filter((d) => !isAdminEntry(d));
 
-  const pendingDrivers = drivers.filter(
+  const pendingDrivers = nonAdminDrivers.filter(
     (d) => d.pendingPayment && d.pendingPayment.status === 'pending'
   );
 
-  // Lista consolidada de cadastros de motoristas para aprovação do ADM (Motoristas Pendentes)
+  // Lista consolidada de cadastros de motoristas para aprovação do ADM (Motoristas Pendentes — NUNCA inclui ADM)
   const mergedDriverApplications: DriverApplicationRecord[] = (() => {
     const byEmail = new Map<string, DriverApplicationRecord>();
 
     Object.entries(driverApplicationsMap).forEach(([em, rec]) => {
       const key = em.trim().toLowerCase();
-      if (key) byEmail.set(key, rec);
+      if (!key) return;
+      if (isAdminEntry({ id: rec.id, email: key, vehiclePlate: rec.vehiclePlate, vehicleModel: rec.vehicleModel })) return;
+      if (passengerUserEmails.has(key)) return;
+      byEmail.set(key, rec);
     });
 
-    drivers.forEach((d) => {
+    nonAdminDrivers.forEach((d) => {
       const key = (d.email || '').trim().toLowerCase();
       if (!key) return;
+      if (isAdminEntry(d) || passengerUserEmails.has(key)) return;
       const existing = byEmail.get(key);
       byEmail.set(key, {
         ...(existing || {}),
@@ -1484,6 +1534,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     overviewDrivers.forEach((u) => {
       const key = (u.email || '').trim().toLowerCase();
       if (!key || key === 'sem e-mail') return;
+      if (isAdminEntry({ id: u.id, email: key, vehiclePlate: u.plate, vehicleModel: u.model, tipo: u.raw?.tipo })) return;
       const existing = byEmail.get(key);
       byEmail.set(key, {
         ...(existing || {}),
@@ -1512,7 +1563,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
     });
 
-    return Array.from(byEmail.values());
+    return Array.from(byEmail.values()).filter(
+      (app) => !isAdminEntry({ id: app.id, email: app.email, vehiclePlate: app.vehiclePlate, vehicleModel: app.vehicleModel })
+    );
   })();
 
   const pendingApprovalsList = mergedDriverApplications.filter(
@@ -3594,7 +3647,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Ações de Cadastros no RACE
                   </h3>
                   <p className="text-xs text-zinc-400">
-                    {drivers.length} condutores cadastrados • {activeWeeklySubs} ativos • {passengers.length} passageiros
+                    {overviewDrivers.length} condutores cadastrados • {activeWeeklySubs} ativos • {nonAdminUsers.filter(u => u.isPassenger).length} passageiros
                   </p>
                 </div>
               </div>
@@ -3614,7 +3667,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 title="Ativar e liberar todos os motoristas com status ONLINE"
               >
                 <CheckCheck className="w-4 h-4" />
-                <span>Ativar Todos os Cadastros ({drivers.length})</span>
+                <span>Ativar Todos os Cadastros ({overviewDrivers.length})</span>
               </button>
 
               {/* Botão REMOVER TODOS OS CADASTROS */}
@@ -3642,7 +3695,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <Database className="w-4 h-4 text-slate-900" />
-              <span>Todos ({parsedUsers.length})</span>
+              <span>Todos ({nonAdminUsers.length})</span>
             </button>
 
             <button
@@ -3655,7 +3708,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <Car className="w-4 h-4 text-slate-900" />
-              <span>Motoristas & Motos ({parsedUsers.filter(u => !u.isPassenger).length})</span>
+              <span>Motoristas & Motos ({overviewDrivers.length})</span>
             </button>
 
             <button
@@ -3668,7 +3721,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <Users className="w-4 h-4 text-slate-900" />
-              <span>Passageiros ({parsedUsers.filter(u => u.isPassenger).length})</span>
+              <span>Passageiros ({nonAdminUsers.filter(u => u.isPassenger).length})</span>
             </button>
           </div>
 
