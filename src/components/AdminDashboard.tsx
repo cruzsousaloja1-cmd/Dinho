@@ -160,6 +160,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onSelectFooterTab,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'pending_drivers' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'referrals' | 'beneficiaries' | 'reports' | 'reviews' | 'supabase'>('overview');
+  const [motoristasSubTab, setMotoristasSubTab] = useState<'pendente' | 'ativados'>('pendente');
 
   const adminRootRef = React.useRef<HTMLDivElement>(null);
 
@@ -170,10 +171,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ? 'pending_drivers'
       : activeTab;
 
+  const isMotoristasTab =
+    effectiveTab === 'pending_drivers' || effectiveTab === 'drivers';
+
   useEffect(() => {
     setSelectedAdminUserDetail(null);
     setSelectedAdminRideDetail(null);
     setShowRideDetailMap(false);
+    if (activeFooterTab === 'admin_drivers') {
+      setMotoristasSubTab('pendente');
+    }
     requestAnimationFrame(() => {
       const scroller = adminRootRef.current?.parentElement;
       if (scroller) scroller.scrollTop = 0;
@@ -1484,23 +1491,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const nonAdminUsers = parsedUsers.filter((u) => !u.isAdminRow);
 
-  const filteredUsers = nonAdminUsers.filter((u) => {
-    if (cadastrosSubTab === 'drivers' && u.isPassenger) return false;
-    if (cadastrosSubTab === 'passengers' && !u.isPassenger) return false;
-    if (driverFilterCategory !== 'all' && u.categoryKey !== driverFilterCategory) return false;
-
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase().trim();
-    return (
-      u.name.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q) ||
-      u.phone.toLowerCase().includes(q) ||
-      u.login.toLowerCase().includes(q) ||
-      u.plate.toLowerCase().includes(q) ||
-      u.model.toLowerCase().includes(q)
-    );
-  });
-
   const overviewDrivers = parsedUsers.filter((u) => !u.isPassenger && !u.isAdminRow);
   const nonAdminDrivers = drivers.filter((d) => !isAdminEntry(d));
 
@@ -1600,6 +1590,67 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const approvedApprovalsList = mergedDriverApplications.filter(
     (app) => app.approvalStatus === 'aprovado'
   );
+
+  // Isolamento estrito: motorista Pendente/Reprovado aparece SOMENTE em Motoristas > Pendente
+  const approvedDriverEmailsSet = new Set<string>(
+    approvedApprovalsList
+      .map((app) => String(app.email || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const approvedDriverIdsSet = new Set<string>(
+    approvedApprovalsList
+      .map((app) => String(app.id || '').trim())
+      .filter(Boolean)
+  );
+  const pendingOrRejectedDriverEmailsSet = new Set<string>(
+    [...pendingApprovalsList, ...rejectedApprovalsList]
+      .map((app) => String(app.email || '').trim().toLowerCase())
+      .filter((em) => Boolean(em) && !approvedDriverEmailsSet.has(em))
+  );
+  const pendingOrRejectedDriverIdsSet = new Set<string>(
+    [...pendingApprovalsList, ...rejectedApprovalsList]
+      .map((app) => String(app.id || '').trim())
+      .filter((id) => Boolean(id) && !approvedDriverIdsSet.has(id))
+  );
+
+  const isPendingOrRejectedDriver = (
+    id?: string | number,
+    email?: string,
+    isPassenger?: boolean
+  ): boolean => {
+    if (isPassenger) return false;
+    const em = String(email || '').trim().toLowerCase();
+    const idStr = String(id || '').trim();
+    if (em && approvedDriverEmailsSet.has(em)) return false;
+    if (idStr && approvedDriverIdsSet.has(idStr)) return false;
+    if (em && pendingOrRejectedDriverEmailsSet.has(em)) return true;
+    if (idStr && pendingOrRejectedDriverIdsSet.has(idStr)) return true;
+    return false;
+  };
+
+  const approvedOverviewDrivers = overviewDrivers.filter(
+    (u) => !isPendingOrRejectedDriver(u.id, u.email, false)
+  );
+  const approvedNonAdminUsers = nonAdminUsers.filter(
+    (u) => u.isPassenger || !isPendingOrRejectedDriver(u.id, u.email, false)
+  );
+
+  const filteredUsers = approvedNonAdminUsers.filter((u) => {
+    if (cadastrosSubTab === 'drivers' && u.isPassenger) return false;
+    if (cadastrosSubTab === 'passengers' && !u.isPassenger) return false;
+    if (driverFilterCategory !== 'all' && u.categoryKey !== driverFilterCategory) return false;
+
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      u.phone.toLowerCase().includes(q) ||
+      u.login.toLowerCase().includes(q) ||
+      u.plate.toLowerCase().includes(q) ||
+      u.model.toLowerCase().includes(q)
+    );
+  });
 
   const openDocumentPreview = (imageUrl: string, title: string) => {
     setPreviewDocTitle(title);
@@ -1744,8 +1795,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Financial calculations - Soma EXCLUSIVA das tabelas pagamentos e corridas do Supabase (considera Promo 0% quando aplicável)
-  const activeWeeklySubs = approvedApprovalsList.filter((d) => d.online).length;
-  const referralBonusesAdmin = supabasePagamentos.filter((p) => p.tipo === 'bonus_indicacao');
+  const activeWeeklySubs = approvedApprovalsList.length;
+  const referralBonusesAdmin = supabasePagamentos.filter((p) => {
+    if (p.tipo !== 'bonus_indicacao') return false;
+    const meta = parseReferralBonusMeta(p.comprovante_url, p.chave_pix, p.valor);
+    if (meta.indicatedRole !== 'passenger' && isPendingOrRejectedDriver(meta.indicatedId, meta.indicatedEmail, false)) {
+      return false;
+    }
+    return true;
+  });
   const driverBonusesAdmin = referralBonusesAdmin.filter(
     (p) => parseReferralBonusMeta(p.comprovante_url, p.chave_pix, p.valor).indicatedRole !== 'passenger'
   );
@@ -1754,6 +1812,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   );
 
   // Combina RPC adminReferrals com eventuais linhas de supabaseUsers que tenham indicado_por/indicado_por_codigo + hidrata fotos
+  // NUNCA inclui motoristas ainda Pendentes/Reprovados (só entram após aprovação pelo ADM)
   const mergedReferralsAdmin: AdminReferralItem[] = (() => {
     const byKey = new Map<string, AdminReferralItem>();
     const findUserPhoto = (uid?: string, uEmail?: string): string => {
@@ -1779,6 +1838,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
 
     for (const r of adminReferrals) {
+      const isPass = isPassengerReferralRole(r.tipo);
+      if (!isPass && isPendingOrRejectedDriver(r.id, r.email, false)) continue;
       const key = String(r.id || r.email || '').trim().toLowerCase();
       if (key) {
         byKey.set(key, {
@@ -1793,12 +1854,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (!indCode) continue;
       const uid = String(u.id || '').trim();
       const uEmail = String(u.email || '').trim().toLowerCase();
+      const isPass = isPassengerReferralRole(u.tipo);
+      if (!isPass && isPendingOrRejectedDriver(uid, uEmail, false)) continue;
       const existing =
         (uid && byKey.get(uid.toLowerCase())) ||
         (uEmail && byKey.get(uEmail));
       if (existing) continue;
 
-      const isPass = isPassengerReferralRole(u.tipo);
       const ridesCount = supabaseCorridas.filter((c) => {
         if (String(c.status || '').toLowerCase() !== 'finalizada') return false;
         if (isPass) {
@@ -1832,8 +1894,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return Array.from(byKey.values());
   })();
 
-  const driverReferralsAdmin = mergedReferralsAdmin.filter((item) => !isPassengerReferralRole(item.tipo));
-  const passengerReferralsAdmin = mergedReferralsAdmin.filter((item) => isPassengerReferralRole(item.tipo));
+  const isLinkedToAdmReferralCode = (item: AdminReferralItem): boolean => {
+    const myId = String(currentUser?.id || '').trim();
+    const myEmail = String(currentUser?.email || '').trim().toLowerCase();
+    const myPhoneDigits = normalizeReferralDigits(currentUser?.whatsapp || currentUser?.phone || '');
+    const myCodeUpper = String(admReferralCode || FIXED_ADM_REFERRAL_CODE).trim().toUpperCase();
+    const indId = String(item.indicadoPorId || '').trim();
+    if (myId && indId && indId === myId) return true;
+    const codUpper = String(item.codigoUsado || '').trim().toUpperCase();
+    if (myCodeUpper && codUpper && codUpper === myCodeUpper) return true;
+    const indRaw = String(item.indicadoPor || '').trim();
+    const indUpper = indRaw.toUpperCase();
+    const indLower = indRaw.toLowerCase();
+    const indDigits = normalizeReferralDigits(indRaw);
+    return Boolean(
+      (myId && indRaw === myId) ||
+        (myCodeUpper && indUpper === myCodeUpper) ||
+        (myEmail && indLower === myEmail) ||
+        (myPhoneDigits.length >= 8 &&
+          indDigits.length >= 8 &&
+          (indDigits.endsWith(myPhoneDigits) || myPhoneDigits.endsWith(indDigits)))
+    );
+  };
+
+  const joseReferralsAdmin = mergedReferralsAdmin.filter(isLinkedToAdmReferralCode);
+  const driverReferralsAdmin = joseReferralsAdmin.filter((item) => !isPassengerReferralRole(item.tipo));
+  const passengerReferralsAdmin = joseReferralsAdmin.filter((item) => isPassengerReferralRole(item.tipo));
 
   // Helper global para resolver o usuário que indicou (nome + código + id + email)
   const resolveReferrerForCode = (codeOrPhoneOrId: string) => {
@@ -2035,6 +2121,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
     const combined = new Map<string, ReferralCandidateItem>();
     for (const r of admOwnReferrals) {
+      if (!isPassengerReferralRole(r.tipo) && isPendingOrRejectedDriver(r.id, r.email, false)) {
+        continue;
+      }
       combined.set(String(r.id || r.email).toLowerCase(), r);
     }
     for (const r of matchingFromAdmin) {
@@ -2471,151 +2560,140 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </>
       )}
 
-      {/* Admin Subtabs in White (visíveis na aba ADM) */}
+      {/* Menu ADM simplificado: somente 4 botões (Visão Geral, Motoristas, Corridas, Indicação e Bônus) */}
       {!isFocusedFooterView && (
-      <div className="bg-white border border-slate-200 p-2 rounded-2xl flex items-center gap-2 shadow-sm overflow-x-auto overscroll-x-contain">
+      <div className="bg-white border border-slate-200 p-2 rounded-2xl grid grid-cols-2 sm:grid-cols-4 gap-2 shadow-sm">
         <button
+          type="button"
           onClick={() => {
             setActiveTab('overview');
             onSelectFooterTab?.('admin');
           }}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5 ${
             effectiveTab === 'overview'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          Visão Geral & Métricas
+          <TrendingUp className="w-4 h-4 shrink-0" />
+          <span>Visão Geral</span>
         </button>
         <button
-          onClick={() => setActiveTab('pending_drivers')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            effectiveTab === 'pending_drivers'
+          type="button"
+          onClick={() => {
+            setActiveTab('pending_drivers');
+            setMotoristasSubTab('pendente');
+          }}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5 ${
+            isMotoristasTab
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          <UserCheck className="w-4 h-4 text-[#ff6a00]" />
-          <span>Motorista Pendente ({pendingApprovalsList.length})</span>
+          <UserCheck className="w-4 h-4 text-[#ff6a00] shrink-0" />
+          <span>Motoristas</span>
           {pendingApprovalsList.length > 0 && (
-            <span className="w-2.5 h-2.5 rounded-full bg-[#ff6a00] animate-pulse" />
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-[#ff6a00] text-white">
+              {pendingApprovalsList.length}
+            </span>
           )}
         </button>
         <button
-          onClick={() => setActiveTab('withdrawals')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            effectiveTab === 'withdrawals'
-              ? 'bg-amber-500 text-slate-950 shadow'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <ArrowDownCircle className="w-4 h-4 text-emerald-700" />
-          <span>Saques Pendentes ({pendingWithdrawals.length})</span>
-          {pendingWithdrawals.length > 0 && (
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('payments')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            effectiveTab === 'payments'
-              ? 'bg-amber-500 text-slate-950 shadow'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <Wallet className="w-4 h-4 text-emerald-700" />
-          <span>Pagamentos Pendentes ({pendingDrivers.length})</span>
-          {pendingDrivers.length > 0 && (
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('drivers')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            effectiveTab === 'drivers'
-              ? 'bg-amber-500 text-slate-950 shadow'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <Users className="w-4 h-4 text-amber-900" />
-          <span>Gestão de Cadastros ({drivers.length + passengers.length})</span>
-        </button>
-        <button
+          type="button"
           onClick={() => setActiveTab('rides')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5 ${
             effectiveTab === 'rides'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          Monitor de Corridas
+          <Car className="w-4 h-4 shrink-0" />
+          <span>Corridas ({totalRidesAdmin})</span>
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('referrals')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5 ${
             effectiveTab === 'referrals'
               ? 'bg-[#ff6a00] text-white shadow'
               : 'text-orange-700 hover:text-orange-950 hover:bg-orange-50'
           }`}
         >
           <Gift className="w-4 h-4 shrink-0" />
-          <span>Indicações & Bônus ({referralBonusesAdmin.length})</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('beneficiaries')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            effectiveTab === 'beneficiaries'
-              ? 'bg-blue-700 text-white shadow'
-              : 'text-blue-800 hover:text-blue-950 hover:bg-blue-50'
-          }`}
-        >
-          <Users className="w-4 h-4 shrink-0" />
-          <span>📋 Controle Geral dos Beneficiados ({allBeneficiaryRowsWithUsage.length})</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('reports')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
-            effectiveTab === 'reports'
-              ? 'bg-amber-500 text-slate-950 shadow'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          Relatórios & Performance
-        </button>
-        <button
-          onClick={() => setActiveTab('reviews')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            effectiveTab === 'reviews'
-              ? 'bg-amber-500 text-slate-950 shadow'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-          <span>Avaliações & Reclamações ({reviewsList.length})</span>
-          {criticalIssues.length > 0 && (
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
-              {criticalIssues.length} alerta{criticalIssues.length > 1 ? 's' : ''}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('supabase')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            effectiveTab === 'supabase'
-              ? 'bg-[#ff6a00] text-white shadow'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <Cloud className="w-4 h-4 text-emerald-600" />
-          <span>Nuvem Supabase</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Indicação e Bônus ({admOwnMergedReferrals.length})</span>
         </button>
       </div>
       )}
 
-      {/* TAB 1: OVERVIEW & KEY PERFORMANCE INDICATORS */}
+      {/* TAB 1: VISÃO GERAL (SOMENTE NÚMEROS: TOTAL DE CORRIDAS, TOTAL ARRECADADO, CONDUTORES ATIVOS) */}
       {effectiveTab === 'overview' && (
         <div className="space-y-4">
+          {/* 3 Números Principais da Visão Geral */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 font-mono">
+                  Total de Corridas
+                </span>
+                <Car className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="text-3xl sm:text-4xl font-heading font-black text-slate-950">
+                {totalRidesAdmin}
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                Corridas registradas no sistema
+              </p>
+            </div>
+
+            <div className="bg-white border border-emerald-200 rounded-3xl p-5 shadow-md">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 font-mono">
+                  Total Arrecadado
+                </span>
+                <DollarSign className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="text-3xl sm:text-4xl font-heading font-black text-emerald-700">
+                {formatBRL(totalArrecadadoAdmin)}
+              </div>
+              <p className="text-xs text-emerald-700/80 font-medium mt-1">
+                {isPromoZeroFeeNow
+                  ? 'Repasse 100% Motorista / 0% Race até 17/12'
+                  : 'Repasse 85% Motorista / 15% Race'}
+              </p>
+            </div>
+
+            <div className="bg-white border border-amber-200 rounded-3xl p-5 shadow-md">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-800 font-mono">
+                  Condutores Ativos
+                </span>
+                <UserCheck className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="text-3xl sm:text-4xl font-heading font-black text-slate-950">
+                {approvedApprovalsList.length}
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-xs text-slate-500 font-medium">
+                  {pendingApprovalsList.length > 0
+                    ? `${pendingApprovalsList.length} pendente(s) em Motoristas > Pendente`
+                    : 'Somente condutores aprovados'}
+                </p>
+                {pendingApprovalsList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('pending_drivers');
+                      setMotoristasSubTab('pendente');
+                    }}
+                    className="text-xs font-heading font-black text-[#ff6a00] hover:underline cursor-pointer"
+                  >
+                    Ver Pendentes →
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* PAINEL DE CÓDIGOS DE EMBARQUE PARA CONFERÊNCIA ADM (SOMENTE CORRIDAS DO SUPABASE) */}
           {(() => {
             const merged = new Map<string, Ride>();
@@ -2639,7 +2717,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onClick={() => setActiveTab('rides')}
                     className="px-3 py-1 bg-slate-950 text-amber-300 font-heading font-black text-xs rounded-xl cursor-pointer hover:bg-slate-800"
                   >
-                    Ver Todas no Monitor
+                    Ver Todas em Corridas
                   </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -2669,33 +2747,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             );
           })()}
 
-          {/* Alerta de Pagamentos Pendentes no Overview se houver */}
-          {pendingDrivers.length > 0 && (
-            <div className="bg-amber-50 border-2 border-amber-400 rounded-3xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-amber-200 text-amber-900 flex items-center justify-center font-bold">
-                  <Clock className="w-6 h-6 animate-pulse" />
-                </div>
-                <div>
-                  <h3 className="font-heading font-black text-amber-950 text-base sm:text-lg">
-                    {pendingDrivers.length} {pendingDrivers.length === 1 ? 'Comprovante PIX Pendente' : 'Comprovantes PIX Pendentes'}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-amber-800 font-medium">
-                    Condutores aguardando conferência bancária ({RACE_PIX_BANK}) ou validação de chave PIX.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('payments')}
-                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-heading font-black text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow-sm shrink-0 flex items-center justify-center gap-2"
-              >
-                <span>Auditar Comprovantes Agora</span>
-                <ExternalLink className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-          {/* PAINEL OFICIAL ASAAS: Saldo Asaas, Total Recebido, Comissão 15% Race, Repasse Sexta 85% */}
+          {/* PAINEL OFICIAL ASAAS: Saldo Asaas, Total Recebido, Comissão Race, Repasse Sexta */}
           <div className="bg-gradient-to-br from-slate-900 via-zinc-950 to-slate-900 border-2 border-emerald-500/80 rounded-3xl p-5 sm:p-6 shadow-xl text-white space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-zinc-800">
               <div className="flex items-center gap-3">
@@ -2713,7 +2765,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-zinc-400 mt-0.5">
-                    Controle de cobranças PIX, Cartão e repasse semanal de 85% aos motoristas (chave protegida no servidor)
+                    {isPromoZeroFeeNow
+                      ? 'Controle de cobranças PIX, Cartão e repasse semanal de 100% aos motoristas até 17/12 (depois 85%)'
+                      : 'Controle de cobranças PIX, Cartão e repasse semanal de 85% aos motoristas (chave protegida no servidor)'}
                   </p>
                 </div>
               </div>
@@ -2738,7 +2792,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {/* 4 Cards de Métricas Principais Solicitadas */}
+            {/* 4 Cards de Métricas Financeiras */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
               {/* 1. Saldo Asaas */}
               <div className="bg-zinc-900/80 border border-emerald-500/30 rounded-2xl p-4 relative overflow-hidden">
@@ -2798,7 +2852,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {formatBRL(asaasData.repassarSexta85)}
                 </div>
                 <p className="text-[11px] text-emerald-400 mt-1 font-bold">
-                  85% para condutores
+                  {isPromoZeroFeeNow ? '100% para condutores até 17/12' : '85% para condutores'}
                 </p>
               </div>
             </div>
@@ -2808,19 +2862,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="flex items-center gap-2.5">
                 <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span className="text-zinc-200">
-                  <strong>Próximo Repasse Semanal:</strong> Toda sexta-feira às 18:00 o admin repassa os 85% ({formatBRL(asaasData.repassarSexta85)}) diretamente para as chaves PIX dos condutores.
+                  <strong>Próximo Repasse Semanal:</strong> Toda sexta-feira às 18:00 o admin repassa {isPromoZeroFeeNow ? '100%' : 'os 85%'} ({formatBRL(asaasData.repassarSexta85)}) diretamente para as chaves PIX dos condutores ativos.
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => {
                   const rows = [
-                    ['Motorista', 'Chave PIX', 'Total Arrecadado', 'Ganho Líquido (85%)', 'Comissão Race (15%)'],
-                    ...overviewDrivers.map((d) => {
-                      const driverTotal = d.saldo ? Number((d.saldo / 0.85).toFixed(2)) : 0;
-                      const driver85 = d.saldo || 0;
-                      const race15 = Number((driverTotal * 0.15).toFixed(2));
-                      return [d.name, d.raw?.chave_pix || d.phone || 'PIX pendente', driverTotal.toFixed(2), driver85.toFixed(2), race15.toFixed(2)];
+                    [
+                      'Motorista',
+                      'Chave PIX',
+                      'Total Arrecadado',
+                      isPromoZeroFeeNow ? 'Ganho Líquido (100%)' : 'Ganho Líquido (85%)',
+                      isPromoZeroFeeNow ? 'Comissão Race (0%)' : 'Comissão Race (15%)',
+                    ],
+                    ...approvedOverviewDrivers.map((d) => {
+                      const driverShare = isPromoZeroFeeNow ? 1 : 0.85;
+                      const feeShare = isPromoZeroFeeNow ? 0 : 0.15;
+                      const driverTotal = d.saldo ? Number((d.saldo / driverShare).toFixed(2)) : 0;
+                      const driverNet = d.saldo || 0;
+                      const raceFee = Number((driverTotal * feeShare).toFixed(2));
+                      return [d.name, d.raw?.chave_pix || d.phone || 'PIX pendente', driverTotal.toFixed(2), driverNet.toFixed(2), raceFee.toFixed(2)];
                     })
                   ];
                   const csv = '\uFEFF' + rows.map((r) => r.join(';')).join('\n');
@@ -2839,202 +2901,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           </div>
-
-          {/* Painel Direto: Quem Ganhou Quanto (100% Motorista / 0% Race até 17/12, depois 85% / 15%) */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg flex items-center gap-2">
-                  <Users className="w-5 h-5 text-amber-600" />
-                  <span>
-                    {isPromoZeroFeeNow
-                      ? 'Quem Ganhou Quanto • Repasse 100% Motorista / 0% Race - PROMOÇÃO ATÉ 17/12'
-                      : 'Quem Ganhou Quanto • Repasse 85% e Comissão Race 15%'}
-                  </span>
-                </h3>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  {isPromoZeroFeeNow
-                    ? 'Acompanhe corridas feitas, total arrecadado, ganho do condutor (100%) e comissão retida pela Race (0% até 17/12; depois volta para 85% / 15%).'
-                    : 'Acompanhe corridas feitas, total arrecadado, ganho do condutor (85%) e comissão retida pela Race (15%).'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('drivers')}
-                className="text-xs font-heading font-black text-amber-700 hover:text-amber-800 flex items-center gap-1 self-start sm:self-auto cursor-pointer"
-              >
-                <span>Ver Todos os {overviewDrivers.length} Condutores</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {isLoadingUsers ? (
-              <div className="text-center py-8 text-slate-500 text-sm flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
-                <span>Carregando motoristas do Supabase...</span>
-              </div>
-            ) : overviewDrivers.length === 0 ? (
-              <div className="text-center py-8 text-slate-500 text-sm">
-                Nenhum motorista ou motoboy cadastrado no Supabase no momento.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {overviewDrivers.map((driver) => {
-                  const driverRides = supabaseCorridas.filter(
-                    (r) => r.driver?.id === driver.id || (driver.email && r.driver?.email?.toLowerCase() === driver.email?.toLowerCase()) || (driver.name && r.driver?.name?.toLowerCase() === driver.name?.toLowerCase())
-                  );
-                  const driverRidesCount = driverRides.length;
-                  const driverTotalArrecadado = Number(driverRides.reduce((acc, r) => acc + Number(r.price || 0), 0).toFixed(2));
-                  const driverEarningsNet = Number(
-                    driverRides
-                      .reduce(
-                        (acc, r) =>
-                          acc +
-                          calculateRideSplitForDriver(
-                            r.price,
-                            driver.raw ? { createdAt: driver.raw.created_at } : null,
-                            r.createdAt
-                          ).driverEarnings,
-                        0
-                      )
-                      .toFixed(2)
-                  );
-                  const driverCommissionRace = Number(
-                    Math.max(0, driverTotalArrecadado - driverEarningsNet).toFixed(2)
-                  );
-                  const driverSaldoRepassar = driverEarningsNet || driver.saldo || 0;
-
-                  return (
-                    <div
-                      key={driver.id}
-                      className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-slate-300 transition-all"
-                    >
-                      <div className="flex items-center gap-3">
-                        {driver.avatar ? (
-                          <img
-                            src={driver.avatar}
-                            alt={driver.name}
-                            className="w-12 h-12 rounded-full object-cover border-2 border-amber-500 shadow-xs shrink-0"
-                          />
-                        ) : (
-                          <div className={`w-12 h-12 rounded-full flex items-center justify-center font-heading font-black text-sm border-2 shadow-xs shrink-0 ${
-                            driver.isMotoboy ? 'bg-cyan-100 text-cyan-800 border-cyan-300' : 'bg-amber-100 text-amber-800 border-amber-400'
-                          }`}>
-                            {driver.name ? driver.name.charAt(0).toUpperCase() : 'M'}
-                          </div>
-                        )}
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="font-heading font-black text-slate-950 text-sm sm:text-base">
-                              {driver.name}
-                            </h4>
-                            {driver.plate && (
-                              <span className="text-[11px] font-mono bg-white text-slate-800 px-2 py-0.5 rounded border border-slate-300 font-bold uppercase">
-                                {driver.plate}
-                              </span>
-                            )}
-                            <span className="text-[11px] font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded uppercase">
-                              {driver.categoryLabel}
-                            </span>
-                            <span className="text-[11px] font-mono font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                              {driver.userType}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 font-medium flex-wrap">
-                            <span>E-mail: <strong className="text-slate-800">{driver.email}</strong></span>
-                            <span>&bull;</span>
-                            <span>WhatsApp: <strong className="text-slate-800">{driver.phone}</strong></span>
-                            <span>&bull;</span>
-                            <span>Login: <strong className="text-slate-800">{driver.login}</strong></span>
-                            <span>&bull;</span>
-                            <span>Cadastro: {driver.createdAtFormatted}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 justify-between md:justify-end border-t md:border-t-0 pt-2 md:pt-0 border-slate-200">
-                        {/* Quem Ganhou Quanto: Corridas, Total, Ganho 100%/85%, Race 0%/15%, Saldo */}
-                        <div className="grid grid-cols-5 gap-2 text-center bg-white p-2.5 rounded-xl border border-slate-200 text-xs shadow-xs">
-                          <div className="px-1">
-                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Corridas</span>
-                            <span className="font-heading font-black text-slate-900">{driverRidesCount}</span>
-                          </div>
-                          <div className="px-1 border-l border-slate-100">
-                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Total</span>
-                            <span className="font-heading font-black text-slate-900">{formatBRL(driverTotalArrecadado)}</span>
-                          </div>
-                          <div className="px-1 border-l border-slate-100">
-                            <span className="text-[10px] text-emerald-700 font-bold uppercase block">
-                              {isPromoZeroFeeNow ? 'GANHO 100%' : 'GANHO 85%'}
-                            </span>
-                            <span className="font-heading font-black text-emerald-600">{formatBRL(driverEarningsNet)}</span>
-                          </div>
-                          <div className="px-1 border-l border-slate-100">
-                            <span className="text-[10px] text-amber-700 font-bold uppercase block">
-                              {isPromoZeroFeeNow ? 'RACE 0%' : 'RACE 15%'}
-                            </span>
-                            <span className="font-heading font-black text-amber-600">{formatBRL(driverCommissionRace)}</span>
-                          </div>
-                          <div className="px-1 border-l border-slate-100">
-                            <span className="text-[10px] text-blue-700 font-bold uppercase block">Saldo</span>
-                            <span className="font-heading font-black text-blue-700">{formatBRL(driverSaldoRepassar)}</span>
-                          </div>
-                        </div>
-
-                        {/* Botões: Editar, Ativar (para sempre), Bloquear, Ver avaliações */}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAdminEditUser(driver)}
-                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                            title="Editar usuário e foto"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            <span>Editar</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleLiberar7Dias(driver.raw)}
-                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                            title="Ativar condutor permanentemente"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Ativar</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleBloquear(driver.raw)}
-                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                            title="Bloquear condutor"
-                          >
-                            <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                            <span>Bloquear</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleVerAvaliacoes(driver)}
-                            className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                            title="Ver avaliações do condutor"
-                          >
-                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                            <span>Ver avaliações</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
       )}
 
-      {/* TAB MOTORISTAS PENDENTES: APROVAÇÃO COM FOTOS CNH FRENTE/VERSO, CRLV, PLACA E MODELO/COR */}
-      {effectiveTab === 'pending_drivers' && (
+      {/* SELETOR 2 ABAS DE MOTORISTAS: PENDENTE (ANTES DE APROVAR) E ATIVADOS (DEPOIS DE APROVAR) */}
+      {isMotoristasTab && (
+        <div className="bg-white border border-slate-200 p-2 rounded-2xl grid grid-cols-2 gap-2 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setMotoristasSubTab('pendente')}
+            className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              motoristasSubTab === 'pendente'
+                ? 'bg-[#ff6a00] text-white shadow'
+                : 'text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <Clock className="w-4 h-4 shrink-0" />
+            <span>Pendente ({pendingApprovalsList.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMotoristasSubTab('ativados')}
+            className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              motoristasSubTab === 'ativados'
+                ? 'bg-emerald-600 text-white shadow'
+                : 'text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Ativados ({approvedApprovalsList.length})</span>
+          </button>
+        </div>
+      )}
+
+      {/* TAB MOTORISTAS > PENDENTE: APROVAÇÃO COM FOTOS CNH FRENTE/VERSO, CRLV, PLACA E MODELO/COR */}
+      {isMotoristasTab && motoristasSubTab === 'pendente' && (
         <div className="space-y-4">
           {actionToast && (
             <div className="bg-slate-950 text-white border-2 border-[#ff6a00] p-3.5 rounded-2xl flex items-center justify-between shadow-lg">
@@ -3662,11 +3563,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 3: GESTÃO DE CADASTROS (MOTORISTAS, MOTOBOYS E PASSAGEIROS) */}
-      {(effectiveTab === 'drivers' || effectiveTab === 'pending_drivers') && (
+      {/* TAB MOTORISTAS > ATIVADOS (CONSOLIDADO: QUEM GANHOU QUANTO + GESTÃO DE CADASTROS + BENEFICIADOS) */}
+      {isMotoristasTab && motoristasSubTab === 'ativados' && (
         <div className="space-y-4">
           {/* Toast de feedback de ação */}
-          {effectiveTab === 'drivers' && actionToast && (
+          {actionToast && (
             <div className="bg-slate-950 text-white border-2 border-[#ff6a00] p-3.5 rounded-2xl flex items-center justify-between shadow-lg animate-bounce">
               <span className="font-heading font-black text-xs sm:text-sm flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -3682,6 +3583,188 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
+          {/* Painel Direto: Quem Ganhou Quanto (somente condutores ATIVADOS — 100% Motorista / 0% Race até 17/12) */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5 text-amber-600" />
+                  <span>
+                    {isPromoZeroFeeNow
+                      ? 'Quem Ganhou Quanto • Repasse 100% Motorista / 0% Race - PROMOÇÃO ATÉ 17/12'
+                      : 'Quem Ganhou Quanto • Repasse 85% e Comissão Race 15%'}
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  {isPromoZeroFeeNow
+                    ? 'Condutores ativados: corridas feitas, total arrecadado, ganho do condutor (100%) e comissão retida pela Race (0% até 17/12; depois 85% / 15%).'
+                    : 'Condutores ativados: corridas feitas, total arrecadado, ganho do condutor (85%) e comissão retida pela Race (15%).'}
+                </p>
+              </div>
+              <span className="text-xs font-mono font-bold px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0">
+                {approvedOverviewDrivers.length} Ativado(s)
+              </span>
+            </div>
+
+            {isLoadingUsers ? (
+              <div className="text-center py-6 text-slate-500 text-sm flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
+                <span>Carregando motoristas ativados do Supabase...</span>
+              </div>
+            ) : approvedOverviewDrivers.length === 0 ? (
+              <div className="text-center py-6 text-slate-500 text-sm">
+                Nenhum condutor ativado ainda. Aprove em Motoristas &gt; Pendente para aparecer aqui.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {approvedOverviewDrivers.map((driver) => {
+                  const driverRides = supabaseCorridas.filter(
+                    (r) =>
+                      r.driver?.id === driver.id ||
+                      (driver.email && r.driver?.email?.toLowerCase() === driver.email?.toLowerCase()) ||
+                      (driver.name && r.driver?.name?.toLowerCase() === driver.name?.toLowerCase())
+                  );
+                  const driverRidesCount = driverRides.length;
+                  const driverTotalArrecadado = Number(
+                    driverRides.reduce((acc, r) => acc + Number(r.price || 0), 0).toFixed(2)
+                  );
+                  const driverEarningsNet = Number(
+                    driverRides
+                      .reduce(
+                        (acc, r) =>
+                          acc +
+                          calculateRideSplitForDriver(
+                            r.price,
+                            driver.raw ? { createdAt: driver.raw.created_at } : null,
+                            r.createdAt
+                          ).driverEarnings,
+                        0
+                      )
+                      .toFixed(2)
+                  );
+                  const driverCommissionRace = Number(
+                    Math.max(0, driverTotalArrecadado - driverEarningsNet).toFixed(2)
+                  );
+                  const driverSaldoRepassar = driverEarningsNet || driver.saldo || 0;
+
+                  return (
+                    <div
+                      key={driver.id}
+                      className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-slate-300 transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        {driver.avatar ? (
+                          <img
+                            src={driver.avatar}
+                            alt={driver.name}
+                            className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500 shadow-xs shrink-0"
+                          />
+                        ) : (
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center font-heading font-black text-sm border-2 shadow-xs shrink-0 ${
+                            driver.isMotoboy ? 'bg-cyan-100 text-cyan-800 border-cyan-300' : 'bg-emerald-100 text-emerald-800 border-emerald-400'
+                          }`}>
+                            {driver.name ? driver.name.charAt(0).toUpperCase() : 'M'}
+                          </div>
+                        )}
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-heading font-black text-slate-950 text-sm sm:text-base">
+                              {driver.name}
+                            </h4>
+                            {driver.plate && (
+                              <span className="text-[11px] font-mono bg-white text-slate-800 px-2 py-0.5 rounded border border-slate-300 font-bold uppercase">
+                                {driver.plate}
+                              </span>
+                            )}
+                            <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded uppercase">
+                              ATIVADO
+                            </span>
+                            <span className="text-[11px] font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded uppercase">
+                              {driver.categoryLabel}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 font-medium flex-wrap">
+                            <span>E-mail: <strong className="text-slate-800">{driver.email}</strong></span>
+                            <span>&bull;</span>
+                            <span>WhatsApp: <strong className="text-slate-800">{driver.phone}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 justify-between md:justify-end border-t md:border-t-0 pt-2 md:pt-0 border-slate-200">
+                        <div className="grid grid-cols-5 gap-2 text-center bg-white p-2.5 rounded-xl border border-slate-200 text-xs shadow-xs">
+                          <div className="px-1">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Corridas</span>
+                            <span className="font-heading font-black text-slate-900">{driverRidesCount}</span>
+                          </div>
+                          <div className="px-1 border-l border-slate-100">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Total</span>
+                            <span className="font-heading font-black text-slate-900">{formatBRL(driverTotalArrecadado)}</span>
+                          </div>
+                          <div className="px-1 border-l border-slate-100">
+                            <span className="text-[10px] text-emerald-700 font-bold uppercase block">
+                              {isPromoZeroFeeNow ? 'GANHO 100%' : 'GANHO 85%'}
+                            </span>
+                            <span className="font-heading font-black text-emerald-600">{formatBRL(driverEarningsNet)}</span>
+                          </div>
+                          <div className="px-1 border-l border-slate-100">
+                            <span className="text-[10px] text-amber-700 font-bold uppercase block">
+                              {isPromoZeroFeeNow ? 'RACE 0%' : 'RACE 15%'}
+                            </span>
+                            <span className="font-heading font-black text-amber-600">{formatBRL(driverCommissionRace)}</span>
+                          </div>
+                          <div className="px-1 border-l border-slate-100">
+                            <span className="text-[10px] text-blue-700 font-bold uppercase block">Saldo</span>
+                            <span className="font-heading font-black text-blue-700">{formatBRL(driverSaldoRepassar)}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAdminEditUser(driver)}
+                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                            title="Editar usuário e foto"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>Editar</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleLiberar7Dias(driver.raw)}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                            title="Ativar condutor permanentemente"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Ativar</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleBloquear(driver.raw)}
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                            title="Bloquear condutor"
+                          >
+                            <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Bloquear</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleVerAvaliacoes(driver)}
+                            className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-heading font-black text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                            title="Ver avaliações do condutor"
+                          >
+                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                            <span>Ver avaliações</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* BARRA DE AÇÕES GERAIS: ATIVAR TODOS E REMOVER TODOS */}
           <div className="bg-gradient-to-r from-slate-950 to-zinc-900 text-white border border-zinc-800 rounded-3xl p-5 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
@@ -3691,10 +3774,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="font-heading font-black text-base sm:text-lg text-white">
-                    Ações de Cadastros no RACE
+                    Gestão de Cadastros Ativados no RACE
                   </h3>
                   <p className="text-xs text-zinc-400">
-                    {overviewDrivers.length} condutores cadastrados • {activeWeeklySubs} ativos • {nonAdminUsers.filter(u => u.isPassenger).length} passageiros
+                    {approvedOverviewDrivers.length} condutores ativados • {approvedNonAdminUsers.filter(u => u.isPassenger).length} passageiros
                   </p>
                 </div>
               </div>
@@ -3714,7 +3797,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 title="Ativar e liberar todos os motoristas com status ONLINE"
               >
                 <CheckCheck className="w-4 h-4" />
-                <span>Ativar Todos os Cadastros ({overviewDrivers.length})</span>
+                <span>Ativar Todos ({approvedOverviewDrivers.length})</span>
               </button>
 
               {/* Botão REMOVER TODOS OS CADASTROS */}
@@ -3730,7 +3813,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* SUB-ABAS: TODOS VS MOTORISTAS/MOTOBOYS VS PASSAGEIROS (SUPABASE) */}
+          {/* SUB-ABAS: TODOS VS MOTORISTAS/MOTOBOYS ATIVADOS VS PASSAGEIROS (SUPABASE) */}
           <div className="bg-white border border-slate-200 p-1.5 rounded-2xl flex items-center gap-2 shadow-xs flex-wrap">
             <button
               type="button"
@@ -3742,7 +3825,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <Database className="w-4 h-4 text-slate-900" />
-              <span>Todos ({nonAdminUsers.length})</span>
+              <span>Todos ({approvedNonAdminUsers.length})</span>
             </button>
 
             <button
@@ -3755,7 +3838,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <Car className="w-4 h-4 text-slate-900" />
-              <span>Motoristas & Motos ({overviewDrivers.length})</span>
+              <span>Motoristas & Motos ({approvedOverviewDrivers.length})</span>
             </button>
 
             <button
@@ -3768,7 +3851,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <Users className="w-4 h-4 text-slate-900" />
-              <span>Passageiros ({nonAdminUsers.filter(u => u.isPassenger).length})</span>
+              <span>Passageiros ({approvedNonAdminUsers.filter(u => u.isPassenger).length})</span>
             </button>
           </div>
 
@@ -4733,7 +4816,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             creditBalance={Number(currentUser?.creditBalance || 0)}
             isLoading={isLoadingUsers}
             onRefresh={fetchSupabaseUsuarios}
-            titleSubtitle="Suas indicações pessoais como ADM (R$50 Motorista/Motoboy + R$10 Passageiro). Para ver TODOS os usuários, abra a aba Controle Geral dos Beneficiados."
+            titleSubtitle={`Somente indicações confirmadas vinculadas ao código ${admReferralCode} (motoristas pendentes só aparecem aqui após aprovação).`}
           />
 
           {/* SEÇÃO 1 (LARANJA): R$50 MOTORISTA / MOTOBOY — MANTIDA INTACTA */}
@@ -4984,8 +5067,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB NOVA: CONTROLE GERAL DOS BENEFICIADOS (TODOS OS USUÁRIOS) */}
-      {effectiveTab === 'beneficiaries' && (() => {
+      {/* CONTROLE GERAL DOS BENEFICIADOS (CONSOLIDADO DENTRO DE MOTORISTAS > ATIVADOS — SEM MOTORISTAS PENDENTES) */}
+      {(effectiveTab === 'beneficiaries' || (isMotoristasTab && motoristasSubTab === 'ativados')) && (() => {
         const filteredRows = allBeneficiaryRowsWithUsage.filter((row) => {
           const nameFilter = beneficiaryFilterName.trim().toLowerCase();
           if (nameFilter) {
@@ -5058,7 +5141,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {totalBeneficiariesCount}
                 </span>
                 <span className="text-xs text-slate-500 block mt-0.5">
-                  R$50: {driverReferralsAdmin.length} &bull; R$10: {passengerReferralsAdmin.length}
+                  R$50: {allBeneficiaryRowsWithUsage.filter((r) => !r.isPass).length} &bull; R$10: {allBeneficiaryRowsWithUsage.filter((r) => r.isPass).length}
                 </span>
               </div>
               <div className="bg-white border border-emerald-200 rounded-2xl p-5 shadow-xs">
