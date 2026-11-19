@@ -44,7 +44,11 @@ import {
   Loader2,
   Gift,
   Lock,
-  MessageCircle
+  MessageCircle,
+  Eye,
+  Navigation,
+  CreditCard,
+  ChevronRight
 } from 'lucide-react';
 import { getWithdrawals, markWithdrawalAsPaid, setWithdrawalsFromSupabase } from '../services/walletService';
 import { WithdrawalRequest } from '../types';
@@ -88,6 +92,7 @@ import { maskLast4Digits } from '../utils/security';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isAppUserAdmin, isAdminTipoValue, saveSessionUser } from '../services/userService';
 import { MyReferralsControlSection } from './MyReferralsControlSection';
+import { MapRealtime } from './MapRealtime';
 import {
   calculateRideSplitForDriver,
   parseReferralBonusMeta,
@@ -523,9 +528,161 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editUserError, setEditUserError] = useState<string | null>(null);
   const adminEditPhotoRef = React.useRef<HTMLInputElement>(null);
 
+  // Sistema Completo de Motoristas (Ficha Completa ADM) e Corridas (Detalhe Completo ADM + Mapa)
+  const [selectedAdminUserDetail, setSelectedAdminUserDetail] = useState<any | null>(null);
+  const [detailUserMeta, setDetailUserMeta] = useState<{
+    linkedCode: string;
+    ownCode: string;
+    vehicleColor: string;
+    vehicleYear: string;
+    pixKey: string;
+    cnh: string;
+    cpf: string;
+    cnhFrontPhoto: string;
+    cnhBackPhoto: string;
+    crlvPhoto: string;
+    vehiclePhoto: string;
+    approvalStatus: string;
+  }>({
+    linkedCode: '',
+    ownCode: '',
+    vehicleColor: '',
+    vehicleYear: '',
+    pixKey: '',
+    cnh: '',
+    cpf: '',
+    cnhFrontPhoto: '',
+    cnhBackPhoto: '',
+    crlvPhoto: '',
+    vehiclePhoto: '',
+    approvalStatus: '',
+  });
+  const [selectedAdminRideDetail, setSelectedAdminRideDetail] = useState<Ride | null>(null);
+  const [showRideDetailMap, setShowRideDetailMap] = useState(false);
+  const [rideSearchQuery, setRideSearchQuery] = useState('');
+
   const showToast = (msg: string) => {
     setActionToast(msg);
     setTimeout(() => setActionToast(null), 3500);
+  };
+
+  const handleOpenAdminUserDetail = (u: any, linkedCode: string = '') => {
+    const cleanEm = u.email === 'Sem e-mail' ? '' : String(u.email || '').trim();
+    const emKey = cleanEm.toLowerCase();
+    const appRec =
+      (emKey ? driverApplicationsMap[emKey] : undefined) ||
+      mergedDriverApplications.find(
+        (a) =>
+          (emKey && a.email.toLowerCase() === emKey) ||
+          (u.id && a.id && String(a.id) === String(u.id))
+      );
+    const matchedDriver = drivers.find(
+      (d) =>
+        (emKey && (d.email || '').toLowerCase().trim() === emKey) ||
+        (u.id && String(d.id) === String(u.id))
+    );
+
+    const ownCodeRaw = String(
+      u.raw?.codigo_indicacao ||
+        matchedDriver?.codigoIndicacao ||
+        (u.isAdminRow ? admReferralCode || FIXED_ADM_REFERRAL_CODE : '')
+    )
+      .trim()
+      .toUpperCase();
+
+    const initialCnhFront =
+      appRec?.cnhFrontPhoto ||
+      matchedDriver?.cnhFrontPhoto ||
+      matchedDriver?.cnhPhoto ||
+      u.raw?.cnh_frente ||
+      u.raw?.cnhFrontPhoto ||
+      '';
+    const initialCnhBack =
+      appRec?.cnhBackPhoto ||
+      matchedDriver?.cnhBackPhoto ||
+      u.raw?.cnh_verso ||
+      u.raw?.cnhBackPhoto ||
+      '';
+    const initialCrlv =
+      appRec?.crlvPhoto ||
+      matchedDriver?.crlvPhoto ||
+      u.raw?.crlv ||
+      u.raw?.crlvPhoto ||
+      '';
+    const initialVehicle =
+      appRec?.vehiclePhoto ||
+      matchedDriver?.vehiclePhoto ||
+      u.raw?.foto_veiculo ||
+      u.raw?.vehiclePhoto ||
+      '';
+
+    setSelectedAdminUserDetail(u);
+    setDetailUserMeta({
+      linkedCode: linkedCode || '',
+      ownCode: ownCodeRaw,
+      vehicleColor: appRec?.vehicleColor || matchedDriver?.vehicleColor || u.raw?.cor || u.raw?.cor_veiculo || '',
+      vehicleYear: String(appRec?.vehicleYear || matchedDriver?.vehicleYear || u.year || ''),
+      pixKey: appRec?.pixKey || matchedDriver?.pixKey || u.raw?.chave_pix || u.raw?.pix || '',
+      cnh: appRec?.cnh || matchedDriver?.cnh || u.cnh || '',
+      cpf: appRec?.cpf || matchedDriver?.cpf || u.cpf || '',
+      cnhFrontPhoto: initialCnhFront,
+      cnhBackPhoto: initialCnhBack,
+      crlvPhoto: initialCrlv,
+      vehiclePhoto: initialVehicle,
+      approvalStatus: appRec?.approvalStatus || matchedDriver?.approvalStatus || '',
+    });
+
+    if (!u.isPassenger && !u.isAdminRow && emKey && (!initialCnhFront || !initialCnhBack || !initialCrlv || !initialVehicle)) {
+      fetchDriverApplicationsSupabase(emKey)
+        .then((freshMap) => {
+          const fresh = freshMap?.[emKey];
+          if (!fresh) return;
+          setDriverApplicationsMap((prev) => ({ ...prev, [emKey]: { ...(prev[emKey] || {}), ...fresh } }));
+          setDetailUserMeta((prev) => ({
+            ...prev,
+            vehicleColor: prev.vehicleColor || fresh.vehicleColor || '',
+            vehicleYear: prev.vehicleYear || (fresh.vehicleYear ? String(fresh.vehicleYear) : ''),
+            pixKey: prev.pixKey || fresh.pixKey || '',
+            cnh: prev.cnh || fresh.cnh || '',
+            cpf: prev.cpf || fresh.cpf || '',
+            cnhFrontPhoto: prev.cnhFrontPhoto || fresh.cnhFrontPhoto || '',
+            cnhBackPhoto: prev.cnhBackPhoto || fresh.cnhBackPhoto || '',
+            crlvPhoto: prev.crlvPhoto || fresh.crlvPhoto || '',
+            vehiclePhoto: prev.vehiclePhoto || fresh.vehiclePhoto || '',
+            approvalStatus: prev.approvalStatus || fresh.approvalStatus || '',
+          }));
+        })
+        .catch(() => {});
+    }
+  };
+
+  const formatRidePaymentLabel = (method?: string) => {
+    const m = String(method || '').toLowerCase().trim();
+    if (m === 'pix') return 'PIX';
+    if (m === 'credit_card' || m === 'card' || m === 'cartao' || m === 'cartão') return 'Cartão';
+    if (m === 'race_pay') return 'Race Pay';
+    if (m === 'money' || m === 'dinheiro' || m === 'cash') return 'Dinheiro';
+    return method ? method.toUpperCase() : 'PIX';
+  };
+
+  const formatRideStatusInfo = (status?: string) => {
+    const s = String(status || '').toLowerCase().trim();
+    if (s === 'completed' || s === 'finalizada') {
+      return { label: 'Finalizada', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+    }
+    if (s === 'in_progress' || s === 'em_andamento') {
+      return { label: 'Em andamento', cls: 'bg-blue-100 text-blue-800 border-blue-300' };
+    }
+    if (s === 'accepted' || s === 'aceita' || s === 'driver_assigned' || s === 'driver_arriving') {
+      return { label: 'Motorista a caminho', cls: 'bg-amber-100 text-amber-900 border-amber-300' };
+    }
+    if (s === 'cancelled' || s === 'cancelada') {
+      return { label: 'Cancelada', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
+    }
+    if (s === 'searching' || s === 'procurando' || s === 'procurando_motorista') {
+      return { label: 'Procurando motorista', cls: 'bg-purple-100 text-purple-800 border-purple-300' };
+    }
+    return { label: status || 'Registrada', cls: 'bg-slate-100 text-slate-800 border-slate-300' };
   };
 
   const handleOpenAdminEditUser = (u: any) => {
@@ -778,6 +935,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )
       );
 
+      if (selectedAdminUserDetail && String(selectedAdminUserDetail.id) === String(editingAdminUser.id)) {
+        setSelectedAdminUserDetail((prev: any) =>
+          prev
+            ? {
+                ...prev,
+                name: cleanName,
+                email: cleanEmail,
+                phone: cleanPhone || 'Não informado',
+                model: !editingAdminUser.isPassenger && editUserModel.trim() ? editUserModel.trim() : prev.model,
+                plate: !editingAdminUser.isPassenger && editUserPlate.trim() ? editUserPlate.trim().toUpperCase() : prev.plate,
+                avatar: returnedPhoto || prev.avatar,
+              }
+            : null
+        );
+        setDetailUserMeta((prev) => ({
+          ...prev,
+          cnhFrontPhoto: editDocCnhFront || prev.cnhFrontPhoto,
+          cnhBackPhoto: editDocCnhBack || prev.cnhBackPhoto,
+          crlvPhoto: editDocCrlv || prev.crlvPhoto,
+          vehiclePhoto: editDocVehicle || prev.vehiclePhoto,
+        }));
+      }
+
       setEditingAdminUser(null);
       setEditUserPhotoFile(null);
       setHasPendingEditAvatar(false);
@@ -1013,6 +1193,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         onRemoveDriver(targetId, targetEmail);
       }
 
+      if (selectedAdminUserDetail && String(selectedAdminUserDetail.id) === targetId) {
+        setSelectedAdminUserDetail(null);
+      }
       setDeleteConfirmTarget(null);
       showToast(`🗑️ Cadastro, corridas e bônus de ${target.name} excluídos do Supabase!`);
       await fetchSupabaseUsuarios();
@@ -3472,7 +3655,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 return (
                 <div
                   key={u.id}
-                  className="bg-white border border-slate-200 rounded-3xl p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-md hover:border-slate-300 transition-all"
+                  onClick={() => handleOpenAdminUserDetail(u, displayLinkedCode)}
+                  className="bg-white border border-slate-200 hover:border-[#ff6a00] rounded-3xl p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-md transition-all cursor-pointer group"
                 >
                   <div className="flex items-start sm:items-center gap-4 flex-1 min-w-0 w-full sm:w-auto">
                     {/* Foto (se tiver no cadastro) */}
@@ -3538,6 +3722,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </span>
                           )
                         )}
+
+                        <span className="text-[11px] font-heading font-black text-[#ff6a00] bg-orange-50 group-hover:bg-[#ff6a00] group-hover:text-white border border-orange-200 px-2.5 py-0.5 rounded-full transition-colors inline-flex items-center gap-1">
+                          <Eye className="w-3 h-3" />
+                          <span>Ficha completa</span>
+                        </span>
                       </div>
 
                       {/* Dados veiculares e documentos mascarados (apenas 4 últimos dígitos) */}
@@ -3602,8 +3791,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Botões de Controle ADM: Editar, Corrigir indicação, Ativar / Liberar 7 dias, Bloquear, Remover, Ver avaliações */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Botões de Controle ADM: Editar, Corrigir indicação, Ativar, Bloquear, Remover, Ver avaliações */}
+                    <div
+                      className="flex items-center gap-1.5 flex-wrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {/* Botão Editar */}
                       <button
                         type="button"
@@ -3681,81 +3873,197 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 3: LIVE RIDES MONITOR */}
-      {activeTab === 'rides' && (
-        <div className="space-y-3.5">
-          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md">
-            <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg mb-4 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-amber-600" />
-              <span>Corridas e Entregas Registradas na Plataforma</span>
-            </h3>
+      {/* TAB 3: SISTEMA COMPLETO DE CORRIDAS (ADM) */}
+      {activeTab === 'rides' && (() => {
+        const rq = rideSearchQuery.trim().toLowerCase();
+        const filteredRides = supabaseCorridas.filter((ride) => {
+          if (!rq) return true;
+          return (
+            String(ride.id || '').toLowerCase().includes(rq) ||
+            String(ride.passengerName || '').toLowerCase().includes(rq) ||
+            String(ride.driver?.name || '').toLowerCase().includes(rq) ||
+            String(ride.driver?.vehiclePlate || '').toLowerCase().includes(rq) ||
+            String(ride.pickup?.address || '').toLowerCase().includes(rq) ||
+            String(ride.destination?.address || '').toLowerCase().includes(rq) ||
+            String(ride.status || '').toLowerCase().includes(rq)
+          );
+        });
 
-            <div className="space-y-3">
-              {supabaseCorridas.length === 0 ? (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-10 text-center space-y-2">
-                  <MapPin className="w-8 h-8 text-slate-400 mx-auto" />
-                  <p className="font-heading font-black text-slate-800 text-base">
-                    Nenhuma corrida ainda
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Assim que uma corrida real for realizada no aplicativo, ela aparecerá aqui direto do Supabase.
+        const completedCount = supabaseCorridas.filter(
+          (r) => r.status === 'completed' || r.status === 'finalizada'
+        ).length;
+        const activeCount = supabaseCorridas.filter(
+          (r) =>
+            r.status === 'in_progress' ||
+            r.status === 'em_andamento' ||
+            r.status === 'accepted' ||
+            r.status === 'aceita' ||
+            r.status === 'driver_assigned' ||
+            r.status === 'driver_arriving' ||
+            r.status === 'searching' ||
+            r.status === 'procurando' ||
+            r.status === 'procurando_motorista'
+        ).length;
+
+        return (
+          <div className="space-y-4">
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-heading font-black text-slate-950 text-base sm:text-lg flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-[#ff6a00]" />
+                    <span>Sistema Completo de Corridas ({supabaseCorridas.length})</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Toque em qualquer corrida para abrir os dados completos de passageiro, motorista, trajeto, pagamento e mapa.
                   </p>
                 </div>
-              ) : (
-                supabaseCorridas.map((ride) => (
-                  <div
-                    key={ride.id}
-                    className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="font-mono font-extrabold text-amber-800 text-sm">{ride.id}</span>
-                        <span className="bg-slate-200 text-slate-800 px-2 py-0.5 rounded text-xs uppercase font-extrabold">
-                          {ride.category.replace('_', ' ')}
-                        </span>
-                        <span className="text-emerald-700 font-bold">{ride.status}</span>
-                        {ride.confirmationCode && (
-                          <span className="bg-slate-950 text-[#ff6a00] border border-[#ff6a00]/60 px-2.5 py-0.5 rounded-lg font-mono font-black text-xs tracking-wider">
-                            🔐 Código: {ride.confirmationCode}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-slate-900 font-medium">
-                        <strong>De:</strong> {ride.pickup.address}
-                      </p>
-                      <p className="text-slate-600">
-                        <strong>Para:</strong> {ride.destination.address}
-                      </p>
-                    </div>
 
-                    <div className="text-right sm:shrink-0">
-                      <div className="font-heading font-black text-slate-950 text-lg">
-                        {formatBRL(ride.price)}
-                      </div>
-                      {(() => {
-                        const split = calculateRideSplitForDriver(ride.price, ride.driver, ride.createdAt);
-                        const dEarns = typeof ride.driverEarnings === 'number' ? ride.driverEarnings : split.driverEarnings;
-                        const pFee = typeof ride.platformFee === 'number' ? ride.platformFee : split.platformFee;
-                        const isZeroFee = pFee === 0;
-                        return (
-                          <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1 rounded-full">
+                    Finalizadas: {completedCount}
+                  </span>
+                  <span className="text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200 px-3 py-1 rounded-full">
+                    Em andamento: {activeCount}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={fetchSupabaseUsuarios}
+                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-heading font-black inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-[#ff6a00]" />
+                    <span>Atualizar</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Busca rápida de corridas */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={rideSearchQuery}
+                  onChange={(e) => setRideSearchQuery(e.target.value)}
+                  placeholder="Buscar por passageiro, motorista, placa, endereço ou ID..."
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 border border-slate-300 focus:border-[#ff6a00] text-xs sm:text-sm font-bold text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="space-y-3">
+                {filteredRides.length === 0 ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-10 text-center space-y-2">
+                    <MapPin className="w-8 h-8 text-slate-400 mx-auto" />
+                    <p className="font-heading font-black text-slate-800 text-base">
+                      {rideSearchQuery ? 'Nenhuma corrida encontrada para a busca' : 'Nenhuma corrida ainda'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {rideSearchQuery
+                        ? `Nenhum resultado para "${rideSearchQuery}".`
+                        : 'Assim que uma corrida real for realizada no aplicativo, ela aparecerá aqui direto do Supabase.'}
+                    </p>
+                  </div>
+                ) : (
+                  filteredRides.map((ride) => {
+                    const statusBadge = formatRideStatusInfo(ride.status);
+                    const split = calculateRideSplitForDriver(ride.price, ride.driver, ride.createdAt);
+                    const dEarns = typeof ride.driverEarnings === 'number' ? ride.driverEarnings : split.driverEarnings;
+                    const pFee = typeof ride.platformFee === 'number' ? ride.platformFee : split.platformFee;
+                    const isZeroFee = pFee === 0;
+                    const rideDateFormatted = ride.createdAt
+                      ? new Date(ride.createdAt).toLocaleString('pt-BR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : 'Recente';
+
+                    return (
+                      <div
+                        key={ride.id}
+                        onClick={() => {
+                          setSelectedAdminRideDetail(ride);
+                          setShowRideDetailMap(false);
+                        }}
+                        className="bg-slate-50 hover:bg-orange-50/40 p-4 rounded-2xl border border-slate-200 hover:border-[#ff6a00] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm transition-all cursor-pointer group"
+                      >
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono font-extrabold text-amber-800 text-xs sm:text-sm">
+                              {ride.id}
+                            </span>
+                            <span className="bg-slate-200 text-slate-800 px-2 py-0.5 rounded text-[11px] uppercase font-extrabold">
+                              {ride.category.replace('_', ' ')}
+                            </span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black border ${statusBadge.cls}`}>
+                              {statusBadge.label}
+                            </span>
+                            <span className="bg-white border border-slate-300 text-slate-700 px-2 py-0.5 rounded text-[11px] font-bold inline-flex items-center gap-1">
+                              <CreditCard className="w-3 h-3 text-[#ff6a00]" />
+                              {formatRidePaymentLabel(ride.paymentMethod)}
+                            </span>
+                            <span className="text-[11px] text-slate-500 font-mono">
+                              {rideDateFormatted}
+                            </span>
+                            {ride.confirmationCode && (
+                              <span className="bg-slate-950 text-[#ff6a00] border border-[#ff6a00]/60 px-2 py-0.5 rounded-lg font-mono font-black text-[11px] tracking-wider">
+                                🔐 {ride.confirmationCode}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-700 font-semibold">
+                            <span>
+                              👤 Passageiro: <strong className="text-slate-950">{ride.passengerName || 'Passageiro'}</strong>
+                            </span>
+                            <span>
+                              🚗 Motorista:{' '}
+                              <strong className="text-slate-950">
+                                {ride.driver?.name || 'Aguardando motorista'}
+                              </strong>
+                              {ride.driver?.vehiclePlate ? ` (${ride.driver.vehiclePlate})` : ''}
+                            </span>
+                            <span>
+                              📏 <strong>{Number(ride.distanceKm || 0).toFixed(1)} km</strong>
+                            </span>
+                          </div>
+
+                          <p className="text-slate-900 font-medium text-xs sm:text-sm truncate">
+                            <strong>Origem:</strong> {ride.pickup.address}
+                          </p>
+                          <p className="text-slate-600 text-xs sm:text-sm truncate">
+                            <strong>Destino:</strong> {ride.destination.address}
+                          </p>
+                        </div>
+
+                        <div className="text-left sm:text-right sm:shrink-0 flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200">
+                          <div>
+                            <div className="font-heading font-black text-slate-950 text-lg">
+                              {formatBRL(ride.price)}
+                            </div>
                             <span className="text-xs text-emerald-700 block font-extrabold">
                               Condutor ({isZeroFee ? '100%' : '85%'}): {formatBRL(dEarns)}
                             </span>
                             <span className="text-xs text-amber-700 font-bold">
                               Comissão Race ({isZeroFee ? '0% Promo' : '15%'}): {formatBRL(pFee)}
                             </span>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                ))
-              )}
+                          </div>
+
+                          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-900 group-hover:bg-[#ff6a00] text-white font-heading font-black text-xs transition-colors">
+                            <span>Ver corrida</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* TAB 4: PERFORMANCE REPORTS & DATA ANALYSIS */}
       {activeTab === 'reports' && (
@@ -5443,6 +5751,563 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal ADM: Ficha Completa do Motorista / Usuário (Sistema Completo de Motoristas) */}
+      {selectedAdminUserDetail && (() => {
+        const liveUser =
+          parsedUsers.find((p) => String(p.id) === String(selectedAdminUserDetail.id)) ||
+          selectedAdminUserDetail;
+        const statusNow = userStatusMap[String(liveUser.id)] || liveUser.statusInfo;
+        const isBlocked = statusNow?.status === 'bloqueado';
+
+        return (
+          <div className="fixed inset-0 z-[1150] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+            <div className="bg-white rounded-3xl max-w-2xl w-full border-2 border-[#ff6a00] shadow-2xl max-h-[92vh] overflow-y-auto overscroll-contain">
+              {/* Header */}
+              <div className="sticky top-0 z-10 bg-slate-950 text-white px-5 py-4 rounded-t-[22px] flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  {liveUser.avatar ? (
+                    <button
+                      type="button"
+                      onClick={() => openDocumentPreview(liveUser.avatar, `Foto de Perfil — ${liveUser.name}`)}
+                      className="shrink-0 cursor-pointer"
+                      title="Clique para ampliar foto"
+                    >
+                      <img
+                        src={liveUser.avatar}
+                        alt={liveUser.name}
+                        className="w-14 h-14 rounded-full object-cover border-2 border-[#ff6a00] shadow"
+                      />
+                    </button>
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-800 border-2 border-[#ff6a00] flex items-center justify-center font-heading font-black text-xl shrink-0">
+                      {(liveUser.name || 'U').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-heading font-black text-white text-base sm:text-lg truncate">
+                        {liveUser.name}
+                      </h3>
+                      <span className="text-[11px] font-mono font-black px-2 py-0.5 rounded-full bg-[#ff6a00] text-white">
+                        {liveUser.userType}
+                      </span>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/15 text-amber-300">
+                        ⭐ {Number(liveUser.rating || 0).toFixed(1)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 font-medium truncate">
+                      {liveUser.categoryLabel} &bull; ID #{liveUser.id} &bull; Cadastro: {liveUser.createdAtFormatted}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAdminUserDetail(null)}
+                  className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer shrink-0"
+                  title="Fechar ficha"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-5">
+                {/* Saldo, Repasse e Códigos */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5">
+                    <span className="text-[10px] font-black uppercase text-emerald-700 block">Saldo em Carteira</span>
+                    <strong className="text-xl font-heading font-black text-emerald-800">
+                      R$ {Number(liveUser.saldo || 0).toFixed(2)}
+                    </strong>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+                    <span className="text-[10px] font-black uppercase text-slate-500 block">Modelo de Repasse</span>
+                    <strong
+                      className={`text-sm font-heading font-black block mt-0.5 ${
+                        isBlocked ? 'text-rose-700' : liveUser.isPassenger ? 'text-blue-700' : 'text-emerald-700'
+                      }`}
+                    >
+                      {isBlocked
+                        ? '⛔ Bloqueado'
+                        : liveUser.isPassenger
+                        ? 'Passageiro'
+                        : '100% Promo (até 17/12) / 85%'}
+                    </strong>
+                  </div>
+
+                  <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3.5">
+                    <span className="text-[10px] font-black uppercase text-orange-800 block">Código / Indicação</span>
+                    <strong className="text-sm font-mono font-black text-[#ff6a00] block mt-0.5">
+                      {detailUserMeta.ownCode || detailUserMeta.linkedCode || FIXED_ADM_REFERRAL_CODE}
+                    </strong>
+                    {detailUserMeta.linkedCode && !liveUser.isAdminRow && (
+                      <span className="text-[11px] font-bold text-orange-900 block">
+                        Indicado por: {detailUserMeta.linkedCode}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Dados Pessoais e de Contato */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                  <h4 className="font-heading font-black text-slate-900 text-xs uppercase tracking-wider border-b border-slate-200 pb-2">
+                    👤 Dados Pessoais e Contato
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Nome Completo</span>
+                      <strong className="text-slate-950">{liveUser.name}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">E-mail</span>
+                      <strong className="text-slate-950 font-mono break-all">{liveUser.email || 'Não informado'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">WhatsApp</span>
+                      <strong className="text-slate-950 font-mono">{liveUser.phone || 'Não informado'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Chave PIX</span>
+                      <strong className="text-slate-950 font-mono break-all">
+                        {detailUserMeta.pixKey || 'Não informada'}
+                      </strong>
+                    </div>
+                    {!liveUser.isPassenger && (
+                      <>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-slate-400 block">CNH</span>
+                          <strong className="text-slate-950 font-mono">{detailUserMeta.cnh || 'Não informada'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-slate-400 block">CPF</span>
+                          <strong className="text-slate-950 font-mono">{detailUserMeta.cpf || 'Não informado'}</strong>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Dados do Veículo (Motoristas e Motoboys) */}
+                {!liveUser.isPassenger && !liveUser.isAdminRow && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <h4 className="font-heading font-black text-slate-900 text-xs uppercase tracking-wider border-b border-slate-200 pb-2">
+                      🚗 Dados do Veículo
+                    </h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs sm:text-sm">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Veículo / Categoria</span>
+                        <strong className="text-slate-950">{liveUser.categoryLabel}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Modelo</span>
+                        <strong className="text-slate-950">{liveUser.model || 'Não informado'}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Cor</span>
+                        <strong className="text-slate-950">{detailUserMeta.vehicleColor || 'Não informada'}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Placa</span>
+                        <strong className="text-slate-950 font-mono uppercase">
+                          {liveUser.plate || 'Não informada'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Ano</span>
+                        <strong className="text-slate-950 font-mono">
+                          {detailUserMeta.vehicleYear || liveUser.year || 'Não informado'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Status Documentos</span>
+                        <strong className="text-slate-950 uppercase text-xs">
+                          {detailUserMeta.approvalStatus || statusNow?.status || 'Pendente'}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Seção 📄 DOCUMENTOS clicáveis para ampliar */}
+                {!liveUser.isPassenger && !liveUser.isAdminRow && (
+                  <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                      <h4 className="font-heading font-black text-slate-950 text-xs sm:text-sm uppercase tracking-wider">
+                        📄 DOCUMENTOS
+                      </h4>
+                      <span className="text-[11px] font-bold text-slate-500">
+                        Clique em qualquer foto para ampliar
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { label: 'CNH Frente', url: detailUserMeta.cnhFrontPhoto },
+                        { label: 'CNH Verso', url: detailUserMeta.cnhBackPhoto },
+                        { label: 'CRLV', url: detailUserMeta.crlvPhoto },
+                        {
+                          label: liveUser.isMotoboy ? 'Foto da moto' : 'Foto do carro (Frente)',
+                          url: detailUserMeta.vehiclePhoto,
+                        },
+                      ].map((doc) => (
+                        <div
+                          key={doc.label}
+                          className="bg-white border border-slate-200 rounded-2xl p-2 flex flex-col gap-1.5"
+                        >
+                          <span className="text-[11px] font-heading font-black text-slate-800 text-center leading-tight">
+                            {doc.label}
+                          </span>
+                          {doc.url ? (
+                            <button
+                              type="button"
+                              onClick={() => openDocumentPreview(doc.url, `${doc.label} — ${liveUser.name}`)}
+                              className="w-full relative rounded-xl overflow-hidden border border-slate-300 group cursor-pointer"
+                              title="Clique para ampliar"
+                            >
+                              <img
+                                src={doc.url}
+                                alt={doc.label}
+                                className="w-full h-24 object-cover group-hover:scale-105 transition-transform"
+                              />
+                              <span className="absolute bottom-1 right-1 bg-slate-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
+                                Ampliar
+                              </span>
+                            </button>
+                          ) : (
+                            <div className="w-full h-24 rounded-xl bg-rose-50 border border-dashed border-rose-300 flex items-center justify-center text-xs font-heading font-black text-rose-600 text-center px-2">
+                              Não enviada
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Botões de Ação ADM */}
+                <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleLiberar7Dias(liveUser.raw)}
+                    className="flex-1 min-w-[100px] py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Ativar</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleBloquear(liveUser.raw)}
+                    className="flex-1 min-w-[100px] py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-heading font-black text-xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <XCircle className="w-4 h-4 text-amber-600" />
+                    <span>Bloquear</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAdminEditUser(liveUser)}
+                    className="flex-1 min-w-[100px] py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-xs shadow-xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    <span>Editar</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleVerAvaliacoes(liveUser)}
+                    className="flex-1 min-w-[105px] py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-300 font-heading font-black text-xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                    <span>Avaliações</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRequestExcluirUsuario(liveUser)}
+                    className="flex-1 min-w-[100px] py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                    <span>Excluir</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal ADM: Tela Completa da Corrida (Sistema Completo de Corridas + Ver no Mapa) */}
+      {selectedAdminRideDetail && (() => {
+        const ride = selectedAdminRideDetail;
+        const statusBadge = formatRideStatusInfo(ride.status);
+        const split = calculateRideSplitForDriver(ride.price, ride.driver, ride.createdAt);
+        const dEarns = typeof ride.driverEarnings === 'number' ? ride.driverEarnings : split.driverEarnings;
+        const pFee = typeof ride.platformFee === 'number' ? ride.platformFee : split.platformFee;
+        const isZeroFee = pFee === 0;
+
+        // Enriquece foto/WhatsApp do passageiro e do motorista com os dados da tabela usuarios/drivers
+        const matchedPassengerUser = parsedUsers.find((u) => {
+          const rEmail = String(ride.passengerEmail || '').trim().toLowerCase();
+          const rName = String(ride.passengerName || '').trim().toLowerCase();
+          return (
+            (ride.passengerId && String(u.id) === String(ride.passengerId)) ||
+            (rEmail && u.email && u.email.toLowerCase() === rEmail) ||
+            (rName && u.name.toLowerCase() === rName)
+          );
+        });
+        const passengerPhoto = ride.passengerAvatar || matchedPassengerUser?.avatar || '';
+        const passengerPhone = ride.passengerPhone || matchedPassengerUser?.phone || 'Não informado';
+
+        const matchedDriverObj =
+          ride.driver ||
+          drivers.find((d) => d.id === ride.driver?.id);
+        const matchedDriverUser = parsedUsers.find((u) => {
+          const dEmail = String(matchedDriverObj?.email || '').trim().toLowerCase();
+          const dName = String(matchedDriverObj?.name || '').trim().toLowerCase();
+          return (
+            (matchedDriverObj?.id && String(u.id) === String(matchedDriverObj.id)) ||
+            (dEmail && u.email && u.email.toLowerCase() === dEmail) ||
+            (dName && u.name.toLowerCase() === dName)
+          );
+        });
+        const driverPhoto = matchedDriverObj?.avatar || matchedDriverUser?.avatar || '';
+        const driverPhone = matchedDriverObj?.phone || matchedDriverUser?.phone || 'Não informado';
+        const driverCar = [
+          matchedDriverObj?.vehicleModel || matchedDriverUser?.model || '',
+          matchedDriverObj?.vehicleColor || '',
+        ]
+          .filter(Boolean)
+          .join(' • ');
+        const driverPlate = matchedDriverObj?.vehiclePlate || matchedDriverUser?.plate || '';
+
+        const rideDateStr = ride.createdAt
+          ? new Date(ride.createdAt).toLocaleString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : 'Data não registrada';
+
+        return (
+          <div className="fixed inset-0 z-[1150] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+            <div className="bg-white rounded-3xl max-w-2xl w-full border-2 border-[#ff6a00] shadow-2xl max-h-[92vh] overflow-y-auto overscroll-contain">
+              {/* Header */}
+              <div className="sticky top-0 z-10 bg-slate-950 text-white px-5 py-4 rounded-t-[22px] flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-heading font-black text-white text-base sm:text-lg">
+                      Detalhes da Corrida
+                    </h3>
+                    <span className="font-mono text-xs bg-white/15 text-[#ff6a00] font-black px-2 py-0.5 rounded">
+                      {ride.id}
+                    </span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black border ${statusBadge.cls}`}>
+                      {statusBadge.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 font-medium mt-0.5">
+                    {ride.category.replace('_', ' ').toUpperCase()} &bull; {rideDateStr}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedAdminRideDetail(null);
+                    setShowRideDetailMap(false);
+                  }}
+                  className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer shrink-0"
+                  title="Fechar detalhes"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-5">
+                {/* Passageiro e Motorista lado a lado */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Card Passageiro */}
+                  <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-4 space-y-2.5">
+                    <span className="text-[10px] font-heading font-black uppercase tracking-wider text-blue-700 block">
+                      👤 Passageiro
+                    </span>
+                    <div className="flex items-center gap-3">
+                      {passengerPhoto ? (
+                        <img
+                          src={passengerPhoto}
+                          alt={ride.passengerName || 'Passageiro'}
+                          className="w-12 h-12 rounded-full object-cover border-2 border-blue-500 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-800 border-2 border-blue-400 flex items-center justify-center font-heading font-black text-lg shrink-0">
+                          {(ride.passengerName || 'P').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-heading font-black text-slate-950 text-sm truncate">
+                          {ride.passengerName || 'Passageiro'}
+                        </p>
+                        <p className="text-xs text-slate-700 font-mono flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="truncate">{passengerPhone}</span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Motorista */}
+                  <div className="bg-orange-50/70 border border-orange-200 rounded-2xl p-4 space-y-2.5">
+                    <span className="text-[10px] font-heading font-black uppercase tracking-wider text-orange-800 block">
+                      🚗 Motorista
+                    </span>
+                    <div className="flex items-center gap-3">
+                      {driverPhoto ? (
+                        <img
+                          src={driverPhoto}
+                          alt={matchedDriverObj?.name || 'Motorista'}
+                          className="w-12 h-12 rounded-full object-cover border-2 border-[#ff6a00] shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-900 border-2 border-[#ff6a00] flex items-center justify-center font-heading font-black text-lg shrink-0">
+                          {(matchedDriverObj?.name || 'M').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-heading font-black text-slate-950 text-sm truncate">
+                          {matchedDriverObj?.name || 'Aguardando motorista'}
+                        </p>
+                        <p className="text-xs text-slate-700 font-mono flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="truncate">{driverPhone}</span>
+                        </p>
+                        {(driverCar || driverPlate) && (
+                          <p className="text-xs text-slate-800 font-bold mt-1 flex items-center gap-1.5 flex-wrap">
+                            <span>{driverCar || 'Veículo cadastrado'}</span>
+                            {driverPlate && (
+                              <span className="font-mono bg-slate-900 text-amber-400 px-1.5 py-0.5 rounded text-[10px] uppercase">
+                                {driverPlate}
+                              </span>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Origem e Destino */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-emerald-200 mt-1 shrink-0" />
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-black uppercase text-slate-400 block">Origem</span>
+                      <p className="text-xs sm:text-sm font-bold text-slate-950">{ride.pickup.address}</p>
+                    </div>
+                  </div>
+                  <div className="border-l-2 border-dashed border-slate-300 ml-1.5 h-3" />
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-3 h-3 rounded-full bg-[#ff6a00] border-2 border-orange-200 mt-1 shrink-0" />
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-black uppercase text-slate-400 block">Destino</span>
+                      <p className="text-xs sm:text-sm font-bold text-slate-950">{ride.destination.address}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* KM, Valor, Pagamento, Status e Data */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                    <span className="text-[10px] font-black uppercase text-slate-400 block">Distância (KM)</span>
+                    <strong className="text-base font-heading font-black text-slate-950">
+                      {Number(ride.distanceKm || 0).toFixed(1)} km
+                    </strong>
+                    {ride.durationMinutes ? (
+                      <span className="text-[11px] text-slate-500 block">~{ride.durationMinutes} min</span>
+                    ) : null}
+                  </div>
+
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3">
+                    <span className="text-[10px] font-black uppercase text-emerald-700 block">Valor</span>
+                    <strong className="text-base font-heading font-black text-emerald-800">
+                      {formatBRL(ride.price)}
+                    </strong>
+                    <span className="text-[10px] font-bold text-emerald-700 block">
+                      Condutor ({isZeroFee ? '100%' : '85%'}): {formatBRL(dEarns)}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                    <span className="text-[10px] font-black uppercase text-slate-400 block">Forma de Pagamento</span>
+                    <strong className="text-sm font-heading font-black text-slate-950 flex items-center gap-1 mt-0.5">
+                      <CreditCard className="w-3.5 h-3.5 text-[#ff6a00]" />
+                      {formatRidePaymentLabel(ride.paymentMethod)}
+                    </strong>
+                    <span className="text-[10px] font-bold text-slate-500 block">
+                      {ride.paymentStatus === 'paid' ? 'Pago' : 'Pendente'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                    <span className="text-[10px] font-black uppercase text-slate-400 block">Data</span>
+                    <strong className="text-xs font-mono font-black text-slate-950 block mt-0.5">
+                      {rideDateStr}
+                    </strong>
+                    <span className="text-[10px] font-bold text-amber-700 block">
+                      Taxa Race ({isZeroFee ? '0% Promo' : '15%'}): {formatBRL(pFee)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Botão Ver no Mapa (abre mapa interativo embutido dentro do ADM) */}
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowRideDetailMap((prev) => !prev)}
+                    className="w-full py-3.5 px-5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-heading font-black text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
+                  >
+                    <Navigation className="w-4 h-4 text-[#ff6a00]" />
+                    <span>{showRideDetailMap ? 'Ocultar Mapa da Corrida' : 'Ver no mapa'}</span>
+                  </button>
+
+                  {showRideDetailMap && (
+                    <div className="space-y-2 animate-fade-in">
+                      <div className="h-72 sm:h-80 w-full rounded-2xl overflow-hidden border-2 border-slate-300 relative shadow-inner">
+                        <MapRealtime
+                          drivers={matchedDriverObj ? [matchedDriverObj] : []}
+                          pickup={ride.pickup}
+                          destination={ride.destination}
+                          activeDriver={matchedDriverObj || null}
+                          rideStatus={ride.status}
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-mono text-center">
+                        Origem: {Number(ride.pickup.lat || 0).toFixed(5)}, {Number(ride.pickup.lng || 0).toFixed(5)} &bull; Destino:{' '}
+                        {Number(ride.destination.lat || 0).toFixed(5)}, {Number(ride.destination.lng || 0).toFixed(5)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end pt-1 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedAdminRideDetail(null);
+                      setShowRideDetailMap(false);
+                    }}
+                    className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-heading font-black text-xs rounded-xl cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal ADM: Editar Usuário (Nome, E-mail, WhatsApp, Foto + SALVAR ALTERAÇÕES) */}
       {editingAdminUser && (
