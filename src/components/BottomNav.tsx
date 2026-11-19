@@ -18,6 +18,8 @@ export type TabType =
   | 'driver_portal' 
   | 'history' 
   | 'admin'
+  | 'admin_rides'
+  | 'admin_drivers'
   | 'passenger_options'
   | 'passenger_account';
 
@@ -26,8 +28,6 @@ interface BottomNavProps {
   onChangeTab: (tab: TabType) => void;
   isDriverOnline?: boolean;
   currentUser?: AppUser | null;
-  activeAdminSubTab?: string;
-  onSelectAdminSection?: (section: 'rides' | 'pending_drivers' | 'drivers' | 'overview') => void;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
@@ -35,8 +35,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onChangeTab,
   isDriverOnline,
   currentUser,
-  activeAdminSubTab,
-  onSelectAdminSection,
 }) => {
   // Identifica se é Motorista/Motoboy ou Administrador
   const isDriverOrMotoboy = Boolean(
@@ -111,91 +109,57 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   }
 
   // 1B. BARRA EXCLUSIVA DO ADM: 4 BOTÕES (Corridas, Motoristas, ADM, CONTA)
-  // Trava mantida: clicar em Motoristas abre somente a gestão ADM para VER/aprovar, nunca deixa ADM online como motorista.
+  // Mesma lógica direta de navegação do Passageiro (TabType + onChangeTab)
   if (isAdmin) {
-    const adminTabs: Array<{
-      key: string;
-      emoji: string;
-      label: string;
-      isActive: boolean;
-      onClick: () => void;
-    }> = [
+    const adminTabs = [
       {
-        key: 'admin_rides',
+        id: 'admin_rides' as TabType,
         emoji: '🏁',
         label: 'Corridas',
-        isActive: activeTab === 'admin' && activeAdminSubTab === 'rides',
-        onClick: () => {
-          if (onSelectAdminSection) {
-            onSelectAdminSection('rides');
-          } else {
-            onChangeTab('admin');
-          }
-        },
       },
       {
-        key: 'admin_drivers',
+        id: 'admin_drivers' as TabType,
         emoji: '🚗',
         label: 'Motoristas',
-        isActive:
-          activeTab === 'admin' &&
-          (activeAdminSubTab === 'drivers' || activeAdminSubTab === 'pending_drivers'),
-        onClick: () => {
-          if (onSelectAdminSection) {
-            onSelectAdminSection('pending_drivers');
-          } else {
-            onChangeTab('admin');
-          }
-        },
       },
       {
-        key: 'admin_panel',
+        id: 'admin' as TabType,
         emoji: '🛡️',
         label: 'ADM',
-        isActive:
-          activeTab === 'admin' &&
-          activeAdminSubTab !== 'rides' &&
-          activeAdminSubTab !== 'drivers' &&
-          activeAdminSubTab !== 'pending_drivers',
-        onClick: () => {
-          if (onSelectAdminSection) {
-            onSelectAdminSection('overview');
-          } else {
-            onChangeTab('admin');
-          }
-        },
       },
       {
-        key: 'admin_account',
+        id: 'passenger_account' as TabType,
         emoji: '👤',
         label: 'CONTA',
-        isActive: activeTab === 'passenger_account',
-        onClick: () => onChangeTab('passenger_account'),
       },
     ];
 
     return (
-      <nav className="fixed bottom-0 left-0 right-0 z-[100] pointer-events-auto bg-white border-t border-slate-200 px-1.5 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
-        <div className="w-full max-w-md mx-auto grid grid-cols-4 gap-1 items-stretch">
-          {adminTabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={tab.onClick}
-              className={`relative pointer-events-auto touch-manipulation flex flex-col items-center justify-center w-full min-w-0 py-2 px-1 rounded-2xl transition-colors duration-200 cursor-pointer ${
-                tab.isActive
-                  ? 'text-[#ff6a00] bg-orange-50 font-black border border-[#ff6a00]/40 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
-              }`}
-            >
-              <span className="text-lg sm:text-xl leading-none" aria-hidden="true">
-                {tab.emoji}
-              </span>
-              <span className="text-[11px] sm:text-xs font-heading font-black mt-1 whitespace-nowrap shrink-0 leading-tight">
-                {tab.label}
-              </span>
-            </button>
-          ))}
+      <nav className="fixed bottom-0 left-0 right-0 z-[100] pointer-events-auto bg-white border-t border-slate-200 px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
+        <div className="w-full max-w-md mx-auto flex flex-row items-stretch">
+          {adminTabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onChangeTab(tab.id)}
+                className={`relative pointer-events-auto touch-manipulation flex flex-col items-center justify-center w-1/4 shrink-0 box-border py-2 px-0.5 rounded-2xl transition-colors duration-200 cursor-pointer ${
+                  isActive
+                    ? 'text-[#ff6a00] bg-orange-50 font-black border border-[#ff6a00]/30 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
+                }`}
+              >
+                <span className="text-lg sm:text-xl leading-none" aria-hidden="true">
+                  {tab.emoji}
+                </span>
+                <span className="text-[12px] font-heading font-black mt-1 whitespace-nowrap shrink-0 leading-tight tracking-normal">
+                  {tab.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </nav>
     );

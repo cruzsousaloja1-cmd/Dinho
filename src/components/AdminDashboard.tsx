@@ -126,8 +126,9 @@ interface AdminDashboardProps {
   onRemoveAllAccounts?: () => void;
   onApproveDriverApplication?: (email: string, updatedDriver?: Driver) => void;
   onRejectDriverApplication?: (email: string, reason: string) => void;
-  requestedSection?: { tab: 'overview' | 'pending_drivers' | 'drivers' | 'rides' | 'referrals'; seq: number } | null;
-  onActiveTabChange?: (tab: string) => void;
+  activeFooterTab?: 'admin' | 'admin_rides' | 'admin_drivers';
+  overviewResetSeq?: number;
+  onSelectFooterTab?: (tab: 'admin' | 'admin_rides' | 'admin_drivers') => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -146,29 +147,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRemoveAllAccounts,
   onApproveDriverApplication,
   onRejectDriverApplication,
-  requestedSection,
-  onActiveTabChange,
+  activeFooterTab = 'admin',
+  overviewResetSeq = 0,
+  onSelectFooterTab,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'pending_drivers' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'referrals' | 'beneficiaries' | 'reports' | 'reviews' | 'supabase'>('overview');
 
   const adminRootRef = React.useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (requestedSection?.tab) {
-      setActiveTab(requestedSection.tab);
-      setSelectedAdminUserDetail(null);
-      setSelectedAdminRideDetail(null);
-      setShowRideDetailMap(false);
-      requestAnimationFrame(() => {
-        const scroller = adminRootRef.current?.parentElement;
-        if (scroller) scroller.scrollTop = 0;
-      });
-    }
-  }, [requestedSection?.seq, requestedSection?.tab]);
+  const effectiveTab =
+    activeFooterTab === 'admin_rides'
+      ? 'rides'
+      : activeFooterTab === 'admin_drivers'
+      ? 'pending_drivers'
+      : activeTab;
 
   useEffect(() => {
-    onActiveTabChange?.(activeTab);
-  }, [activeTab, onActiveTabChange]);
+    setSelectedAdminUserDetail(null);
+    setSelectedAdminRideDetail(null);
+    setShowRideDetailMap(false);
+    requestAnimationFrame(() => {
+      const scroller = adminRootRef.current?.parentElement;
+      if (scroller) scroller.scrollTop = 0;
+    });
+  }, [activeFooterTab, overviewResetSeq]);
+
+  useEffect(() => {
+    if (overviewResetSeq > 0) {
+      setActiveTab('overview');
+    }
+  }, [overviewResetSeq]);
   const [cadastrosSubTab, setCadastrosSubTab] = useState<'all' | 'drivers' | 'passengers'>('all');
   const [driverFilterCategory, setDriverFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -2203,7 +2211,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const isFocusedFooterView =
-    activeTab === 'rides' || activeTab === 'pending_drivers' || activeTab === 'drivers';
+    activeFooterTab === 'admin_rides' || activeFooterTab === 'admin_drivers';
 
   return (
     <div ref={adminRootRef} className="space-y-5">
@@ -2274,12 +2282,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </>
       )}
 
-      {/* Admin Subtabs in White */}
+      {/* Admin Subtabs in White (visíveis na aba ADM) */}
+      {!isFocusedFooterView && (
       <div className="bg-white border border-slate-200 p-2 rounded-2xl flex items-center gap-2 shadow-sm overflow-x-auto overscroll-x-contain">
         <button
-          onClick={() => setActiveTab('overview')}
+          onClick={() => {
+            setActiveTab('overview');
+            onSelectFooterTab?.('admin');
+          }}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === 'overview'
+            effectiveTab === 'overview'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
@@ -2287,9 +2299,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           Visão Geral & Métricas
         </button>
         <button
-          onClick={() => setActiveTab('pending_drivers')}
+          onClick={() => {
+            setActiveTab('pending_drivers');
+            onSelectFooterTab?.('admin_drivers');
+          }}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'pending_drivers'
+            effectiveTab === 'pending_drivers'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
@@ -2303,7 +2318,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           onClick={() => setActiveTab('withdrawals')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'withdrawals'
+            effectiveTab === 'withdrawals'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
@@ -2317,7 +2332,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           onClick={() => setActiveTab('payments')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'payments'
+            effectiveTab === 'payments'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
@@ -2331,7 +2346,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           onClick={() => setActiveTab('drivers')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'drivers'
+            effectiveTab === 'drivers'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
@@ -2340,9 +2355,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <span>Gestão de Cadastros ({drivers.length + passengers.length})</span>
         </button>
         <button
-          onClick={() => setActiveTab('rides')}
+          onClick={() => {
+            setActiveTab('rides');
+            onSelectFooterTab?.('admin_rides');
+          }}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === 'rides'
+            effectiveTab === 'rides'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
@@ -2352,7 +2370,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           onClick={() => setActiveTab('referrals')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'referrals'
+            effectiveTab === 'referrals'
               ? 'bg-[#ff6a00] text-white shadow'
               : 'text-orange-700 hover:text-orange-950 hover:bg-orange-50'
           }`}
@@ -2363,7 +2381,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           onClick={() => setActiveTab('beneficiaries')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'beneficiaries'
+            effectiveTab === 'beneficiaries'
               ? 'bg-blue-700 text-white shadow'
               : 'text-blue-800 hover:text-blue-950 hover:bg-blue-50'
           }`}
@@ -2374,7 +2392,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           onClick={() => setActiveTab('reports')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === 'reports'
+            effectiveTab === 'reports'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
@@ -2384,7 +2402,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           onClick={() => setActiveTab('reviews')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'reviews'
+            effectiveTab === 'reviews'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
@@ -2400,7 +2418,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           onClick={() => setActiveTab('supabase')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'supabase'
+            effectiveTab === 'supabase'
               ? 'bg-[#ff6a00] text-white shadow'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
@@ -2410,9 +2428,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         </button>
       </div>
+      )}
 
       {/* TAB 1: OVERVIEW & KEY PERFORMANCE INDICATORS */}
-      {activeTab === 'overview' && (
+      {effectiveTab === 'overview' && (
         <div className="space-y-4">
           {/* PAINEL DE CÓDIGOS DE EMBARQUE PARA CONFERÊNCIA ADM (SOMENTE CORRIDAS DO SUPABASE) */}
           {(() => {
@@ -2814,7 +2833,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* TAB MOTORISTAS PENDENTES: APROVAÇÃO COM FOTOS CNH FRENTE/VERSO, CRLV, PLACA E MODELO/COR */}
-      {activeTab === 'pending_drivers' && (
+      {effectiveTab === 'pending_drivers' && (
         <div className="space-y-4">
           {actionToast && (
             <div className="bg-slate-950 text-white border-2 border-[#ff6a00] p-3.5 rounded-2xl flex items-center justify-between shadow-lg">
@@ -3135,7 +3154,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* TAB SAQUES: LISTA DE SAQUES PENDENTES E BOTÃO PAGAR */}
-      {activeTab === 'withdrawals' && (
+      {effectiveTab === 'withdrawals' && (
         <div className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
@@ -3286,7 +3305,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* TAB 2: PAGAMENTOS PENDENTES (AUDITORIA PIX MANUAL) */}
-      {activeTab === 'payments' && (
+      {effectiveTab === 'payments' && (
         <div className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
@@ -3455,10 +3474,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* TAB 3: GESTÃO DE CADASTROS (MOTORISTAS, MOTOBOYS E PASSAGEIROS) */}
-      {(activeTab === 'drivers' || activeTab === 'pending_drivers') && (
+      {(effectiveTab === 'drivers' || effectiveTab === 'pending_drivers') && (
         <div className="space-y-4">
           {/* Toast de feedback de ação */}
-          {activeTab === 'drivers' && actionToast && (
+          {effectiveTab === 'drivers' && actionToast && (
             <div className="bg-slate-950 text-white border-2 border-[#ff6a00] p-3.5 rounded-2xl flex items-center justify-between shadow-lg animate-bounce">
               <span className="font-heading font-black text-xs sm:text-sm flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -3891,7 +3910,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* TAB 3: SISTEMA COMPLETO DE CORRIDAS (ADM) */}
-      {activeTab === 'rides' && (() => {
+      {effectiveTab === 'rides' && (() => {
         const rq = rideSearchQuery.trim().toLowerCase();
         const filteredRides = supabaseCorridas.filter((ride) => {
           if (!rq) return true;
@@ -4083,7 +4102,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       })()}
 
       {/* TAB 4: PERFORMANCE REPORTS & DATA ANALYSIS */}
-      {activeTab === 'reports' && (
+      {effectiveTab === 'reports' && (
         <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-md space-y-5">
           <div className="flex items-center justify-between border-b border-slate-200 pb-4">
             <div>
@@ -4143,7 +4162,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* TAB: REVIEWS & RECLAMAÇÕES (O QUE DEU ERRADO?) */}
-      {activeTab === 'reviews' && (
+      {effectiveTab === 'reviews' && (
         <div className="space-y-6 animate-fade-in">
           {/* Header & Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -4429,7 +4448,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* TAB: INDICAÇÕES & BÔNUS (MEUS BENEFICIADOS DO ADM + VISÃO R$50 LARANJA & R$10 AZUL) */}
-      {activeTab === 'referrals' && (
+      {effectiveTab === 'referrals' && (
         <div className="space-y-6 animate-fade-in">
           {/* BLOCO DO PRÓPRIO ADM: CÓDIGO + COMPARTILHAR + MEUS BENEFICIADOS / MINHAS INDICAÇÕES */}
           <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
@@ -4764,7 +4783,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* TAB NOVA: CONTROLE GERAL DOS BENEFICIADOS (TODOS OS USUÁRIOS) */}
-      {activeTab === 'beneficiaries' && (() => {
+      {effectiveTab === 'beneficiaries' && (() => {
         const filteredRows = allBeneficiaryRowsWithUsage.filter((row) => {
           const nameFilter = beneficiaryFilterName.trim().toLowerCase();
           if (nameFilter) {
@@ -5123,7 +5142,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       })()}
 
       {/* TAB: NUVEM SUPABASE */}
-      {activeTab === 'supabase' && (
+      {effectiveTab === 'supabase' && (
         <div className="space-y-6 animate-fade-in">
           {/* Top Banner de Conexão */}
           <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-black text-white p-6 rounded-3xl border border-zinc-800 shadow-md space-y-4">
@@ -5752,6 +5771,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onClick={() => {
                   setSelectedUserReviewModal(null);
                   setActiveTab('reviews');
+                  onSelectFooterTab?.('admin');
                 }}
                 className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-heading font-black text-xs rounded-xl cursor-pointer transition-colors shadow-xs"
               >

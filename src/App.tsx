@@ -112,13 +112,16 @@ export default function App() {
 
   // Global States
   const [activeTab, setActiveTab] = useState<TabType>(() => resolveInitialTab(initialUser));
+  const isAdminActiveTab = (tab: TabType) =>
+    tab === 'admin' || tab === 'admin_rides' || tab === 'admin_drivers';
   const tabScrollTopsRef = useRef<Partial<Record<TabType, number>>>({});
   const tabPanelRefs = useRef<Partial<Record<TabType, HTMLDivElement | null>>>({});
 
   useLayoutEffect(() => {
-    const el = tabPanelRefs.current[activeTab];
+    const panelKey: TabType = isAdminActiveTab(activeTab) ? 'admin' : activeTab;
+    const el = tabPanelRefs.current[panelKey];
     if (el) {
-      el.scrollTop = tabScrollTopsRef.current[activeTab] ?? 0;
+      el.scrollTop = isAdminActiveTab(activeTab) ? 0 : (tabScrollTopsRef.current[panelKey] ?? 0);
     }
   }, [activeTab]);
 
@@ -150,7 +153,7 @@ export default function App() {
     activeRideStatusLower !== 'cancelada';
 
   const getTabPanelProps = (tab: TabType) => {
-    const isActive = activeTab === tab;
+    const isActive = tab === 'admin' ? isAdminActiveTab(activeTab) : activeTab === tab;
     const bottomPad = isRideActivePhase && tab !== 'driver_portal' ? 'pb-40' : 'pb-28';
     return {
       ref: (el: HTMLDivElement | null) => {
@@ -178,16 +181,12 @@ export default function App() {
   const ADMIN_DRIVER_BLOCK_MESSAGE =
     'Esta conta é de ADM. Para ser motorista, crie uma conta de motorista.';
 
-  // Garante isolamento de abas para ADM: apenas ADM e CONTA (nunca entra online como motorista)
-  const [adminSectionRequest, setAdminSectionRequest] = useState<{
-    tab: 'overview' | 'pending_drivers' | 'drivers' | 'rides' | 'referrals';
-    seq: number;
-  } | null>(null);
-  const [adminCurrentSubTab, setAdminCurrentSubTab] = useState<string>('overview');
+  // Garante isolamento de abas para ADM: apenas abas ADM (Corridas, Motoristas, ADM) e CONTA
+  const [adminOverviewResetSeq, setAdminOverviewResetSeq] = useState(0);
 
   useEffect(() => {
     if (currentUser && isAppUserAdmin(currentUser)) {
-      if (activeTab !== 'admin' && activeTab !== 'passenger_account') {
+      if (!isAdminActiveTab(activeTab) && activeTab !== 'passenger_account') {
         setActiveTab('admin');
       }
     }
@@ -2249,7 +2248,7 @@ export default function App() {
         onOpenSos={() => setIsSosOpen(true)}
         onOpenShare={() => setIsShareOpen(true)}
         activeRole={
-          activeTab === 'admin'
+          isAdminActiveTab(activeTab)
             ? 'admin'
             : isAppUserAdmin(currentUser)
             ? 'admin'
@@ -2593,8 +2592,17 @@ export default function App() {
               onRemoveAllAccounts={handleRemoveAllAccounts}
               onApproveDriverApplication={handleApproveDriverApplication}
               onRejectDriverApplication={handleRejectDriverApplication}
-              requestedSection={adminSectionRequest}
-              onActiveTabChange={setAdminCurrentSubTab}
+              activeFooterTab={
+                activeTab === 'admin_rides'
+                  ? 'admin_rides'
+                  : activeTab === 'admin_drivers'
+                  ? 'admin_drivers'
+                  : 'admin'
+              }
+              overviewResetSeq={adminOverviewResetSeq}
+              onSelectFooterTab={(nextFooterTab) => {
+                setActiveTab(nextFooterTab);
+              }}
             />
           ) : (
             <div className="text-center py-12 p-6 bg-zinc-950 border-2 border-[#ff6a00] rounded-3xl text-white space-y-3 shadow-xl">
@@ -2632,7 +2640,7 @@ export default function App() {
         isOpen={isSupportOpen}
         onClose={() => setIsSupportOpen(false)}
         userType={
-          activeTab === 'admin'
+          isAdminActiveTab(activeTab)
             ? 'admin'
             : activeTab === 'driver_portal'
             ? 'driver'
@@ -2672,20 +2680,6 @@ export default function App() {
       {/* Ergonomic Bottom Navigation Bar */}
       <BottomNav
         activeTab={activeTab}
-        activeAdminSubTab={adminCurrentSubTab}
-        onSelectAdminSection={(section) => {
-          if (!isAppUserAdmin(currentUser)) return;
-          setActiveTab('admin');
-          setAdminCurrentSubTab(section);
-          setAdminSectionRequest((prev) => ({
-            tab: section,
-            seq: (prev?.seq || 0) + 1,
-          }));
-          tabScrollTopsRef.current['admin'] = 0;
-          requestAnimationFrame(() => {
-            tabPanelRefs.current['admin']?.scrollTo({ top: 0, behavior: 'auto' });
-          });
-        }}
         onChangeTab={(tab) => {
           if (isAppUserAdmin(currentUser)) {
             if (tab === 'driver_portal') {
@@ -2693,13 +2687,24 @@ export default function App() {
               setActiveTab('admin');
               return;
             }
-            if (tab !== 'admin' && tab !== 'passenger_account') {
+            if (!isAdminActiveTab(tab) && tab !== 'passenger_account') {
               setActiveTab('admin');
               return;
             }
+            if (tab === 'admin') {
+              setAdminOverviewResetSeq((n) => n + 1);
+            }
+            if (isAdminActiveTab(tab)) {
+              tabScrollTopsRef.current['admin'] = 0;
+              requestAnimationFrame(() => {
+                tabPanelRefs.current['admin']?.scrollTo({ top: 0, behavior: 'auto' });
+              });
+            }
+            setActiveTab(tab);
+            return;
           }
-          if (tab === 'admin') {
-            if (!isAppUserAdmin(currentUser)) return;
+          if (isAdminActiveTab(tab)) {
+            return;
           }
 
           setActiveTab(tab);
