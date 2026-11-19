@@ -27,7 +27,7 @@ interface BottomNavProps {
   isDriverOnline?: boolean;
   currentUser?: AppUser | null;
   activeAdminSubTab?: string;
-  onSelectAdminSection?: (section: 'rides' | 'drivers' | 'overview') => void;
+  onSelectAdminSection?: (section: 'rides' | 'pending_drivers' | 'drivers' | 'overview') => void;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
@@ -142,7 +142,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           (activeAdminSubTab === 'drivers' || activeAdminSubTab === 'pending_drivers'),
         onClick: () => {
           if (onSelectAdminSection) {
-            onSelectAdminSection('drivers');
+            onSelectAdminSection('pending_drivers');
           } else {
             onChangeTab('admin');
           }

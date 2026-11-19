@@ -151,9 +151,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'pending_drivers' | 'withdrawals' | 'payments' | 'drivers' | 'rides' | 'referrals' | 'beneficiaries' | 'reports' | 'reviews' | 'supabase'>('overview');
 
+  const adminRootRef = React.useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (requestedSection?.tab) {
       setActiveTab(requestedSection.tab);
+      setSelectedAdminUserDetail(null);
+      setSelectedAdminRideDetail(null);
+      setShowRideDetailMap(false);
+      requestAnimationFrame(() => {
+        const scroller = adminRootRef.current?.parentElement;
+        if (scroller) scroller.scrollTop = 0;
+      });
     }
   }, [requestedSection?.seq, requestedSection?.tab]);
 
@@ -2193,69 +2202,77 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showToast('Backup JSON seguro baixado com sucesso (sem senhas e com CPF/CNH mascarados).');
   };
 
+  const isFocusedFooterView =
+    activeTab === 'rides' || activeTab === 'pending_drivers' || activeTab === 'drivers';
+
   return (
-    <div className="space-y-5">
-      {/* Admin Title & Live Status in White Theme */}
-      <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold border border-amber-300">
-              <ShieldCheck className="w-6 h-6" />
+    <div ref={adminRootRef} className="space-y-5">
+      {/* Cabeçalho completo de Visão Geral ADM (oculto nas telas diretas de Corridas e Motoristas do rodapé) */}
+      {!isFocusedFooterView && (
+        <>
+          {/* Admin Title & Live Status in White Theme */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md">
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold border border-amber-300">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <h2 className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
+                  Painel Administrativo RACE Master
+                </h2>
+              </div>
+              <p className="text-sm text-slate-600 mt-1 font-medium">
+                Monitoramento de frota em tempo real, auditoria de segurança e análise de dados
+              </p>
             </div>
-            <h2 className="font-heading font-black text-slate-950 text-xl sm:text-2xl">
-              Painel Administrativo RACE Master
-            </h2>
-          </div>
-          <p className="text-sm text-slate-600 mt-1 font-medium">
-            Monitoramento de frota em tempo real, auditoria de segurança e análise de dados
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {onOpenShare && (
-            <button
-              onClick={onOpenShare}
-              className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs sm:text-sm font-bold rounded-xl border border-emerald-300 transition-all cursor-pointer shadow-xs active:scale-95"
-            >
-              <Share2 className="w-4 h-4 text-emerald-700" />
-              <span>Compartilhar App</span>
-            </button>
-          )}
-          <button
-            onClick={exportReportCSV}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs sm:text-sm font-bold rounded-xl border border-slate-300 transition-all cursor-pointer shadow-xs active:scale-95"
-          >
-            <Download className="w-4 h-4 text-slate-800" />
-            <span>Exportar CSV</span>
-          </button>
-          <span className="text-xs sm:text-sm bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-2 rounded-xl font-mono font-bold flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse" />
-            Servidores 100% OK
-          </span>
-        </div>
-      </div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {onOpenShare && (
+                <button
+                  onClick={onOpenShare}
+                  className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs sm:text-sm font-bold rounded-xl border border-emerald-300 transition-all cursor-pointer shadow-xs active:scale-95"
+                >
+                  <Share2 className="w-4 h-4 text-emerald-700" />
+                  <span>Compartilhar App</span>
+                </button>
+              )}
+              <button
+                onClick={exportReportCSV}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs sm:text-sm font-bold rounded-xl border border-slate-300 transition-all cursor-pointer shadow-xs active:scale-95"
+              >
+                <Download className="w-4 h-4 text-slate-800" />
+                <span>Exportar CSV</span>
+              </button>
+              <span className="text-xs sm:text-sm bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-2 rounded-xl font-mono font-bold flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse" />
+                Servidores 100% OK
+              </span>
+            </div>
+          </div>
 
-      {/* Modelo Oficial Financeiro Race: Comissão 15% - Total Arrecadado */}
-      <div className="bg-slate-950 text-white rounded-2xl p-3.5 sm:p-4 border border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#ff6a00]/20 border border-[#ff6a00]/40 text-[#ff6a00] flex items-center justify-center font-bold shrink-0">
-            <Wallet className="w-4 h-4" />
+          {/* Modelo Oficial Financeiro Race: Comissão 15% - Total Arrecadado */}
+          <div className="bg-slate-950 text-white rounded-2xl p-3.5 sm:p-4 border border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-[#ff6a00]/20 border border-[#ff6a00]/40 text-[#ff6a00] flex items-center justify-center font-bold shrink-0">
+                <Wallet className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-heading font-black text-sm text-white block">
+                  Comissão Race 15% - Total arrecadado: {formatBRL(asaasData.raceCommission15)}
+                </span>
+                <span className="text-zinc-400 font-mono text-[11px]">
+                  Total recebido no app: <strong className="text-white">{formatBRL(asaasData.totalReceived)}</strong> &bull; Repasse 85% aos condutores toda sexta-feira
+                </span>
+              </div>
+            </div>
+            <div className="text-left sm:text-right shrink-0">
+              <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 px-3 py-1 rounded-full font-mono text-xs font-bold">
+                85% Motorista • 15% Race • Sem Mensalidade
+              </span>
+            </div>
           </div>
-          <div>
-            <span className="font-heading font-black text-sm text-white block">
-              Comissão Race 15% - Total arrecadado: {formatBRL(asaasData.raceCommission15)}
-            </span>
-            <span className="text-zinc-400 font-mono text-[11px]">
-              Total recebido no app: <strong className="text-white">{formatBRL(asaasData.totalReceived)}</strong> &bull; Repasse 85% aos condutores toda sexta-feira
-            </span>
-          </div>
-        </div>
-        <div className="text-left sm:text-right shrink-0">
-          <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 px-3 py-1 rounded-full font-mono text-xs font-bold">
-            85% Motorista • 15% Race • Sem Mensalidade
-          </span>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Admin Subtabs in White */}
       <div className="bg-white border border-slate-200 p-2 rounded-2xl flex items-center gap-2 shadow-sm overflow-x-auto overscroll-x-contain">
@@ -3438,10 +3455,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* TAB 3: GESTÃO DE CADASTROS (MOTORISTAS, MOTOBOYS E PASSAGEIROS) */}
-      {activeTab === 'drivers' && (
+      {(activeTab === 'drivers' || activeTab === 'pending_drivers') && (
         <div className="space-y-4">
           {/* Toast de feedback de ação */}
-          {actionToast && (
+          {activeTab === 'drivers' && actionToast && (
             <div className="bg-slate-950 text-white border-2 border-[#ff6a00] p-3.5 rounded-2xl flex items-center justify-between shadow-lg animate-bounce">
               <span className="font-heading font-black text-xs sm:text-sm flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />

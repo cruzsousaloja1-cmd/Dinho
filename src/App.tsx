@@ -2676,10 +2676,15 @@ export default function App() {
         onSelectAdminSection={(section) => {
           if (!isAppUserAdmin(currentUser)) return;
           setActiveTab('admin');
+          setAdminCurrentSubTab(section);
           setAdminSectionRequest((prev) => ({
             tab: section,
             seq: (prev?.seq || 0) + 1,
           }));
+          tabScrollTopsRef.current['admin'] = 0;
+          requestAnimationFrame(() => {
+            tabPanelRefs.current['admin']?.scrollTo({ top: 0, behavior: 'auto' });
+          });
         }}
         onChangeTab={(tab) => {
           if (isAppUserAdmin(currentUser)) {
