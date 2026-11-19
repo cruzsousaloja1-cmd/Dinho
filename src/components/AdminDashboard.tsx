@@ -216,8 +216,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [supabasePagamentos, setSupabasePagamentos] = useState<SupabasePagamentoRow[]>([]);
   const [adminReferrals, setAdminReferrals] = useState<AdminReferralItem[]>([]);
   const [driverApplicationsMap, setDriverApplicationsMap] = useState<Record<string, DriverApplicationRecord>>({});
-  const [rejectionReasonInputs, setRejectionReasonInputs] = useState<Record<string, string>>({});
-  const [rejectedDocInputs, setRejectedDocInputs] = useState<Record<string, string>>({});
   const [processingApprovalEmail, setProcessingApprovalEmail] = useState<string | null>(null);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [supabaseUsersError, setSupabaseUsersError] = useState<string | null>(null);
@@ -1638,11 +1636,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleRejectPendingDriver = async (app: DriverApplicationRecord) => {
-    const selectedDoc = (rejectedDocInputs[app.email] || 'CNH Frente').trim();
-    const extraMotivo = (rejectionReasonInputs[app.email] || '').trim();
-    const reason = extraMotivo
-      ? `Seu documento [${selectedDoc}] foi reprovado. Envie novamente. Motivo: ${extraMotivo}`
-      : `Seu documento [${selectedDoc}] foi reprovado. Envie novamente.`;
+    const reason = 'Um documento foi reprovado. Verifique suas fotos e envie novamente.';
     setProcessingApprovalEmail(app.email);
     try {
       const matchedDriver = drivers.find(
@@ -3027,28 +3021,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     url: app.vehiclePhoto,
                   },
                 ];
-                const hasAll5Photos = docItems.every((d) => Boolean(d.url));
-                const matchedPendingUser = parsedUsers.find(
-                  (pu) =>
-                    (pu.email && app.email && pu.email.toLowerCase() === app.email.toLowerCase()) ||
-                    (app.id && String(pu.id) === String(app.id))
-                );
-                const fallbackPendingRaw = matchedPendingUser?.raw || {
-                  id: app.id || app.email,
-                  nome: app.name || 'Condutor RACE',
-                  email: app.email,
-                  'e-mail': app.email,
-                  celular: app.whatsapp || app.phone || '',
-                  whatsapp: app.whatsapp || app.phone || '',
-                };
-                const fallbackPendingParsed = matchedPendingUser || {
-                  id: app.id || app.email,
-                  name: app.name || 'Condutor RACE',
-                  email: app.email,
-                  login: app.email,
-                  isPassenger: false,
-                  raw: fallbackPendingRaw,
-                };
+                const hasAll5Photos = docItems.every((d) => Boolean(String(d.url || '').trim()));
                 return (
                   <div
                     key={app.email}
@@ -3171,89 +3144,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Documento + Motivo de reprovação e Botões Ativar, Reprovar, Bloquear e Excluir */}
-                    <div className="space-y-2.5 pt-2 border-t border-slate-200">
-                      <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
-                        <select
-                          value={rejectedDocInputs[app.email] || 'CNH Frente'}
-                          onChange={(e) =>
-                            setRejectedDocInputs((prev) => ({
-                              ...prev,
-                              [app.email]: e.target.value,
-                            }))
-                          }
-                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:border-rose-500 cursor-pointer"
-                          title="Documento a reprovar"
-                        >
-                          <option value="CNH Frente">Doc: CNH Frente</option>
-                          <option value="CNH Verso">Doc: CNH Verso</option>
-                          <option value="CRLV">Doc: CRLV</option>
-                          <option value="Foto de Perfil">Doc: Foto de Perfil</option>
-                          <option value="Foto do carro (Frente)">Doc: Foto do carro (Frente)</option>
-                        </select>
+                    {/* Botões ❌ Reprovar e ✅ Ativar */}
+                    <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleRejectPendingDriver(app)}
+                        className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      >
+                        <span>❌ Reprovar</span>
+                      </button>
 
-                        <input
-                          type="text"
-                          value={rejectionReasonInputs[app.email] || ''}
-                          onChange={(e) =>
-                            setRejectionReasonInputs((prev) => ({
-                              ...prev,
-                              [app.email]: e.target.value,
-                            }))
-                          }
-                          placeholder="Motivo da reprovação (ex: foto borrada)"
-                          className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-amber-500"
-                        />
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={isBusy || !hasAll5Photos}
-                          onClick={() => handleApprovePendingDriver(app)}
-                          title={
-                            hasAll5Photos
-                              ? 'Ativar motorista'
-                              : 'Bloqueado: aguarde todas as 5 fotos obrigatórias estarem enviadas'
-                          }
-                          className="flex-1 min-w-[115px] px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-300 disabled:text-slate-600 disabled:cursor-not-allowed text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
-                        >
-                          {isBusy ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <span>{hasAll5Photos ? '✅ Ativar' : '🔒 Ativar (5 fotos)'}</span>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => handleRejectPendingDriver(app)}
-                          className="flex-1 min-w-[115px] px-4 py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
-                        >
-                          <span>❌ Reprovar</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => handleBloquear(fallbackPendingRaw)}
-                          className="flex-1 min-w-[105px] px-4 py-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
-                        >
-                          <XCircle className="w-4 h-4 text-amber-600" />
-                          <span>Bloquear</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => handleRequestExcluirUsuario(fallbackPendingParsed)}
-                          className="flex-1 min-w-[105px] px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          <span>Excluir</span>
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        disabled={isBusy || !hasAll5Photos}
+                        onClick={() => handleApprovePendingDriver(app)}
+                        title={
+                          hasAll5Photos
+                            ? 'Ativar motorista'
+                            : 'Bloqueado: aguarde todas as 5 fotos obrigatórias estarem enviadas'
+                        }
+                        className={`flex-1 sm:flex-none px-6 py-3 rounded-xl font-heading font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 ${
+                          hasAll5Photos
+                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md cursor-pointer active:scale-95'
+                            : 'bg-slate-300 text-slate-500 border border-slate-300 cursor-not-allowed shadow-none'
+                        }`}
+                      >
+                        {isBusy ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <span>✅ Ativar</span>
+                        )}
+                      </button>
                     </div>
                   </div>
                 );
