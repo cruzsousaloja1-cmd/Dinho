@@ -112,18 +112,34 @@ export default function App() {
 
   // Global States
   const [activeTab, setActiveTab] = useState<TabType>(() => resolveInitialTab(initialUser));
+  const [admRidesSubView, setAdmRidesSubView] = useState<'passenger' | 'all_rides'>('passenger');
+  const [admDriversSubView, setAdmDriversSubView] = useState<'driver' | 'all_drivers'>('driver');
   const isAdminActiveTab = (tab: TabType) =>
     tab === 'admin' || tab === 'admin_rides' || tab === 'admin_drivers';
   const tabScrollTopsRef = useRef<Partial<Record<TabType, number>>>({});
   const tabPanelRefs = useRef<Partial<Record<TabType, HTMLDivElement | null>>>({});
 
   useLayoutEffect(() => {
-    const panelKey: TabType = isAdminActiveTab(activeTab) ? 'admin' : activeTab;
+    const panelKey: TabType =
+      activeTab === 'admin_rides'
+        ? admRidesSubView === 'passenger'
+          ? 'rides'
+          : 'admin'
+        : activeTab === 'admin_drivers'
+        ? admDriversSubView === 'driver'
+          ? 'driver_portal'
+          : 'admin'
+        : activeTab;
     const el = tabPanelRefs.current[panelKey];
     if (el) {
       el.scrollTop = isAdminActiveTab(activeTab) ? 0 : (tabScrollTopsRef.current[panelKey] ?? 0);
     }
-  }, [activeTab]);
+    if (activeTab === 'admin_rides' && admRidesSubView === 'passenger') {
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+      });
+    }
+  }, [activeTab, admRidesSubView, admDriversSubView]);
 
   const [isFullMapOpen, setIsFullMapOpen] = useState(false);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -153,7 +169,14 @@ export default function App() {
     activeRideStatusLower !== 'cancelada';
 
   const getTabPanelProps = (tab: TabType) => {
-    const isActive = tab === 'admin' ? isAdminActiveTab(activeTab) : activeTab === tab;
+    let isActive = activeTab === tab;
+    if (currentUser && isAppUserAdmin(currentUser)) {
+      if (activeTab === 'admin_rides') {
+        isActive = admRidesSubView === 'passenger' ? tab === 'rides' : tab === 'admin';
+      } else if (activeTab === 'admin_drivers') {
+        isActive = admDriversSubView === 'driver' ? tab === 'driver_portal' : tab === 'admin';
+      }
+    }
     const bottomPad = isRideActivePhase && tab !== 'driver_portal' ? 'pb-40' : 'pb-28';
     return {
       ref: (el: HTMLDivElement | null) => {
@@ -2280,7 +2303,70 @@ export default function App() {
       />
 
       {/* Main Layout Container - Scroll isolado por aba para não acionar pull-to-refresh nem perder posição */}
-      <main className="flex-1 min-h-0 max-w-4xl w-full max-w-[100vw] mx-auto overflow-hidden box-border relative">
+      <main className="flex-1 min-h-0 max-w-4xl w-full max-w-[100vw] mx-auto overflow-hidden box-border relative flex flex-col">
+        {/* Barra de alternância ADM nas abas Corridas e Motoristas (Ver funcionando + Gestão completa) */}
+        {isAppUserAdmin(currentUser) && activeTab === 'admin_rides' && (
+          <div className="shrink-0 bg-slate-950 border-b border-zinc-800 px-3 py-2 z-20">
+            <div className="grid grid-cols-2 gap-2 max-w-xl mx-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setAdmRidesSubView('passenger');
+                  requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+                }}
+                className={`py-2 px-3 rounded-xl font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  admRidesSubView === 'passenger'
+                    ? 'bg-[#ff6a00] text-white shadow'
+                    : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700'
+                }`}
+              >
+                <span>🏁 Ver como Passageiro</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdmRidesSubView('all_rides')}
+                className={`py-2 px-3 rounded-xl font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  admRidesSubView === 'all_rides'
+                    ? 'bg-[#ff6a00] text-white shadow'
+                    : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700'
+                }`}
+              >
+                <span>📋 Todas as Corridas ({ridesHistory.length})</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isAppUserAdmin(currentUser) && activeTab === 'admin_drivers' && (
+          <div className="shrink-0 bg-slate-950 border-b border-zinc-800 px-3 py-2 z-20">
+            <div className="grid grid-cols-2 gap-2 max-w-xl mx-auto">
+              <button
+                type="button"
+                onClick={() => setAdmDriversSubView('driver')}
+                className={`py-2 px-3 rounded-xl font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  admDriversSubView === 'driver'
+                    ? 'bg-[#ff6a00] text-white shadow'
+                    : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700'
+                }`}
+              >
+                <span>🚗 Ver como Motorista</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdmDriversSubView('all_drivers')}
+                className={`py-2 px-3 rounded-xl font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  admDriversSubView === 'all_drivers'
+                    ? 'bg-[#ff6a00] text-white shadow'
+                    : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700'
+                }`}
+              >
+                <span>👥 Todos os Motoristas</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 min-h-0 relative overflow-hidden">
         {/* 1. Corridas (Passageiro / Condutor) */}
         <div {...getTabPanelProps('rides')}>
           <PassengerRideView
@@ -2343,24 +2429,38 @@ export default function App() {
 
         {/* 3. Condutor & Cadastro (85% para você, 15% Race - Sem mensalidade) */}
         <div {...getTabPanelProps('driver_portal')}>
-          {isAppUserAdmin(currentUser) ? (
-            <div className="text-center py-12 p-6 bg-zinc-950 border-2 border-[#ff6a00] rounded-3xl text-white space-y-3 shadow-xl">
-              <AlertTriangle className="w-12 h-12 text-[#ff6a00] mx-auto" />
-              <h3 className="text-xl font-heading font-black text-white">Acesso Bloqueado</h3>
-              <p className="text-sm text-zinc-200 max-w-md mx-auto font-bold">
-                {ADMIN_DRIVER_BLOCK_MESSAGE}
-              </p>
-              <button
-                type="button"
-                onClick={() => setActiveTab('admin')}
-                className="mt-4 px-6 py-2.5 bg-[#ff6a00] hover:bg-[#e05e00] text-white font-heading font-black text-sm rounded-xl cursor-pointer"
-              >
-                Voltar para o Painel ADM
-              </button>
-            </div>
-          ) : isUserDriver ? (
+          {isUserDriver || isAppUserAdmin(currentUser) ? (
             <DriverPartnerPortal
-              currentDriver={currentDriver}
+              currentDriver={
+                isAppUserAdmin(currentUser)
+                  ? {
+                      ...DEFAULT_NEW_DRIVER,
+                      ...currentDriver,
+                      id: currentUser.id,
+                      name: currentUser.name,
+                      email: currentUser.email,
+                      phone: currentUser.phone || '(19) 99999-0000',
+                      avatar: currentUser.avatar || currentDriver.avatar || '',
+                      category: currentDriver.category || 'economica',
+                      categoryConfigured: true,
+                      requirementsConfirmed: true,
+                      documentosAceitos: true,
+                      approvalStatus: 'aprovado',
+                      weeklyPlanActive: true,
+                      vehicleModel:
+                        currentDriver.vehicleModel && currentDriver.vehicleModel !== 'Veículo não informado'
+                          ? currentDriver.vehicleModel
+                          : 'Veículo ADM RACE',
+                      vehiclePlate: currentDriver.vehiclePlate || 'ADM-2026',
+                      vehicleColor: currentDriver.vehicleColor || 'Preto',
+                      vehicleYear: currentDriver.vehicleYear || 2025,
+                      status:
+                        currentDriver.status === 'online' || currentDriver.status === 'in_ride'
+                          ? currentDriver.status
+                          : 'offline',
+                    }
+                  : currentDriver
+              }
               currentUser={currentUser}
               rides={ridesHistory}
               activeRide={activeRide}
@@ -2620,6 +2720,7 @@ export default function App() {
               </button>
             </div>
           )}
+        </div>
         </div>
       </main>
 

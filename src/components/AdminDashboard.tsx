@@ -268,7 +268,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [rides]);
 
   // Busca de usuarios, corridas, pagamentos e cadastros de motoristas diretamente do Supabase (somente ADM)
-  const fetchSupabaseUsuarios = async () => {
+  const fetchSupabaseUsuarios = async (triggerOrShowToast?: unknown) => {
+    const isManualClick =
+      triggerOrShowToast === true ||
+      Boolean(
+        triggerOrShowToast &&
+          typeof triggerOrShowToast === 'object' &&
+          ('nativeEvent' in (triggerOrShowToast as any) || 'preventDefault' in (triggerOrShowToast as any))
+      );
+
     if (!isAppUserAdmin(currentUser)) {
       setSupabaseUsers([]);
       setSupabaseCorridas([]);
@@ -450,9 +458,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }));
       setReviewsFromSupabase(mappedReviews);
       setReviewsList(mappedReviews);
+      if (isManualClick) {
+        showToast('✅ Dados atualizados com sucesso!');
+      }
     } catch (err: any) {
       console.error('Falha ao conectar no Supabase:', err);
       setSupabaseUsersError(err?.message || 'Falha ao buscar dados do Supabase');
+      if (isManualClick) {
+        showToast('Erro ao atualizar dados do Supabase.');
+      }
     } finally {
       setIsLoadingUsers(false);
     }
@@ -999,12 +1013,70 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       },
     }));
 
-    if (onApproveWeeklyPayment) {
-      const match = drivers.find((d) => d.email.toLowerCase().trim() === userEmail || d.id === userId);
-      if (match) onApproveWeeklyPayment(match);
+    const match = drivers.find(
+      (d) => (userEmail && d.email.toLowerCase().trim() === userEmail) || String(d.id) === userId
+    );
+    const existingApp =
+      (userEmail ? driverApplicationsMap[userEmail] : undefined) ||
+      mergedDriverApplications.find(
+        (a) =>
+          (userEmail && a.email.toLowerCase() === userEmail) ||
+          (userId && a.id && String(a.id) === userId)
+      );
+
+    if (userEmail) {
+      setDriverApplicationsMap((prev) => ({
+        ...prev,
+        [userEmail]: {
+          ...(existingApp || prev[userEmail] || { email: userEmail, name: u.nome || 'Condutor' }),
+          email: userEmail,
+          name: existingApp?.name || u.nome || match?.name || 'Condutor',
+          approvalStatus: 'aprovado',
+          rejectionReason: '',
+          approvedAt: new Date().toISOString(),
+        },
+      }));
+    }
+
+    if (selectedAdminUserDetail && String(selectedAdminUserDetail.id) === userId) {
+      setDetailUserMeta((prev) => ({
+        ...prev,
+        approvalStatus: 'aprovado',
+      }));
+    }
+
+    if (match) {
+      onApproveDriver(match.id);
+      if (onApproveWeeklyPayment) {
+        onApproveWeeklyPayment(match);
+      }
     }
 
     try {
+      if (userEmail) {
+        await approveOrRejectDriverSupabase({
+          email: userEmail,
+          decision: 'aprovado',
+          driverSnapshot: {
+            ...(match || {}),
+            id: userId || match?.id || '',
+            name: u.nome || existingApp?.name || match?.name || 'Condutor',
+            email: userEmail,
+            phone: u.celular || u.whatsapp || existingApp?.phone || match?.phone || '',
+            category: (existingApp?.category as any) || match?.category || u.categoria || 'economica',
+            vehicleModel: existingApp?.vehicleModel || match?.vehicleModel || u.modelo || '',
+            vehicleColor: existingApp?.vehicleColor || match?.vehicleColor || u.cor || '',
+            vehiclePlate: existingApp?.vehiclePlate || match?.vehiclePlate || u.placa || '',
+            vehicleYear: existingApp?.vehicleYear || match?.vehicleYear || Number(u.ano) || 2023,
+            cnh: existingApp?.cnh || match?.cnh || u.cnh || '',
+            avatar: existingApp?.avatar || match?.avatar || extractPhotoFromRow(u) || '',
+            cnhFrontPhoto: existingApp?.cnhFrontPhoto || match?.cnhFrontPhoto || '',
+            cnhBackPhoto: existingApp?.cnhBackPhoto || match?.cnhBackPhoto || '',
+            crlvPhoto: existingApp?.crlvPhoto || match?.crlvPhoto || '',
+            vehiclePhoto: existingApp?.vehiclePhoto || match?.vehiclePhoto || '',
+          },
+        });
+      }
       await updateDriverOnlineStatusSupabase({
         id: String(u.id),
         email: userEmail,
@@ -1012,7 +1084,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
     } catch {}
 
-    showToast(`✅ Acesso ativado com sucesso para ${u.nome}!`);
+    if (onApproveDriverApplication && userEmail) {
+      onApproveDriverApplication(userEmail, match ? { ...match, approvalStatus: 'aprovado', weeklyPlanActive: true } : undefined);
+    }
+
+    showToast(`✅ Acesso ativado e aprovado com sucesso para ${u.nome}!`);
   };
 
   const handleBloquear = async (u: any) => {
@@ -1023,6 +1099,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ...prev,
       [userId]: { status: 'bloqueado' },
     }));
+
+    if (selectedAdminUserDetail && String(selectedAdminUserDetail.id) === userId) {
+      setDetailUserMeta((prev) => ({
+        ...prev,
+        approvalStatus: 'bloqueado',
+      }));
+    }
 
     if (onRejectWeeklyPayment) {
       const match = drivers.find((d) => d.email.toLowerCase().trim() === userEmail || d.id === userId);
@@ -1471,6 +1554,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           driverStatus: 'offline',
         },
       }));
+      const matchedParsedRow = parsedUsers.find(
+        (pu) => (pu.email && pu.email.toLowerCase() === app.email.toLowerCase()) || (app.id && String(pu.id) === String(app.id))
+      );
+      const statusKey = String(app.id || matchedParsedRow?.id || matchedDriver?.id || '').trim();
+      if (statusKey) {
+        setUserStatusMap((prev) => ({
+          ...prev,
+          [statusKey]: { status: 'liberado' },
+        }));
+      }
       if (matchedDriver) {
         onApproveDriver(matchedDriver.id);
       }
@@ -2299,10 +2392,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           Visão Geral & Métricas
         </button>
         <button
-          onClick={() => {
-            setActiveTab('pending_drivers');
-            onSelectFooterTab?.('admin_drivers');
-          }}
+          onClick={() => setActiveTab('pending_drivers')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
             effectiveTab === 'pending_drivers'
               ? 'bg-amber-500 text-slate-950 shadow'
@@ -2355,10 +2445,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <span>Gestão de Cadastros ({drivers.length + passengers.length})</span>
         </button>
         <button
-          onClick={() => {
-            setActiveTab('rides');
-            onSelectFooterTab?.('admin_rides');
-          }}
+          onClick={() => setActiveTab('rides')}
           className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-heading font-black transition-all cursor-pointer whitespace-nowrap ${
             effectiveTab === 'rides'
               ? 'bg-amber-500 text-slate-950 shadow'
@@ -3965,10 +4052,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     type="button"
                     onClick={fetchSupabaseUsuarios}
-                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-heading font-black inline-flex items-center gap-1.5 cursor-pointer"
+                    disabled={isLoadingUsers}
+                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-heading font-black inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                   >
-                    <RefreshCw className="w-3.5 h-3.5 text-[#ff6a00]" />
-                    <span>Atualizar</span>
+                    <RefreshCw className={`w-3.5 h-3.5 text-[#ff6a00] ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                    <span>{isLoadingUsers ? 'Atualizando...' : 'Atualizar'}</span>
                   </button>
                 </div>
               </div>
