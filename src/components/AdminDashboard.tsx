@@ -173,6 +173,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [adminReferrals, setAdminReferrals] = useState<AdminReferralItem[]>([]);
   const [driverApplicationsMap, setDriverApplicationsMap] = useState<Record<string, DriverApplicationRecord>>({});
   const [rejectionReasonInputs, setRejectionReasonInputs] = useState<Record<string, string>>({});
+  const [rejectedDocInputs, setRejectedDocInputs] = useState<Record<string, string>>({});
   const [processingApprovalEmail, setProcessingApprovalEmail] = useState<string | null>(null);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [supabaseUsersError, setSupabaseUsersError] = useState<string | null>(null);
@@ -1016,6 +1017,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         vehiclePlate: (d.vehiclePlate || existing?.vehiclePlate || '').toUpperCase(),
         vehicleYear: d.vehicleYear || existing?.vehicleYear || 2023,
         cnh: d.cnh || existing?.cnh || '',
+        cpf: d.cpf || existing?.cpf || '',
+        pixKey: d.pixKey || existing?.pixKey || '',
         avatar: d.avatar || existing?.avatar || '',
         cnhFrontPhoto: d.cnhFrontPhoto || d.cnhPhoto || existing?.cnhFrontPhoto || '',
         cnhBackPhoto: d.cnhBackPhoto || existing?.cnhBackPhoto || '',
@@ -1047,6 +1050,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         vehiclePlate: (existing?.vehiclePlate || u.plate || '').toUpperCase(),
         vehicleYear: existing?.vehicleYear || Number(u.year) || 2023,
         cnh: existing?.cnh || u.raw?.cnh || '',
+        cpf: existing?.cpf || u.raw?.cpf || '',
+        pixKey: existing?.pixKey || '',
         avatar: existing?.avatar || u.avatar || '',
         cnhFrontPhoto: existing?.cnhFrontPhoto || '',
         cnhBackPhoto: existing?.cnhBackPhoto || '',
@@ -1166,9 +1171,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleRejectPendingDriver = async (app: DriverApplicationRecord) => {
-    const reason =
-      (rejectionReasonInputs[app.email] || '').trim() ||
-      'Documentação (CNH / CRLV / Dados do veículo) não aprovada pelo ADM. Reenvie fotos legíveis.';
+    const selectedDoc = (rejectedDocInputs[app.email] || 'CNH Frente').trim();
+    const extraMotivo = (rejectionReasonInputs[app.email] || '').trim();
+    const reason = extraMotivo
+      ? `Seu documento [${selectedDoc}] foi reprovado. Envie novamente. Motivo: ${extraMotivo}`
+      : `Seu documento [${selectedDoc}] foi reprovado. Envie novamente.`;
     setProcessingApprovalEmail(app.email);
     try {
       const matchedDriver = drivers.find(
@@ -1938,7 +1945,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           <UserCheck className="w-4 h-4 text-[#ff6a00]" />
-          <span>Motoristas Pendentes ({pendingApprovalsList.length})</span>
+          <span>Motorista Pendente ({pendingApprovalsList.length})</span>
           {pendingApprovalsList.length > 0 && (
             <span className="w-2.5 h-2.5 rounded-full bg-[#ff6a00] animate-pulse" />
           )}
@@ -2483,10 +2490,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="font-heading font-black text-slate-950 text-xl">
-                    Aprovação de Motoristas Pendentes
+                    Motorista Pendente — Aprovação Rápida
                   </h3>
                   <span className="text-xs font-mono font-bold text-slate-500">
-                    CNH (frente e verso), CRLV, Placa, Modelo e Cor • Somente aprovados ficam ONLINE
+                    5 fotos lado a lado (Perfil, CNH Frente, CNH Verso, CRLV e Carro Frente) • Somente aprovados ficam ONLINE
                   </span>
                 </div>
               </div>
@@ -2528,10 +2535,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {pendingApprovalsList.map((app) => {
                 const isBusy = processingApprovalEmail === app.email;
                 const docItems = [
-                  { label: 'CNH (Frente)', url: app.cnhFrontPhoto },
-                  { label: 'CNH (Verso)', url: app.cnhBackPhoto },
-                  { label: 'CRLV do Veículo', url: app.crlvPhoto },
-                  { label: 'Foto do Veículo', url: app.vehiclePhoto },
+                  { label: '1. Foto de Perfil', url: app.avatar },
+                  { label: '2. CNH Frente', url: app.cnhFrontPhoto },
+                  { label: '3. CNH Verso', url: app.cnhBackPhoto },
+                  { label: '4. CRLV', url: app.crlvPhoto },
+                  {
+                    label:
+                      app.category === 'moto_passageiro' || app.category === 'moto_entrega'
+                        ? '5. Moto'
+                        : '5. Carro (Frente)',
+                    url: app.vehiclePhoto,
+                  },
                 ];
                 return (
                   <div
@@ -2577,8 +2591,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Dados do Veículo e CNH */}
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                    {/* Dados do Veículo, CPF, CNH e Chave PIX */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
                       <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                         <span className="text-slate-500 block font-bold uppercase text-[10px]">Modelo</span>
                         <strong className="text-slate-950 text-sm">{app.vehicleModel || '—'}</strong>
@@ -2595,18 +2609,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span className="text-slate-500 block font-bold uppercase text-[10px]">Ano</span>
                         <strong className="text-slate-950 font-mono text-sm">{app.vehicleYear || '—'}</strong>
                       </div>
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 col-span-2 sm:col-span-1">
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <span className="text-slate-500 block font-bold uppercase text-[10px]">CPF</span>
+                        <strong className="text-slate-950 font-mono text-sm">{app.cpf || '—'}</strong>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                         <span className="text-slate-500 block font-bold uppercase text-[10px]">CNH</span>
                         <strong className="text-slate-950 font-mono text-sm">{app.cnh || '—'}</strong>
                       </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 col-span-2 sm:col-span-2 lg:col-span-1">
+                        <span className="text-slate-500 block font-bold uppercase text-[10px]">Chave PIX</span>
+                        <strong className="text-slate-950 font-mono text-xs break-all">{app.pixKey || '—'}</strong>
+                      </div>
                     </div>
 
-                    {/* Fotos Enviadas (Clique para ampliar) */}
+                    {/* 5 Fotos Lado a Lado (Clique para ampliar) */}
                     <div className="space-y-2">
                       <span className="text-xs font-heading font-black text-slate-700 uppercase tracking-wider block">
-                        Documentos Enviados (Toque na foto para ampliar):
+                        5 Fotos Enviadas Lado a Lado (Toque na foto para ampliar):
                       </span>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                         {docItems.map((doc) => (
                           <div
                             key={doc.label}
@@ -2640,8 +2662,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Motivo opcional + Botões Aprovar / Reprovar */}
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 border-t border-slate-200">
+                    {/* Documento + Motivo de reprovação e Botões ✅ Ativar / ❌ Reprovar */}
+                    <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5 pt-2 border-t border-slate-200">
+                      <select
+                        value={rejectedDocInputs[app.email] || 'CNH Frente'}
+                        onChange={(e) =>
+                          setRejectedDocInputs((prev) => ({
+                            ...prev,
+                            [app.email]: e.target.value,
+                          }))
+                        }
+                        className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:border-rose-500 cursor-pointer"
+                        title="Documento a reprovar"
+                      >
+                        <option value="CNH Frente">Doc: CNH Frente</option>
+                        <option value="CNH Verso">Doc: CNH Verso</option>
+                        <option value="CRLV">Doc: CRLV</option>
+                        <option value="Foto de Perfil">Doc: Foto de Perfil</option>
+                        <option value="Foto do carro (Frente)">Doc: Foto do carro (Frente)</option>
+                      </select>
+
                       <input
                         type="text"
                         value={rejectionReasonInputs[app.email] || ''}
@@ -2651,7 +2691,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             [app.email]: e.target.value,
                           }))
                         }
-                        placeholder="Motivo caso reprove (ex: CNH ilegível ou CRLV vencido)"
+                        placeholder="Motivo opcional da reprovação (ex: foto borrada)"
                         className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-amber-500"
                       />
 
@@ -2662,8 +2702,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           onClick={() => handleRejectPendingDriver(app)}
                           className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                         >
-                          <XCircle className="w-4 h-4 text-rose-600" />
-                          <span>Reprovar</span>
+                          <span>❌ Reprovar</span>
                         </button>
 
                         <button
@@ -2675,9 +2714,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           {isBusy ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <CheckCircle2 className="w-4 h-4" />
+                            <span>✅ Ativar</span>
                           )}
-                          <span>Aprovar Motorista</span>
                         </button>
                       </div>
                     </div>

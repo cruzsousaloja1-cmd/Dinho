@@ -686,8 +686,39 @@ export default function App() {
 
         if (isDriver && ownDriverEmail) {
           const myApp = (ownAppsMap as Record<string, any>)[ownDriverEmail];
-          if (myApp && myApp.approvalStatus && myApp.approvalStatus !== currentDriver.approvalStatus) {
-            setCurrentDriver((prev) => mergeDriverWithApplication(prev, myApp));
+          if (
+            myApp &&
+            myApp.approvalStatus &&
+            (myApp.approvalStatus !== currentDriver.approvalStatus ||
+              (myApp.approvalStatus === 'reprovado' &&
+                myApp.rejectionReason &&
+                myApp.rejectionReason !== currentDriver.rejectionReason))
+          ) {
+            const merged = mergeDriverWithApplication(currentDriver, myApp);
+            setCurrentDriver(merged);
+            setCurrentUser((prev) => {
+              if (!prev) return prev;
+              const nextUser = {
+                ...prev,
+                avatar: merged.avatar || prev.avatar,
+                driverData: merged,
+              };
+              saveSessionUser(nextUser);
+              return nextUser;
+            });
+            if (myApp.approvalStatus === 'aprovado') {
+              triggerPush(
+                '✅ Cadastro Aprovado!',
+                'Seu cadastro foi aprovado pelo ADM! Agora você já pode ficar ONLINE.',
+                'safety'
+              );
+            } else if (myApp.approvalStatus === 'reprovado') {
+              triggerPush(
+                '❌ Documento Reprovado',
+                myApp.rejectionReason || 'Seu documento [CNH Frente] foi reprovado. Envie novamente.',
+                'safety'
+              );
+            }
           }
         }
 
@@ -1682,7 +1713,11 @@ export default function App() {
         status: 'offline',
       }));
     }
-    triggerPush('Cadastro Reprovado', `O cadastro de ${email} foi marcado como reprovado.`, 'safety');
+    triggerPush(
+      'Documento Reprovado',
+      reason || 'Seu documento [CNH Frente] foi reprovado. Envie novamente.',
+      'safety'
+    );
   };
 
   const handleApproveWeeklyPayment = (driver: Driver) => {
@@ -2177,6 +2212,7 @@ export default function App() {
                 : 'motoboy_entregas';
             const updatedUser: AppUser = {
               ...currentUser,
+              avatar: configuredDriver.avatar || currentUser.avatar,
               role: isMoto ? 'motoboy' : 'driver',
               tipo: nextTipo,
               placa: configuredDriver.vehiclePlate,
@@ -2189,7 +2225,7 @@ export default function App() {
             setLoginSuccessBanner(
               isApproved
                 ? `Modalidade configurada! Você já pode ficar ONLINE e receber corridas na RACE.`
-                : `Cadastro enviado! Seus documentos (CNH frente/verso e CRLV) estão com status PENDENTE aguardando aprovação do ADM.`
+                : `Cadastro enviado! Aguardando aprovação do ADM. Você será avisado quando for aprovado.`
             );
           }}
         />
@@ -2405,6 +2441,7 @@ export default function App() {
                 const isMoto = pendingDriver.category === 'moto_entrega' || pendingDriver.category === 'moto_passageiro';
                 const updatedUser: AppUser = {
                   ...currentUser!,
+                  avatar: pendingDriver.avatar || currentUser?.avatar,
                   role: isMoto ? 'motoboy' : 'driver',
                   tipo: pendingDriver.category === 'economica' ? 'motorista_economico' :
                         pendingDriver.category === 'confort' ? 'motorista_confort' :
@@ -2418,7 +2455,7 @@ export default function App() {
                 setLoginSuccessBanner(
                   isApproved
                     ? `Parabéns, ${pendingDriver.name}! Cadastro de motorista aprovado!`
-                    : `Cadastro enviado! Seus documentos estão PENDENTES de aprovação do ADM. Você não ficará online até ser aprovado.`
+                    : `Cadastro enviado! Aguardando aprovação do ADM. Você será avisado quando for aprovado.`
                 );
               }}
               onBackToRides={() => setActiveTab('rides')}

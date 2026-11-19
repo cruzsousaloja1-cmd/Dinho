@@ -1168,8 +1168,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       setOnlineBlockNotice(
         approvalStatus === 'reprovado'
           ? (currentDriver.rejectionReason ||
-            'Seu cadastro foi reprovado pelo ADM. Atualize e reenvie seus documentos (CNH frente/verso e CRLV).')
-          : 'Seu cadastro está com status PENDENTE. Só motoristas aprovados pelo ADM podem ficar ONLINE.'
+            'Seu documento [CNH Frente] foi reprovado. Envie novamente.')
+          : 'Cadastro enviado! Aguardando aprovação do ADM. Você será avisado quando for aprovado.'
       );
       return;
     }
@@ -2008,14 +2008,14 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   <div className="space-y-1 text-xs sm:text-sm">
                     <strong className="font-heading font-black block uppercase tracking-wide">
                       {approvalStatus === 'reprovado'
-                        ? 'Cadastro Reprovado pelo ADM'
+                        ? 'Documento Reprovado pelo ADM'
                         : 'Cadastro Pendente — Aguardando Aprovação do ADM'}
                     </strong>
                     <p className="font-medium leading-snug">
                       {approvalStatus === 'reprovado'
                         ? currentDriver.rejectionReason ||
-                          'Verifique as fotos da CNH (frente e verso), CRLV e dados do veículo e reenvie para nova análise.'
-                        : 'Seus documentos (CNH frente e verso, CRLV, placa, modelo e cor) estão em análise. Você não aparece como condutor online até o ADM aprovar.'}
+                          'Seu documento [CNH Frente] foi reprovado. Envie novamente.'
+                        : 'Cadastro enviado! Aguardando aprovação do ADM. Você será avisado quando for aprovado.'}
                     </p>
                   </div>
                 </div>
@@ -2060,10 +2060,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 setIsEditingCategory(false);
                 if (onTriggerToast) {
                   onTriggerToast(
-                    approved ? 'Modalidade atualizada!' : 'Cadastro enviado para aprovação!',
+                    approved ? 'Modalidade atualizada!' : 'Cadastro enviado!',
                     approved
                       ? 'Sua modalidade e dados do veículo foram salvos no Supabase.'
-                      : 'Seus documentos (CNH e CRLV) estão com status PENDENTE aguardando aprovação do ADM.',
+                      : 'Cadastro enviado! Aguardando aprovação do ADM. Você será avisado quando for aprovado.',
                     'system'
                   );
                 }

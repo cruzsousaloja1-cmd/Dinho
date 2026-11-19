@@ -4578,6 +4578,8 @@ export interface DriverApplicationRecord {
   vehiclePlate: string;
   vehicleYear: number;
   cnh?: string;
+  cpf?: string;
+  pixKey?: string;
   avatar?: string;
   cnhFrontPhoto?: string;
   cnhBackPhoto?: string;
@@ -4751,6 +4753,8 @@ export async function saveDriverApplicationSupabase(params: {
   vehiclePlate: string;
   vehicleYear?: number;
   cnh?: string;
+  cpf?: string;
+  pixKey?: string;
   avatar?: string;
   cnhFrontPhoto?: string;
   cnhBackPhoto?: string;
@@ -4808,6 +4812,8 @@ export async function saveDriverApplicationSupabase(params: {
     vehiclePlate: (params.vehiclePlate || prevLocal?.vehiclePlate || '').toUpperCase(),
     vehicleYear: Number(params.vehicleYear) || prevLocal?.vehicleYear || 2023,
     cnh: params.cnh || prevLocal?.cnh || '',
+    cpf: params.cpf || prevLocal?.cpf || '',
+    pixKey: params.pixKey || prevLocal?.pixKey || '',
     avatar: compressedAvatar,
     cnhFrontPhoto: compressedCnhFront,
     cnhBackPhoto: compressedCnhBack,
@@ -4897,6 +4903,8 @@ export async function saveDriverApplicationSupabase(params: {
         vehiclePlate: record.vehiclePlate,
         vehicleYear: record.vehicleYear,
         cnh: record.cnh || '',
+        cpf: record.cpf || '',
+        pixKey: record.pixKey || '',
         phone: record.phone || '',
         whatsapp: record.whatsapp || '',
         rejectionReason: record.rejectionReason || '',
@@ -4998,6 +5006,8 @@ export async function fetchDriverApplicationsSupabase(
           vehiclePlate: String(meta.vehiclePlate || prev?.vehiclePlate || '').toUpperCase(),
           vehicleYear: Number(meta.vehicleYear) || prev?.vehicleYear || 2023,
           cnh: String(meta.cnh || prev?.cnh || ''),
+          cpf: String(meta.cpf || prev?.cpf || ''),
+          pixKey: String(meta.pixKey || prev?.pixKey || ''),
           avatar: String(photos.avatar || prev?.avatar || ''),
           cnhFrontPhoto: String(photos.cnhFrontPhoto || prev?.cnhFrontPhoto || ''),
           cnhBackPhoto: String(photos.cnhBackPhoto || prev?.cnhBackPhoto || ''),
@@ -5116,6 +5126,8 @@ export async function approveOrRejectDriverSupabase(params: {
     vehiclePlate: (params.driverSnapshot?.vehiclePlate || existing?.vehiclePlate || '').toUpperCase(),
     vehicleYear: params.driverSnapshot?.vehicleYear || existing?.vehicleYear || 2023,
     cnh: params.driverSnapshot?.cnh || existing?.cnh || '',
+    cpf: params.driverSnapshot?.cpf || existing?.cpf || '',
+    pixKey: params.driverSnapshot?.pixKey || existing?.pixKey || '',
     avatar: params.driverSnapshot?.avatar || existing?.avatar || '',
     cnhFrontPhoto: params.driverSnapshot?.cnhFrontPhoto || params.driverSnapshot?.cnhPhoto || existing?.cnhFrontPhoto || '',
     cnhBackPhoto: params.driverSnapshot?.cnhBackPhoto || existing?.cnhBackPhoto || '',

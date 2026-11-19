@@ -15,6 +15,7 @@ import {
   Loader2,
   Camera,
   LogOut,
+  User,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveUserAccount } from '../services/userService';
@@ -23,6 +24,7 @@ import {
   saveUsuarioSupabase,
   setDriverRequirementsConfirmedLocal,
   saveDriverApplicationSupabase,
+  uploadProfilePhotoSupabase,
 } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isBasicPopularOneLiterModel } from '../services/vehicleValidationService';
@@ -253,12 +255,40 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     ? 'motoboy_passageiro'
     : 'motorista_economico';
 
+  const isRejectedResubmission = currentUser.driverData?.approvalStatus === 'reprovado';
+  const rejectionMessage = String(currentUser.driverData?.rejectionReason || '').trim();
+
+  const detectRejectedStep = (reason: string): 1 | 2 | 3 | 4 | 5 | 6 => {
+    const lower = reason.toLowerCase();
+    if (lower.includes('perfil') || lower.includes('rosto')) return 1;
+    if (lower.includes('cnh frente') || lower.includes('cnh (frente)')) return 2;
+    if (lower.includes('cnh verso') || lower.includes('cnh (verso)')) return 3;
+    if (lower.includes('crlv')) return 4;
+    if (lower.includes('carro') || lower.includes('moto') || lower.includes('veículo') || lower.includes('veiculo')) return 5;
+    return 1;
+  };
+
   const [stage, setStage] = useState<'select_category' | 'fill_details'>(
-    hasExistingVehicleSetup ? 'fill_details' : 'select_category'
+    hasExistingVehicleSetup || isRejectedResubmission ? 'fill_details' : 'select_category'
   );
   const [selectedKey, setSelectedKey] = useState<WorkCategoryKey>(initialKey);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(() =>
+    isRejectedResubmission ? detectRejectedStep(rejectionMessage) : 1
+  );
 
-  // Form de detalhes operacionais do motorista / motoboy
+  // Passo 1 a 5: Fotos obrigatórias na ordem (estilo Uber, só 1 foto da frente do carro)
+  const [profilePhoto, setProfilePhoto] = useState(
+    currentUser.avatar || currentUser.driverData?.avatar || ''
+  );
+  const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
+  const [cnhFrontPhoto, setCnhFrontPhoto] = useState(
+    currentUser.driverData?.cnhFrontPhoto || currentUser.driverData?.cnhPhoto || ''
+  );
+  const [cnhBackPhoto, setCnhBackPhoto] = useState(currentUser.driverData?.cnhBackPhoto || '');
+  const [crlvPhoto, setCrlvPhoto] = useState(currentUser.driverData?.crlvPhoto || '');
+  const [vehiclePhoto, setVehiclePhoto] = useState(currentUser.driverData?.vehiclePhoto || '');
+
+  // Passo 6: Dados do veículo + CPF + Chave PIX
   const [plate, setPlate] = useState(currentUser.driverData?.vehiclePlate || '');
   const [model, setModel] = useState(currentUser.driverData?.vehicleModel || '');
   const [year, setYear] = useState(
@@ -278,12 +308,6 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     return 'Baú 90 Litros';
   });
   const [color, setColor] = useState(currentUser.driverData?.vehicleColor || '');
-  const [vehiclePhoto, setVehiclePhoto] = useState(currentUser.driverData?.vehiclePhoto || '');
-  const [cnhFrontPhoto, setCnhFrontPhoto] = useState(
-    currentUser.driverData?.cnhFrontPhoto || currentUser.driverData?.cnhPhoto || ''
-  );
-  const [cnhBackPhoto, setCnhBackPhoto] = useState(currentUser.driverData?.cnhBackPhoto || '');
-  const [crlvPhoto, setCrlvPhoto] = useState(currentUser.driverData?.crlvPhoto || '');
   const [acceptedContract, setAcceptedContract] = useState<boolean>(false);
   const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
   const [acceptedLgpd, setAcceptedLgpd] = useState<boolean>(false);
@@ -292,6 +316,66 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   const [isSaving, setIsSaving] = useState(false);
 
   const selectedCategory = WORK_CATEGORIES[selectedKey];
+  const isCarCategoryGlobal = selectedCategory.role === 'driver';
+
+  const getStepMissingMessage = (step: 1 | 2 | 3 | 4 | 5): string | null => {
+    if (step === 1 && !profilePhoto) {
+      return 'Envie a foto de perfil (rosto) para continuar.';
+    }
+    if (step === 2 && !cnhFrontPhoto) {
+      return 'Envie a foto da CNH Frente para continuar.';
+    }
+    if (step === 3 && !cnhBackPhoto) {
+      return 'Envie a foto da CNH Verso para continuar.';
+    }
+    if (step === 4 && !crlvPhoto) {
+      return 'Envie a foto do CRLV para continuar.';
+    }
+    if (step === 5 && !vehiclePhoto) {
+      return isCarCategoryGlobal
+        ? 'Envie a foto do carro (Frente) para continuar.'
+        : 'Envie a foto da moto para continuar.';
+    }
+    return null;
+  };
+
+  const handleAttemptStepNavigation = (targetStep: 1 | 2 | 3 | 4 | 5 | 6) => {
+    if (targetStep <= wizardStep) {
+      setErrorMessage(null);
+      setWizardStep(targetStep);
+      return;
+    }
+    for (let s = 1 as 1 | 2 | 3 | 4 | 5; s < targetStep; s = (s + 1) as 1 | 2 | 3 | 4 | 5) {
+      const missingMsg = getStepMissingMessage(s);
+      if (missingMsg) {
+        setErrorMessage(missingMsg);
+        setWizardStep(s);
+        return;
+      }
+    }
+    setErrorMessage(null);
+    setWizardStep(targetStep);
+  };
+
+  const handleNextWizardStep = () => {
+    if (wizardStep >= 6) return;
+    const missingMsg = getStepMissingMessage(wizardStep as 1 | 2 | 3 | 4 | 5);
+    if (missingMsg) {
+      setErrorMessage(missingMsg);
+      return;
+    }
+    setErrorMessage(null);
+    setWizardStep((wizardStep + 1) as 1 | 2 | 3 | 4 | 5 | 6);
+  };
+
+  const handlePrevWizardStep = () => {
+    setErrorMessage(null);
+    if (wizardStep === 1) {
+      setStage('select_category');
+      return;
+    }
+    setWizardStep((wizardStep - 1) as 1 | 2 | 3 | 4 | 5 | 6);
+  };
 
   const handleSelectCategory = (key: WorkCategoryKey) => {
     setSelectedKey(key);
@@ -315,6 +399,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     setAcceptedLgpd(false);
     setAcceptedPrivacy(false);
     setErrorMessage(null);
+    setWizardStep(isRejectedResubmission ? detectRejectedStep(rejectionMessage) : 1);
     setStage('fill_details');
   };
 
@@ -346,6 +431,16 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     e.preventDefault();
     setErrorMessage(null);
 
+    // Garante que nenhum dos 5 passos de foto foi pulado
+    for (const stepNum of [1, 2, 3, 4, 5] as const) {
+      const missingMsg = getStepMissingMessage(stepNum);
+      if (missingMsg) {
+        setErrorMessage(missingMsg);
+        setWizardStep(stepNum);
+        return;
+      }
+    }
+
     const isCarCategory = selectedCategory.role === 'driver';
     const isDeliveryMoto = selectedCategory.key === 'motoboy_entregas';
     const cleanPlate = plate.trim().toUpperCase();
@@ -353,6 +448,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     const cleanCnh = cnh.trim();
     const cleanColor = color.trim();
     const cleanCpf = cpf.trim();
+    const cleanPix = pixKey.trim();
     const cleanBau = isCarCategory
       ? ''
       : hasTrunk === 'Sim'
@@ -360,8 +456,8 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       : 'Não';
     const yearNum = parseInt(year.trim(), 10);
 
-    if (!cleanPlate || !cleanModel || !year.trim() || Number.isNaN(yearNum)) {
-      setErrorMessage('Preencha Placa, Modelo e Ano do veículo.');
+    if (!cleanModel || !cleanColor || !cleanPlate || !year.trim() || Number.isNaN(yearNum)) {
+      setErrorMessage('Preencha Modelo, Cor, Placa e Ano do veículo.');
       return;
     }
 
@@ -377,34 +473,22 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       return;
     }
 
-    if (isCarCategory) {
-      if (!cleanColor || !cleanCnh || !cleanCpf) {
-        setErrorMessage('Preencha todos os campos obrigatórios: Placa, Modelo, Ano, Cor, CNH e CPF.');
-        return;
-      }
-    } else if (selectedCategory.key === 'motoboy_passageiro') {
-      if (!cleanColor || !cleanCnh || !cleanCpf) {
-        setErrorMessage('Preencha todos os campos obrigatórios: Placa moto, Modelo moto, Ano, Cor, CNH A e CPF.');
-        return;
-      }
-    } else if (isDeliveryMoto) {
-      if (hasTrunk !== 'Sim') {
-        setErrorMessage('Motoboy Entregas exige baú fixo de no mínimo 90L.');
-        return;
-      }
-      if (!cleanColor || !cleanCnh || !cleanCpf) {
-        setErrorMessage('Preencha Cor da moto, CNH A válida e CPF para concluir seu cadastro.');
-        return;
-      }
-    }
-
-    if (!cnhFrontPhoto || !cnhBackPhoto || !crlvPhoto) {
-      setErrorMessage('Envie as fotos obrigatórias da CNH (frente e verso) e do CRLV do veículo para aprovação do ADM.');
+    if (!cleanCpf || !cleanPix) {
+      setErrorMessage('Preencha CPF e Chave PIX para continuar.');
       return;
     }
 
-    if (!isCarCategory && !vehiclePhoto) {
-      setErrorMessage('Envie a foto da moto obrigatória para concluir o cadastro de Motoboy.');
+    if (!cleanCnh) {
+      setErrorMessage(
+        isCarCategory
+          ? 'Preencha o número da CNH B para concluir o cadastro.'
+          : 'Preencha o número da CNH A para concluir o cadastro.'
+      );
+      return;
+    }
+
+    if (isDeliveryMoto && hasTrunk !== 'Sim') {
+      setErrorMessage('Motoboy Entregas exige baú fixo de no mínimo 90L.');
       return;
     }
 
@@ -421,11 +505,26 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       const keepApproved = existingDriver?.approvalStatus === 'aprovado';
       const nextApprovalStatus = keepApproved ? 'aprovado' : 'pendente';
 
+      let finalAvatarUrl = profilePhoto || currentUser.avatar || existingDriver?.avatar || '';
+      if (profilePhotoFile) {
+        try {
+          const uploadRes = await uploadProfilePhotoSupabase({
+            photo: profilePhotoFile,
+            identifier: currentUser.email || currentUser.id,
+          });
+          if (uploadRes?.url) {
+            finalAvatarUrl = uploadRes.url;
+          }
+        } catch {
+          // Mantém preview comprimido em base64 caso Storage falhe
+        }
+      }
+
       const newDriver: Driver = {
         ...(existingDriver || {}),
         id: existingDriver?.id || currentUser.id || '',
         name: currentUser.name,
-        avatar: currentUser.avatar || existingDriver?.avatar || '',
+        avatar: finalAvatarUrl,
         phone: currentUser.phone,
         email: currentUser.email,
         cpf: cleanCpf,
@@ -458,7 +557,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         weeklyFeeExpiresAt: null,
         weeklyPlanExpiresAt: null,
         weeklyPlanPrice: 0,
-        pixKey: pixKey.trim() || cleanCpf || currentUser.phone,
+        pixKey: cleanPix,
         trunkType: isCarCategory ? undefined : cleanBau,
         earningsToday: existingDriver?.earningsToday || 0,
         earningsWeek: existingDriver?.earningsWeek || 0,
@@ -484,7 +583,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         role: selectedCategory.role,
         tipo: selectedCategory.userTipo,
         placa: cleanPlate,
-        avatar: newDriver.avatar,
+        avatar: finalAvatarUrl,
         rating: newDriver.rating,
         driverData: newDriver,
         createdAt: confirmedTimestamp,
@@ -511,12 +610,15 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         vehiclePlate: cleanPlate,
         vehicleYear: yearNum,
         cnh: cleanCnh,
-        avatar: newDriver.avatar,
+        cpf: cleanCpf,
+        pixKey: cleanPix,
+        avatar: finalAvatarUrl,
         cnhFrontPhoto,
         cnhBackPhoto,
         crlvPhoto,
         vehiclePhoto,
         approvalStatus: nextApprovalStatus,
+        rejectionReason: nextApprovalStatus === 'pendente' ? '' : existingDriver?.rejectionReason,
         online: false,
         driverStatus: nextApprovalStatus === 'aprovado' ? 'offline' : 'pending_approval',
         documentosAceitos: true,
@@ -529,7 +631,9 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         placa: cleanPlate,
         modelo: cleanModel,
         ano: yearNum,
+        cor: cleanColor,
         cnh: cleanCnh,
+        cpf: cleanCpf,
         tipo: selectedCategory.userTipo,
         documentos_aceitos: true,
         aceitou_contrato: true,
@@ -552,7 +656,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           modelo: cleanModel,
           ano: yearNum,
           cnh: cleanCnh,
-          foto: newDriver.avatar,
+          foto: finalAvatarUrl,
           documentos_aceitos: true,
           aceitou_contrato: true,
           aceitou_termos: true,
@@ -704,15 +808,176 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     );
   }
 
-  // ESTÁGIO 2: CADASTRO COMPLETO + EXIGÊNCIAS DA MODALIDADE + 4 CHECKBOXES OBRIGATÓRIOS
+  // ESTÁGIO 2: CADASTRO PASSO A PASSO (6 PASSOS OBRIGATÓRIOS — SEM PULAR)
   if (stage === 'fill_details') {
     const isCarCategory = selectedCategory.role === 'driver';
     const isDeliveryMoto = selectedCategory.key === 'motoboy_entregas';
     const all4CheckboxesMarked =
       acceptedContract && acceptedTerms && acceptedLgpd && acceptedPrivacy;
 
+    const wizardSteps: Array<{
+      step: 1 | 2 | 3 | 4 | 5 | 6;
+      shortLabel: string;
+      title: string;
+      subtitle: string;
+      done: boolean;
+    }> = [
+      {
+        step: 1,
+        shortLabel: '1. Perfil',
+        title: 'Passo 1: Foto de perfil (rosto)',
+        subtitle: 'Envie uma foto nítida do seu rosto, bem iluminada, sem óculos escuros ou boné.',
+        done: Boolean(profilePhoto),
+      },
+      {
+        step: 2,
+        shortLabel: '2. CNH Frente',
+        title: 'Passo 2: CNH Frente',
+        subtitle: `Tire uma foto legível da frente da sua ${isCarCategory ? 'CNH B' : 'CNH A'} aberta.`,
+        done: Boolean(cnhFrontPhoto),
+      },
+      {
+        step: 3,
+        shortLabel: '3. CNH Verso',
+        title: 'Passo 3: CNH Verso',
+        subtitle: 'Tire uma foto legível do verso da sua CNH com o QR Code visível.',
+        done: Boolean(cnhBackPhoto),
+      },
+      {
+        step: 4,
+        shortLabel: '4. CRLV',
+        title: `Passo 4: CRLV (documento ${isCarCategory ? 'do carro' : 'da moto'})`,
+        subtitle: `Envie a foto do documento CRLV atualizado ${isCarCategory ? 'do seu carro' : 'da sua moto'}.`,
+        done: Boolean(crlvPhoto),
+      },
+      {
+        step: 5,
+        shortLabel: isCarCategory ? '5. Carro (Frente)' : '5. Moto',
+        title: isCarCategory
+          ? 'Passo 5: Foto do carro (Frente)'
+          : `Passo 5: ${selectedCategory.vehiclePhotoLabel}`,
+        subtitle: isCarCategory
+          ? 'Envie SÓ 1 foto da frente do carro (com a placa visível). Não precisa dos 4 lados.'
+          : 'Envie 1 foto nítida da sua moto com a placa visível.',
+        done: Boolean(vehiclePhoto),
+      },
+      {
+        step: 6,
+        shortLabel: '6. Dados',
+        title: 'Passo 6: Dados do veículo, CPF e Chave PIX',
+        subtitle: 'Preencha Modelo, Cor, Placa, Ano, CPF, Chave PIX e confirme os termos para enviar ao ADM.',
+        done: Boolean(
+          model.trim() &&
+            color.trim() &&
+            plate.trim() &&
+            year.trim() &&
+            cpf.trim() &&
+            pixKey.trim() &&
+            cnh.trim() &&
+            all4CheckboxesMarked
+        ),
+      },
+    ];
+
+    const currentStepMeta = wizardSteps[wizardStep - 1];
+    const progressPercent = Math.round((wizardStep / 6) * 100);
+
+    const renderPhotoStepCard = (opts: {
+      photoUrl: string;
+      label: string;
+      hint: string;
+      isCircular?: boolean;
+      onSelectFile: (file: File) => void;
+    }) => (
+      <div className="space-y-4">
+        <label
+          className={`flex flex-col items-center justify-center p-6 sm:p-8 border-2 border-dashed rounded-3xl cursor-pointer transition-all text-center gap-3 ${
+            opts.photoUrl
+              ? 'bg-emerald-50 border-emerald-500'
+              : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00] hover:bg-orange-50/40'
+          }`}
+        >
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) opts.onSelectFile(f);
+            }}
+          />
+          {opts.photoUrl ? (
+            <>
+              <img
+                src={opts.photoUrl}
+                alt={opts.label}
+                className={
+                  opts.isCircular
+                    ? 'w-40 h-40 rounded-full object-cover border-4 border-[#ff6a00] shadow-lg'
+                    : 'w-full max-w-sm h-56 object-cover rounded-2xl border-2 border-emerald-500 shadow-md'
+                }
+              />
+              <div className="flex items-center gap-2 text-emerald-700 font-heading font-black text-sm">
+                <CheckCircle2 className="w-5 h-5" />
+                <span>{opts.label} enviada ✓</span>
+              </div>
+              <span className="text-xs font-bold text-slate-600 underline">
+                Toque para trocar a foto
+              </span>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 rounded-2xl bg-[#ff6a00]/15 border border-[#ff6a00]/40 flex items-center justify-center">
+                {opts.isCircular ? (
+                  <User className="w-8 h-8 text-[#ff6a00]" />
+                ) : (
+                  <Camera className="w-8 h-8 text-[#ff6a00]" />
+                )}
+              </div>
+              <div className="space-y-1">
+                <span className="block text-base font-heading font-black text-slate-900">
+                  Toque para enviar: {opts.label} *
+                </span>
+                <span className="block text-xs font-medium text-slate-600 max-w-md mx-auto">
+                  {opts.hint}
+                </span>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#ff6a00] text-white font-heading font-black text-xs shadow-sm">
+                <Camera className="w-4 h-4" />
+                <span>Tirar foto ou escolher da galeria</span>
+              </span>
+            </>
+          )}
+        </label>
+
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handlePrevWizardStep}
+            className="px-5 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-heading font-black text-sm flex items-center gap-1.5 cursor-pointer transition-all"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Voltar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleNextWizardStep}
+            className={`flex-1 py-3.5 px-6 rounded-2xl font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md ${
+              opts.photoUrl
+                ? 'bg-[#ff6a00] hover:bg-[#e05e00] text-white active:scale-[0.99]'
+                : 'bg-slate-900 hover:bg-slate-800 text-white'
+            }`}
+          >
+            <span>Continuar para Passo {wizardStep + 1}</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+
     return (
-      <div className="space-y-5 max-w-2xl mx-auto py-2 animate-fade-in">
+      <div className="space-y-4 max-w-2xl mx-auto py-2 animate-fade-in">
         {/* Navegação e Modalidade Ativa */}
         <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
           <button
@@ -721,69 +986,80 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             className="text-amber-400 hover:text-amber-300 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 bg-zinc-900 px-3 py-2 rounded-xl border border-zinc-700"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Voltar para modalidades</span>
+            <span>Trocar modalidade</span>
           </button>
           <span className="text-xs font-mono font-black text-slate-950 bg-amber-400 px-3.5 py-1.5 rounded-full">
             {selectedCategory.title}
           </span>
         </div>
 
-        {/* Aviso para cadastros já existentes confirmarem documentos */}
-        {hasExistingVehicleSetup && !currentUser.driverData?.documentosAceitos && (
-          <div className="bg-amber-50 border-2 border-amber-400 text-amber-950 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
-            <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-            <div className="text-xs sm:text-sm font-bold">
-              Complete os dados do veículo, envie as fotos obrigatórias e marque os 4 documentos abaixo para liberar seu cadastro para aprovação e trabalho.
+        {/* Banner de Reprovação (se ADM reprovou algum documento) */}
+        {isRejectedResubmission && (
+          <div className="bg-rose-50 border-2 border-rose-500 text-rose-950 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div className="space-y-1 text-xs sm:text-sm">
+              <strong className="font-heading font-black block">
+                Documento reprovado pelo ADM
+              </strong>
+              <p className="font-bold">
+                {rejectionMessage || 'Seu documento [CNH Frente] foi reprovado. Envie novamente.'}
+              </p>
             </div>
           </div>
         )}
 
-        {/* Cabeçalho do Formulário */}
-        <div className="space-y-1">
-          <h2 className="text-xl sm:text-2xl font-heading font-black tracking-tight">
-            {isCarCategory ? 'Cadastro Completo Motorista' : 'Cadastro Completo Motoboy'}
-          </h2>
-          <p className="text-xs sm:text-sm opacity-80 font-medium">
-            {selectedCategory.title} — Preencha os dados do seu {isCarCategory ? 'carro' : 'moto'}, envie as fotos e marque os 4 documentos obrigatórios para trabalhar.
-          </p>
-        </div>
-
-        {/* CARD OFICIAL DE EXIGÊNCIAS DA MODALIDADE ESCOLHIDA */}
-        <div
-          className={`rounded-3xl p-5 sm:p-6 border-2 shadow-md space-y-3 ${
-            selectedCategory.key === 'motorista_confort'
-              ? 'bg-[#fff8f2] border-[#ff6a00] text-slate-900'
-              : selectedCategory.key === 'motoboy_passageiro'
-              ? 'bg-cyan-50 border-cyan-500 text-slate-900'
-              : selectedCategory.key === 'motoboy_entregas'
-              ? 'bg-amber-50 border-amber-500 text-slate-900'
-              : 'bg-slate-50 border-slate-800 text-slate-900'
-          }`}
-        >
-          <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-3">
-            <div className="flex items-center gap-2.5">
-              <FileText className="w-5 h-5 text-[#ff6a00] shrink-0" />
-              <h3 className="font-heading font-black text-base sm:text-lg text-slate-950">
-                {selectedCategory.requirementsTitle}
-              </h3>
+        {/* Indicador de Progresso Passo a Passo (1 a 6 — Sem pular) */}
+        <div className="bg-white text-slate-900 border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-md space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <span className="text-[11px] font-mono font-black uppercase tracking-wider text-[#ff6a00] block">
+                Passo {wizardStep} de 6 • Obrigatório na ordem
+              </span>
+              <h2 className="text-lg sm:text-xl font-heading font-black text-slate-950">
+                {currentStepMeta.title}
+              </h2>
             </div>
-            <span className="text-[11px] font-mono font-black px-2.5 py-1 rounded-full bg-slate-950 text-white shrink-0">
-              Ano {selectedCategory.minYear}+
+            <span className="text-xs font-mono font-black px-2.5 py-1 rounded-full bg-slate-950 text-white shrink-0">
+              {progressPercent}%
             </span>
           </div>
 
-          <ul className="space-y-2">
-            {selectedCategory.requirementsList.map((req, idx) => (
-              <li key={idx} className="flex items-start gap-2.5 text-xs sm:text-sm font-semibold text-slate-800">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>{req}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[#ff6a00] transition-all duration-300"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 pt-1">
+            {wizardSteps.map((s) => {
+              const isCurrent = s.step === wizardStep;
+              return (
+                <button
+                  key={s.step}
+                  type="button"
+                  onClick={() => handleAttemptStepNavigation(s.step)}
+                  className={`px-2 py-2 rounded-xl text-[11px] font-heading font-black border text-center transition-all cursor-pointer truncate ${
+                    isCurrent
+                      ? 'bg-[#ff6a00] text-white border-[#ff6a00] shadow-sm'
+                      : s.done
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-400'
+                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {s.done && !isCurrent ? `${s.shortLabel} ✓` : s.shortLabel}
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="text-xs sm:text-sm text-slate-600 font-medium">
+            {currentStepMeta.subtitle}
+          </p>
         </div>
 
-        {/* Alerta em Tempo Real se Ano / Modelo / Baú não atenderem */}
-        {liveBlockingAlert && (
+        {/* Alerta em Tempo Real se Ano / Modelo / Baú não atenderem (Passo 6) */}
+        {wizardStep === 6 && liveBlockingAlert && (
           <div className="bg-rose-50 border-2 border-rose-500 text-rose-950 text-xs sm:text-sm p-4 rounded-2xl font-bold space-y-2.5 shadow-md">
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
@@ -801,7 +1077,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           </div>
         )}
 
-        {/* Mensagem de Erro de Submit */}
+        {/* Mensagem de Erro / Bloqueio ao tentar pular passo */}
         {errorMessage && (
           <div className="bg-rose-50 border-2 border-rose-400 text-rose-900 text-xs sm:text-sm p-4 rounded-2xl font-bold flex items-center gap-2.5 shadow-sm">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
@@ -809,513 +1085,326 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           </div>
         )}
 
-        <form
-          onSubmit={handleSubmitDetails}
-          className="space-y-4 bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl"
-        >
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-700 flex flex-wrap gap-x-4 gap-y-1">
-            <span>
-              <strong>Condutor:</strong> {currentUser.name}
-            </span>
-            <span>
-              <strong>E-mail:</strong> {currentUser.email}
-            </span>
-            <span>
-              <strong>Modalidade:</strong> {selectedCategory.title}
-            </span>
+        {/* CONTEÚDO DO PASSO ATUAL */}
+        {wizardStep === 1 && (
+          <div className="bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl">
+            {renderPhotoStepCard({
+              photoUrl: profilePhoto,
+              label: 'Foto de perfil (rosto)',
+              hint: 'Centralize seu rosto em local iluminado. Essa foto aparecerá para os passageiros e no ADM.',
+              isCircular: true,
+              onSelectFile: (file) => {
+                setProfilePhotoFile(file);
+                setErrorMessage(null);
+                compressUploadImage(file, setProfilePhoto);
+              },
+            })}
           </div>
+        )}
 
-          {isCarCategory ? (
-            /* MOTORISTA ECONÔMICO / CONFORT: Placa, Modelo, Ano, Cor, CNH, CPF, Foto do carro (Frente), Foto da CNH, Foto do CRLV */
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Placa *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={plate}
-                    onChange={(e) => setPlate(e.target.value.toUpperCase())}
-                    placeholder="Ex: ABC1D23"
-                    maxLength={8}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 uppercase"
-                  />
-                </div>
+        {wizardStep === 2 && (
+          <div className="bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl">
+            {renderPhotoStepCard({
+              photoUrl: cnhFrontPhoto,
+              label: 'CNH Frente',
+              hint: `Envie uma foto nítida da frente da sua ${isCarCategory ? 'CNH B' : 'CNH A'}, sem cortes e sem reflexo.`,
+              onSelectFile: (file) => {
+                setErrorMessage(null);
+                compressUploadImage(file, setCnhFrontPhoto);
+              },
+            })}
+          </div>
+        )}
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Modelo *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    placeholder={selectedCategory.modelPlaceholder}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
+        {wizardStep === 3 && (
+          <div className="bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl">
+            {renderPhotoStepCard({
+              photoUrl: cnhBackPhoto,
+              label: 'CNH Verso',
+              hint: 'Envie uma foto nítida do verso da sua CNH com todos os dados legíveis.',
+              onSelectFile: (file) => {
+                setErrorMessage(null);
+                compressUploadImage(file, setCnhBackPhoto);
+              },
+            })}
+          </div>
+        )}
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Ano *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1995}
-                    max={2027}
-                    value={year}
-                    onChange={(e) => setYear(e.target.value)}
-                    placeholder={selectedCategory.key === 'motorista_confort' ? 'Ex: 2022' : 'Ex: 2019'}
-                    className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none ${
-                      isYearBelowMinimum
-                        ? 'border-rose-500 bg-rose-50 text-rose-900'
-                        : 'border-slate-300 focus:border-amber-500'
-                    }`}
-                  />
-                  <span className="text-[11px] font-bold text-slate-500 block">
-                    Exigência mínima: ano {selectedCategory.minYear} ou superior.
-                  </span>
-                </div>
+        {wizardStep === 4 && (
+          <div className="bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl">
+            {renderPhotoStepCard({
+              photoUrl: crlvPhoto,
+              label: `CRLV (documento ${isCarCategory ? 'do carro' : 'da moto'})`,
+              hint: 'Envie foto ou print legível do CRLV (documento do veículo) em dia.',
+              onSelectFile: (file) => {
+                setErrorMessage(null);
+                compressUploadImage(file, setCrlvPhoto);
+              },
+            })}
+          </div>
+        )}
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Cor *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={color}
-                    onChange={(e) => setColor(e.target.value)}
-                    placeholder="Ex: Prata, Preto, Branco"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
+        {wizardStep === 5 && (
+          <div className="bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl">
+            {renderPhotoStepCard({
+              photoUrl: vehiclePhoto,
+              label: isCarCategory ? 'Foto do carro (Frente)' : selectedCategory.vehiclePhotoLabel,
+              hint: isCarCategory
+                ? 'Apenas 1 foto da frente do carro mostrando a placa e o para-brisa. Não precisa tirar 4 lados.'
+                : 'Apenas 1 foto nítida da moto mostrando a placa.',
+              onSelectFile: (file) => {
+                setErrorMessage(null);
+                compressUploadImage(file, setVehiclePhoto);
+              },
+            })}
+          </div>
+        )}
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    CNH B *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={cnh}
-                    onChange={(e) => setCnh(e.target.value)}
-                    placeholder="Número da CNH B válida"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    CPF *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={cpf}
-                    onChange={(e) => setCpf(e.target.value)}
-                    placeholder="000.000.000-00"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-
-              {/* Fotos: Veículo, CNH (Frente), CNH (Verso) e CRLV */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                <label className="flex flex-col items-center justify-center p-3.5 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-[#ff6a00] rounded-2xl cursor-pointer transition-colors text-center gap-2">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setVehiclePhoto);
+        {wizardStep === 6 && (
+          <form
+            onSubmit={handleSubmitDetails}
+            className="space-y-4 bg-white text-slate-900 border border-slate-200 p-5 sm:p-6 rounded-3xl shadow-xl"
+          >
+            {/* Resumo das 5 fotos já enviadas */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-heading font-black text-emerald-700 uppercase tracking-wider block">
+                5 fotos obrigatórias anexadas ✓ (toque para alterar)
+              </span>
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  { step: 1 as const, label: 'Perfil', src: profilePhoto },
+                  { step: 2 as const, label: 'CNH Frente', src: cnhFrontPhoto },
+                  { step: 3 as const, label: 'CNH Verso', src: cnhBackPhoto },
+                  { step: 4 as const, label: 'CRLV', src: crlvPhoto },
+                  { step: 5 as const, label: isCarCategory ? 'Carro' : 'Moto', src: vehiclePhoto },
+                ].map((item) => (
+                  <button
+                    key={item.step}
+                    type="button"
+                    onClick={() => {
+                      setErrorMessage(null);
+                      setWizardStep(item.step);
                     }}
-                  />
-                  {vehiclePhoto ? (
-                    <>
-                      <img src={vehiclePhoto} alt={selectedCategory.vehiclePhotoLabel} className="w-full h-20 object-cover rounded-xl" />
-                      <span className="text-[11px] font-bold text-emerald-700">{selectedCategory.vehiclePhotoLabel} ✓</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-5 h-5 text-[#ff6a00]" />
-                      <span className="text-[11px] font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel}</span>
-                      <span className="text-[10px] text-slate-500 leading-tight">Opcional - Só 1 foto da frente do carro</span>
-                    </>
-                  )}
-                </label>
-
-                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${cnhFrontPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setCnhFrontPhoto);
-                    }}
-                  />
-                  {cnhFrontPhoto ? (
-                    <>
-                      <img src={cnhFrontPhoto} alt="CNH Frente" className="w-full h-20 object-cover rounded-xl" />
-                      <span className="text-[11px] font-bold text-emerald-700">CNH (Frente) ✓</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-5 h-5 text-[#ff6a00]" />
-                      <span className="text-[11px] font-bold text-slate-800">CNH (Frente) *</span>
-                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
-                    </>
-                  )}
-                </label>
-
-                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${cnhBackPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setCnhBackPhoto);
-                    }}
-                  />
-                  {cnhBackPhoto ? (
-                    <>
-                      <img src={cnhBackPhoto} alt="CNH Verso" className="w-full h-20 object-cover rounded-xl" />
-                      <span className="text-[11px] font-bold text-emerald-700">CNH (Verso) ✓</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-5 h-5 text-[#ff6a00]" />
-                      <span className="text-[11px] font-bold text-slate-800">CNH (Verso) *</span>
-                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
-                    </>
-                  )}
-                </label>
-
-                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${crlvPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setCrlvPhoto);
-                    }}
-                  />
-                  {crlvPhoto ? (
-                    <>
-                      <img src={crlvPhoto} alt="CRLV" className="w-full h-20 object-cover rounded-xl" />
-                      <span className="text-[11px] font-bold text-emerald-700">CRLV ✓</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-5 h-5 text-[#ff6a00]" />
-                      <span className="text-[11px] font-bold text-slate-800">Foto CRLV *</span>
-                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
-                    </>
-                  )}
-                </label>
-              </div>
-            </>
-          ) : (
-            /* MOTOBOY PASSAGEIRO / ENTREGAS */
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Placa moto *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={plate}
-                    onChange={(e) => setPlate(e.target.value.toUpperCase())}
-                    placeholder="Ex: RCE9M22"
-                    maxLength={8}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 uppercase"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Modelo moto *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    placeholder={selectedCategory.modelPlaceholder}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Ano *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1995}
-                    max={2027}
-                    value={year}
-                    onChange={(e) => setYear(e.target.value)}
-                    placeholder={selectedCategory.key === 'motoboy_passageiro' ? 'Ex: 2022' : 'Ex: 2020'}
-                    className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none ${
-                      isYearBelowMinimum
-                        ? 'border-rose-500 bg-rose-50 text-rose-900'
-                        : 'border-slate-300 focus:border-amber-500'
-                    }`}
-                  />
-                  <span className="text-[11px] font-bold text-slate-500 block">
-                    Exigência mínima: ano {selectedCategory.minYear} ou superior.
-                  </span>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Cor *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={color}
-                    onChange={(e) => setColor(e.target.value)}
-                    placeholder="Ex: Preta, Vermelha, Azul"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    CNH A *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={cnh}
-                    onChange={(e) => setCnh(e.target.value)}
-                    placeholder="Número da CNH A válida"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    CPF *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={cpf}
-                    onChange={(e) => setCpf(e.target.value)}
-                    placeholder="000.000.000-00"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Tem baú? *
-                  </label>
-                  <select
-                    value={hasTrunk}
-                    onChange={(e) => setHasTrunk(e.target.value as 'Sim' | 'Não')}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                    className="flex flex-col items-center gap-1 p-1.5 rounded-xl bg-emerald-50 border border-emerald-300 cursor-pointer hover:border-[#ff6a00]"
                   >
-                    <option value="Sim">Sim, tenho baú fixo</option>
-                    <option value="Não">Não</option>
-                  </select>
-                </div>
+                    <img
+                      src={item.src}
+                      alt={item.label}
+                      className="w-full h-12 object-cover rounded-lg"
+                    />
+                    <span className="text-[10px] font-bold text-emerald-800 truncate w-full text-center">
+                      {item.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
-                {hasTrunk === 'Sim' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  {isCarCategory ? 'Modelo *' : 'Modelo moto *'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={selectedCategory.modelPlaceholder}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-[#ff6a00]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Cor *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder={isCarCategory ? 'Ex: Prata, Preto, Branco' : 'Ex: Preta, Vermelha, Azul'}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-[#ff6a00]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  {isCarCategory ? 'Placa *' : 'Placa moto *'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={plate}
+                  onChange={(e) => setPlate(e.target.value.toUpperCase())}
+                  placeholder={isCarCategory ? 'Ex: ABC1D23' : 'Ex: RCE9M22'}
+                  maxLength={8}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-[#ff6a00] uppercase"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Ano *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1995}
+                  max={2027}
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  placeholder={selectedCategory.defaultYear}
+                  className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none ${
+                    isYearBelowMinimum
+                      ? 'border-rose-500 bg-rose-50 text-rose-900'
+                      : 'border-slate-300 focus:border-[#ff6a00]'
+                  }`}
+                />
+                <span className="text-[11px] font-bold text-slate-500 block">
+                  Exigência mínima: ano {selectedCategory.minYear} ou superior.
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  CPF *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cpf}
+                  onChange={(e) => setCpf(e.target.value)}
+                  placeholder="000.000.000-00"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-[#ff6a00]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Chave PIX *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={pixKey}
+                  onChange={(e) => setPixKey(e.target.value)}
+                  placeholder="CPF, celular, e-mail ou chave aleatória"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-[#ff6a00]"
+                />
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  {isCarCategory ? 'Número da CNH B *' : 'Número da CNH A *'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cnh}
+                  onChange={(e) => setCnh(e.target.value)}
+                  placeholder={isCarCategory ? 'Número da CNH B válida' : 'Número da CNH A válida'}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-[#ff6a00]"
+                />
+              </div>
+
+              {!isCarCategory && (
+                <>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                      Tamanho do baú {isDeliveryMoto ? '(mín. 90L) *' : ''}
+                      Tem baú? *
                     </label>
                     <select
-                      value={trunkType}
-                      onChange={(e) => setTrunkType(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                      value={hasTrunk}
+                      onChange={(e) => setHasTrunk(e.target.value as 'Sim' | 'Não')}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-[#ff6a00] cursor-pointer"
                     >
-                      <option value="Baú 90 Litros">Baú 90 Litros (Mínimo Entregas)</option>
-                      <option value="Baú 100 Litros">Baú 100 Litros</option>
-                      <option value="Baú 120 Litros">Baú 120 Litros</option>
-                      <option value="Baú 135 Litros">Baú 135 Litros</option>
+                      <option value="Sim">Sim, tenho baú fixo</option>
+                      <option value="Não">Não</option>
                     </select>
                   </div>
-                )}
-              </div>
 
-              {/* Fotos: Moto (Obrigatória), CNH (Frente), CNH (Verso) e CRLV */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${vehiclePhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setVehiclePhoto);
-                    }}
-                  />
-                  {vehiclePhoto ? (
-                    <>
-                      <img src={vehiclePhoto} alt={selectedCategory.vehiclePhotoLabel} className="w-full h-20 object-cover rounded-xl" />
-                      <span className="text-[11px] font-bold text-emerald-700">{selectedCategory.vehiclePhotoLabel} ✓</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-5 h-5 text-[#ff6a00]" />
-                      <span className="text-[11px] font-bold text-slate-800">{selectedCategory.vehiclePhotoLabel} *</span>
-                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
-                    </>
+                  {hasTrunk === 'Sim' && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                        Tamanho do baú {isDeliveryMoto ? '(mín. 90L) *' : ''}
+                      </label>
+                      <select
+                        value={trunkType}
+                        onChange={(e) => setTrunkType(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:border-[#ff6a00] cursor-pointer"
+                      >
+                        <option value="Baú 90 Litros">Baú 90 Litros (Mínimo Entregas)</option>
+                        <option value="Baú 100 Litros">Baú 100 Litros</option>
+                        <option value="Baú 120 Litros">Baú 120 Litros</option>
+                        <option value="Baú 135 Litros">Baú 135 Litros</option>
+                      </select>
+                    </div>
                   )}
-                </label>
+                </>
+              )}
+            </div>
 
-                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${cnhFrontPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setCnhFrontPhoto);
-                    }}
-                  />
-                  {cnhFrontPhoto ? (
-                    <>
-                      <img src={cnhFrontPhoto} alt="CNH Frente" className="w-full h-20 object-cover rounded-xl" />
-                      <span className="text-[11px] font-bold text-emerald-700">CNH (Frente) ✓</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-5 h-5 text-[#ff6a00]" />
-                      <span className="text-[11px] font-bold text-slate-800">CNH (Frente) *</span>
-                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
-                    </>
-                  )}
-                </label>
-
-                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${cnhBackPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setCnhBackPhoto);
-                    }}
-                  />
-                  {cnhBackPhoto ? (
-                    <>
-                      <img src={cnhBackPhoto} alt="CNH Verso" className="w-full h-20 object-cover rounded-xl" />
-                      <span className="text-[11px] font-bold text-emerald-700">CNH (Verso) ✓</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-5 h-5 text-[#ff6a00]" />
-                      <span className="text-[11px] font-bold text-slate-800">CNH (Verso) *</span>
-                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
-                    </>
-                  )}
-                </label>
-
-                <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl cursor-pointer transition-colors text-center gap-2 ${crlvPhoto ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-300 hover:border-[#ff6a00]'}`}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) compressUploadImage(f, setCrlvPhoto);
-                    }}
-                  />
-                  {crlvPhoto ? (
-                    <>
-                      <img src={crlvPhoto} alt="CRLV" className="w-full h-20 object-cover rounded-xl" />
-                      <span className="text-[11px] font-bold text-emerald-700">CRLV ✓</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-5 h-5 text-[#ff6a00]" />
-                      <span className="text-[11px] font-bold text-slate-800">Foto CRLV *</span>
-                      <span className="text-[10px] text-rose-600 font-bold">Obrigatória</span>
-                    </>
-                  )}
-                </label>
-              </div>
-            </>
-          )}
-
-          {/* Chave PIX Opcional para Saques */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-              Chave PIX (para receber seus 85% das corridas toda sexta)
-            </label>
-            <input
-              type="text"
-              value={pixKey}
-              onChange={(e) => setPixKey(e.target.value)}
-              placeholder="Opcional: CPF, e-mail, celular ou chave aleatória"
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-amber-500"
+            {/* 4 CHECKBOXES OBRIGATÓRIOS: 1) CONTRATO, 2) TERMOS, 3) LGPD, 4) POLÍTICA DE PRIVACIDADE */}
+            <LegalConsentSection
+              acceptedContract={acceptedContract}
+              acceptedTerms={acceptedTerms}
+              acceptedLgpd={acceptedLgpd}
+              acceptedPrivacy={acceptedPrivacy}
+              onChangeContract={setAcceptedContract}
+              onChangeTerms={setAcceptedTerms}
+              onChangeLgpd={setAcceptedLgpd}
+              onChangePrivacy={setAcceptedPrivacy}
+              onOpenPrivacyPage={onOpenPrivacyPage}
+              theme="light"
             />
-          </div>
 
-          {/* 4 CHECKBOXES OBRIGATÓRIOS: 1) CONTRATO, 2) TERMOS, 3) LGPD, 4) POLÍTICA DE PRIVACIDADE */}
-          <LegalConsentSection
-            acceptedContract={acceptedContract}
-            acceptedTerms={acceptedTerms}
-            acceptedLgpd={acceptedLgpd}
-            acceptedPrivacy={acceptedPrivacy}
-            onChangeContract={setAcceptedContract}
-            onChangeTerms={setAcceptedTerms}
-            onChangeLgpd={setAcceptedLgpd}
-            onChangePrivacy={setAcceptedPrivacy}
-            onOpenPrivacyPage={onOpenPrivacyPage}
-            theme="light"
-          />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handlePrevWizardStep}
+                className="px-5 py-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-heading font-black text-sm flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Voltar</span>
+              </button>
 
-          <button
-            type="submit"
-            disabled={isSaving || Boolean(liveBlockingAlert)}
-            className={`w-full py-4 px-6 rounded-2xl font-heading font-black text-base sm:text-lg transition-all shadow-lg flex items-center justify-center gap-2 ${
-              isSaving || Boolean(liveBlockingAlert)
-                ? 'bg-slate-300 text-slate-600 border-2 border-slate-400 cursor-not-allowed opacity-85'
-                : !all4CheckboxesMarked
-                ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border-2 border-amber-500 cursor-pointer'
-                : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer active:scale-[0.99]'
-            }`}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Salvando no Supabase...</span>
-              </>
-            ) : !all4CheckboxesMarked ? (
-              <>
-                <Lock className="w-5 h-5" />
-                <span>Marque os 4 documentos para trabalhar</span>
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-5 h-5" />
-                <span>
-                  {currentUser.driverData?.approvalStatus === 'aprovado'
-                    ? 'Salvar alterações do veículo'
-                    : 'Enviar cadastro para aprovação do ADM'}
-                </span>
-              </>
-            )}
-          </button>
-        </form>
+              <button
+                type="submit"
+                disabled={isSaving || Boolean(liveBlockingAlert)}
+                className={`flex-1 py-4 px-6 rounded-2xl font-heading font-black text-sm sm:text-base transition-all shadow-lg flex items-center justify-center gap-2 ${
+                  isSaving || Boolean(liveBlockingAlert)
+                    ? 'bg-slate-300 text-slate-600 border-2 border-slate-400 cursor-not-allowed opacity-85'
+                    : !all4CheckboxesMarked
+                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border-2 border-amber-500 cursor-pointer'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-[0.99]'
+                }`}
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Enviando cadastro...</span>
+                  </>
+                ) : !all4CheckboxesMarked ? (
+                  <>
+                    <Lock className="w-5 h-5" />
+                    <span>Marque os 4 documentos para enviar</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span>
+                      {currentUser.driverData?.approvalStatus === 'aprovado'
+                        ? 'Salvar alterações do veículo'
+                        : 'Enviar cadastro para aprovação do ADM'}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     );
   }
