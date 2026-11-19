@@ -27,7 +27,7 @@ interface BottomNavProps {
   isDriverOnline?: boolean;
   currentUser?: AppUser | null;
   activeAdminSubTab?: string;
-  onSelectAdminSection?: (section: 'rides' | 'drivers' | 'referrals') => void;
+  onSelectAdminSection?: (section: 'rides' | 'drivers' | 'overview') => void;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
@@ -110,7 +110,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     );
   }
 
-  // 1B. BARRA EXCLUSIVA DO ADM: 4 BOTÕES PARA VER O SISTEMA FUNCIONANDO (Corridas, Motoristas, Indicar, CONTA)
+  // 1B. BARRA EXCLUSIVA DO ADM: 4 BOTÕES (Corridas, Motoristas, ADM, CONTA)
   // Trava mantida: clicar em Motoristas abre somente a gestão ADM para VER/aprovar, nunca deixa ADM online como motorista.
   if (isAdmin) {
     const adminTabs: Array<{
@@ -149,15 +149,17 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         },
       },
       {
-        key: 'admin_referrals',
-        emoji: '🎁',
-        label: 'Indicar',
+        key: 'admin_panel',
+        emoji: '🛡️',
+        label: 'ADM',
         isActive:
           activeTab === 'admin' &&
-          (activeAdminSubTab === 'referrals' || activeAdminSubTab === 'beneficiaries'),
+          activeAdminSubTab !== 'rides' &&
+          activeAdminSubTab !== 'drivers' &&
+          activeAdminSubTab !== 'pending_drivers',
         onClick: () => {
           if (onSelectAdminSection) {
-            onSelectAdminSection('referrals');
+            onSelectAdminSection('overview');
           } else {
             onChangeTab('admin');
           }
