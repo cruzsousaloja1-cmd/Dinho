@@ -167,6 +167,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Leitura direta das tabelas do Supabase (usuarios, corridas, pagamentos, motoristas)
   const [supabaseUsers, setSupabaseUsers] = useState<any[]>([]);
+  const [storageAvatarMap, setStorageAvatarMap] = useState<Record<string, string>>({});
   const [supabaseCorridas, setSupabaseCorridas] = useState<Ride[]>(rides);
   const [supabasePagamentos, setSupabasePagamentos] = useState<SupabasePagamentoRow[]>([]);
   const [adminReferrals, setAdminReferrals] = useState<AdminReferralItem[]>([]);
@@ -272,6 +273,99 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setSupabaseUsersError(usersRes.error.message);
       } else if (usersRes.data) {
         setSupabaseUsers(usersRes.data);
+
+        // Fallback no Supabase Storage (bucket avatars) para usuários sem foto salva nos campos da tabela
+        const usersWithoutPhoto = usersRes.data.filter((u: any) => !extractPhotoFromRow(u));
+        if (usersWithoutPhoto.length > 0) {
+          (async () => {
+            try {
+              const [rootListRes, perfisListRes] = await Promise.all([
+                supabase.storage.from('avatars').list('', { limit: 500 }),
+                supabase.storage.from('avatars').list('perfis', { limit: 500 }),
+              ]);
+              const rootFiles = (rootListRes.data || []).filter((f: any) => f?.name && f.id !== null);
+              const perfisFiles = (perfisListRes.data || []).filter((f: any) => f?.name && f.id !== null);
+              const rootFolderNames = new Set(
+                (rootListRes.data || [])
+                  .filter((f: any) => f?.name && f.id === null)
+                  .map((f: any) => String(f.name))
+              );
+
+              const fileTime = (f: any): number => {
+                const tsMatch = String(f?.name || '').match(/_(\d{10,15})\./);
+                if (tsMatch) return Number(tsMatch[1]);
+                const d = Date.parse(f?.updated_at || f?.created_at || '');
+                return Number.isFinite(d) ? d : 0;
+              };
+
+              const resolvedMap: Record<string, string> = {};
+              for (const u of usersWithoutPhoto) {
+                const uid = String(u?.id ?? '').trim();
+                const rawEmail = String(u?.email || u?.['e-mail'] || u?.login || '').trim().toLowerCase();
+                const safeSlug = rawEmail
+                  .replace(/[^a-z0-9]/g, '_')
+                  .replace(/_+/g, '_')
+                  .slice(0, 40);
+
+                const matchesId = (name: string) => {
+                  if (!uid) return false;
+                  const lower = name.toLowerCase();
+                  return (
+                    lower === uid ||
+                    lower.startsWith(`${uid}.`) ||
+                    lower.startsWith(`${uid}_`) ||
+                    lower.startsWith(`${uid}-`)
+                  );
+                };
+                const matchesEmailSlug = (name: string) => {
+                  if (!safeSlug) return false;
+                  const lower = name.toLowerCase();
+                  return lower.startsWith(`${safeSlug}_`) || lower.startsWith(`${safeSlug}.`);
+                };
+
+                const candidates: Array<{ path: string; time: number }> = [];
+
+                // 1) Busca pelo ID no bucket avatars (raiz, pasta <id>/ ou perfis/)
+                for (const f of rootFiles) {
+                  if (matchesId(f.name) || matchesEmailSlug(f.name)) {
+                    candidates.push({ path: f.name, time: fileTime(f) });
+                  }
+                }
+                if (uid && rootFolderNames.has(uid)) {
+                  const { data: idFolderFiles } = await supabase.storage
+                    .from('avatars')
+                    .list(uid, { limit: 20 });
+                  for (const f of idFolderFiles || []) {
+                    if (f?.name && f.id !== null) {
+                      candidates.push({ path: `${uid}/${f.name}`, time: fileTime(f) });
+                    }
+                  }
+                }
+                for (const f of perfisFiles) {
+                  if (matchesId(f.name) || matchesEmailSlug(f.name)) {
+                    candidates.push({ path: `perfis/${f.name}`, time: fileTime(f) });
+                  }
+                }
+
+                if (candidates.length > 0) {
+                  candidates.sort((a, b) => b.time - a.time);
+                  const { data: pub } = supabase.storage
+                    .from('avatars')
+                    .getPublicUrl(candidates[0].path);
+                  if (pub?.publicUrl && uid) {
+                    resolvedMap[uid] = withPhotoCacheBuster(pub.publicUrl);
+                  }
+                }
+              }
+
+              if (Object.keys(resolvedMap).length > 0) {
+                setStorageAvatarMap((prev) => ({ ...prev, ...resolvedMap }));
+              }
+            } catch {
+              // Mantém fallback seguro sem quebrar a listagem
+            }
+          })();
+        }
       }
 
       setSupabaseCorridas(corridasData);
@@ -834,6 +928,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (safeRaw.cnh) safeRaw.cnh = maskedCnh;
     if (safeRaw.cpf) safeRaw.cpf = maskedCpf;
 
+    const rowPhoto = extractPhotoFromRow(u);
+    const isCurrentLoggedUser = Boolean(
+      currentUser &&
+      (
+        (u.id !== undefined && u.id !== null && String(u.id) === String(currentUser.id)) ||
+        (email && currentUser.email && email.toLowerCase() === currentUser.email.toLowerCase())
+      )
+    );
+    const resolvedAvatar =
+      rowPhoto ||
+      (isCurrentLoggedUser ? String(currentUser?.avatar || '').trim() : '') ||
+      storageAvatarMap[String(u.id)] ||
+      null;
+
     return {
       raw: safeRaw,
       id: String(u.id),
@@ -852,7 +960,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       year: u.ano || '',
       cnh: maskedCnh,
       cpf: maskedCpf,
-      avatar: u.avatar || u.foto || null,
+      avatar: resolvedAvatar,
       rating: typeof u.rating === 'number' ? u.rating : 0,
       saldo: typeof u.saldo === 'number' ? u.saldo : 0.0,
       createdAt: u.created_at,
@@ -3186,7 +3294,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <img
                         src={u.avatar}
                         alt={u.name}
-                        className="w-14 h-14 rounded-full object-cover border-2 border-amber-500 shadow-sm shrink-0"
+                        className="w-14 h-14 rounded-full object-cover border-2 border-[#ff6a00] shadow-sm shrink-0"
                       />
                     ) : (
                       <div className={`w-14 h-14 rounded-full flex items-center justify-center font-heading font-black text-lg border-2 shadow-sm shrink-0 ${

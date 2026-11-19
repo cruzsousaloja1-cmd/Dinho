@@ -88,7 +88,7 @@ const FORBIDDEN_INVENTED_COLS = new Set([
 
 export function extractPhotoFromRow(row: any): string {
   if (!row || typeof row !== 'object') return '';
-  return String(row.avatar || row.foto || row.foto_url || row.avatar_url || '').trim();
+  return String(row.foto || row.avatar || row.foto_url || row.photo || row.avatar_url || '').trim();
 }
 
 export function withPhotoCacheBuster(url: string): string {
