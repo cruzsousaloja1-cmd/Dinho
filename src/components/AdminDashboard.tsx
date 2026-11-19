@@ -895,6 +895,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         photoToSave = uploadRes.url || uploadRes.compressedDataUrl || photoToSave;
       }
 
+      const isTargetAdminAccount =
+        editingAdminUser.userType === 'ADM' ||
+        isAdminTipoValue(editingAdminUser.raw?.tipo) ||
+        isPrimaryAdmEmail(cleanEmail) ||
+        isPrimaryAdmEmail(editingAdminUser.email);
+
       const res = await saveUsuarioSupabase({
         id: editingAdminUser.id,
         previousEmail: editingAdminUser.email,
@@ -903,14 +909,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         celular: normalizedPhone,
         whatsapp: normalizedPhone,
         login: editingAdminUser.login,
-        tipo: editingAdminUser.raw?.tipo,
-        categoria: isConductor ? editUserCategory || editingAdminUser.raw?.categoria : editingAdminUser.raw?.categoria,
-        modelo: isConductor && cleanModel ? cleanModel : undefined,
-        cor: isConductor && cleanColor ? cleanColor : undefined,
-        placa: isConductor && validatedPlate ? validatedPlate : undefined,
-        ano: isConductor && !Number.isNaN(parsedYear) && parsedYear > 1990 ? parsedYear : undefined,
-        cpf: isConductor && validatedCpf && !validatedCpf.includes('*') ? validatedCpf : undefined,
-        cnh: isConductor && validatedCnh && !validatedCnh.includes('*') ? validatedCnh : undefined,
+        tipo: isTargetAdminAccount ? 'ADM' : editingAdminUser.raw?.tipo,
+        categoria: isTargetAdminAccount
+          ? ''
+          : isConductor
+          ? editUserCategory || editingAdminUser.raw?.categoria
+          : editingAdminUser.raw?.categoria,
+        modelo: isTargetAdminAccount ? '' : isConductor && cleanModel ? cleanModel : undefined,
+        cor: isTargetAdminAccount ? undefined : isConductor && cleanColor ? cleanColor : undefined,
+        placa: isTargetAdminAccount ? '' : isConductor && validatedPlate ? validatedPlate : undefined,
+        ano: isTargetAdminAccount
+          ? undefined
+          : isConductor && !Number.isNaN(parsedYear) && parsedYear > 1990
+          ? parsedYear
+          : undefined,
+        cpf: isTargetAdminAccount
+          ? undefined
+          : isConductor && validatedCpf && !validatedCpf.includes('*')
+          ? validatedCpf
+          : undefined,
+        cnh: isTargetAdminAccount
+          ? undefined
+          : isConductor && validatedCnh && !validatedCnh.includes('*')
+          ? validatedCnh
+          : undefined,
         foto: photoToSave || undefined,
         avatar: photoToSave || undefined,
       });
@@ -926,8 +948,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       const returnedPhoto = extractPhotoFromRow(res.data) || photoToSave || '';
 
-      // Mantém intactas todas as fotos de documentos já salvas no Supabase ao editar dados cadastrais
-      if (isConductor) {
+      // Mantém intactas todas as fotos de documentos já salvas no Supabase ao editar dados cadastrais (nunca para ADM)
+      if (isConductor && !isTargetAdminAccount) {
         const existingApp = driverApplicationsMap[cleanEmail];
         const savedAppRes = await saveDriverApplicationSupabase({
           id: editingAdminUser.id,
@@ -5335,6 +5357,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     let count = 0;
                     try {
                       for (const d of drivers) {
+                        if (
+                          isPrimaryAdmEmail(d.email) ||
+                          String(d.vehiclePlate || '').trim().toUpperCase() === 'ADM-2026'
+                        ) {
+                          continue;
+                        }
                         await saveUsuarioSupabase({
                           nome: d.name,
                           email: d.email,
@@ -5355,6 +5383,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         count++;
                       }
                       for (const p of passengers) {
+                        if (isAppUserAdmin(p) || isPrimaryAdmEmail(p.email)) {
+                          continue;
+                        }
                         await saveUsuarioSupabase({
                           nome: p.name,
                           email: p.email,

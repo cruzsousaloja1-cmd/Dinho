@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
-import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser } from '../services/userService';
+import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser, isAppUserAdmin } from '../services/userService';
 import { savePagamentoSupabase, getPagamentosSupabase, getSearchingCorridasSupabase, getCorridaByIdSupabase, fetchRideCounterpartProfileSupabase, acceptCorridaSupabase, updateCorridaStatusSupabase, updateDriverOnlineStatusSupabase, subscribeToCorridasRealtime, normalizeRideCategory, isRidePaidOrConfirmedCash, isDeliveryRideCompleteForDriver, reportPassengerCashNonPaymentSupabase, saveUsuarioSupabase, hydrateRidesWithUserPhotosSupabase, fetchUsuarioPhotoByIdentity, checkDuplicateRegistrationSupabase, saveDriverApplicationSupabase, fetchDriverApplicationsSupabase, mergeDriverWithApplication, uploadProfilePhotoSupabase, extractPhotoFromRow, getUsuarioSupabase, checkAndAwardReferralBonusSupabase, getDriverReferralsAndBonusesSupabase, syncDriverWalletSaldoSupabase, ensureUserReferralCodeSupabase, ReferralCandidateItem, SupabasePagamentoRow, supabase, withPhotoCacheBuster } from '../supabase';
 import {
   isDriverInLaunchZeroFeePromo,
@@ -288,6 +288,7 @@ interface DriverPartnerPortalProps {
   onOpenShare?: () => void;
   onOpenPrivacyPage?: () => void;
   onNavigateToRides?: () => void;
+  onOpenAdminPanel?: () => void;
   onShowSubscriptionExpiredModal?: () => void;
   onRenewWeeklyPlan?: (driver?: Driver) => void;
   onTriggerToast?: (title: string, message: string, type?: 'ride' | 'financial' | 'safety' | 'system') => void;
@@ -307,6 +308,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   onOpenShare,
   onOpenPrivacyPage,
   onNavigateToRides,
+  onOpenAdminPanel,
   onShowSubscriptionExpiredModal,
   onRenewWeeklyPlan,
   onTriggerToast,
@@ -566,6 +568,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   ]);
 
   useEffect(() => {
+    if (isAppUserAdmin(currentUser)) return;
     let active = true;
     const loadDriverPhotoFromSupabase = async () => {
       try {
@@ -735,6 +738,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         photoToSave = uploadRes.url || uploadRes.compressedDataUrl || photoToSave;
       }
 
+      const isAdmProfile = isAppUserAdmin(currentUser);
       const res = await saveUsuarioSupabase({
         id: currentDriver.id || currentUser?.id,
         previousEmail: currentDriver.email || currentUser?.email,
@@ -743,12 +747,12 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
         celular: cleanPhone,
         whatsapp: cleanPhone,
         login: currentUser?.login || currentDriver.email || cleanEmail,
-        tipo: currentUser?.tipo,
-        categoria: currentDriver.category,
-        placa: currentDriver.vehiclePlate,
-        modelo: currentDriver.vehicleModel,
-        ano: currentDriver.vehicleYear,
-        cnh: currentDriver.cnh,
+        tipo: isAdmProfile ? 'ADM' : currentUser?.tipo,
+        categoria: isAdmProfile ? '' : currentDriver.category,
+        placa: isAdmProfile ? '' : currentDriver.vehiclePlate,
+        modelo: isAdmProfile ? '' : currentDriver.vehicleModel,
+        ano: isAdmProfile ? undefined : currentDriver.vehicleYear,
+        cnh: isAdmProfile ? undefined : currentDriver.cnh,
         foto: photoToSave || undefined,
         avatar: photoToSave || undefined,
       });
@@ -790,7 +794,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
       const finalCrlv = currentDriver.crlvPhoto || '';
       const finalVehicle = currentDriver.vehiclePhoto || '';
 
-      if (finalCnhFront || finalCnhBack || finalCrlv || finalVehicle) {
+      if (!isAdmProfile && (finalCnhFront || finalCnhBack || finalCrlv || finalVehicle)) {
         await saveDriverApplicationSupabase({
           id: currentDriver.id || currentUser?.id,
           email: cleanEmail,
@@ -1987,7 +1991,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     {isCategoryConfigured && !isOnline && (
                       <button
                         type="button"
-                        onClick={() => setIsEditingCategory(true)}
+                        onClick={() => {
+                          if (isAppUserAdmin(currentUser)) {
+                            onOpenAdminPanel?.();
+                            return;
+                          }
+                          setIsEditingCategory(true);
+                        }}
                         className="text-xs font-bold text-[#ff6a00] hover:underline cursor-pointer"
                       >
                         Trocar categoria
@@ -2001,7 +2011,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               {!isCategoryConfigured ? (
                 <button
                   type="button"
-                  onClick={() => setIsEditingCategory(true)}
+                  onClick={() => {
+                    if (isAppUserAdmin(currentUser)) {
+                      onOpenAdminPanel?.();
+                      return;
+                    }
+                    setIsEditingCategory(true);
+                  }}
                   className="flex items-center gap-2 px-4 sm:px-5 py-3 rounded-2xl font-heading font-black text-xs sm:text-sm bg-[#ff6a00] hover:bg-[#e05e00] text-white border border-[#ff6a00] cursor-pointer shrink-0 shadow-md transition-all"
                 >
                   <ShieldCheck className="w-4 h-4 shrink-0" />
@@ -2077,7 +2093,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsEditingCategory(true)}
+                  onClick={() => {
+                    if (isAppUserAdmin(currentUser)) {
+                      onOpenAdminPanel?.();
+                      return;
+                    }
+                    setIsEditingCategory(true);
+                  }}
                   className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs shrink-0 cursor-pointer"
                 >
                   {approvalStatus === 'reprovado' ? 'Reenviar Documentos' : 'Editar Documentos'}
@@ -2086,8 +2108,8 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
             )}
           </div>
 
-          {/* TELA OBRIGATÓRIA DE ESCOLHA DE CATEGORIA ANTES DE FICAR ONLINE */}
-          {(!isCategoryConfigured || isEditingCategory) && (
+          {/* TELA OBRIGATÓRIA DE ESCOLHA DE CATEGORIA ANTES DE FICAR ONLINE (NUNCA PARA ADM) */}
+          {!isAppUserAdmin(currentUser) && (!isCategoryConfigured || isEditingCategory) && (
             <DriverWorkSelectionView
               currentUser={
                 currentUser || {
@@ -3603,6 +3625,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        if (isAppUserAdmin(currentUser)) {
+                          onOpenAdminPanel?.();
+                          return;
+                        }
                         setDashboardSection('corridas');
                         setIsEditingCategory(true);
                       }}

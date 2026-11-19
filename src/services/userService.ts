@@ -13,6 +13,7 @@ import {
   fetchDriverApplicationsSupabase,
   mergeDriverWithApplication,
   extractPhotoFromRow,
+  isPrimaryAdmEmail,
 } from '../supabase';
 
 export interface StoredUserAccount {
@@ -80,11 +81,13 @@ export function isPassengerTipoValue(rawTipo?: unknown): boolean {
 
 export function isAppUserAdmin(user?: Partial<AppUser> | null): boolean {
   if (!user) return false;
+  const cleanEmail = normalizeEmail(user.email || user.login || '');
   return Boolean(
-    user.role === 'admin' ||
-      user.isAdmin ||
-      isAdminTipoValue(user.tipo) ||
-      normalizeEmail(user.email || '') === ADMIN_EMAIL
+    isAdminTipoValue(user.tipo) ||
+      isPrimaryAdmEmail(cleanEmail) ||
+      cleanEmail === ADMIN_EMAIL ||
+      user.role === 'admin' ||
+      user.isAdmin
   );
 }
 
@@ -129,8 +132,10 @@ export function saveSessionUser(user: AppUser | null): void {
 
     const cleanEmail = normalizeEmail(user.email || existingSaved?.email || '');
     const resolvedLogin = (user.login || existingSaved?.login || cleanEmail).trim().toLowerCase();
+    const isAdminSession =
+      isAppUserAdmin(user) || isPrimaryAdmEmail(cleanEmail) || cleanEmail === ADMIN_EMAIL;
     const resolvedFoto = user.avatar !== undefined ? user.avatar : (existingSaved?.foto || existingSaved?.avatar || '');
-    const resolvedDriverData = user.driverData || existingSaved?.driverData;
+    const resolvedDriverData = isAdminSession ? undefined : (user.driverData || existingSaved?.driverData);
     const sanitizedDriverData = resolvedDriverData
       ? (() => {
           const clone = { ...resolvedDriverData };
@@ -143,17 +148,17 @@ export function saveSessionUser(user: AppUser | null): void {
       id: user.id || existingSaved?.id || '',
       login: resolvedLogin,
       email: cleanEmail,
-      tipo: user.tipo || user.role || existingSaved?.tipo || 'passenger',
-      role: user.role,
+      tipo: isAdminSession ? 'ADM' : (user.tipo || user.role || existingSaved?.tipo || 'passenger'),
+      role: isAdminSession ? 'admin' : user.role,
       nome: user.name || existingSaved?.nome || '',
       name: user.name || existingSaved?.nome || '',
       foto: resolvedFoto,
       avatar: resolvedFoto,
       phone: user.phone || existingSaved?.phone || '',
       whatsapp: user.whatsapp || user.phone || existingSaved?.whatsapp || '',
-      placa: user.placa || existingSaved?.placa || '',
+      placa: isAdminSession ? '' : (user.placa || existingSaved?.placa || ''),
       rating: user.rating ?? existingSaved?.rating ?? 0,
-      isAdmin: user.isAdmin,
+      isAdmin: isAdminSession ? true : user.isAdmin,
       createdAt: user.createdAt || existingSaved?.createdAt || '',
       indicadoPor: user.indicadoPor !== undefined ? user.indicadoPor : (existingSaved?.indicadoPor || ''),
       codigoIndicacao: user.codigoIndicacao || user.driverData?.codigoIndicacao || existingSaved?.codigoIndicacao || '',
@@ -166,7 +171,7 @@ export function saveSessionUser(user: AppUser | null): void {
         user.creditBalance !== undefined
           ? Number(user.creditBalance || 0)
           : Number(existingSaved?.creditBalance ?? existingSaved?.saldo ?? 0),
-      driverData: sanitizedDriverData,
+      driverData: isAdminSession ? undefined : sanitizedDriverData,
     };
 
     try {
@@ -224,10 +229,11 @@ export function getSessionUser(): AppUser | null {
     const tipoStr = String(parsed.tipo || parsed.role || 'passenger');
     const tipoLower = tipoStr.toLowerCase().trim();
     const isAdmin =
-      Boolean(parsed.isAdmin) ||
-      parsed.role === 'admin' ||
       isAdminTipoValue(tipoStr) ||
-      cleanEmail === ADMIN_EMAIL;
+      isPrimaryAdmEmail(cleanEmail) ||
+      cleanEmail === ADMIN_EMAIL ||
+      Boolean(parsed.isAdmin) ||
+      parsed.role === 'admin';
     const isMoto = !isAdmin && (parsed.role === 'motoboy' || isMotoTipoValue(tipoLower));
     const isDriver = !isAdmin && (parsed.role === 'driver' || isDriverTipoValue(tipoLower));
 
@@ -241,9 +247,9 @@ export function getSessionUser(): AppUser | null {
       whatsapp: parsed.whatsapp || parsed.phone || '',
       login: parsed.login || cleanEmail,
       role,
-      tipo: tipoStr as UserTipo,
+      tipo: (isAdmin ? 'ADM' : tipoStr) as UserTipo,
       isAdmin: isAdmin || undefined,
-      placa: parsed.placa || '',
+      placa: isAdmin ? '' : (parsed.placa || ''),
       avatar: parsed.foto || parsed.avatar || '',
       rating: Number(parsed.rating || 0),
       createdAt: parsed.createdAt || undefined,
@@ -252,7 +258,7 @@ export function getSessionUser(): AppUser | null {
       indicadoPorCodigo: parsed.indicadoPorCodigo || undefined,
       bonusPago: Boolean(parsed.bonusPago),
       creditBalance: Number(parsed.creditBalance ?? parsed.saldo ?? 0),
-      driverData: parsed.driverData,
+      driverData: isAdmin ? undefined : parsed.driverData,
     };
   } catch {}
   return null;
@@ -263,20 +269,48 @@ export function getSessionUser(): AppUser | null {
  */
 export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver?: Driver } {
   const cleanEmail = normalizeEmail(cloudUser['e-mail'] || cloudUser.email || '');
-  const isCloudAdmin = isAdminTipoValue(cloudUser.tipo) || cleanEmail === ADMIN_EMAIL;
+  // 1. Verifica PRIMEIRO o campo tipo = ADM ou e-mail oficial do ADM (nunca usa categoria para decidir ADM nem cria driverData para ADM)
+  const isCloudAdmin =
+    isAdminTipoValue(cloudUser.tipo) || isPrimaryAdmEmail(cleanEmail) || cleanEmail === ADMIN_EMAIL;
+
+  if (isCloudAdmin) {
+    const adminPayload: AppUser = {
+      id: String(cloudUser.id),
+      name: cloudUser.nome || 'Administrador Geral',
+      email: cleanEmail,
+      phone: cloudUser.celular || cloudUser.whatsapp || '',
+      whatsapp: cloudUser.whatsapp || cloudUser.celular || '',
+      login: cloudUser.login || cleanEmail,
+      role: 'admin',
+      tipo: 'ADM' as UserTipo,
+      isAdmin: true,
+      placa: '',
+      avatar: extractPhotoFromRow(cloudUser),
+      rating: Number(cloudUser.rating || 0),
+      driverData: undefined,
+      debtAmount: 0,
+      isBlockedDebt: false,
+      createdAt: cloudUser.created_at || cloudUser.data_cadastro || undefined,
+      indicadoPor: cloudUser.indicado_por || cloudUser.indicado_por_codigo || '',
+      codigoIndicacao: cloudUser.codigo_indicacao || '',
+      indicadoPorCodigo: cloudUser.indicado_por_codigo || cloudUser.indicado_por || '',
+      bonusPago: Boolean(cloudUser.bonus_pago),
+      creditBalance: Number(cloudUser.saldo || 0),
+    };
+    return { user: adminPayload, driver: undefined };
+  }
 
   const tipoLower = String(cloudUser.tipo || '').toLowerCase().trim();
   const rawCatNorm = cloudUser.categoria ? normalizeRideCategory(cloudUser.categoria) : null;
   const isMoto =
-    !isCloudAdmin &&
-    (isMotoTipoValue(tipoLower) ||
-      rawCatNorm === 'moto_passageiro' ||
-      rawCatNorm === 'moto_entrega');
+    isMotoTipoValue(tipoLower) ||
+    rawCatNorm === 'moto_passageiro' ||
+    rawCatNorm === 'moto_entrega';
 
-  const isDriver = !isCloudAdmin && (isDriverTipoValue(tipoLower) || isMoto);
+  const isDriver = isDriverTipoValue(tipoLower) || isMoto;
 
   const driverObj: Driver | undefined = isDriver ? mapSupabaseRowToDriver(cloudUser) : undefined;
-  const role: UserRole = isCloudAdmin ? 'admin' : isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
+  const role: UserRole = isMoto ? 'motoboy' : isDriver ? 'driver' : 'passenger';
 
   const userPayload: AppUser = {
     id: String(cloudUser.id),
@@ -287,7 +321,7 @@ export function mapSupabaseRowToAppUser(cloudUser: any): { user: AppUser; driver
     login: cloudUser.login || cleanEmail,
     role,
     tipo: (cloudUser.tipo as UserTipo) || role,
-    isAdmin: isCloudAdmin || undefined,
+    isAdmin: undefined,
     placa: cloudUser.placa || '',
     avatar: extractPhotoFromRow(cloudUser),
     rating: Number(cloudUser.rating || 0),
@@ -317,17 +351,18 @@ export async function saveUserAccount(
   if (!cleanEmail) return { success: false, error: 'E-mail inválido.' };
 
   const isAdminAccount =
-    account.role === 'admin' ||
     isAdminTipoValue(account.tipo) ||
-    cleanEmail === ADMIN_EMAIL;
+    isPrimaryAdmEmail(cleanEmail) ||
+    cleanEmail === ADMIN_EMAIL ||
+    account.role === 'admin';
 
-  const normalizedTipo = String(
-    isAdminAccount
-      ? 'admin'
-      : account.tipo || (account.role === 'passenger' ? 'passenger' : account.role === 'motoboy' ? 'motoboy' : 'driver')
-  )
-    .trim()
-    .toLowerCase();
+  const normalizedTipo = isAdminAccount
+    ? 'ADM'
+    : String(
+        account.tipo || (account.role === 'passenger' ? 'passenger' : account.role === 'motoboy' ? 'motoboy' : 'driver')
+      )
+        .trim()
+        .toLowerCase();
 
   const currentUserPayload: AppUser = {
     id: account.id,
@@ -339,13 +374,14 @@ export async function saveUserAccount(
     role: isAdminAccount ? 'admin' : account.role,
     tipo: normalizedTipo as UserTipo,
     isAdmin: isAdminAccount || undefined,
-    placa: account.placa || account.driverData?.vehiclePlate || '',
+    placa: isAdminAccount ? '' : (account.placa || account.driverData?.vehiclePlate || ''),
     avatar: account.avatar,
     rating: account.rating || 0,
-    driverData: account.driverData,
+    driverData: isAdminAccount ? undefined : account.driverData,
   };
 
   const isConfiguredDriver = Boolean(
+    !isAdminAccount &&
     account.driverData?.categoryConfigured !== false &&
     account.driverData?.vehiclePlate?.trim() &&
     account.driverData?.vehicleModel?.trim()
@@ -360,19 +396,21 @@ export async function saveUserAccount(
       login: account.login || cleanEmail,
       senha: account.password,
       tipo: normalizedTipo,
-      categoria: account.role === 'passenger' || isAdminAccount
+      categoria: isAdminAccount
+        ? ''
+        : account.role === 'passenger'
         ? undefined
         : isConfiguredDriver && account.driverData?.category
         ? getWorkCategoryFullTitle(account.driverData.category)
         : undefined,
-      placa: account.role === 'passenger' || isAdminAccount ? undefined : (account.placa || account.driverData?.vehiclePlate || undefined),
-      modelo: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.vehicleModel || undefined),
+      placa: isAdminAccount ? '' : account.role === 'passenger' ? undefined : (account.placa || account.driverData?.vehiclePlate || undefined),
+      modelo: isAdminAccount ? '' : account.role === 'passenger' ? undefined : (account.driverData?.vehicleModel || undefined),
       ano: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.vehicleYear || undefined),
       cnh: account.role === 'passenger' || isAdminAccount ? undefined : (account.driverData?.cnh || undefined),
       foto: account.avatar || '',
       avatar: account.avatar || '',
       rating: account.rating || 0,
-      saldo: account.driverData?.walletBalance || 0,
+      saldo: isAdminAccount ? undefined : (account.driverData?.walletBalance || 0),
       indicado_por: account.indicadoPor || account.driverData?.indicadoPor || undefined,
       codigo_indicacao: account.codigoIndicacao || account.driverData?.codigoIndicacao || undefined,
       indicado_por_codigo: account.indicadoPorCodigo || account.driverData?.indicadoPorCodigo || undefined,
@@ -455,6 +493,19 @@ export async function verifyUserLoginAsync(
     }
 
     let { user: userPayload, driver: driverObj } = mapSupabaseRowToAppUser(authRes.data);
+    // Se for ADM (tipo = ADM ou e-mail ADM), libera direto para o Painel ADM sem consultar documentos ou categoria
+    if (isAppUserAdmin(userPayload)) {
+      const cleanAdminUser: AppUser = {
+        ...userPayload,
+        role: 'admin',
+        tipo: 'ADM' as UserTipo,
+        isAdmin: true,
+        placa: '',
+        driverData: undefined,
+      };
+      saveSessionUser(cleanAdminUser);
+      return { success: true, user: cleanAdminUser, driver: undefined };
+    }
     if (driverObj && driverObj.email) {
       try {
         const appsMap = await fetchDriverApplicationsSupabase(driverObj.email);
@@ -495,7 +546,7 @@ export function saveIsolatedRide(ride: Ride, currentUser: AppUser | null): void 
  */
 export function deleteUserAccount(email: string, id?: string): void {
   const cleanEmail = normalizeEmail(email);
-  if (!cleanEmail || cleanEmail === ADMIN_EMAIL) return;
+  if (!cleanEmail || cleanEmail === ADMIN_EMAIL || isPrimaryAdmEmail(cleanEmail)) return;
 
   deleteUsuarioSupabase({ id, email: cleanEmail }).catch(() => {});
 

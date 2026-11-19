@@ -146,8 +146,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setErrorMessage(res.error || 'Login ou senha incorretos.');
           return;
         }
-        if (role === 'driver' && isAppUserAdmin(res.user)) {
-          setErrorMessage('Esta conta é de ADM. Para ser motorista, crie uma conta de motorista.');
+        if (isAppUserAdmin(res.user)) {
+          const cleanAdminUser: AppUser = {
+            ...res.user,
+            role: 'admin',
+            tipo: 'ADM',
+            isAdmin: true,
+            placa: '',
+            driverData: undefined,
+          };
+          try {
+            confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+          } catch {}
+          onAuthSuccess(cleanAdminUser, undefined);
+          onClose();
           return;
         }
         try {

@@ -6,6 +6,7 @@ import {
   saveSessionUser,
   mapSupabaseRowToAppUser,
   isAdminTipoValue,
+  isAppUserAdmin,
 } from '../services/userService';
 import {
   insertUsuarioSupabase,
@@ -22,6 +23,7 @@ import {
   validateReferralCodeExistsSupabase,
   normalizeReferralCodeInput,
   INVALID_REFERRAL_CODE_ERROR,
+  isPrimaryAdmEmail,
 } from '../supabase';
 import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
@@ -263,7 +265,8 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         if (cloudAdminRes.success && cloudAdminRes.data) {
           const row = cloudAdminRes.data;
           const rowEmail = (row['e-mail'] || row.email || cleanIdentifier).toLowerCase().trim();
-          const isRowAdmin = isAdminTipoValue(row.tipo) || rowEmail === 'admin@race.com.br';
+          const isRowAdmin =
+            isAdminTipoValue(row.tipo) || isPrimaryAdmEmail(rowEmail) || rowEmail === 'admin@race.com.br';
 
           if (!isRowAdmin) {
             setLoginErrorMessage('Acesso restrito');
@@ -285,12 +288,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             whatsapp: row.whatsapp || row.celular || '',
             login: row.login || rowEmail,
             role: 'admin',
-            tipo: row.tipo || 'admin',
+            tipo: 'ADM',
             isAdmin: true,
-            placa: 'ADMIN-01',
+            placa: '',
             avatar: resolvedAdminAvatar || undefined,
             rating: 0,
             codigoIndicacao: ensuredAdminCode,
+            driverData: undefined,
           };
 
           saveSessionUser(adminUser);
@@ -307,7 +311,11 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         const existingUser = await getUsuarioSupabase(cleanIdentifier).catch(() => null);
         if (existingUser) {
           const existingEmail = (existingUser['e-mail'] || existingUser.email || '').toLowerCase().trim();
-          if (!isAdminTipoValue(existingUser.tipo) && existingEmail !== 'admin@race.com.br') {
+          if (
+            !isAdminTipoValue(existingUser.tipo) &&
+            !isPrimaryAdmEmail(existingEmail) &&
+            existingEmail !== 'admin@race.com.br'
+          ) {
             setLoginErrorMessage('Acesso restrito');
             return;
           }
@@ -337,12 +345,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             whatsapp: row.whatsapp || row.celular || '',
             login: row.login || 'admin@race.com.br',
             role: 'admin',
-            tipo: row.tipo || 'admin',
+            tipo: 'ADM',
             isAdmin: true,
-            placa: 'ADMIN-01',
+            placa: '',
             avatar: resolvedAdminAvatar || undefined,
             rating: 0,
             codigoIndicacao: ensuredAdminCode,
+            driverData: undefined,
           };
           saveSessionUser(adminUser);
           setLoginSuccessMessage('Acesso ADM liberado!');
@@ -383,6 +392,28 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         name: mappedUser.name,
         currentCode: mappedUser.codigoIndicacao || row.codigo_indicacao,
       });
+
+      // TRAVA ABSOLUTA DE ADM: se tipo = ADM ou euroclub507@gmail.com, sempre abrir Painel do ADM
+      if (isAppUserAdmin(mappedUser)) {
+        const cleanAdminUser: AppUser = {
+          ...mappedUser,
+          role: 'admin',
+          tipo: 'ADM',
+          isAdmin: true,
+          placa: '',
+          avatar: resolvedPhoto || undefined,
+          codigoIndicacao: ensuredCodigoIndicacao,
+          driverData: undefined,
+        };
+        saveSessionUser(cleanAdminUser);
+        setLoginSuccessMessage('Acesso ADM liberado!');
+        try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } }); } catch {}
+        setTimeout(() => {
+          onLoginSuccess(cleanAdminUser, undefined);
+        }, 400);
+        return;
+      }
+
       let driverObj: Driver | undefined = mappedDriver
         ? {
             ...mappedDriver,

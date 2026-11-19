@@ -368,6 +368,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         photoToSave = uploadRes.url || uploadRes.compressedDataUrl || photoToSave;
       }
 
+      const isAdmAccount = isAppUserAdmin(currentUser);
       const res = await saveUsuarioSupabase({
         id: currentUser?.id,
         previousEmail: currentUser?.email,
@@ -376,7 +377,10 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         celular: cleanPhone,
         whatsapp: cleanPhone,
         login: currentUser?.login || currentUser?.email || cleanEmail,
-        tipo: currentUser?.tipo || 'passenger',
+        tipo: isAdmAccount ? 'ADM' : (currentUser?.tipo || 'passenger'),
+        categoria: isAdmAccount ? '' : undefined,
+        placa: isAdmAccount ? '' : undefined,
+        modelo: isAdmAccount ? '' : undefined,
         foto: photoToSave || undefined,
         avatar: photoToSave || undefined,
         rating: currentUser?.rating || 0,
@@ -429,6 +433,9 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         phone: cleanPhone,
         whatsapp: cleanPhone,
         avatar: fotoUrlBusted,
+        ...(isAdmAccount
+          ? { role: 'admin' as const, tipo: 'ADM' as const, isAdmin: true, placa: '', driverData: undefined }
+          : {}),
       };
 
       setUserAvatar(fotoUrlBusted);

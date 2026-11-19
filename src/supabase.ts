@@ -2143,6 +2143,16 @@ export function isPrimaryAdmEmail(email?: string | null): boolean {
   return String(email || '').trim().toLowerCase() === FIXED_ADM_EMAIL;
 }
 
+export function isAdminTipoRaw(rawTipo?: unknown): boolean {
+  const normalized = String(rawTipo || '').trim().toLowerCase();
+  return normalized === 'adm' || normalized === 'admin' || normalized === 'administrador';
+}
+
+export function isLockedAdminEmail(email?: string | null): boolean {
+  const clean = String(email || '').trim().toLowerCase();
+  return clean === FIXED_ADM_EMAIL || clean === 'admin@race.com.br';
+}
+
 const INTERNAL_REFERRAL_CODE_STATUS = 'codigo_indicacao';
 const INTERNAL_REFERRAL_LINK_STATUS = 'indicacao_vinculo';
 
@@ -3000,8 +3010,8 @@ export async function insertUsuarioSupabase(params: {
 
     const rawTipoStr = String(params.tipo || 'passenger').trim();
     const tipoLower = rawTipoStr.toLowerCase();
-    const isAdminTipo = tipoLower === 'adm' || tipoLower === 'admin' || tipoLower === 'administrador';
-    const tipoStr = isAdminTipo ? 'admin' : tipoLower;
+    const isAdminTipo = isAdminTipoRaw(rawTipoStr) || isLockedAdminEmail(cleanEmail);
+    const tipoStr = isAdminTipo ? 'ADM' : tipoLower;
     const authRole =
       isAdminTipo
         ? 'admin'
@@ -3167,22 +3177,30 @@ export async function insertUsuarioSupabase(params: {
       row.senha = rawSenha;
     }
 
-    // Só inclui campos de motorista quando informados (nunca inventa colunas nulas no ADM/passageiro)
-    if (params.categoria && params.categoria.trim()) row.categoria = params.categoria.trim();
-    if (params.placa && params.placa.trim()) row.placa = params.placa.trim();
-    if (params.modelo && params.modelo.trim()) row.modelo = params.modelo.trim();
-    if (params.ano !== undefined && params.ano !== null && String(params.ano).trim() !== '') {
-      row.ano = Number(params.ano) || String(params.ano);
+    // Só inclui campos de motorista quando NÃO for ADM (ADM sempre mantém categoria/placa/modelo vazios)
+    if (isAdminTipo) {
+      if (!knownCols || knownCols.size === 0 || knownCols.has('categoria')) row.categoria = '';
+      if (!knownCols || knownCols.size === 0 || knownCols.has('placa')) row.placa = '';
+      if (!knownCols || knownCols.size === 0 || knownCols.has('modelo')) row.modelo = '';
+    } else {
+      if (params.categoria && params.categoria.trim()) row.categoria = params.categoria.trim();
+      if (params.placa && params.placa.trim()) row.placa = params.placa.trim();
+      if (params.modelo && params.modelo.trim()) row.modelo = params.modelo.trim();
+      if (params.ano !== undefined && params.ano !== null && String(params.ano).trim() !== '') {
+        row.ano = Number(params.ano) || String(params.ano);
+      }
+      if (params.cnh && params.cnh.trim()) row.cnh = params.cnh.trim();
     }
-    if (params.cnh && params.cnh.trim()) row.cnh = params.cnh.trim();
 
     // Só inclui campos opcionais se explicitamente presentes E existentes no schema real do banco
     if (knownCols && knownCols.size > 0) {
-      if (compressedVehiclePhoto && knownCols.has('foto_veiculo')) row.foto_veiculo = compressedVehiclePhoto;
-      if (compressedCnhPhoto && knownCols.has('foto_cnh')) row.foto_cnh = compressedCnhPhoto;
-      if (compressedCrlvPhoto && knownCols.has('foto_crlv')) row.foto_crlv = compressedCrlvPhoto;
-      if (typeof params.exigencias_confirmadas === 'boolean' && knownCols.has('exigencias_confirmadas')) {
-        row.exigencias_confirmadas = params.exigencias_confirmadas;
+      if (!isAdminTipo) {
+        if (compressedVehiclePhoto && knownCols.has('foto_veiculo')) row.foto_veiculo = compressedVehiclePhoto;
+        if (compressedCnhPhoto && knownCols.has('foto_cnh')) row.foto_cnh = compressedCnhPhoto;
+        if (compressedCrlvPhoto && knownCols.has('foto_crlv')) row.foto_crlv = compressedCrlvPhoto;
+        if (typeof params.exigencias_confirmadas === 'boolean' && knownCols.has('exigencias_confirmadas')) {
+          row.exigencias_confirmadas = params.exigencias_confirmadas;
+        }
       }
       if (typeof params.aceitou_contrato === 'boolean' && knownCols.has('aceitou_contrato')) {
         row.aceitou_contrato = params.aceitou_contrato;
@@ -3505,10 +3523,8 @@ export async function loginUsuarioSupabase(
       const metaTipoLower = String(directTipo || meta.tipo || '').trim().toLowerCase();
       const isMetaAdmin =
         meta.role === 'admin' ||
-        metaTipoLower === 'adm' ||
-        metaTipoLower === 'admin' ||
-        metaTipoLower === 'administrador' ||
-        authEmail === 'admin@race.com.br';
+        isAdminTipoRaw(metaTipoLower) ||
+        isLockedAdminEmail(authEmail);
       if (!isMetaAdmin) {
         await supabase.auth.signOut().catch(() => {});
         return {
@@ -3521,12 +3537,17 @@ export async function loginUsuarioSupabase(
         nome: meta.nome || authEmail.split('@')[0],
         email: authEmail,
         login: authEmail,
-        tipo: 'admin',
+        tipo: 'ADM',
+        categoria: '',
+        placa: '',
+        modelo: '',
         foto: metaPhoto,
         avatar: metaPhoto,
       };
     } else {
-      if (directTipo && !foundRow.tipo) {
+      if (isAdminTipoRaw(directTipo) || isAdminTipoRaw(foundRow.tipo) || isLockedAdminEmail(authEmail)) {
+        foundRow = { ...foundRow, tipo: 'ADM' };
+      } else if (directTipo && !foundRow.tipo) {
         foundRow = { ...foundRow, tipo: directTipo };
       }
       if (!extractPhotoFromRow(foundRow)) {
@@ -3586,6 +3607,18 @@ export async function updateMotoristaSupabase(
   }
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   const cleanEmail = emailInput.trim().toLowerCase();
+  // TRAVA ABSOLUTA DE ADM: se e-mail for ADM ou tipo no Supabase for ADM, NUNCA mudar para motorista
+  try {
+    const existingCheck = cleanEmail ? await getUsuarioSupabase(cleanEmail).catch(() => null) : null;
+    if (isLockedAdminEmail(cleanEmail) || isAdminTipoRaw(existingCheck?.tipo)) {
+      return {
+        success: true,
+        data: existingCheck
+          ? { ...stripSensitiveUserFields(existingCheck), tipo: 'ADM', categoria: '', placa: '', modelo: '' }
+          : { email: cleanEmail, tipo: 'ADM', categoria: '', placa: '', modelo: '' },
+      };
+    }
+  } catch {}
   if (params.exigencias_confirmadas === true) {
     setDriverRequirementsConfirmedLocal(cleanEmail, true);
   }
@@ -3813,31 +3846,45 @@ export async function saveUsuarioSupabase(user: {
       const existingKeys = new Set(Object.keys(existing));
       const allowedCols = knownCols && knownCols.size > 0 ? knownCols : existingKeys;
 
+      // TRAVA ABSOLUTA DE ADM: se tipo = ADM no Supabase ou e-mail ADM, NUNCA mudar para motorista/passageiro
+      const isLockedAdm =
+        isAdminTipoRaw(existing.tipo) ||
+        isLockedAdminEmail(cleanEmail) ||
+        isLockedAdminEmail(prevEmail) ||
+        isLockedAdminEmail(existing.email || existing['e-mail']);
+
       const phoneVal = (user.whatsapp || user.celular || existing.celular || '').trim();
       const updateData: Record<string, any> = {
         nome: user.nome,
         celular: phoneVal,
-        tipo: user.tipo || existing.tipo || 'passenger',
+        tipo: isLockedAdm ? 'ADM' : (user.tipo || existing.tipo || 'passenger'),
       };
       if (cleanEmail && allowedCols.has('email')) updateData.email = cleanEmail;
       if (cleanEmail && allowedCols.has('e-mail')) updateData['e-mail'] = cleanEmail;
       if (phoneVal && allowedCols.has('whatsapp')) updateData.whatsapp = phoneVal;
-      if (user.categoria !== undefined && user.categoria !== '') updateData.categoria = user.categoria;
-      if (user.placa !== undefined && user.placa !== '') updateData.placa = user.placa;
-      if (user.modelo !== undefined && user.modelo !== '') updateData.modelo = user.modelo;
-      if (user.ano !== undefined && user.ano !== '') updateData.ano = user.ano;
-      if (user.cnh !== undefined && user.cnh !== '') updateData.cnh = user.cnh;
-      if (user.foto_veiculo && allowedCols.has('foto_veiculo')) {
-        updateData.foto_veiculo = await compressImageToMax200KB(user.foto_veiculo);
-      }
-      if (user.foto_cnh && allowedCols.has('foto_cnh')) {
-        updateData.foto_cnh = await compressImageToMax200KB(user.foto_cnh);
-      }
-      if (user.foto_crlv && allowedCols.has('foto_crlv')) {
-        updateData.foto_crlv = await compressImageToMax200KB(user.foto_crlv);
-      }
-      if (typeof user.exigencias_confirmadas === 'boolean' && allowedCols.has('exigencias_confirmadas')) {
-        updateData.exigencias_confirmadas = user.exigencias_confirmadas;
+      if (isLockedAdm) {
+        // Ao salvar qualquer alteração do ADM, manter tipo = ADM e categoria/placa/modelo vazios
+        if (allowedCols.has('categoria')) updateData.categoria = '';
+        if (allowedCols.has('placa')) updateData.placa = '';
+        if (allowedCols.has('modelo')) updateData.modelo = '';
+      } else {
+        if (user.categoria !== undefined && user.categoria !== '') updateData.categoria = user.categoria;
+        if (user.placa !== undefined && user.placa !== '') updateData.placa = user.placa;
+        if (user.modelo !== undefined && user.modelo !== '') updateData.modelo = user.modelo;
+        if (user.ano !== undefined && user.ano !== '') updateData.ano = user.ano;
+        if (user.cnh !== undefined && user.cnh !== '') updateData.cnh = user.cnh;
+        if (user.foto_veiculo && allowedCols.has('foto_veiculo')) {
+          updateData.foto_veiculo = await compressImageToMax200KB(user.foto_veiculo);
+        }
+        if (user.foto_cnh && allowedCols.has('foto_cnh')) {
+          updateData.foto_cnh = await compressImageToMax200KB(user.foto_cnh);
+        }
+        if (user.foto_crlv && allowedCols.has('foto_crlv')) {
+          updateData.foto_crlv = await compressImageToMax200KB(user.foto_crlv);
+        }
+        if (typeof user.exigencias_confirmadas === 'boolean' && allowedCols.has('exigencias_confirmadas')) {
+          updateData.exigencias_confirmadas = user.exigencias_confirmadas;
+        }
       }
       if (typeof user.aceitou_contrato === 'boolean' && allowedCols.has('aceitou_contrato')) {
         updateData.aceitou_contrato = user.aceitou_contrato;
@@ -3949,12 +3996,14 @@ export async function saveUsuarioSupabase(user: {
           }
 
           if (finalProfilePhoto && (cleanEmail || prevEmail)) {
-            try {
-              await supabase
-                .from('motoristas')
-                .update({ foto_perfil: finalProfilePhoto })
-                .eq('email', cleanEmail || prevEmail);
-            } catch {}
+            if (!isLockedAdm) {
+              try {
+                await supabase
+                  .from('motoristas')
+                  .update({ foto_perfil: finalProfilePhoto })
+                  .eq('email', cleanEmail || prevEmail);
+              } catch {}
+            }
 
             try {
               const activeAuthEmail = String(authSessionRes?.session?.user?.email || '').trim().toLowerCase();
@@ -4082,6 +4131,9 @@ export async function updateDriverOnlineStatusSupabase(params: {
 }): Promise<boolean> {
   try {
     const cleanEmail = String(params.email || '').trim().toLowerCase();
+    if (isLockedAdminEmail(cleanEmail)) {
+      return false;
+    }
     let effectiveApproval: DriverApprovalStatus = params.approvalStatus || 'pendente';
     let effectiveDocsAccepted: boolean | undefined = params.documentosAceitos;
 
@@ -4772,6 +4824,26 @@ export async function saveDriverApplicationSupabase(params: {
   dataAceite?: string;
 }): Promise<{ success: boolean; record: DriverApplicationRecord }> {
   const cleanEmail = String(params.email || '').trim().toLowerCase();
+  // TRAVA ABSOLUTA DE ADM: nunca criar/atualizar registro de motorista para conta ADM
+  const existingUserForApp = cleanEmail ? await getUsuarioSupabase(cleanEmail).catch(() => null) : null;
+  if (isLockedAdminEmail(cleanEmail) || isAdminTipoRaw(existingUserForApp?.tipo)) {
+    return {
+      success: false,
+      record: {
+        id: String(params.id || existingUserForApp?.id || ''),
+        email: cleanEmail,
+        name: params.name,
+        category: 'economica',
+        vehicleModel: '',
+        vehicleColor: '',
+        vehiclePlate: '',
+        vehicleYear: 0,
+        approvalStatus: 'pendente',
+        online: false,
+        driverStatus: 'offline',
+      },
+    };
+  }
   const localMap = cleanEmail ? getLocalDriverApprovalsMap() : {};
   const prevLocal = cleanEmail ? localMap[cleanEmail] : undefined;
 

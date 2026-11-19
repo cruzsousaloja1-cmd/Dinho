@@ -18,7 +18,7 @@ import {
   User,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { saveUserAccount } from '../services/userService';
+import { saveUserAccount, isAppUserAdmin } from '../services/userService';
 import {
   updateMotoristaSupabase,
   saveUsuarioSupabase,
@@ -218,6 +218,7 @@ interface DriverWorkSelectionViewProps {
   currentUser: AppUser;
   onCompleteDriverRegister: (driver: Driver) => void;
   onBackToRides?: () => void;
+  onOpenAdminPanel?: () => void;
   onRenewWeeklyPlan?: (driver?: Driver) => void;
   onLogout?: () => void;
   onOpenPrivacyPage?: () => void;
@@ -239,6 +240,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   currentUser,
   onCompleteDriverRegister,
   onBackToRides,
+  onOpenAdminPanel,
   onLogout,
   onOpenPrivacyPage,
   isMandatorySetup = false,
@@ -431,6 +433,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   const handleSubmitDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    // TRAVA ABSOLUTA DE ADM: nunca salvar modalidade/motorista_economico sobre conta ADM
+    if (isAppUserAdmin(currentUser)) {
+      onOpenAdminPanel?.();
+      return;
+    }
 
     // Garante que nenhum dos 5 passos de foto foi pulado
     for (const stepNum of [1, 2, 3, 4, 5] as const) {
@@ -1005,7 +1013,13 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
           <button
             type="button"
-            onClick={() => setStage('select_category')}
+            onClick={() => {
+              if (isAppUserAdmin(currentUser)) {
+                onOpenAdminPanel?.();
+                return;
+              }
+              setStage('select_category');
+            }}
             className="text-amber-400 hover:text-amber-300 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 bg-zinc-900 px-3 py-2 rounded-xl border border-zinc-700"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -1091,7 +1105,13 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             {selectedCategory.key === 'motorista_confort' && (
               <button
                 type="button"
-                onClick={() => handleSelectCategory('motorista_economico')}
+                onClick={() => {
+                  if (isAppUserAdmin(currentUser)) {
+                    onOpenAdminPanel?.();
+                    return;
+                  }
+                  handleSelectCategory('motorista_economico');
+                }}
                 className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs cursor-pointer transition-all"
               >
                 Mudar para Motorista Econômico

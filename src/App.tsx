@@ -73,6 +73,7 @@ import {
   getUsuarioSupabase,
   checkEmailExistsSupabase,
   getAllDriversFromSupabase,
+  isPrimaryAdmEmail,
   getOnlineDriversFromSupabase,
   updateDriverOnlineStatusSupabase,
   getAllPassengersFromSupabase,
@@ -392,23 +393,36 @@ export default function App() {
         });
         if (!active) return;
 
-        const mergedUser: AppUser = {
-          ...hydratedUser,
-          avatar: resolvedAvatar,
-          codigoIndicacao: ensuredCodigoIndicacao,
-          driverData: hydratedDriver
-            ? {
-                ...hydratedDriver,
-                avatar: resolvedAvatar || hydratedDriver.avatar,
-                codigoIndicacao: ensuredCodigoIndicacao,
-              }
-            : hydratedUser.driverData,
-        };
+        const isAdminSession = isAppUserAdmin(hydratedUser) || isAppUserAdmin(session);
+        const mergedUser: AppUser = isAdminSession
+          ? {
+              ...hydratedUser,
+              role: 'admin',
+              tipo: (hydratedUser.tipo || session.tipo || 'admin') as AppUser['tipo'],
+              isAdmin: true,
+              avatar: resolvedAvatar,
+              codigoIndicacao: ensuredCodigoIndicacao,
+              driverData: undefined,
+            }
+          : {
+              ...hydratedUser,
+              avatar: resolvedAvatar,
+              codigoIndicacao: ensuredCodigoIndicacao,
+              driverData: hydratedDriver
+                ? {
+                    ...hydratedDriver,
+                    avatar: resolvedAvatar || hydratedDriver.avatar,
+                    codigoIndicacao: ensuredCodigoIndicacao,
+                  }
+                : hydratedUser.driverData,
+            };
         setCurrentUser(mergedUser);
         saveSessionUser(mergedUser);
 
-        if (isAppUserAdmin(mergedUser)) {
-          setActiveTab('admin');
+        if (isAdminSession) {
+          setActiveTab((prev) =>
+            isAdminActiveTab(prev) || prev === 'passenger_account' ? prev : 'admin'
+          );
           try {
             const [cloudDrivers, onlineRpcDrivers, cloudPassengers, fetchedApps] = await Promise.all([
               getAllDriversFromSupabase(),
@@ -1472,6 +1486,15 @@ export default function App() {
 
   // Driver register / updates (100% Supabase)
   const handleRegisterDriver = (newDriver: Driver) => {
+    // TRAVA ABSOLUTA DE ADM: ADM nunca pode virar motorista nem sobrescrever tipo=ADM no Supabase
+    if (
+      isAppUserAdmin(currentUser) ||
+      isPrimaryAdmEmail(newDriver.email) ||
+      String(newDriver.vehiclePlate || '').trim().toUpperCase() === 'ADM-2026'
+    ) {
+      setActiveTab('admin');
+      return;
+    }
     const isConfigured =
       newDriver.categoryConfigured !== false &&
       Boolean(newDriver.vehiclePlate?.trim() && newDriver.vehicleModel?.trim());
@@ -1548,6 +1571,15 @@ export default function App() {
   };
 
   const handleUpdateDriver = (updated: Driver) => {
+    // Trava de segurança: ADM em pré-visualização NUNCA sobrescreve seu registro tipo=ADM no Supabase
+    if (
+      isAppUserAdmin(currentUser) ||
+      isPrimaryAdmEmail(updated.email) ||
+      String(updated.vehiclePlate || '').trim().toUpperCase() === 'ADM-2026'
+    ) {
+      setCurrentDriver(updated);
+      return;
+    }
     const isConfigured =
       updated.categoryConfigured !== false &&
       Boolean(updated.vehiclePlate?.trim() && updated.vehicleModel?.trim());
@@ -1926,11 +1958,16 @@ export default function App() {
     setDrivers([]);
     setPassengerDebt({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
 
-    setCurrentUser(user);
-    saveSessionUser(user);
+    const isAdminUser = isAppUserAdmin(user);
+    const sanitizedUser: AppUser = isAdminUser
+      ? { ...user, role: 'admin', tipo: 'ADM', isAdmin: true, placa: '', driverData: undefined }
+      : user;
+
+    setCurrentUser(sanitizedUser);
+    saveSessionUser(sanitizedUser);
     setHasSearchedRoute(false);
     setShowPostAuthSplash(true);
-    if (driver) {
+    if (!isAdminUser && driver) {
       const isConfigured =
         driver.categoryConfigured !== false &&
         Boolean(driver.vehiclePlate?.trim() && driver.vehicleModel?.trim()) &&
@@ -1957,12 +1994,11 @@ export default function App() {
     } else {
       setCurrentDriver(DEFAULT_NEW_DRIVER);
     }
-    const isAdminUser = isAppUserAdmin(user);
     const isDriverUser =
       !isAdminUser &&
-      (isAppUserDriver(user) || Boolean(driver) || Boolean(user.driverData));
+      (isAppUserDriver(sanitizedUser) || Boolean(driver) || Boolean(sanitizedUser.driverData));
     setActiveTab(isAdminUser ? 'admin' : isDriverUser ? 'driver_portal' : 'rides');
-    loadRoleScopedDataAfterLogin(user);
+    loadRoleScopedDataAfterLogin(sanitizedUser);
     const roleName = isAdminUser
       ? 'Administrador ADM'
       : user.role === 'driver' || user.role === 'motoboy'
@@ -2101,21 +2137,34 @@ export default function App() {
           setDrivers([]);
           setPassengerDebt({ debtAmount: 0, isBlocked: false, unpaidRideIds: [] });
 
-          setCurrentUser(user);
-          saveSessionUser(user);
-          setHasSearchedRoute(false);
-          setShowPostAuthSplash(true);
-          loadRoleScopedDataAfterLogin(user);
-
-          // Se for Administrador (tipo = ADM / admin / Administrador ou admin@race.com.br)
+          // 1. Verifica PRIMEIRO se tipo = ADM — abre direto o Painel do ADM sem verificar categoria ou documentos
           if (isAppUserAdmin(user)) {
+            const cleanAdminUser: AppUser = {
+              ...user,
+              role: 'admin',
+              tipo: 'ADM',
+              isAdmin: true,
+              placa: '',
+              driverData: undefined,
+            };
+            setCurrentUser(cleanAdminUser);
+            saveSessionUser(cleanAdminUser);
+            setHasSearchedRoute(false);
+            setShowPostAuthSplash(true);
             setCurrentDriver(DEFAULT_NEW_DRIVER);
             setActiveTab('admin');
+            loadRoleScopedDataAfterLogin(cleanAdminUser);
             setLoginSuccessBanner(
               'Bem-vindo, Administrador Geral! Painel de controle e auditoria liberados.'
             );
             return;
           }
+
+          setCurrentUser(user);
+          saveSessionUser(user);
+          setHasSearchedRoute(false);
+          setShowPostAuthSplash(true);
+          loadRoleScopedDataAfterLogin(user);
 
           const loginTipoLower = String(user.tipo || '').toLowerCase().trim();
           const isDriverOrMotoboy = isAppUserDriver(user);
@@ -2192,8 +2241,10 @@ export default function App() {
     );
   }
 
+  // Verifica PRIMEIRO se é ADM (tipo = ADM). ADM NUNCA entra na tela Passo 1 de 6.
+  const isCurrentUserAdmin = isAppUserAdmin(currentUser);
   const isUserDriver = Boolean(
-    currentUser && (isAppUserDriver(currentUser) || Boolean(currentUser.driverData))
+    !isCurrentUserAdmin && currentUser && isAppUserDriver(currentUser)
   );
 
   const isDriverCategoryConfigured = Boolean(
@@ -2205,8 +2256,8 @@ export default function App() {
   );
 
   // TELA FULLSCREEN OBRIGATÓRIA DE ESCOLHA DE MODALIDADE E CONFIRMAÇÃO DE EXIGÊNCIAS
-  // Não mostra tela de passageiro, Header ou BottomNav até concluir o preenchimento e confirmação das exigências.
-  if (isUserDriver && !isDriverCategoryConfigured) {
+  // Só aparece para tipo = motorista, motoboy ou driver (NUNCA para ADM).
+  if (!isCurrentUserAdmin && isUserDriver && !isDriverCategoryConfigured) {
     return (
       <div className="h-dvh bg-[#0a0a0a] text-white px-4 py-6 sm:py-10 overflow-y-auto overscroll-contain">
         <DriverWorkSelectionView
@@ -2429,10 +2480,10 @@ export default function App() {
 
         {/* 3. Condutor & Cadastro (85% para você, 15% Race - Sem mensalidade) */}
         <div {...getTabPanelProps('driver_portal')}>
-          {isUserDriver || isAppUserAdmin(currentUser) ? (
+          {isUserDriver || (isCurrentUserAdmin && activeTab === 'admin_drivers' && admDriversSubView === 'driver') ? (
             <DriverPartnerPortal
               currentDriver={
-                isAppUserAdmin(currentUser)
+                isCurrentUserAdmin
                   ? {
                       ...DEFAULT_NEW_DRIVER,
                       ...currentDriver,
@@ -2477,13 +2528,34 @@ export default function App() {
               }}
               onUpdateDriver={handleUpdateDriver}
               onUpdateUserProfile={(updatedUser) => {
-                setCurrentUser(updatedUser);
-                saveSessionUser(updatedUser);
+                const safeUser: AppUser = isCurrentUserAdmin
+                  ? { ...updatedUser, role: 'admin', tipo: 'ADM', isAdmin: true, placa: '', driverData: undefined }
+                  : updatedUser;
+                setCurrentUser(safeUser);
+                saveSessionUser(safeUser);
+              }}
+              onOpenAdminPanel={() => {
+                setActiveTab('admin');
               }}
               onRegisterDriver={(newDriver) => {
                 handleRegisterDriver(newDriver);
               }}
               onLoginDriverSuccess={(user, driver) => {
+                if (isAppUserAdmin(user)) {
+                  const cleanAdminUser: AppUser = {
+                    ...user,
+                    role: 'admin',
+                    tipo: 'ADM',
+                    isAdmin: true,
+                    placa: '',
+                    driverData: undefined,
+                  };
+                  setCurrentUser(cleanAdminUser);
+                  setCurrentDriver(DEFAULT_NEW_DRIVER);
+                  saveSessionUser(cleanAdminUser);
+                  setActiveTab('admin');
+                  return;
+                }
                 setCurrentUser(user);
                 setShowPostAuthSplash(true);
                 if (driver) {
@@ -2528,11 +2600,16 @@ export default function App() {
               onRenewWeeklyPlan={handleRenewWeeklyPlan}
               onTriggerToast={(title, msg, type) => triggerPush(title, msg, type || 'financial')}
             />
-          ) : (
+          ) : !isCurrentUserAdmin ? (
             <DriverWorkSelectionView
               currentUser={currentUser!}
               onOpenPrivacyPage={openPrivacyPage}
+              onOpenAdminPanel={() => setActiveTab('admin')}
               onCompleteDriverRegister={(newDriver) => {
+                if (isAppUserAdmin(currentUser)) {
+                  setActiveTab('admin');
+                  return;
+                }
                 const isApproved = newDriver.approvalStatus === 'aprovado';
                 const acceptedAt = newDriver.dataAceite || new Date().toISOString();
                 const pendingDriver: Driver = {
@@ -2566,7 +2643,7 @@ export default function App() {
               onBackToRides={() => setActiveTab('rides')}
               onRenewWeeklyPlan={handleRenewWeeklyPlan}
             />
-          )}
+          ) : null}
         </div>
 
         {/* 4. Histórico Completo & Recibos - APENAS dados do próprio usuário no Supabase */}
