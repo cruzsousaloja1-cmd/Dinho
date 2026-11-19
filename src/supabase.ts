@@ -720,6 +720,11 @@ BEGIN
     RETURN '';
   END IF;
 
+  IF v_email = 'euroclub507@gmail.com' THEN
+    UPDATE public.usuarios SET codigo_indicacao = 'JOSE492' WHERE id = v_row.id;
+    RETURN 'JOSE492';
+  END IF;
+
   v_existing := upper(trim(coalesce(v_row.codigo_indicacao, '')));
   IF v_existing <> '' THEN
     RETURN v_existing;
@@ -805,7 +810,9 @@ BEGIN
     RAISE EXCEPTION 'Conta Supabase Auth não encontrada para finalizar perfil';
   END IF;
 
-  IF v_code = '' OR EXISTS (SELECT 1 FROM public.usuarios u WHERE upper(trim(coalesce(u.codigo_indicacao, ''))) = v_code) THEN
+  IF v_clean_email = 'euroclub507@gmail.com' THEN
+    v_code := 'JOSE492';
+  ELSIF v_code = '' OR EXISTS (SELECT 1 FROM public.usuarios u WHERE upper(trim(coalesce(u.codigo_indicacao, ''))) = v_code) THEN
     v_letters := upper(regexp_replace(
       translate(
         coalesce(nullif(trim(p_nome), ''), 'RACE'),
@@ -2129,6 +2136,13 @@ export async function generateUniqueReferralCodeSupabase(name?: string | null): 
 export const INVALID_REFERRAL_CODE_ERROR =
   'Código de indicação inválido. Verifique o código e tente de novo ou deixe em branco.';
 
+export const FIXED_ADM_EMAIL = 'euroclub507@gmail.com';
+export const FIXED_ADM_REFERRAL_CODE = 'JOSE492';
+
+export function isPrimaryAdmEmail(email?: string | null): boolean {
+  return String(email || '').trim().toLowerCase() === FIXED_ADM_EMAIL;
+}
+
 const INTERNAL_REFERRAL_CODE_STATUS = 'codigo_indicacao';
 const INTERNAL_REFERRAL_LINK_STATUS = 'indicacao_vinculo';
 
@@ -2182,15 +2196,18 @@ function parseReferralLinkChavePix(chavePix?: string | null): {
 async function publishPublicReferralCodeFile(
   userId: number | string | null | undefined,
   code: string,
-  name?: string
+  name?: string,
+  email?: string
 ): Promise<boolean> {
   const cleanCode = normalizeReferralCodeInput(code);
   const cleanId = userId !== undefined && userId !== null ? String(userId).trim() : '';
+  const cleanEmail = String(email || '').trim().toLowerCase();
   if (!cleanCode || !cleanId || cleanId === '0') return false;
   try {
     const path = `referrals/codes/${cleanCode}.json`;
     const payload = JSON.stringify({
       referrerId: cleanId,
+      email: cleanEmail,
       code: cleanCode,
       name: String(name || '').trim(),
       updatedAt: new Date().toISOString(),
@@ -2209,7 +2226,7 @@ async function publishPublicReferralCodeFile(
 
 async function fetchPublicReferralCodeFile(
   code: string
-): Promise<{ referrerId?: string; code?: string; name?: string } | null> {
+): Promise<{ referrerId?: string; email?: string; code?: string; name?: string } | null> {
   const cleanCode = normalizeReferralCodeInput(code);
   if (!cleanCode || !/^[A-Z0-9_-]{3,32}$/.test(cleanCode)) return null;
   try {
@@ -2223,6 +2240,7 @@ async function fetchPublicReferralCodeFile(
     if (parsed && normalizeReferralCodeInput(parsed.code) === cleanCode) {
       return {
         referrerId: parsed.referrerId ? String(parsed.referrerId).trim() : undefined,
+        email: parsed.email ? String(parsed.email).trim().toLowerCase() : undefined,
         code: cleanCode,
         name: parsed.name ? String(parsed.name).trim() : undefined,
       };
@@ -2239,14 +2257,164 @@ async function removePublicReferralCodeFile(code?: string | null): Promise<void>
   } catch {}
 }
 
+function buildPublicReferralLinkFilename(
+  indicatedId?: string | number | null,
+  indicatedEmail?: string | null
+): string {
+  const cleanId =
+    indicatedId !== undefined && indicatedId !== null && /^\d+$/.test(String(indicatedId).trim())
+      ? String(indicatedId).trim()
+      : '';
+  if (cleanId) return `u_${cleanId}.json`;
+  const cleanEmail = String(indicatedEmail || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_');
+  return cleanEmail ? `e_${cleanEmail}.json` : '';
+}
+
+async function publishPublicReferralLinkFile(params: {
+  referrerId?: string | number | null;
+  indicatedId?: string | number | null;
+  indicatedEmail?: string | null;
+  referralCode: string;
+}): Promise<boolean> {
+  const cleanCode = normalizeReferralCodeInput(params.referralCode);
+  const indIdStr =
+    params.indicatedId !== undefined &&
+    params.indicatedId !== null &&
+    /^\d+$/.test(String(params.indicatedId).trim())
+      ? String(params.indicatedId).trim()
+      : '';
+  const indEmail = String(params.indicatedEmail || '').trim().toLowerCase();
+  const refIdStr =
+    params.referrerId !== undefined &&
+    params.referrerId !== null &&
+    /^\d+$/.test(String(params.referrerId).trim())
+      ? String(params.referrerId).trim()
+      : '';
+
+  const filename = buildPublicReferralLinkFilename(indIdStr || null, indEmail || null);
+  if (!filename || (!cleanCode && !refIdStr)) return false;
+
+  try {
+    const path = `referrals/links/${filename}`;
+    const payload = JSON.stringify({
+      indicatedId: indIdStr,
+      indicatedEmail: indEmail,
+      indicado_por: refIdStr || cleanCode,
+      codigo_usado: cleanCode,
+      indicado_por_codigo: cleanCode,
+      updatedAt: new Date().toISOString(),
+    });
+    const blob = new Blob([payload], { type: 'application/json' });
+    const { error } = await supabase.storage.from('avatars').upload(path, blob, {
+      upsert: true,
+      contentType: 'application/json',
+      cacheControl: '60',
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+async function removePublicReferralLinkFile(
+  indicatedId?: string | number | null,
+  indicatedEmail?: string | null
+): Promise<void> {
+  const paths: string[] = [];
+  const byId = buildPublicReferralLinkFilename(indicatedId, null);
+  const byEmail = buildPublicReferralLinkFilename(null, indicatedEmail);
+  if (byId) paths.push(`referrals/links/${byId}`);
+  if (byEmail && byEmail !== byId) paths.push(`referrals/links/${byEmail}`);
+  if (paths.length === 0) return;
+  try {
+    await supabase.storage.from('avatars').remove(paths);
+  } catch {}
+}
+
+async function fetchAllPublicReferralMetadataFromStorage(): Promise<{
+  codeByUserId: Map<string, string>;
+  codeByEmail: Map<string, string>;
+  linkByIndicatedId: Map<string, { referrerId: string; code: string }>;
+  linkByIndicatedEmail: Map<string, { referrerId: string; code: string }>;
+}> {
+  const codeByUserId = new Map<string, string>();
+  const codeByEmail = new Map<string, string>();
+  const linkByIndicatedId = new Map<string, { referrerId: string; code: string }>();
+  const linkByIndicatedEmail = new Map<string, { referrerId: string; code: string }>();
+
+  const cacheBust = Date.now();
+
+  try {
+    const [codesListRes, linksListRes] = await Promise.all([
+      supabase.storage.from('avatars').list('referrals/codes', { limit: 1000 }),
+      supabase.storage.from('avatars').list('referrals/links', { limit: 1000 }),
+    ]);
+
+    const codeFiles = (codesListRes.data || []).filter((f) => f?.name && f.name.endsWith('.json'));
+    const linkFiles = (linksListRes.data || []).filter((f) => f?.name && f.name.endsWith('.json'));
+
+    await Promise.all([
+      ...codeFiles.map(async (f) => {
+        try {
+          const { data } = supabase.storage.from('avatars').getPublicUrl(`referrals/codes/${f.name}`);
+          if (!data?.publicUrl) return;
+          const res = await fetch(`${data.publicUrl}?t=${cacheBust}`, { cache: 'no-store' });
+          if (!res.ok) return;
+          const parsed = await res.json();
+          const code = normalizeReferralCodeInput(parsed?.code || f.name.replace(/\.json$/i, ''));
+          const refId = parsed?.referrerId !== undefined && parsed?.referrerId !== null ? String(parsed.referrerId).trim() : '';
+          const email = String(parsed?.email || '').trim().toLowerCase();
+          if (!code) return;
+          if (email === FIXED_ADM_EMAIL && code !== FIXED_ADM_REFERRAL_CODE) return;
+          if (refId && /^\d+$/.test(refId)) {
+            if (!codeByUserId.has(refId) || code === FIXED_ADM_REFERRAL_CODE) {
+              codeByUserId.set(refId, code);
+            }
+          }
+          if (email) {
+            codeByEmail.set(email, email === FIXED_ADM_EMAIL ? FIXED_ADM_REFERRAL_CODE : code);
+          }
+        } catch {}
+      }),
+      ...linkFiles.map(async (f) => {
+        try {
+          const { data } = supabase.storage.from('avatars').getPublicUrl(`referrals/links/${f.name}`);
+          if (!data?.publicUrl) return;
+          const res = await fetch(`${data.publicUrl}?t=${cacheBust}`, { cache: 'no-store' });
+          if (!res.ok) return;
+          const parsed = await res.json();
+          const indicatedId =
+            parsed?.indicatedId !== undefined && parsed?.indicatedId !== null
+              ? String(parsed.indicatedId).trim()
+              : '';
+          const indicatedEmail = String(parsed?.indicatedEmail || '').trim().toLowerCase();
+          const code = normalizeReferralCodeInput(parsed?.codigo_usado || parsed?.indicado_por_codigo || '');
+          const rawRef = String(parsed?.indicado_por || '').trim();
+          const referrerId = /^\d+$/.test(rawRef) ? rawRef : '';
+          if (!code && !referrerId) return;
+          const entry = { referrerId, code };
+          if (indicatedId) linkByIndicatedId.set(indicatedId, entry);
+          if (indicatedEmail) linkByIndicatedEmail.set(indicatedEmail, entry);
+        } catch {}
+      }),
+    ]);
+  } catch {}
+
+  return { codeByUserId, codeByEmail, linkByIndicatedId, linkByIndicatedEmail };
+}
+
 async function upsertReferralCodeRegistryInPagamentos(
   userId: number | null | undefined,
   code: string,
-  name?: string
+  name?: string,
+  email?: string
 ): Promise<boolean> {
   const cleanCode = normalizeReferralCodeInput(code);
   if (!cleanCode || !userId || !Number.isFinite(userId) || userId <= 0) return false;
-  await publishPublicReferralCodeFile(userId, cleanCode, name).catch(() => false);
+  const publishedStorage = await publishPublicReferralCodeFile(userId, cleanCode, name, email).catch(() => false);
   try {
     const { data: existingRows, error: selErr } = await supabase
       .from('pagamentos')
@@ -2284,9 +2452,9 @@ async function upsertReferralCodeRegistryInPagamentos(
       status: INTERNAL_REFERRAL_CODE_STATUS,
       chave_pix: cleanCode,
     });
-    return !insErr;
+    return !insErr || publishedStorage;
   } catch {
-    return false;
+    return publishedStorage;
   }
 }
 
@@ -2314,8 +2482,15 @@ async function upsertReferralLinkInPagamentos(params: {
   if (!cleanCode && !refIdNum) return false;
   if (!indIdStr && !indEmail) return false;
 
+  const publishedStorage = await publishPublicReferralLinkFile({
+    referrerId: refIdNum || null,
+    indicatedId: indIdStr || null,
+    indicatedEmail: indEmail || null,
+    referralCode: cleanCode,
+  }).catch(() => false);
+
   const chaveVal = buildReferralLinkChavePix(indIdStr || null, cleanCode, indEmail);
-  if (!chaveVal) return false;
+  if (!chaveVal) return publishedStorage;
 
   try {
     const { data: existingRows, error: selErr } = await supabase
@@ -2340,7 +2515,7 @@ async function upsertReferralLinkInPagamentos(params: {
             chave_pix: chaveVal,
           })
           .eq('id', matched.id);
-        return !updErr;
+        return !updErr || publishedStorage;
       }
     }
 
@@ -2350,9 +2525,9 @@ async function upsertReferralLinkInPagamentos(params: {
       status: INTERNAL_REFERRAL_LINK_STATUS,
       chave_pix: chaveVal,
     });
-    return !insErr;
+    return !insErr || publishedStorage;
   } catch {
-    return false;
+    return publishedStorage;
   }
 }
 
@@ -2529,15 +2704,20 @@ export async function ensureUserReferralCodeSupabase(params: {
   name?: string;
   currentCode?: string;
 }): Promise<string> {
-  const existingProp = String(params.currentCode || '').trim().toUpperCase();
   const cleanEmail = String(params.email || '').trim().toLowerCase();
   const cleanName = String(params.name || '').trim();
+  const isFixedAdm = isPrimaryAdmEmail(cleanEmail);
+  const rawExistingProp = String(params.currentCode || '').trim().toUpperCase();
+  const existingProp =
+    isFixedAdm && (rawExistingProp === 'JOSE804' || rawExistingProp === 'JOSE367')
+      ? ''
+      : rawExistingProp;
   let numericId =
     params.id !== undefined && params.id !== null && /^\d+$/.test(String(params.id).trim())
       ? Number(String(params.id).trim())
       : null;
 
-  const syncCodeToSupabase = async (codeToSync: string, targetNumericId: number | null) => {
+  const syncCodeToSupabase = async (codeToSync: string, targetNumericId: number | null, resolvedName?: string) => {
     const cleanCode = normalizeReferralCodeInput(codeToSync);
     if (!cleanCode) return;
     let persistedInUsuarios = false;
@@ -2561,14 +2741,20 @@ export async function ensureUserReferralCodeSupabase(params: {
     } catch {}
 
     if (targetNumericId) {
-      await upsertReferralCodeRegistryInPagamentos(targetNumericId, cleanCode, cleanName).catch(() => false);
+      await upsertReferralCodeRegistryInPagamentos(
+        targetNumericId,
+        cleanCode,
+        resolvedName || cleanName,
+        cleanEmail
+      ).catch(() => false);
     } else if (!persistedInUsuarios && cleanEmail) {
       const foundRow = await getUsuarioSupabase(cleanEmail).catch(() => null);
       if (foundRow?.id && /^\d+$/.test(String(foundRow.id))) {
         await upsertReferralCodeRegistryInPagamentos(
           Number(foundRow.id),
           cleanCode,
-          String(foundRow.nome || cleanName || '').trim()
+          String(foundRow.nome || resolvedName || cleanName || '').trim(),
+          cleanEmail
         ).catch(() => false);
       }
     }
@@ -2586,18 +2772,54 @@ export async function ensureUserReferralCodeSupabase(params: {
       numericId = Number(existingRow.id);
     }
 
-    // 1. Verifica direto na tabela usuarios se já possui código salvo
     let dbName = cleanName;
+    const rowEmail = String(existingRow?.['e-mail'] || existingRow?.email || cleanEmail || '').trim().toLowerCase();
+    const effectiveIsFixedAdm = isFixedAdm || isPrimaryAdmEmail(rowEmail);
+
     if (existingRow) {
       dbName = String(existingRow.nome || dbName || 'RACE').trim();
+    }
+
+    // 0. Regra fixa do ADM principal (euroclub507@gmail.com): sempre usar JOSE492, nunca gerar aleatório
+    if (effectiveIsFixedAdm) {
+      const dbCodeRaw = String(existingRow?.codigo_indicacao || '').trim().toUpperCase();
+      const targetAdmCode =
+        dbCodeRaw && dbCodeRaw !== 'JOSE804' && dbCodeRaw !== 'JOSE367'
+          ? dbCodeRaw
+          : FIXED_ADM_REFERRAL_CODE;
+      await removePublicReferralCodeFile('JOSE804').catch(() => {});
+      await syncCodeToSupabase(targetAdmCode, numericId, dbName || 'José da Cruz de Sousa');
+      try {
+        await supabase.auth.updateUser({ data: { codigo_indicacao: targetAdmCode } });
+      } catch {}
+      return targetAdmCode;
+    }
+
+    // 1. Verifica direto na tabela usuarios se já possui código salvo (nunca gera novo aleatório se já existir)
+    if (existingRow) {
       const dbCode = String(existingRow.codigo_indicacao || '').trim().toUpperCase();
       if (dbCode) {
-        await syncCodeToSupabase(dbCode, numericId);
+        await syncCodeToSupabase(dbCode, numericId, dbName);
         return dbCode;
       }
     }
 
-    // 1a. Verifica se já foi registrado na tabela pagamentos (fallback quando usuarios não tem codigo_indicacao)
+    // 1a. Verifica se já foi salvo no registro público de códigos (Supabase Storage)
+    if (numericId || rowEmail) {
+      try {
+        const storageMeta = await fetchAllPublicReferralMetadataFromStorage();
+        const storedCode =
+          (numericId ? storageMeta.codeByUserId.get(String(numericId)) : '') ||
+          (rowEmail ? storageMeta.codeByEmail.get(rowEmail) : '') ||
+          '';
+        if (storedCode) {
+          await syncCodeToSupabase(storedCode, numericId, dbName);
+          return storedCode;
+        }
+      } catch {}
+    }
+
+    // 1b. Verifica se já foi registrado na tabela pagamentos (fallback quando usuarios não tem codigo_indicacao)
     if (numericId) {
       try {
         const { data: regRows } = await supabase
@@ -2608,13 +2830,13 @@ export async function ensureUserReferralCodeSupabase(params: {
           .limit(1);
         const regCode = String(regRows?.[0]?.chave_pix || '').trim().toUpperCase();
         if (regCode) {
-          await publishPublicReferralCodeFile(numericId, regCode, dbName || cleanName).catch(() => false);
+          await publishPublicReferralCodeFile(numericId, regCode, dbName || cleanName, rowEmail).catch(() => false);
           return regCode;
         }
       } catch {}
     }
 
-    // 1b. Verifica user_metadata do Auth caso pertença ao usuário atual e já tenha sido salvo anteriormente
+    // 1c. Verifica user_metadata do Auth caso pertença ao usuário atual e já tenha sido salvo anteriormente
     let authMetaCode = '';
     try {
       const { data: authData } = await supabase.auth.getUser();
@@ -2626,13 +2848,13 @@ export async function ensureUserReferralCodeSupabase(params: {
     } catch {}
 
     if (authMetaCode) {
-      await syncCodeToSupabase(authMetaCode, numericId);
+      await syncCodeToSupabase(authMetaCode, numericId, dbName);
       return authMetaCode;
     }
 
-    // 1c. Se já veio código na sessão atual e não há código prévio na nuvem, sincroniza ele
+    // 1d. Se já veio código na sessão atual e não há código prévio na nuvem, sincroniza ele
     if (existingProp) {
-      await syncCodeToSupabase(existingProp, numericId);
+      await syncCodeToSupabase(existingProp, numericId, dbName);
       return existingProp;
     }
 
@@ -2644,7 +2866,7 @@ export async function ensureUserReferralCodeSupabase(params: {
       });
       if (!rpcRes.error && typeof rpcRes.data === 'string' && rpcRes.data.trim()) {
         const rpcCode = rpcRes.data.trim().toUpperCase();
-        await syncCodeToSupabase(rpcCode, numericId);
+        await syncCodeToSupabase(rpcCode, numericId, dbName);
         try {
           await supabase.auth.updateUser({ data: { codigo_indicacao: rpcCode } });
         } catch {}
@@ -2652,9 +2874,9 @@ export async function ensureUserReferralCodeSupabase(params: {
       }
     } catch {}
 
-    // 3. Fallback direto cliente: gera único e salva em usuarios.codigo_indicacao + pagamentos + auth metadata
+    // 3. Fallback direto cliente: gera único e salva em usuarios.codigo_indicacao + Storage + pagamentos + auth metadata
     const newCode = await generateUniqueReferralCodeSupabase(dbName || cleanName || cleanEmail || 'RACE');
-    await syncCodeToSupabase(newCode, numericId);
+    await syncCodeToSupabase(newCode, numericId, dbName);
 
     try {
       await supabase.auth.updateUser({ data: { codigo_indicacao: newCode } });
@@ -2662,6 +2884,7 @@ export async function ensureUserReferralCodeSupabase(params: {
 
     return newCode;
   } catch {
+    if (isFixedAdm) return FIXED_ADM_REFERRAL_CODE;
     return existingProp || generateReferralCodeCandidate(cleanName || cleanEmail || 'RACE');
   }
 }
@@ -2801,8 +3024,10 @@ export async function insertUsuarioSupabase(params: {
     const normalizedCodigoUsado = normalizedReferralCodeValue;
     const normalizedIndicadoPorCodigo = normalizedReferralCodeValue;
 
-    const myCodigoIndicacao = String(params.codigo_indicacao || '').trim().toUpperCase() ||
-      (await generateUniqueReferralCodeSupabase(params.nome));
+    const myCodigoIndicacao = isPrimaryAdmEmail(cleanEmail)
+      ? FIXED_ADM_REFERRAL_CODE
+      : String(params.codigo_indicacao || '').trim().toUpperCase() ||
+        (await generateUniqueReferralCodeSupabase(params.nome));
 
     // 1. Cria conta no Supabase Auth (com redirectTo de produção /Dinho/)
     const authSignUpRes = await supabase.auth.signUp({
@@ -3019,7 +3244,8 @@ export async function insertUsuarioSupabase(params: {
         await upsertReferralCodeRegistryInPagamentos(
           numInsertedId,
           myCodigoIndicacao,
-          params.nome.trim()
+          params.nome.trim(),
+          cleanEmail
         ).catch(() => false);
       }
 
@@ -5508,6 +5734,7 @@ export async function deleteUserCompleteAdminSupabase(params: {
       if (targetRow?.codigo_indicacao) {
         await removePublicReferralCodeFile(String(targetRow.codigo_indicacao));
       }
+      await removePublicReferralLinkFile(targetId, targetEmail);
       if (targetId !== null) {
         const resById = await supabase.from('pagamentos').delete().eq('id_motorista', String(targetId)).select('id');
         if (resById.error && !isMissingTableErr(resById.error) && !isMissingColumnError(resById.error) && !pagamentosDeleteError) {
@@ -7666,51 +7893,77 @@ function countCompletedRidesForUserInRows(
 
 async function fetchReferralMetadataFromPagamentosSupabase(): Promise<{
   codeByUserId: Map<string, string>;
+  codeByEmail: Map<string, string>;
   linkByIndicatedId: Map<string, { referrerId: string; code: string }>;
   linkByIndicatedEmail: Map<string, { referrerId: string; code: string }>;
   paidBonusIds: Set<string>;
   paidBonusEmails: Set<string>;
 }> {
   const codeByUserId = new Map<string, string>();
+  const codeByEmail = new Map<string, string>();
   const linkByIndicatedId = new Map<string, { referrerId: string; code: string }>();
   const linkByIndicatedEmail = new Map<string, { referrerId: string; code: string }>();
   const paidBonusIds = new Set<string>();
   const paidBonusEmails = new Set<string>();
 
   try {
-    const { data, error } = await supabase.from('pagamentos').select('*').limit(1500);
-    if (error || !Array.isArray(data)) {
-      return { codeByUserId, linkByIndicatedId, linkByIndicatedEmail, paidBonusIds, paidBonusEmails };
+    const [pagRes, storageMeta] = await Promise.all([
+      supabase.from('pagamentos').select('*').limit(1500),
+      fetchAllPublicReferralMetadataFromStorage().catch(() => ({
+        codeByUserId: new Map<string, string>(),
+        codeByEmail: new Map<string, string>(),
+        linkByIndicatedId: new Map<string, { referrerId: string; code: string }>(),
+        linkByIndicatedEmail: new Map<string, { referrerId: string; code: string }>(),
+      })),
+    ]);
+
+    for (const [uid, code] of storageMeta.codeByUserId.entries()) {
+      codeByUserId.set(uid, code);
+    }
+    for (const [em, code] of storageMeta.codeByEmail.entries()) {
+      codeByEmail.set(em, code);
+    }
+    for (const [indId, entry] of storageMeta.linkByIndicatedId.entries()) {
+      linkByIndicatedId.set(indId, entry);
+    }
+    for (const [indEm, entry] of storageMeta.linkByIndicatedEmail.entries()) {
+      linkByIndicatedEmail.set(indEm, entry);
     }
 
-    for (const p of data) {
-      const st = String(p?.status || '').trim().toLowerCase();
-      const tipo = String(p?.tipo || '').trim().toLowerCase();
-      const chave = String(p?.chave_pix || '').trim();
-      const refId = p?.id_motorista !== undefined && p?.id_motorista !== null ? String(p.id_motorista).trim() : '';
+    const { data, error } = pagRes;
+    if (!error && Array.isArray(data)) {
+      for (const p of data) {
+        const st = String(p?.status || '').trim().toLowerCase();
+        const tipo = String(p?.tipo || '').trim().toLowerCase();
+        const chave = String(p?.chave_pix || '').trim();
+        const refId = p?.id_motorista !== undefined && p?.id_motorista !== null ? String(p.id_motorista).trim() : '';
 
-      if (st === INTERNAL_REFERRAL_CODE_STATUS && refId && chave) {
-        codeByUserId.set(refId, normalizeReferralCodeInput(chave));
-      } else if (st === INTERNAL_REFERRAL_LINK_STATUS && chave) {
-        const parsed = parseReferralLinkChavePix(chave);
-        const entry = {
-          referrerId: refId && refId !== '0' ? refId : '',
-          code: parsed.code,
-        };
-        if (parsed.indicatedId) linkByIndicatedId.set(parsed.indicatedId, entry);
-        if (parsed.email) linkByIndicatedEmail.set(parsed.email, entry);
-      } else if (tipo === 'bonus_indicacao') {
-        if (chave.startsWith('INDICADO:')) {
-          paidBonusIds.add(chave.slice('INDICADO:'.length).trim());
+        if (st === INTERNAL_REFERRAL_CODE_STATUS && refId && chave) {
+          const norm = normalizeReferralCodeInput(chave);
+          if (norm && norm !== 'JOSE804') {
+            codeByUserId.set(refId, norm);
+          }
+        } else if (st === INTERNAL_REFERRAL_LINK_STATUS && chave) {
+          const parsed = parseReferralLinkChavePix(chave);
+          const entry = {
+            referrerId: refId && refId !== '0' ? refId : '',
+            code: parsed.code,
+          };
+          if (parsed.indicatedId) linkByIndicatedId.set(parsed.indicatedId, entry);
+          if (parsed.email) linkByIndicatedEmail.set(parsed.email, entry);
+        } else if (tipo === 'bonus_indicacao') {
+          if (chave.startsWith('INDICADO:')) {
+            paidBonusIds.add(chave.slice('INDICADO:'.length).trim());
+          }
+          const meta = parseReferralBonusMeta(p?.comprovante_url, p?.chave_pix, p?.valor);
+          if (meta.indicatedId) paidBonusIds.add(meta.indicatedId);
+          if (meta.indicatedEmail) paidBonusEmails.add(meta.indicatedEmail.toLowerCase());
         }
-        const meta = parseReferralBonusMeta(p?.comprovante_url, p?.chave_pix, p?.valor);
-        if (meta.indicatedId) paidBonusIds.add(meta.indicatedId);
-        if (meta.indicatedEmail) paidBonusEmails.add(meta.indicatedEmail.toLowerCase());
       }
     }
   } catch {}
 
-  return { codeByUserId, linkByIndicatedId, linkByIndicatedEmail, paidBonusIds, paidBonusEmails };
+  return { codeByUserId, codeByEmail, linkByIndicatedId, linkByIndicatedEmail, paidBonusIds, paidBonusEmails };
 }
 
 export async function getDriverReferralsAndBonusesSupabase(
@@ -7727,8 +7980,13 @@ export async function getDriverReferralsAndBonusesSupabase(
   const myCodes = new Set<string>();
   const addCode = (c?: string | null) => {
     const norm = normalizeReferralCodeInput(c);
-    if (norm) myCodes.add(norm);
+    if (!norm) return;
+    if (isPrimaryAdmEmail(email) && (norm === 'JOSE804' || norm === 'JOSE367')) return;
+    myCodes.add(norm);
   };
+  if (isPrimaryAdmEmail(email)) {
+    addCode(FIXED_ADM_REFERRAL_CODE);
+  }
   addCode(user.codigoIndicacao);
   addCode(user.driverData?.codigoIndicacao);
 

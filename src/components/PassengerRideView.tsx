@@ -16,7 +16,6 @@ import {
   searchAddressAutocomplete, 
   calculateDistanceKm, 
   requestCurrentLocationFast,
-  reverseGeocodeCoords,
   parseStructuredIndaiatubaAddress,
   correctNeighborhoodForIndaiatubaStreet,
   saveStreetAddressOverride,
@@ -26,7 +25,6 @@ import {
   AddressSuggestion, 
   POPULAR_DATABASE_LOCATIONS 
 } from '../services/addressSearchService';
-import { GpsLocationPinMap } from './GpsLocationPinMap';
 import { 
   Car, 
   Sparkles, 
@@ -297,7 +295,6 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [isSearchingDest, setIsSearchingDest] = useState(false);
   const [isLocatingUser, setIsLocatingUser] = useState(false);
   const [gpsButtonText, setGpsButtonText] = useState('Buscando GPS preciso...');
-  const [isResolvingPinDrag, setIsResolvingPinDrag] = useState(false);
   const [gpsDetectedNotice, setGpsDetectedNotice] = useState<string | null>(null);
   const [gpsErrorNotice, setGpsErrorNotice] = useState<string | null>(null);
   const [gpsFallbackNotice, setGpsFallbackNotice] = useState<string | null>(null);
@@ -644,50 +641,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setActiveDropdown(null);
   };
 
-  // Ao arrastar o pino "Você está aqui" no mapa, busca endereço atualizado na nova coordenada
-  const handleGpsPinDragged = async (newLat: number, newLng: number) => {
-    setGpsPinCoords({ lat: newLat, lng: newLng });
-    setIsResolvingPinDrag(true);
-    setGpsErrorNotice(null);
-    setGpsFallbackNotice(null);
-
-    try {
-      const geo = await reverseGeocodeCoords(newLat, newLng);
-      if (!geo.inIndaiatuba) {
-        setGpsErrorNotice(
-          'Posição fora de Indaiatuba-SP. Arraste o pino de volta para Indaiatuba ou digite seu endereço.'
-        );
-        return;
-      }
-      if (geo.success && geo.fullAddress) {
-        setPickup({
-          address: geo.fullAddress,
-          lat: newLat,
-          lng: newLng,
-        });
-        setPickupInput(geo.fullAddress);
-        setGpsDetectedNotice(geo.fullAddress);
-        onRouteSearched?.(false);
-
-        if (!hasAddressNumber(geo.fullAddress)) {
-          setAddressValidationError(
-            'Endereço encontrado sem número. Digite o número da casa ou local abaixo para continuar.'
-          );
-          focusManualNumberField();
-        } else {
-          setAddressValidationError(null);
-        }
-      } else if (geo.errorMessage) {
-        setGpsErrorNotice(geo.errorMessage);
-      }
-    } catch {
-      setGpsErrorNotice('Não foi possível converter o novo ponto no mapa. Tente arrastar novamente ou edite o endereço.');
-    } finally {
-      setIsResolvingPinDrag(false);
-    }
-  };
-
-  // Detecta a localização GPS REAL precisa (watchPosition até accuracy < 30m)
+  // Detecta a localização GPS REAL precisa (watchPosition até accuracy < 30m) sem exibir mapa na digitação
   const handleUseCurrentLocation = async () => {
     if (isLocatingUser) return;
     const gpsErrorMsg =
@@ -1838,10 +1792,10 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             </div>
           )}
 
-          {/* Endereço de Saída detectado pelo Meu GPS + Pino arrastável no mapa */}
+          {/* Endereço de Saída detectado pelo Meu GPS (somente texto, sem mapa na tela de digitação) */}
           {gpsDetectedNotice && (
-            <div className="mt-2.5 space-y-2.5 animate-fade-in">
-              <div className="flex items-start justify-between gap-2 bg-emerald-50 border-2 border-emerald-300 px-3.5 py-3 rounded-2xl text-xs sm:text-sm text-emerald-950 font-bold shadow-xs min-w-0">
+            <div className="mt-2.5 animate-fade-in">
+              <div className="flex items-start justify-between gap-2 bg-emerald-50 border-2 border-emerald-300 px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm text-emerald-950 font-bold shadow-xs min-w-0">
                 <div className="flex items-start gap-2 min-w-0 flex-1">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse shrink-0 mt-1" />
                   <span className="text-emerald-800 font-black uppercase font-mono shrink-0">GPS:</span>
@@ -1859,41 +1813,14 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   ✕
                 </button>
               </div>
-
-              {gpsPinCoords && (
-                <GpsLocationPinMap
-                  lat={gpsPinCoords.lat}
-                  lng={gpsPinCoords.lng}
-                  address={pickupInput || gpsDetectedNotice}
-                  onPinDragged={handleGpsPinDragged}
-                  isUpdatingAddress={isResolvingPinDrag}
-                />
-              )}
             </div>
           )}
 
-          {/* Dropdown de Busca Automática para Embarque */}
+          {/* Lista vertical de sugestões de endereço para Saída / Embarque (sem mapa) */}
           {activeDropdown === 'pickup' && (
             <div className="absolute left-0 right-0 top-full z-50 bg-white border-2 border-emerald-400 rounded-2xl shadow-2xl mt-1 overflow-hidden divide-y divide-slate-100 max-h-72 overflow-y-auto overscroll-contain">
-              {pickupInput.trim().length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setFullscreenAddressField('pickup')}
-                  className="w-full text-left bg-emerald-50/90 hover:bg-emerald-100/80 px-3.5 py-2.5 flex items-start justify-between gap-2 cursor-pointer transition-colors"
-                >
-                  <div className="min-w-0 flex-1">
-                    <span className="text-[10px] font-mono font-black text-emerald-800 uppercase block">
-                      Endereço completo selecionado (Toque para tela cheia)
-                    </span>
-                    <span className="text-xs sm:text-sm font-black text-slate-950 whitespace-normal break-words leading-snug block">
-                      {pickupInput}
-                    </span>
-                  </div>
-                  <Maximize2 className="w-4 h-4 text-emerald-700 shrink-0 mt-1" />
-                </button>
-              )}
               <div className="bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-900 flex items-center justify-between">
-                <span>Sugestões Automáticas com Número (Indaiatuba-SP)</span>
+                <span>Sugestões de Endereço (Indaiatuba-SP)</span>
                 <button
                   type="button"
                   onClick={() => setActiveDropdown(null)}

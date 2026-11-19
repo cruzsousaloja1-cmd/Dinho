@@ -72,6 +72,8 @@ import {
   markReferralBonusPaidByAdminSupabase,
   deleteUserCompleteAdminSupabase,
   SELF_ADMIN_DELETE_ERROR,
+  FIXED_ADM_REFERRAL_CODE,
+  isPrimaryAdmEmail,
   ReferralCandidateItem,
   AdminReferralItem,
   DriverApplicationRecord,
@@ -150,15 +152,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [beneficiaryFilterStatus, setBeneficiaryFilterStatus] = useState<'all' | 'waiting' | 'liberado' | 'pago' | 'used'>('all');
   const [beneficiaryFilterDate, setBeneficiaryFilterDate] = useState('');
   const [markingBonusPaidId, setMarkingBonusPaidId] = useState<string | null>(null);
-  const [admReferralCode, setAdmReferralCode] = useState<string>(
-    String(
-      currentUser?.codigoIndicacao && currentUser.codigoIndicacao.toUpperCase() !== 'JOSE367'
-        ? currentUser.codigoIndicacao
-        : 'JOSE492'
-    )
-      .trim()
-      .toUpperCase()
-  );
+  const [admReferralCode, setAdmReferralCode] = useState<string>(() => {
+    const rawCode = String(currentUser?.codigoIndicacao || '').trim().toUpperCase();
+    if (isPrimaryAdmEmail(currentUser?.email)) {
+      return rawCode && rawCode !== 'JOSE367' && rawCode !== 'JOSE804'
+        ? rawCode
+        : FIXED_ADM_REFERRAL_CODE;
+    }
+    return rawCode && rawCode !== 'JOSE367' ? rawCode : FIXED_ADM_REFERRAL_CODE;
+  });
   const [admOwnReferrals, setAdmOwnReferrals] = useState<ReferralCandidateItem[]>([]);
   const [copiedAdmCode, setCopiedAdmCode] = useState(false);
   const [showAdmLogoFallback, setShowAdmLogoFallback] = useState(false);
@@ -179,10 +181,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   useEffect(() => {
     if (!currentUser) return;
     let active = true;
+    const rawCurrentCode = String(currentUser.codigoIndicacao || '').trim().toUpperCase();
     const sanitizedLocalCode =
-      currentUser.codigoIndicacao &&
-      currentUser.codigoIndicacao.trim().toUpperCase() !== 'JOSE367'
-        ? currentUser.codigoIndicacao.trim().toUpperCase()
+      rawCurrentCode &&
+      rawCurrentCode !== 'JOSE367' &&
+      (!isPrimaryAdmEmail(currentUser.email) || rawCurrentCode !== 'JOSE804')
+        ? rawCurrentCode
         : undefined;
     ensureUserReferralCodeSupabase({
       id: currentUser.id,
@@ -192,9 +196,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     })
       .then((code) => {
         if (!active) return;
-        const effectiveCode = String(code || sanitizedLocalCode || 'JOSE492')
+        const resolvedRaw = String(code || sanitizedLocalCode || FIXED_ADM_REFERRAL_CODE)
           .trim()
           .toUpperCase();
+        const effectiveCode =
+          isPrimaryAdmEmail(currentUser.email) && (resolvedRaw === 'JOSE804' || resolvedRaw === 'JOSE367')
+            ? FIXED_ADM_REFERRAL_CODE
+            : resolvedRaw;
         if (effectiveCode) {
           setAdmReferralCode(effectiveCode);
           if (effectiveCode !== String(currentUser.codigoIndicacao || '').trim().toUpperCase()) {
@@ -234,11 +242,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsLoadingUsers(true);
     setSupabaseUsersError(null);
     try {
-      const effectiveAdmCode = String(
-        admReferralCode || currentUser?.codigoIndicacao || 'JOSE492'
+      const rawEffective = String(
+        admReferralCode || currentUser?.codigoIndicacao || FIXED_ADM_REFERRAL_CODE
       )
         .trim()
         .toUpperCase();
+      const effectiveAdmCode =
+        isPrimaryAdmEmail(currentUser?.email) && (rawEffective === 'JOSE804' || rawEffective === 'JOSE367')
+          ? FIXED_ADM_REFERRAL_CODE
+          : rawEffective;
       const [usersRes, corridasData, pagamentosData, appsMap, referralsData, ownRefsData] = await Promise.all([
         selectSafeUsuariosRows((q) => q.order('created_at', { ascending: false })),
         getAllCorridasForAdminSupabase(),
