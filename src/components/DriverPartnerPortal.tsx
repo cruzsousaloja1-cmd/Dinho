@@ -32,6 +32,7 @@ import { DriverWorkSelectionView } from './DriverWorkSelectionView';
 import { LaunchPromoBanner } from './LaunchPromoBanner';
 import { DriverBenefitsBox } from './DriverBenefitsBox';
 import { MyReferralsControlSection } from './MyReferralsControlSection';
+import { PersonalReferralShareBox } from './PersonalReferralShareBox';
 import { LegalConsentSection } from './LegalConsentSection';
 import { 
   WEEKLY_FEE, 
@@ -2973,6 +2974,13 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     <div className="text-[40px] leading-none font-mono font-bold tracking-[0.16em] text-white text-center select-all py-2 break-all">
                       {myPersonalCode || '...'}
                     </div>
+
+                    {myPersonalCode && (
+                      <PersonalReferralShareBox
+                        code={myPersonalCode}
+                        role="driver"
+                      />
+                    )}
 
                     <div className="flex flex-col gap-3 pt-1">
                       <button

@@ -53,6 +53,7 @@ import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imag
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverBenefitsBox } from './DriverBenefitsBox';
 import { MyReferralsControlSection } from './MyReferralsControlSection';
+import { PersonalReferralShareBox } from './PersonalReferralShareBox';
 import {
   buildReferralWhatsappShareText,
   getLaunchPromoCountdownText,
@@ -1062,6 +1063,11 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
             <div className="text-[40px] leading-none font-mono font-bold tracking-[0.16em] text-white text-center select-all py-2 break-all">
               {referralCode}
             </div>
+
+            <PersonalReferralShareBox
+              code={referralCode}
+              role={isDriverOrMoto ? 'driver' : 'passenger'}
+            />
 
             <div className="flex flex-col gap-3 pt-1">
               <button

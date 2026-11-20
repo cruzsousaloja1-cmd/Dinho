@@ -105,6 +105,7 @@ import {
   savePendingConductorBellMessageCloud,
 } from '../services/conductorRegistrationCheckService';
 import { MyReferralsControlSection } from './MyReferralsControlSection';
+import { PersonalReferralShareBox } from './PersonalReferralShareBox';
 import { MapRealtime } from './MapRealtime';
 import {
   calculateRideSplitForDriver,
@@ -4875,6 +4876,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
             )}
+
+            <PersonalReferralShareBox
+              code={admReferralCode}
+              role="admin"
+            />
 
             <p className="text-[11px] text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 leading-relaxed">
               {buildReferralWhatsappShareText(admReferralCode)}

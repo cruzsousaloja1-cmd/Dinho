@@ -152,31 +152,65 @@ export const normalizeReferralDigits = (raw?: string | null): string => {
   return digits;
 };
 
-export const buildReferralLink = (whatsappOrCode: string): string => {
-  const digits = normalizeReferralDigits(whatsappOrCode);
-  const cleanCode = digits || (whatsappOrCode || '').trim();
-  if (typeof window === 'undefined') {
-    return `https://cruzsousaloja1-cmd.github.io/Dinho/?indicado=${encodeURIComponent(cleanCode)}`;
-  }
-  const url = new URL(window.location.href);
-  url.search = '';
-  url.hash = '';
-  if (cleanCode) {
-    url.searchParams.set('indicado', cleanCode);
-  }
-  return url.toString();
+export const PUBLIC_RACE_INSTALL_URL = 'https://cruzsousaloja1-cmd.github.io/Dinho/';
+
+const URL_REFERRAL_STORAGE_KEY = 'race_url_referral_code';
+
+export const buildPersonalReferralLink = (code?: string | null): string => {
+  const cleanCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
+  if (!cleanCode) return PUBLIC_RACE_INSTALL_URL;
+  return `${PUBLIC_RACE_INSTALL_URL}?codigo=${encodeURIComponent(cleanCode)}`;
 };
 
-export const getReferralCodeFromUrl = (): string => {
+export const buildReferralLink = (whatsappOrCode: string): string => {
+  const raw = String(whatsappOrCode || '').trim().toUpperCase();
+  if (raw) {
+    return buildPersonalReferralLink(raw);
+  }
+  return PUBLIC_RACE_INSTALL_URL;
+};
+
+const readReferralCodeFromLocation = (): string => {
   if (typeof window === 'undefined') return '';
   try {
     const params = new URLSearchParams(window.location.search);
-    const raw = params.get('indicado') || params.get('ref') || params.get('codigo') || '';
-    return raw.trim();
+    let raw = params.get('codigo') || params.get('indicado') || params.get('ref') || '';
+    if (!raw && window.location.hash && window.location.hash.includes('?')) {
+      const hashQuery = window.location.hash.slice(window.location.hash.indexOf('?') + 1);
+      const hashParams = new URLSearchParams(hashQuery);
+      raw = hashParams.get('codigo') || hashParams.get('indicado') || hashParams.get('ref') || '';
+    }
+    return raw.replace(/\s+/g, '').trim().toUpperCase();
   } catch {
     return '';
   }
 };
+
+export const getReferralCodeFromUrl = (): string => {
+  if (typeof window === 'undefined') return '';
+  const fromUrl = readReferralCodeFromLocation();
+  if (fromUrl) {
+    try {
+      sessionStorage.setItem(URL_REFERRAL_STORAGE_KEY, fromUrl);
+    } catch {
+      // ignore storage errors
+    }
+    return fromUrl;
+  }
+  try {
+    return String(sessionStorage.getItem(URL_REFERRAL_STORAGE_KEY) || '')
+      .replace(/\s+/g, '')
+      .trim()
+      .toUpperCase();
+  } catch {
+    return '';
+  }
+};
+
+// Captura imediatamente ?codigo= ao abrir o app (antes da SplashScreen ou navegações)
+if (typeof window !== 'undefined') {
+  getReferralCodeFromUrl();
+}
 
 export const isPassengerReferralRole = (tipo?: string | null): boolean => {
   const norm = String(tipo || '').trim().toLowerCase();
@@ -308,6 +342,79 @@ export const buildReferralWhatsappShareText = (
     `🔑 CÓDIGO DE CADASTRO: ${cleanCode}`,
     '👉 Baixe aqui: https://cruzsousaloja1-cmd.github.io/Dinho/',
   ].join('\n');
+};
+
+export type PersonalShareRole = 'passenger' | 'driver' | 'motoboy' | 'admin';
+
+export const buildPersonalInstallShareText = (
+  code?: string | null,
+  role: PersonalShareRole = 'driver'
+): string => {
+  const cleanCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
+  const personalLink = buildPersonalReferralLink(cleanCode);
+  if (role === 'passenger') {
+    return [
+      `🏁 RACE Indaiatuba! Use meu código ${cleanCode} e ganhe R$10 de crédito na primeira corrida!`,
+      `Baixa aqui: ${personalLink}`,
+      '👉 Abre o link no Chrome',
+      '👉 Clica em Instalar',
+      `👉 Cadastra com o código ${cleanCode}!`,
+    ].join('\n');
+  }
+  return [
+    `🏁 RACE Indaiatuba! Ganhe 100% das corridas (0% de taxa) até 17/12/2026! Use meu código ${cleanCode} e ganhe bônus!`,
+    `Baixa aqui: ${personalLink}`,
+    '👉 Abre o link no Chrome',
+    '👉 Clica em Instalar',
+    `👉 Cadastra com o código ${cleanCode}!`,
+  ].join('\n');
+};
+
+export const buildPersonalInstallWhatsappUrl = (
+  code?: string | null,
+  role: PersonalShareRole = 'driver'
+): string => {
+  const text = buildPersonalInstallShareText(code, role);
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+};
+
+export const sharePersonalInstallLink = async (
+  code?: string | null,
+  role: PersonalShareRole = 'driver'
+): Promise<'native' | 'cancelled' | 'whatsapp'> => {
+  const cleanCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
+  const personalLink = buildPersonalReferralLink(cleanCode);
+  const text = buildPersonalInstallShareText(cleanCode, role);
+
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      await navigator.share({
+        title: `RACE Indaiatuba • Código ${cleanCode}`,
+        text,
+        url: personalLink,
+      });
+      return 'native';
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return 'cancelled';
+      }
+    }
+  }
+
+  const waUrl = buildPersonalInstallWhatsappUrl(cleanCode, role);
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = waUrl;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  } catch {
+    // ignore
+  }
+  return 'whatsapp';
 };
 
 export const buildReferralWhatsappShareUrl = (

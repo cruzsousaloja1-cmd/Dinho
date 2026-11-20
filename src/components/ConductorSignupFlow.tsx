@@ -30,6 +30,7 @@ import {
 } from '../supabase';
 import { ADMIN_EMAIL, isAppUserAdmin, normalizeEmail } from '../services/userService';
 import { compressImageToMax200KB } from '../utils/imageCompression';
+import { getReferralCodeFromUrl } from '../services/promoService';
 import { validateEmailCom, validateWhatsAppBR } from '../utils/documentValidation';
 import {
   DriverWorkSelectionView,
@@ -127,7 +128,9 @@ export const ConductorSignupFlow: React.FC<ConductorSignupFlowProps> = ({
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [regAvatar, setRegAvatar] = useState('');
-  const [regIndicadoPor, setRegIndicadoPor] = useState('');
+  const [regIndicadoPor, setRegIndicadoPor] = useState(() =>
+    normalizeReferralCodeInput(getReferralCodeFromUrl())
+  );
   const [regIndicadoPorError, setRegIndicadoPorError] = useState<string | null>(null);
   const [regError, setRegError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -139,12 +142,11 @@ export const ConductorSignupFlow: React.FC<ConductorSignupFlowProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const indicadoPorInputRef = useRef<HTMLInputElement>(null);
 
-  // Preenche código de indicação da URL (?ref=JOSE492) se existir
+  // Preenche código de indicação da URL (?codigo=XXXX, ?indicado=XXXX ou ?ref=XXXX) se existir
   useEffect(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
-      const ref = normalizeReferralCodeInput(params.get('ref') || '');
-      if (ref) setRegIndicadoPor(ref);
+      const ref = normalizeReferralCodeInput(getReferralCodeFromUrl());
+      if (ref) setRegIndicadoPor((prev) => prev || ref);
     } catch {
       // ignore
     }

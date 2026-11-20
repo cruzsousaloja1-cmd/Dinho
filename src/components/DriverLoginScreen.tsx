@@ -119,6 +119,10 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     setRegErrorMessage(null);
     setRegIndicadoPorError(null);
     setRegSuccessMessage(null);
+    const urlCode = getReferralCodeFromUrl();
+    if (urlCode && !regIndicadoPor.trim()) {
+      setRegIndicadoPor(urlCode);
+    }
     setViewMode('register');
   };
 
