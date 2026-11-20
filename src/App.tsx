@@ -34,10 +34,11 @@ import { FullMapView } from './components/FullMapView';
 import { PassengerOptionsView } from './components/PassengerOptionsView';
 import { PassengerAccountView } from './components/PassengerAccountView';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
+import { AdminDriverCallSimulator } from './components/AdminDriverCallSimulator';
 import { RatingModal } from './components/RatingModal';
 import { saveDriverReview, clearReviewsCache } from './services/reviewService';
 import { AppUser } from './types';
-import { AlertTriangle, CheckCircle2, X, QrCode, XCircle, Loader2, Car, Users, Eye, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, X, QrCode, XCircle, Loader2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { WEEKLY_FEE, WEEKLY_FEE_TEXT, COMMISSION, WEEKLY_FEE_BADGE } from './config/pricing';
 import { 
@@ -115,7 +116,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>(() => resolveInitialTab(initialUser));
   const [admRidesSubView, setAdmRidesSubView] = useState<'passenger' | 'all_rides'>('passenger');
   const [admDriversSubView, setAdmDriversSubView] = useState<'driver' | 'all_drivers'>('all_drivers');
-  const [admPreviewDriverKey, setAdmPreviewDriverKey] = useState<string>('');
   const isAdminActiveTab = (tab: TabType) =>
     tab === 'admin' || tab === 'admin_rides' || tab === 'admin_drivers';
   const tabScrollTopsRef = useRef<Partial<Record<TabType, number>>>({});
@@ -136,7 +136,10 @@ export default function App() {
     if (el) {
       el.scrollTop = isAdminActiveTab(activeTab) ? 0 : (tabScrollTopsRef.current[panelKey] ?? 0);
     }
-    if (activeTab === 'admin_rides' && admRidesSubView === 'passenger') {
+    if (
+      (activeTab === 'admin_rides' && admRidesSubView === 'passenger') ||
+      (activeTab === 'admin_drivers' && admDriversSubView === 'driver')
+    ) {
       requestAnimationFrame(() => {
         window.dispatchEvent(new Event('resize'));
       });
@@ -2510,282 +2513,14 @@ export default function App() {
           />
         </div>
 
-        {/* 3. Condutor & Cadastro (somente Motorista/Motoboy; ADM nunca tem Meu Painel Condutor nem aparece como motorista) */}
+        {/* 3. Condutor & Cadastro (somente Motorista/Motoboy; no ADM mostra simulador de chamada sem perfil ADM) */}
         <div {...getTabPanelProps('driver_portal')}>
           {isCurrentUserAdmin ? (
-            (() => {
-              const nonAdminPreviewDrivers = drivers.filter((d) => {
-                const em = normalizeEmail(d.email);
-                const plate = String(d.vehiclePlate || '').trim().toUpperCase();
-                const model = String(d.vehicleModel || '').trim().toUpperCase();
-                if (isPrimaryAdmEmail(em) || em === normalizeEmail(ADMIN_EMAIL)) return false;
-                if (
-                  currentUser &&
-                  (String(d.id) === String(currentUser.id) ||
-                    (currentUser.email && em === normalizeEmail(currentUser.email)))
-                ) {
-                  return false;
-                }
-                if (plate === 'ADM-2026' || model === 'VEÍCULO ADM RACE' || model === 'VEICULO ADM RACE') {
-                  return false;
-                }
-                return true;
-              });
-
-              const onlinePreviewDrivers = nonAdminPreviewDrivers.filter(
-                (d) => d.approvalStatus === 'aprovado' && d.status === 'online'
-              );
-
-              const examplePreviewDriver = {
-                id: 'example',
-                name: 'Motorista Exemplo RACE',
-                categoryLabel: 'Motorista Econômico',
-                vehicleModel: 'Chevrolet Onix',
-                vehicleYear: 2022,
-                vehicleColor: 'Prata',
-                vehiclePlate: 'DEMO-0001',
-                statusLabel: 'ONLINE (Demonstração)',
-                isOnline: true,
-                rating: 4.9,
-                totalRides: 18,
-                earningsWeek: 420.0,
-              };
-
-              const matchedRealDriver =
-                admPreviewDriverKey && admPreviewDriverKey !== 'example'
-                  ? onlinePreviewDrivers.find(
-                      (d) =>
-                        String(d.id) === admPreviewDriverKey ||
-                        normalizeEmail(d.email) === normalizeEmail(admPreviewDriverKey)
-                    ) || null
-                  : null;
-
-              const activePreview =
-                admPreviewDriverKey === 'example'
-                  ? examplePreviewDriver
-                  : matchedRealDriver
-                  ? {
-                      id: matchedRealDriver.id,
-                      name: matchedRealDriver.name,
-                      categoryLabel:
-                        matchedRealDriver.category === 'confort'
-                          ? 'Confort'
-                          : matchedRealDriver.category === 'moto_passageiro'
-                          ? 'Moto Passageiro'
-                          : matchedRealDriver.category === 'moto_entrega'
-                          ? 'Moto Entrega'
-                          : 'Motorista Econômico',
-                      vehicleModel: matchedRealDriver.vehicleModel || 'Veículo cadastrado',
-                      vehicleYear: matchedRealDriver.vehicleYear || 2022,
-                      vehicleColor: matchedRealDriver.vehicleColor || '—',
-                      vehiclePlate: matchedRealDriver.vehiclePlate || '—',
-                      statusLabel: 'ONLINE AGORA',
-                      isOnline: true,
-                      rating: matchedRealDriver.rating || 5.0,
-                      totalRides: matchedRealDriver.totalRides || 0,
-                      earningsWeek: matchedRealDriver.earningsWeek || 0,
-                    }
-                  : null;
-
-              const isPromoZeroFee = isDriverInLaunchZeroFeePromo();
-
-              return (
-                <div className="max-w-3xl mx-auto space-y-4">
-                  {/* Aviso de Modo Visualização ADM (sem Meu Painel Condutor e sem ADM como motorista) */}
-                  <div className="bg-slate-950 text-white border border-amber-500/50 rounded-3xl p-5 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-400/40 text-amber-400 flex items-center justify-center shrink-0">
-                        <Eye className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h3 className="font-heading font-black text-base sm:text-lg text-white">
-                          Ver como Motorista (Prévia ADM)
-                        </h3>
-                        <p className="text-xs text-zinc-300 font-medium">
-                          Modo somente visualização para o administrador. O ADM não é motorista e não possui painel de condutor.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setAdmDriversSubView('all_drivers')}
-                      className="px-4 py-2 rounded-xl bg-[#ff6a00] hover:bg-[#e55f00] text-white font-heading font-black text-xs cursor-pointer shrink-0 flex items-center justify-center gap-1.5"
-                    >
-                      <Users className="w-4 h-4" />
-                      <span>Todos os Motoristas</span>
-                    </button>
-                  </div>
-
-                  {!activePreview ? (
-                    <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-md space-y-5 text-center">
-                      <div className="w-16 h-16 rounded-3xl bg-amber-100 text-[#ff6a00] border border-amber-300 flex items-center justify-center mx-auto">
-                        <Car className="w-8 h-8" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <h4 className="font-heading font-black text-slate-950 text-lg sm:text-xl">
-                          Selecione um motorista para ver como ele vê
-                        </h4>
-                        <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto font-medium">
-                          Escolha um motorista online abaixo ou abra a visão de um motorista de exemplo para conferir o funcionamento da tela do condutor.
-                        </p>
-                      </div>
-
-                      <div className="space-y-2.5 max-w-md mx-auto text-left">
-                        <button
-                          type="button"
-                          onClick={() => setAdmPreviewDriverKey('example')}
-                          className="w-full p-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border-2 border-amber-400 flex items-center justify-between gap-3 cursor-pointer transition-all"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-amber-500 text-slate-950 font-heading font-black flex items-center justify-center shrink-0">
-                              M
-                            </div>
-                            <div>
-                              <span className="font-heading font-black text-slate-950 text-sm block">
-                                Motorista Exemplo RACE
-                              </span>
-                              <span className="text-xs text-slate-600 font-medium block">
-                                Chevrolet Onix 2022 • Prata • Visão de demonstração
-                              </span>
-                            </div>
-                          </div>
-                          <span className="text-xs font-heading font-black text-[#ff6a00] shrink-0">
-                            Ver →
-                          </span>
-                        </button>
-
-                        {onlinePreviewDrivers.length > 0 ? (
-                          onlinePreviewDrivers.map((drv) => (
-                            <button
-                              key={drv.id || drv.email}
-                              type="button"
-                              onClick={() => setAdmPreviewDriverKey(String(drv.id || drv.email))}
-                              className="w-full p-4 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-400 flex items-center justify-between gap-3 cursor-pointer transition-all"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                {drv.avatar ? (
-                                  <img
-                                    src={drv.avatar}
-                                    alt={drv.name}
-                                    className="w-10 h-10 rounded-full object-cover border-2 border-emerald-500 shrink-0"
-                                  />
-                                ) : (
-                                  <div className="w-10 h-10 rounded-full bg-emerald-600 text-white font-heading font-black flex items-center justify-center shrink-0">
-                                    {(drv.name || 'M').charAt(0).toUpperCase()}
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <span className="font-heading font-black text-slate-950 text-sm block truncate">
-                                    {drv.name}
-                                  </span>
-                                  <span className="text-xs text-emerald-800 font-semibold block truncate">
-                                    {drv.vehicleModel || 'Veículo'} • {drv.vehiclePlate || 'Sem placa'} • ONLINE
-                                  </span>
-                                </div>
-                              </div>
-                              <span className="text-xs font-heading font-black text-emerald-700 shrink-0">
-                                Ver →
-                              </span>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-600 text-center font-medium">
-                            Nenhum motorista aprovado está online no momento. Use o <strong>Motorista Exemplo RACE</strong> acima ou gerencie cadastros em <strong>Todos os Motoristas</strong>.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {/* Cabeçalho do Motorista em Prévia */}
-                      <div className="bg-white border-2 border-emerald-400 rounded-3xl p-5 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-800 border-2 border-emerald-500 flex items-center justify-center font-heading font-black text-xl shrink-0">
-                            {activePreview.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="font-heading font-black text-slate-950 text-lg">
-                                {activePreview.name}
-                              </h4>
-                              <span className="text-[11px] font-mono font-black px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                {activePreview.statusLabel}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-600 font-semibold mt-0.5">
-                              {activePreview.categoryLabel} &bull; {activePreview.vehicleModel} ({activePreview.vehicleYear}) &bull; {activePreview.vehicleColor} &bull; Placa <strong className="font-mono text-slate-900">{activePreview.vehiclePlate}</strong>
-                            </p>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setAdmPreviewDriverKey('')}
-                          className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-heading font-black text-xs cursor-pointer shrink-0"
-                        >
-                          Trocar motorista
-                        </button>
-                      </div>
-
-                      {/* Resumo de Ganhos que o Motorista Visualiza */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
-                          <span className="text-[11px] font-bold uppercase text-slate-500 block">Repasse Atual</span>
-                          <span className="text-lg font-heading font-black text-emerald-700 block mt-0.5">
-                            {isPromoZeroFee ? '100% Motorista / 0% Race' : '85% Motorista / 15% Race'}
-                          </span>
-                          <span className="text-[11px] text-slate-500 block">
-                            {isPromoZeroFee ? 'Promoção até 17/12' : 'Comissão padrão'}
-                          </span>
-                        </div>
-                        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
-                          <span className="text-[11px] font-bold uppercase text-slate-500 block">Corridas</span>
-                          <span className="text-2xl font-heading font-black text-slate-950 block mt-0.5">
-                            {activePreview.totalRides}
-                          </span>
-                          <span className="text-[11px] text-slate-500 block">Avaliação ⭐ {activePreview.rating.toFixed(1)}</span>
-                        </div>
-                        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
-                          <span className="text-[11px] font-bold uppercase text-slate-500 block">Ganhos na Semana</span>
-                          <span className="text-2xl font-heading font-black text-emerald-700 block mt-0.5">
-                            R$ {activePreview.earningsWeek.toFixed(2).replace('.', ',')}
-                          </span>
-                          <span className="text-[11px] text-slate-500 block">Repasse sexta-feira</span>
-                        </div>
-                      </div>
-
-                      {/* Fluxo de Tela do Motorista (Demonstração Somente Leitura) */}
-                      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-md space-y-3">
-                        <div className="flex items-center gap-2">
-                          <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-                          <h5 className="font-heading font-black text-slate-950 text-sm sm:text-base">
-                            Fluxo exibido ao Motorista Aprovado
-                          </h5>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
-                            <span className="font-heading font-black text-slate-900 block">1. Chamado</span>
-                            <span className="text-slate-600">Recebe alerta sonoro com origem, destino e valor.</span>
-                          </div>
-                          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
-                            <span className="font-heading font-black text-slate-900 block">2. Aceitar / Recusar</span>
-                            <span className="text-slate-600">Escolhe aceitar a corrida e abre o mapa GPS.</span>
-                          </div>
-                          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
-                            <span className="font-heading font-black text-slate-900 block">3. Código 4 dígitos</span>
-                            <span className="text-slate-600">Confirma o código de embarque do passageiro.</span>
-                          </div>
-                          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
-                            <span className="font-heading font-black text-slate-900 block">4. Finalizar</span>
-                            <span className="text-slate-600">Conclui a corrida e recebe na carteira.</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()
+            activeTab === 'admin_drivers' && admDriversSubView === 'driver' ? (
+              <AdminDriverCallSimulator
+                onOpenAllDrivers={() => setAdmDriversSubView('all_drivers')}
+              />
+            ) : null
           ) : isUserDriver ? (
             <DriverPartnerPortal
               currentDriver={currentDriver}
