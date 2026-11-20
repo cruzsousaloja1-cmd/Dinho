@@ -153,13 +153,14 @@ export const normalizeReferralDigits = (raw?: string | null): string => {
 };
 
 export const PUBLIC_RACE_INSTALL_URL = 'https://cruzsousaloja1-cmd.github.io/Dinho/';
+export const PUBLIC_RACE_APK_URL = 'https://cruzsousaloja1-cmd.github.io/Dinho/RACE.apk';
 
 const URL_REFERRAL_STORAGE_KEY = 'race_url_referral_code';
 
 export const buildPersonalReferralLink = (code?: string | null): string => {
   const cleanCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
-  if (!cleanCode) return PUBLIC_RACE_INSTALL_URL;
-  return `${PUBLIC_RACE_INSTALL_URL}?codigo=${encodeURIComponent(cleanCode)}`;
+  if (!cleanCode) return PUBLIC_RACE_APK_URL;
+  return `${PUBLIC_RACE_APK_URL}?codigo=${encodeURIComponent(cleanCode)}`;
 };
 
 export const buildReferralLink = (whatsappOrCode: string): string => {
@@ -167,7 +168,7 @@ export const buildReferralLink = (whatsappOrCode: string): string => {
   if (raw) {
     return buildPersonalReferralLink(raw);
   }
-  return PUBLIC_RACE_INSTALL_URL;
+  return PUBLIC_RACE_APK_URL;
 };
 
 const readReferralCodeFromLocation = (): string => {
@@ -340,7 +341,7 @@ export const buildReferralWhatsappShareText = (
     'Quanto mais você indicar, mais você ganha!',
     '',
     `🔑 CÓDIGO DE CADASTRO: ${cleanCode}`,
-    '👉 Baixe aqui: https://cruzsousaloja1-cmd.github.io/Dinho/',
+    `👉 Baixe aqui: ${buildPersonalReferralLink(cleanCode)}`,
   ].join('\n');
 };
 
@@ -348,26 +349,11 @@ export type PersonalShareRole = 'passenger' | 'driver' | 'motoboy' | 'admin';
 
 export const buildPersonalInstallShareText = (
   code?: string | null,
-  role: PersonalShareRole = 'driver'
+  _role: PersonalShareRole = 'driver'
 ): string => {
   const cleanCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
   const personalLink = buildPersonalReferralLink(cleanCode);
-  if (role === 'passenger') {
-    return [
-      `🏁 RACE Indaiatuba! Use meu código ${cleanCode} e ganhe R$10 de crédito na primeira corrida!`,
-      `Baixa aqui: ${personalLink}`,
-      '👉 Abre o link no Chrome',
-      '👉 Clica em Instalar',
-      `👉 Cadastra com o código ${cleanCode}!`,
-    ].join('\n');
-  }
-  return [
-    `🏁 RACE Indaiatuba! Ganhe 100% das corridas (0% de taxa) até 17/12/2026! Use meu código ${cleanCode} e ganhe bônus!`,
-    `Baixa aqui: ${personalLink}`,
-    '👉 Abre o link no Chrome',
-    '👉 Clica em Instalar',
-    `👉 Cadastra com o código ${cleanCode}!`,
-  ].join('\n');
+  return `🏁 Baixa nosso app RACE Mobilidade e Entregas e aproveita a promoção de lançamento! Sem taxa até 17/12/2026! Baixa aqui: ${personalLink} Código: ${cleanCode}`;
 };
 
 export const buildPersonalInstallWhatsappUrl = (
@@ -383,15 +369,13 @@ export const sharePersonalInstallLink = async (
   role: PersonalShareRole = 'driver'
 ): Promise<'native' | 'cancelled' | 'whatsapp'> => {
   const cleanCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
-  const personalLink = buildPersonalReferralLink(cleanCode);
   const text = buildPersonalInstallShareText(cleanCode, role);
 
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
       await navigator.share({
-        title: `RACE Indaiatuba • Código ${cleanCode}`,
+        title: `RACE Mobilidade e Entregas • Código ${cleanCode}`,
         text,
-        url: personalLink,
       });
       return 'native';
     } catch (err: unknown) {

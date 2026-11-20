@@ -2913,6 +2913,7 @@ export default function App() {
       <ShareModal
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
+        referralCode={currentUser?.codigoIndicacao}
       />
 
       {/* Universal Login & Cadastro Modal */}

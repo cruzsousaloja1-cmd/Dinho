@@ -14,40 +14,37 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { WEEKLY_FEE_TEXT, WEEKLY_FEE_BADGE } from '../config/pricing';
+import {
+  buildPersonalReferralLink,
+  buildPersonalInstallShareText,
+} from '../services/promoService';
 
 interface ShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   appUrl?: string;
+  referralCode?: string | null;
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({
   isOpen,
   onClose,
   appUrl,
+  referralCode,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
 
   if (!isOpen) return null;
 
-  // Resolve target sharing URL
-  const currentUrl =
-    appUrl ||
-    (typeof window !== 'undefined' && window.location.href.startsWith('http')
-      ? window.location.href
-      : 'https://cruzsousaloja1-cmd.github.io/Dinho/');
+  const cleanCode =
+    String(referralCode || '').replace(/\s+/g, '').trim().toUpperCase() || 'JOSE492';
 
-  const shareTitle = 'RACE - Promoção de Lançamento! Código JOSE492';
-  const shareText = 
-`🏁 Conheça a RACE: Mobilidade e Entregas em Indaiatuba!
-⚡ Promoção de Lançamento: 100% das corridas (0% de taxa) até 17/12/2026! Depois volta para 15% de taxa.
-⭐ Modelo justo: ${WEEKLY_FEE_TEXT}
-🚗 Corridas Econômica: R$ 2,50/km | Confort: R$ 3,50/km
-🏍️ Moto Passageiro: R$ 1,80/km | Flash Entrega: R$ 2,00/km
-🔑 Use o código JOSE492 no cadastro!
-🛡️ Suporte 24h & GPS em tempo real!
-👉 Acesse agora: https://cruzsousaloja1-cmd.github.io/Dinho/`;
+  // Resolve target sharing URL (APK direto com código do usuário)
+  const currentUrl = appUrl || buildPersonalReferralLink(cleanCode);
+
+  const shareTitle = `RACE Mobilidade e Entregas • Código ${cleanCode}`;
+  const shareText = buildPersonalInstallShareText(cleanCode);
 
   const handleCopyLink = async () => {
     try {
@@ -78,7 +75,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         await navigator.share({
           title: shareTitle,
           text: shareText,
-          url: currentUrl,
         });
       } catch {
         // User cancelled or unsupported
