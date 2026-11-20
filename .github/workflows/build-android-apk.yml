@@ -1,4 +1,4 @@
-name: Gerar RACE-release.apk Assinado (com.race.app.oficial)
+name: Gerar RACE-release.apk (Release Keystore + zipalign + apksigner)
 
 on:
   push:
@@ -26,6 +26,9 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Remover qualquer debug.keystore do ambiente (garantir 100% chave Release)
+        run: rm -f "$HOME/.android/debug.keystore"
+
       - name: Instalar dependências do projeto
         run: npm install --legacy-peer-deps
 
@@ -47,31 +50,7 @@ jobs:
         run: |
           npx @capacitor/assets generate --android --iconBackgroundColor '#000000' --iconBackgroundColorDark '#000000' --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000'
 
-      - name: Restaurar keystore oficial Release do com.race.app.oficial
-        uses: actions/cache@v4
-        with:
-          path: race-keystore
-          key: race-oficial-release-keystore-v2
-
-      - name: Preparar keystore Release RSA 2048 (SHA256withRSA)
-        run: |
-          mkdir -p race-keystore
-          if [ ! -f race-keystore/race-oficial-release.jks ]; then
-            keytool -genkeypair -v \
-              -keystore race-keystore/race-oficial-release.jks \
-              -storetype PKCS12 \
-              -alias raceoficial \
-              -keyalg RSA \
-              -keysize 2048 \
-              -sigalg SHA256withRSA \
-              -validity 10000 \
-              -storepass RaceOficial2026Release \
-              -keypass RaceOficial2026Release \
-              -dname "CN=RACE Oficial, OU=Mobile, O=RACE Indaiatuba, L=Indaiatuba, ST=SP, C=BR"
-          fi
-          ls -lh race-keystore/race-oficial-release.jks
-
-      - name: Configurar permissões, package com.race.app.oficial e assinatura Release no Gradle
+      - name: Configurar permissões, versionCode e buildTypes.release limpo (sem debuggable)
         env:
           BUILD_RUN_NUMBER: ${{ github.run_number }}
         run: |
@@ -99,43 +78,22 @@ jobs:
               )
               manifest_path.write_text(manifest, encoding='utf-8')
 
-          # 2. Configurar signingConfigs.release + versionCode + applicationId com.race.app.oficial no build.gradle
+          # 2. Garantir package com.race.app.oficial, versionCode incremental e debuggable false
           gradle_path = Path('android/app/build.gradle')
           gradle = gradle_path.read_text(encoding='utf-8')
-          keystore_abs = str(Path('race-keystore/race-oficial-release.jks').resolve())
-          run_num = max(10, int(os.environ.get('BUILD_RUN_NUMBER', '10')))
+          run_num = max(20, int(os.environ.get('BUILD_RUN_NUMBER', '20')))
 
-          assert 'com.race.app.oficial' in gradle, 'ERRO: applicationId com.race.app.oficial não encontrado no build.gradle!'
-
+          assert 'com.race.app.oficial' in gradle, 'ERRO: applicationId com.race.app.oficial não encontrado!'
           gradle = re.sub(r'versionCode\s+\d+', f'versionCode {run_num}', gradle, count=1)
-          gradle = re.sub(r'versionName\s+"[^"]+"', f'versionName "2.0.{run_num}"', gradle, count=1)
+          gradle = re.sub(r'versionName\s+"[^"]+"', f'versionName "2.1.{run_num}"', gradle, count=1)
 
-          signing_block = f'''    signingConfigs {{
-                  release {{
-                      storeFile file("{keystore_abs}")
-                      storePassword "RaceOficial2026Release"
-                      keyAlias "raceoficial"
-                      keyPassword "RaceOficial2026Release"
-                      enableV1Signing true
-                      enableV2Signing true
-                      enableV3Signing true
-                  }}
-              }}
-              buildTypes {{'''
-
-          assert 'buildTypes {' in gradle, 'ERRO: bloco buildTypes não encontrado no build.gradle!'
-          gradle = gradle.replace('buildTypes {', signing_block, 1)
-
-          assert 'minifyEnabled false' in gradle, 'ERRO: minifyEnabled false não encontrado no build.gradle!'
+          assert 'minifyEnabled false' in gradle, 'ERRO: minifyEnabled false não encontrado!'
           gradle = gradle.replace(
               'minifyEnabled false',
-              'minifyEnabled false\n            debuggable false\n            signingConfig signingConfigs.release',
+              'minifyEnabled false\n            debuggable false',
               1,
           )
-
           gradle_path.write_text(gradle, encoding='utf-8')
-          print('--- android/app/build.gradle configurado ---')
-          print(gradle)
           EOF
 
       - name: Aceitar licenças Android SDK (se necessário)
@@ -145,47 +103,104 @@ jobs:
             yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
           fi
 
-      - name: Compilar RACE-release.apk ASSINADO via Gradle (assembleRelease)
+      - name: Restaurar keystore Release JKS do RACE (mantém assinatura consistente)
+        uses: actions/cache@v4
+        with:
+          path: race-keystore
+          key: race-oficial-release-jks-v3
+
+      - name: Criar keystore de Release novo (JKS RSA 2048 SHA256withRSA - nunca debug.keystore)
+        run: |
+          mkdir -p race-keystore
+          if [ ! -f race-keystore/race-release.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore race-keystore/race-release.keystore \
+              -storetype JKS \
+              -alias raceoficial \
+              -keyalg RSA \
+              -keysize 2048 \
+              -sigalg SHA256withRSA \
+              -validity 10000 \
+              -storepass RaceOficial2026Key \
+              -keypass RaceOficial2026Key \
+              -dname "CN=RACE Oficial, OU=Mobile, O=RACE Indaiatuba, L=Indaiatuba, ST=SP, C=BR"
+          fi
+          keytool -list -v -keystore race-keystore/race-release.keystore -storepass RaceOficial2026Key -alias raceoficial | head -n 15
+
+      - name: Compilar APK RELEASE sem assinatura via Gradle (assembleRelease)
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease
           ls -lh app/build/outputs/apk/release/
 
-      - name: Verificar pacote com.race.app.oficial, ausência de debuggable e assinatura v1+v2+v3
+      - name: Alinhar (zipalign -p 4), assinar com Release Keystore (apksigner v1+v2) e verificar RACE-release.apk
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)"
-          echo "Build-tools: $BUILD_TOOLS"
+          if [ -z "$BUILD_TOOLS" ] || [ ! -x "$BUILD_TOOLS/apksigner" ] || [ ! -x "$BUILD_TOOLS/zipalign" ]; then
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
+            BUILD_TOOLS="$SDK_ROOT/build-tools/35.0.0"
+          fi
+          echo "Build-tools utilizado: $BUILD_TOOLS"
 
-          RELEASE_APK="android/app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$RELEASE_APK" ]; then
-            echo "ERRO: app-release.apk assinado não foi gerado!"
-            ls -la android/app/build/outputs/apk/release/
+          UNSIGNED_APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n 1)"
+          if [ -z "$UNSIGNED_APK" ] || [ ! -f "$UNSIGNED_APK" ]; then
+            echo "ERRO: APK release não encontrado em android/app/build/outputs/apk/release"
+            exit 1
+          fi
+          echo "APK release gerado pelo Gradle: $UNSIGNED_APK"
+
+          mkdir -p apk-output
+          rm -f apk-output/RACE-aligned.apk apk-output/RACE-release.apk apk-output/RACE-release.apk.idsig
+
+          echo "=== 1. Executando zipalign -v -f -p 4 ==="
+          "$BUILD_TOOLS/zipalign" -v -f -p 4 "$UNSIGNED_APK" apk-output/RACE-aligned.apk
+
+          echo "=== 2. Assinando com apksigner (Release Keystore JKS, v1 + v2) ==="
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks race-keystore/race-release.keystore \
+            --ks-type JKS \
+            --ks-key-alias raceoficial \
+            --ks-pass pass:RaceOficial2026Key \
+            --key-pass pass:RaceOficial2026Key \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled false \
+            --out apk-output/RACE-release.apk \
+            apk-output/RACE-aligned.apk
+
+          rm -f apk-output/RACE-aligned.apk apk-output/RACE-release.apk.idsig
+
+          echo "=== 3. Verificando alinhamento (zipalign -c -p 4) ==="
+          "$BUILD_TOOLS/zipalign" -c -p 4 apk-output/RACE-release.apk
+
+          echo "=== 4. Verificando assinatura Release (apksigner verify) ==="
+          VERIFY_OUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs apk-output/RACE-release.apk)"
+          echo "$VERIFY_OUT"
+          echo "$VERIFY_OUT" | grep -q "Verified using v1 scheme (JAR signing): true"
+          echo "$VERIFY_OUT" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
+          echo "$VERIFY_OUT" | grep -q "CN=RACE Oficial"
+          if echo "$VERIFY_OUT" | grep -qi "Android Debug"; then
+            echo "ERRO CRÍTICO: APK está assinado com Android Debug!"
             exit 1
           fi
 
-          mkdir -p apk-output
-          cp "$RELEASE_APK" apk-output/RACE-release.apk
-
-          echo "=== Verificando assinatura (apksigner verify) ==="
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs apk-output/RACE-release.apk
-
-          echo "=== Verificando metadados do APK (aapt2 dump badging) ==="
+          echo "=== 5. Verificando pacote com.race.app.oficial e ausência de debuggable (aapt2) ==="
           BADGING="$("$BUILD_TOOLS/aapt2" dump badging apk-output/RACE-release.apk)"
           echo "$BADGING" | head -n 30
-
           echo "$BADGING" | grep -q "package: name='com.race.app.oficial'"
           echo "$BADGING" | grep -q "application-label:'RACE'"
           if echo "$BADGING" | grep -q "application-debuggable"; then
-            echo "ERRO: APK ainda está marcado como debuggable!"
+            echo "ERRO CRÍTICO: APK está marcado como debuggable!"
             exit 1
           fi
           if echo "$BADGING" | grep -q "testOnly"; then
-            echo "ERRO: APK está marcado como testOnly!"
+            echo "ERRO CRÍTICO: APK está marcado como testOnly!"
             exit 1
           fi
+
           ls -lh apk-output/RACE-release.apk
 
       - name: Publicar RACE-release.apk assinado em Artifacts
@@ -199,13 +214,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: race-apk-latest
-          name: RACE-release.apk Oficial (com.race.app.oficial)
+          name: RACE-release.apk Oficial (Release Keystore - com.race.app.oficial)
           body: |
-            APK **RELEASE assinado** diretamente pelo Android Gradle Plugin (`signingConfigs.release` + verificação `apksigner` v1/v2/v3 + `aapt2`) para o novo pacote **`com.race.app.oficial`** — sem conflito com nenhum APK antigo do AppsGeyser, sem debug, sem propaganda.
+            APK **RELEASE assinado com Release Keystore dedicado** (JKS RSA 2048 `SHA256withRSA`, `zipalign -p 4`, `apksigner` v1 + v2, sem `debug.keystore`, sem `debuggable`) para **`com.race.app.oficial`** — 100% limpo, sem AppsGeyser e sem propaganda.
             - Arquivo: **RACE-release.apk**
             - Package / applicationId: **`com.race.app.oficial`**
             - Nome do app: **RACE**
-            - Ícone: **Círculo preto com borda vermelha grossa, R estilizado e RACE em vermelho**
+            - Ícone: **Círculo preto com borda vermelha grossa, R estilizado e RACE em vermelho (8-bit PNG32)**
             - Abre direto no app RACE em tela cheia
           files: apk-output/RACE-release.apk
           make_latest: true
