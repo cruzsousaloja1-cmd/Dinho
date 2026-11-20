@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { Share2, Copy, Check, MessageCircle, Link2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Copy, Check, MessageCircle, Link2, Download } from 'lucide-react';
 import {
   buildPersonalReferralLink,
   buildPersonalInstallShareText,
-  buildPersonalInstallWhatsappUrl,
-  sharePersonalInstallLink,
+  shareReferralWithLogo,
+  getRaceLogoPublicUrl,
+  preloadRaceLogoBlob,
+  downloadRaceLogoPng,
   PersonalShareRole,
+  ReferralAudienceTab,
 } from '../services/promoService';
 
 interface PersonalReferralShareBoxProps {
@@ -13,19 +16,34 @@ interface PersonalReferralShareBoxProps {
   role: PersonalShareRole;
 }
 
+const AUDIENCE_TABS: { id: ReferralAudienceTab; label: string }[] = [
+  { id: 'passenger', label: 'Passageiro' },
+  { id: 'driver', label: 'Motorista' },
+  { id: 'motoboy', label: 'Motoboy' },
+];
+
 export const PersonalReferralShareBox: React.FC<PersonalReferralShareBoxProps> = ({
   code,
   role,
 }) => {
+  const initialTab: ReferralAudienceTab =
+    role === 'motoboy' ? 'motoboy' : role === 'driver' ? 'driver' : 'passenger';
+
+  const [activeTab, setActiveTab] = useState<ReferralAudienceTab>(initialTab);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [showLogoDownloadHint, setShowLogoDownloadHint] = useState(false);
+  const [logoSaved, setLogoSaved] = useState(false);
+
+  useEffect(() => {
+    preloadRaceLogoBlob().catch(() => {});
+  }, []);
 
   const cleanCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
   if (!cleanCode) return null;
 
+  const raceLogoUrl = getRaceLogoPublicUrl();
   const personalLink = buildPersonalReferralLink(cleanCode);
-  const shareMessage = buildPersonalInstallShareText(cleanCode, role);
-  const whatsappUrl = buildPersonalInstallWhatsappUrl(cleanCode, role);
+  const shareMessage = buildPersonalInstallShareText(cleanCode, activeTab);
 
   const handleCopyLink = async () => {
     try {
@@ -48,31 +66,67 @@ export const PersonalReferralShareBox: React.FC<PersonalReferralShareBoxProps> =
     }
   };
 
-  const handleShareNative = async () => {
-    const res = await sharePersonalInstallLink(cleanCode, role);
-    if (res === 'native') {
-      setShareFeedback('Compartilhamento aberto com seu código e link!');
-      setTimeout(() => setShareFeedback(null), 3000);
-    } else if (res === 'whatsapp') {
-      setShareFeedback('WhatsApp aberto com seu código e link!');
-      setTimeout(() => setShareFeedback(null), 3000);
+  const handleShareWhatsappWithLogo = async () => {
+    try {
+      const res = await shareReferralWithLogo(cleanCode, activeTab);
+      if (res === 'whatsapp_with_download') {
+        setShowLogoDownloadHint(true);
+      }
+    } catch {
+      // ignore share errors
     }
   };
 
   return (
-    <div className="bg-black/55 border-2 border-red-500/80 rounded-2xl p-4 sm:p-5 text-left space-y-3.5 shadow-xl">
-      {/* Seu código + Seu link */}
+    <div className="bg-zinc-950 border-2 border-red-600 rounded-3xl p-5 sm:p-6 text-left space-y-4 shadow-2xl">
+      {/* Logo RACE no topo (círculo preto, borda vermelha grossa, RACE vermelho) */}
+      <div className="flex flex-col items-center gap-2 text-center">
+        <img
+          src={raceLogoUrl}
+          alt="RACE - Mobilidade e Entregas"
+          onLoad={() => {
+            preloadRaceLogoBlob().catch(() => {});
+          }}
+          className="w-28 h-28 sm:w-32 sm:h-32 rounded-full object-contain bg-black shadow-xl"
+        />
+        <span className="text-[11px] font-black uppercase tracking-widest text-red-400">
+          Compartilhar RACE • App Oficial (APK)
+        </span>
+      </div>
+
+      {/* 3 Abas: Passageiro | Motorista | Motoboy */}
+      <div className="grid grid-cols-3 gap-1.5 bg-black/70 p-1.5 rounded-2xl border border-white/15">
+        {AUDIENCE_TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`min-h-[42px] px-2 py-2 rounded-xl font-heading font-black text-xs sm:text-sm transition-all cursor-pointer ${
+                isActive
+                  ? 'bg-red-600 text-white shadow-md border border-red-400'
+                  : 'bg-transparent text-zinc-300 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Seu código + Seu link (APK direto) */}
       <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-black/50 border border-white/15 rounded-xl px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-black/70 border border-white/15 rounded-xl px-3.5 py-2.5">
           <span className="text-xs sm:text-sm font-bold text-amber-200">
             Seu código:
           </span>
-          <span className="font-mono font-black text-base sm:text-lg tracking-wider text-white select-all">
+          <span className="font-mono font-black text-lg sm:text-xl tracking-wider text-white select-all">
             {cleanCode}
           </span>
         </div>
 
-        <div className="bg-black/50 border border-white/15 rounded-xl px-3.5 py-2.5 space-y-1">
+        <div className="bg-black/70 border border-white/15 rounded-xl px-3.5 py-2.5 space-y-1">
           <span className="text-xs font-bold text-amber-200 flex items-center gap-1.5">
             <Link2 className="w-3.5 h-3.5 text-red-400 shrink-0" />
             <span>Seu link:</span>
@@ -83,57 +137,74 @@ export const PersonalReferralShareBox: React.FC<PersonalReferralShareBoxProps> =
         </div>
       </div>
 
-      {/* Botão GRANDE VERMELHO: COMPARTILHAR MEU LINK */}
-      <button
-        type="button"
-        onClick={handleShareNative}
-        className="w-full min-h-[60px] py-3.5 px-5 rounded-2xl bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-heading font-black text-base sm:text-lg uppercase tracking-wide flex items-center justify-center gap-2.5 shadow-xl border-2 border-red-400 transition-all cursor-pointer"
-      >
-        <Share2 className="w-6 h-6 shrink-0" />
-        <span>COMPARTILHAR MEU LINK</span>
-      </button>
-
-      {shareFeedback && (
-        <p className="text-xs font-bold text-emerald-300 text-center">
-          {shareFeedback}
+      {/* Prévia da mensagem curta da aba selecionada */}
+      <div className="bg-black/60 border border-white/15 rounded-xl p-3.5">
+        <p className="text-xs sm:text-sm text-zinc-100 font-medium break-words leading-relaxed">
+          {shareMessage}
         </p>
-      )}
+      </div>
 
-      {/* Botões Copiar link + Compartilhar no WhatsApp */}
+      {/* SÓ 2 BOTÕES: [Copiar link] e [Compartilhar no WhatsApp] */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <button
           type="button"
           onClick={handleCopyLink}
-          className="w-full min-h-[48px] py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 active:scale-[0.98] text-slate-950 font-heading font-black text-sm flex items-center justify-center gap-2 shadow cursor-pointer transition-all"
+          className="w-full min-h-[52px] py-3 px-4 rounded-xl bg-white hover:bg-slate-100 active:scale-[0.98] text-slate-950 font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all"
         >
           {copiedLink ? (
             <>
-              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+              <Check className="w-5 h-5 text-emerald-600 shrink-0" />
               <span className="text-emerald-700">Link copiado!</span>
             </>
           ) : (
             <>
-              <Copy className="w-4 h-4 shrink-0" />
+              <Copy className="w-5 h-5 shrink-0" />
               <span>Copiar link</span>
             </>
           )}
         </button>
 
-        <a
-          href={whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full min-h-[48px] py-2.5 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] active:scale-[0.98] text-white font-heading font-black text-sm flex items-center justify-center gap-2 shadow cursor-pointer transition-all no-underline"
+        <button
+          type="button"
+          onClick={handleShareWhatsappWithLogo}
+          className="w-full min-h-[52px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] active:scale-[0.98] text-white font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all"
         >
-          <MessageCircle className="w-4 h-4 shrink-0" />
+          <MessageCircle className="w-5 h-5 shrink-0" />
           <span>Compartilhar no WhatsApp</span>
-        </a>
+        </button>
       </div>
 
-      {/* Prévia da mensagem automática do usuário logado */}
-      <p className="text-[11px] text-amber-100/95 font-medium whitespace-pre-line break-words bg-black/40 rounded-xl p-3 border border-white/10 leading-relaxed">
-        {shareMessage}
-      </p>
+      {showLogoDownloadHint && (
+        <div className="bg-black/75 border border-amber-400/60 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="text-amber-100 font-medium">
+            Se o WhatsApp não anexou a imagem automaticamente, baixe o logo:
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              downloadRaceLogoPng()
+                .then(() => {
+                  setLogoSaved(true);
+                  setTimeout(() => setLogoSaved(false), 3000);
+                })
+                .catch(() => {});
+            }}
+            className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            {logoSaved ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                <span>Logo salvo!</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                <span>Baixar logo</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 };

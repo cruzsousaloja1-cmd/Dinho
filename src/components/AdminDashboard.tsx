@@ -4809,82 +4809,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="space-y-6 animate-fade-in">
           {/* BLOCO DO PRÓPRIO ADM: CÓDIGO + COMPARTILHAR + MEUS BENEFICIADOS / MINHAS INDICAÇÕES */}
           <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <span className="text-[11px] font-black uppercase tracking-widest bg-black/25 px-3 py-1 rounded-full inline-block">
-                  Indicar e Ganhar (ADM) &bull; Código: {admReferralCode}
-                </span>
-                <h3 className="font-heading font-black text-xl sm:text-2xl flex items-center gap-2">
-                  <Gift className="w-6 h-6" />
-                  <span>Seu Código & Minhas Indicações ({admReferralCode})</span>
-                </h3>
-                <p className="text-xs sm:text-sm text-amber-50 font-medium">
-                  Compartilhe com a logo oficial RACE + acompanhe seus próprios beneficiados R$50 (Laranja) e R$10 (Azul) abaixo.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <img
-                  src={getRaceLogoPublicUrl()}
-                  alt="RACE Indaiatuba"
-                  className="w-14 h-14 rounded-2xl object-contain bg-black border-2 border-yellow-400"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      navigator.clipboard.writeText(admReferralCode);
-                    } catch {}
-                    setCopiedAdmCode(true);
-                    setTimeout(() => setCopiedAdmCode(false), 2500);
-                  }}
-                  className="px-3.5 py-2.5 rounded-xl bg-white text-orange-800 hover:bg-amber-50 font-heading font-black text-xs inline-flex items-center gap-1.5 cursor-pointer shadow"
-                >
-                  {copiedAdmCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                  <span>{copiedAdmCode ? 'Copiado!' : 'Copiar código'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    shareReferralWithLogo(admReferralCode)
-                      .then((res) => {
-                        if (res === 'whatsapp_with_download') {
-                          setShowAdmLogoFallback(true);
-                        }
-                      })
-                      .catch(() => {});
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>Compartilhar WhatsApp</span>
-                </button>
-              </div>
+            <div className="space-y-1">
+              <span className="text-[11px] font-black uppercase tracking-widest bg-black/25 px-3 py-1 rounded-full inline-block">
+                Indicar e Ganhar (ADM) &bull; Código: {admReferralCode}
+              </span>
+              <h3 className="font-heading font-black text-xl sm:text-2xl flex items-center gap-2">
+                <Gift className="w-6 h-6" />
+                <span>Seu Código & Minhas Indicações ({admReferralCode})</span>
+              </h3>
             </div>
-
-            {showAdmLogoFallback && (
-              <div className="bg-black/35 border border-yellow-400/70 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
-                <span className="text-amber-100 font-semibold">
-                  Baixe a logo PNG oficial caso o navegador não anexe direto no WhatsApp:
-                </span>
-                <button
-                  type="button"
-                  onClick={() => downloadRaceLogoPng().catch(() => {})}
-                  className="px-3.5 py-1.5 rounded-lg bg-black border border-yellow-400 text-white font-black inline-flex items-center gap-1.5 cursor-pointer shrink-0"
-                >
-                  <Download className="w-4 h-4 text-yellow-400" />
-                  <span>Baixar Logo</span>
-                </button>
-              </div>
-            )}
 
             <PersonalReferralShareBox
               code={admReferralCode}
               role="admin"
             />
-
-            <p className="text-[11px] text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 leading-relaxed">
-              {buildReferralWhatsappShareText(admReferralCode)}
-            </p>
           </div>
 
           <MyReferralsControlSection

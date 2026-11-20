@@ -2953,161 +2953,18 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                     </div>
                   </div>
 
-                  {/* Código Grande em Destaque + Logo RACE */}
-                  <div className="bg-[#9a3412] border-2 border-yellow-400 rounded-2xl p-5 sm:p-6 text-center space-y-4 shadow-xl">
-                    <div className="flex flex-col items-center gap-2">
-                      <img
-                        src={raceLogoUrl}
-                        alt="RACE - Mobilidade e Entregas Indaiatuba - SP"
-                        onLoad={() => {
-                          preloadRaceLogoBlob().catch(() => {});
-                        }}
-                        className="w-40 h-40 sm:w-48 sm:h-48 rounded-3xl object-contain border-2 border-yellow-400 shadow-2xl mx-auto bg-black"
-                      />
-                    </div>
+                  {/* Bloco único de compartilhamento com logo RACE, 3 abas e link APK */}
+                  {myPersonalCode && (
+                    <PersonalReferralShareBox
+                      code={myPersonalCode}
+                      role={currentUser?.role === 'motoboy' ? 'motoboy' : 'driver'}
+                    />
+                  )}
 
-                    <DriverBenefitsBox />
-
-                    <span className="text-[14px] font-bold uppercase tracking-widest text-amber-100 block">
-                      SEU CÓDIGO DE INDICAÇÃO
-                    </span>
-                    <div className="text-[40px] leading-none font-mono font-bold tracking-[0.16em] text-white text-center select-all py-2 break-all">
-                      {myPersonalCode || '...'}
-                    </div>
-
-                    {myPersonalCode && (
-                      <PersonalReferralShareBox
-                        code={myPersonalCode}
-                        role="driver"
-                      />
-                    )}
-
-                    <div className="flex flex-col gap-3 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!myPersonalCode) return;
-                          try {
-                            navigator.clipboard.writeText(myPersonalCode);
-                          } catch {}
-                          setCopiedDriverCode(true);
-                          setTimeout(() => setCopiedDriverCode(false), 3000);
-                        }}
-                        className="w-full min-h-[54px] py-3.5 px-5 rounded-xl bg-white text-orange-800 hover:bg-amber-50 font-heading font-black text-base sm:text-lg flex items-center justify-center gap-2.5 cursor-pointer shadow-lg transition-all active:scale-[0.98]"
-                      >
-                        {copiedDriverCode ? <Check className="w-5 h-5 text-emerald-600" /> : <Copy className="w-5 h-5" />}
-                        <span>{copiedDriverCode ? 'Código copiado!' : 'Copiar código'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          shareReferralWithLogo(myPersonalCode)
-                            .then((res) => {
-                              if (res === 'whatsapp_with_download') {
-                                setShowDownloadLogoFallback(true);
-                                if (onTriggerToast) {
-                                  onTriggerToast(
-                                    'WhatsApp aberto com a mensagem!',
-                                    'Clique em "Baixar Logo" abaixo para salvar a imagem PNG e anexar no WhatsApp.',
-                                    'ride'
-                                  );
-                                }
-                              }
-                            })
-                            .catch(() => {});
-                        }}
-                        className="w-full min-h-[60px] py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-heading font-bold text-[18px] leading-tight flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98] cursor-pointer"
-                      >
-                        <MessageCircle className="w-6 h-6 shrink-0" />
-                        <span>Compartilhar para Motorista, Motoboy e Passageiros</span>
-                      </button>
-
-                      {showDownloadLogoFallback && (
-                        <div className="bg-black/45 border border-yellow-400/70 rounded-xl p-3.5 space-y-2.5 text-center">
-                          <p className="text-xs font-semibold text-amber-100 leading-snug">
-                            Seu celular/navegador não permitiu enviar a imagem direto. Baixe a logo abaixo para anexar manualmente no WhatsApp:
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              downloadRaceLogoPng()
-                                .then(() => {
-                                  setLogoDownloadedNotice(true);
-                                  setTimeout(() => setLogoDownloadedNotice(false), 3500);
-                                })
-                                .catch(() => {});
-                            }}
-                            className="w-full min-h-[50px] py-2.5 px-4 rounded-xl bg-black hover:bg-zinc-900 border-2 border-yellow-400 text-white font-heading font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] cursor-pointer"
-                          >
-                            {logoDownloadedNotice ? (
-                              <>
-                                <Check className="w-5 h-5 text-emerald-400" />
-                                <span>Logo baixada! Anexe no WhatsApp</span>
-                              </>
-                            ) : (
-                              <>
-                                <Download className="w-5 h-5 text-yellow-400" />
-                                <span>Baixar Logo</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <p className="text-xs text-amber-100/95 font-medium break-words whitespace-pre-line bg-black/30 rounded-xl p-3 border border-white/15 text-left leading-relaxed">
-                      {unifiedShareText}
+                  <div className="bg-black/40 border border-yellow-400/60 rounded-xl p-3 text-center">
+                    <p className="text-xs sm:text-sm font-black text-yellow-300 tracking-wide">
+                      SEM LIMITE DE INDICAÇÃO ATÉ 17/12/2026 - Quanto mais você indicar, mais você ganha!
                     </p>
-
-                    <div className="bg-black/40 border border-yellow-400/60 rounded-xl p-3 text-center">
-                      <p className="text-xs sm:text-sm font-black text-yellow-300 tracking-wide">
-                        SEM LIMITE DE INDICAÇÃO ATÉ 17/12/2026 - Quanto mais você indicar, mais você ganha!
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-black/20 border border-white/20 rounded-2xl p-4 space-y-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-100 block">
-                      Link Direto com Seu Código Preenchido
-                    </span>
-                    <div className="bg-black/40 rounded-xl px-3.5 py-2.5 font-mono text-xs sm:text-sm text-white break-all border border-white/15">
-                      {myReferralLink}
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          try {
-                            navigator.clipboard.writeText(myReferralLink);
-                          } catch {}
-                          setCopiedReferralLink(true);
-                          setTimeout(() => setCopiedReferralLink(false), 3000);
-                        }}
-                        className="flex-1 py-2.5 px-4 rounded-xl bg-black/30 hover:bg-black/45 border border-white/30 text-white font-heading font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
-                      >
-                        {copiedReferralLink ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
-                        <span>{copiedReferralLink ? 'Link copiado!' : 'Copiar meu link'}</span>
-                      </button>
-
-                      {myWhatsappCode && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            try {
-                              navigator.clipboard.writeText(myWhatsappCode);
-                            } catch {}
-                            setCopiedReferralWhatsapp(true);
-                            setTimeout(() => setCopiedReferralWhatsapp(false), 3000);
-                          }}
-                          className="py-2.5 px-4 rounded-xl bg-black/30 hover:bg-black/45 border border-white/30 text-white font-heading font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
-                        >
-                          {copiedReferralWhatsapp ? <Check className="w-4 h-4 text-emerald-300" /> : <Phone className="w-4 h-4" />}
-                          <span>{copiedReferralWhatsapp ? 'WhatsApp copiado!' : 'Copiar WhatsApp'}</span>
-                        </button>
-                      )}
-                    </div>
                   </div>
                 </div>
 

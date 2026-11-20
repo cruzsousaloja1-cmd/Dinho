@@ -311,54 +311,37 @@ export const generateReferralCodeCandidate = (name?: string | null): string => {
   return `${prefix}${digits}`;
 };
 
-export const buildReferralWhatsappShareText = (
-  code?: string | null,
-  _options?: { isDriver?: boolean }
-): string => {
-  const rawCode = String(code || '').trim().toUpperCase();
-  const cleanCode = !rawCode || rawCode === 'JOSE367' ? 'JOSE492' : rawCode;
-  return [
-    '🏁 LANÇAMENTO RACE!',
-    'Sem taxa (0%) até 17/12/2026!',
-    'Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha!',
-    '',
-    '━━━━━━━━━━━━━',
-    '🚗 PARA VOCÊ QUE VAI CADASTRAR COMO MOTORISTA OU MOTOBOY',
-    '✅ Ganhe 100% das corridas (0% de taxa) até 17/12/2026',
-    '✅ Depois volta para 15% de taxa - você fica com 85%',
-    '✅ Pagamento toda sexta-feira via PIX',
-    '',
-    '━━━━━━━━━━━━━',
-    '👥 PARA VOCÊ QUE INDICA MOTORISTA OU MOTOBOY',
-    '💰 Ganhe R$50 por cada Motorista OU Motoboy que fizer 10 corridas até 17/12',
-    '',
-    '━━━━━━━━━━━━━',
-    '🧑 PARA VOCÊ QUE INDICA PASSAGEIRO',
-    '🎁 Ganhe R$10 de crédito por cada passageiro que fizer a 1ª corrida',
-    '',
-    '━━━━━━━━━━━━━',
-    '♾️ SEM LIMITE DE INDICAÇÃO ATÉ 17/12/2026',
-    'Quanto mais você indicar, mais você ganha!',
-    '',
-    `🔑 CÓDIGO DE CADASTRO: ${cleanCode}`,
-    `👉 Baixe aqui: ${buildPersonalReferralLink(cleanCode)}`,
-  ].join('\n');
-};
-
-export type PersonalShareRole = 'passenger' | 'driver' | 'motoboy' | 'admin';
+export type ReferralAudienceTab = 'passenger' | 'driver' | 'motoboy';
+export type PersonalShareRole = ReferralAudienceTab | 'admin';
 
 export const buildPersonalInstallShareText = (
   code?: string | null,
-  _role: PersonalShareRole = 'driver'
+  role: PersonalShareRole = 'passenger'
 ): string => {
-  const cleanCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
-  const personalLink = buildPersonalReferralLink(cleanCode);
-  return `🏁 Baixa nosso app RACE Mobilidade e Entregas e aproveita a promoção de lançamento! Sem taxa até 17/12/2026! Baixa aqui: ${personalLink} Código: ${cleanCode}`;
+  const rawCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
+  const cleanCode = !rawCode || rawCode === 'JOSE367' ? 'JOSE492' : rawCode;
+
+  if (role === 'motoboy') {
+    return `🏁 Baixa nosso app RACE Mobilidade e Entregas e vem fazer entregas e corridas! 🎉 Sem taxa até 17/12/2026! 👉 Baixa aqui: ${PUBLIC_RACE_APK_URL} 🔑 Código: ${cleanCode} Vem ser RACE! 🔴⚫`;
+  }
+  if (role === 'driver') {
+    return `🏁 Baixa nosso app RACE Mobilidade e Entregas e vem ganhar 100%! 🎉 Sem taxa até 17/12/2026! Depois só 15%! 👉 Baixa aqui: ${PUBLIC_RACE_APK_URL} 🔑 Código: ${cleanCode} Vem ser RACE! 🔴⚫`;
+  }
+  return `🏁 Baixa nosso app RACE Mobilidade e Entregas e aproveita a promoção de lançamento! 🎉 Sem taxa até 17/12/2026! 💰 Ganhe R$10 na 1ª corrida! 👉 Baixa aqui: ${PUBLIC_RACE_APK_URL} 🔑 Código: ${cleanCode} Vem ser RACE! 🔴⚫`;
+};
+
+export const buildReferralWhatsappShareText = (
+  code?: string | null,
+  options?: { isDriver?: boolean; audience?: ReferralAudienceTab }
+): string => {
+  const audience: ReferralAudienceTab =
+    options?.audience || (options?.isDriver ? 'driver' : 'passenger');
+  return buildPersonalInstallShareText(code, audience);
 };
 
 export const buildPersonalInstallWhatsappUrl = (
   code?: string | null,
-  role: PersonalShareRole = 'driver'
+  role: PersonalShareRole = 'passenger'
 ): string => {
   const text = buildPersonalInstallShareText(code, role);
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -366,7 +349,7 @@ export const buildPersonalInstallWhatsappUrl = (
 
 export const sharePersonalInstallLink = async (
   code?: string | null,
-  role: PersonalShareRole = 'driver'
+  role: PersonalShareRole = 'passenger'
 ): Promise<'native' | 'cancelled' | 'whatsapp'> => {
   const cleanCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
   const text = buildPersonalInstallShareText(cleanCode, role);
@@ -524,10 +507,11 @@ const openExternalUrlSafely = (url: string) => {
 export type ShareWithLogoResult = 'native_with_logo' | 'cancelled' | 'whatsapp_with_download';
 
 export const shareReferralWithLogo = async (
-  code?: string | null
+  code?: string | null,
+  audience: ReferralAudienceTab = 'passenger'
 ): Promise<ShareWithLogoResult> => {
-  const text = buildReferralWhatsappShareText(code);
-  const whatsappUrl = buildReferralWhatsappShareUrl(code);
+  const text = buildPersonalInstallShareText(code, audience);
+  const whatsappUrl = buildPersonalInstallWhatsappUrl(code, audience);
   const logoBlob = cachedRaceLogoBlob || (await preloadRaceLogoBlob());
 
   if (
@@ -551,7 +535,7 @@ export const shareReferralWithLogo = async (
       if (err instanceof DOMException && err.name === 'AbortError') {
         return 'cancelled';
       }
-      // Fall through to WhatsApp message + Baixar Logo button
+      // Fall through to WhatsApp message + Baixar Logo fallback
     }
   }
 
