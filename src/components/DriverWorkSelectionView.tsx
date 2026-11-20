@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AppUser, Driver, VehicleCategory, UserTipo } from '../types';
 import {
   Car,
@@ -16,6 +16,7 @@ import {
   Camera,
   LogOut,
   User,
+  Bell,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveUserAccount, isAppUserAdmin } from '../services/userService';
@@ -31,6 +32,7 @@ import { isBasicPopularOneLiterModel } from '../services/vehicleValidationServic
 import { LegalConsentSection } from './LegalConsentSection';
 import { LaunchPromoBanner } from './LaunchPromoBanner';
 import { validateCPF, validateCNH, validatePlate } from '../utils/documentValidation';
+import { evaluateConductorMissingFields } from '../services/conductorRegistrationCheckService';
 
 export type WorkCategoryKey =
   | 'motorista_economico'
@@ -224,6 +226,16 @@ interface DriverWorkSelectionViewProps {
   onOpenPrivacyPage?: () => void;
   isMandatorySetup?: boolean;
   hideLockedOnlineButton?: boolean;
+  initialWorkKey?: WorkCategoryKey;
+  skipToDocuments?: boolean;
+  preserveCurrentSession?: boolean;
+  onNotifyRaceMessage?: (
+    title: string,
+    message: string,
+    type?: 'ride' | 'financial' | 'safety' | 'system'
+  ) => void;
+  unreadNotifsCount?: number;
+  onOpenNotifications?: () => void;
 }
 
 function compressUploadImage(file: File, callback: (dataUrl: string) => void) {
@@ -245,6 +257,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
   onOpenPrivacyPage,
   isMandatorySetup = false,
   hideLockedOnlineButton = false,
+  initialWorkKey,
+  skipToDocuments = false,
+  preserveCurrentSession = false,
+  onNotifyRaceMessage,
+  unreadNotifsCount = 0,
+  onOpenNotifications,
 }) => {
   const hasExistingVehicleSetup = Boolean(
     currentUser.driverData?.vehiclePlate?.trim() &&
@@ -252,8 +270,20 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       currentUser.driverData?.categoryConfigured !== false
   );
 
-  const initialKey: WorkCategoryKey = hasExistingVehicleSetup
+  const tipoAsWorkKey: WorkCategoryKey | null =
+    currentUser.tipo === 'motorista_economico' ||
+    currentUser.tipo === 'motorista_confort' ||
+    currentUser.tipo === 'motoboy_passageiro' ||
+    currentUser.tipo === 'motoboy_entregas'
+      ? currentUser.tipo
+      : null;
+
+  const initialKey: WorkCategoryKey = initialWorkKey
+    ? initialWorkKey
+    : hasExistingVehicleSetup
     ? mapVehicleCategoryToWorkKey(currentUser.driverData?.category)
+    : tipoAsWorkKey
+    ? tipoAsWorkKey
     : currentUser.role === 'motoboy'
     ? 'motoboy_passageiro'
     : 'motorista_economico';
@@ -271,13 +301,19 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
     return 1;
   };
 
+  const hasInitialProfilePhoto = Boolean(currentUser.avatar || currentUser.driverData?.avatar);
+
   const [stage, setStage] = useState<'select_category' | 'fill_details'>(
-    hasExistingVehicleSetup || isRejectedResubmission ? 'fill_details' : 'select_category'
+    skipToDocuments || hasExistingVehicleSetup || isRejectedResubmission
+      ? 'fill_details'
+      : 'select_category'
   );
   const [selectedKey, setSelectedKey] = useState<WorkCategoryKey>(initialKey);
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(() =>
-    isRejectedResubmission ? detectRejectedStep(rejectionMessage) : 1
-  );
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(() => {
+    if (isRejectedResubmission) return detectRejectedStep(rejectionMessage);
+    if (skipToDocuments && hasInitialProfilePhoto) return 2;
+    return 1;
+  });
 
   // Passo 1 a 5: Fotos obrigatórias na ordem (estilo Uber, só 1 foto da frente do carro)
   const [profilePhoto, setProfilePhoto] = useState(
@@ -320,6 +356,110 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
   const selectedCategory = WORK_CATEGORIES[selectedKey];
   const isCarCategoryGlobal = selectedCategory.role === 'driver';
+
+  // Verificação automática em tempo real do que falta no cadastro do condutor (sempre como Equipe RACE)
+  const missingCheck = useMemo(
+    () =>
+      evaluateConductorMissingFields({
+        profilePhoto,
+        cnhFrontPhoto,
+        cnhBackPhoto,
+        crlvPhoto,
+        vehiclePhoto,
+        vehicleModel: model,
+        vehicleColor: color,
+        vehiclePlate: plate,
+        vehicleYear: year,
+        cpf,
+        cnh,
+        pixKey,
+        isMoto: !isCarCategoryGlobal,
+      }),
+    [
+      profilePhoto,
+      cnhFrontPhoto,
+      cnhBackPhoto,
+      crlvPhoto,
+      vehiclePhoto,
+      model,
+      color,
+      plate,
+      year,
+      cpf,
+      cnh,
+      pixKey,
+      isCarCategoryGlobal,
+    ]
+  );
+
+  const lastNotifiedSignatureRef = useRef<string>('');
+  const lastPhotoKeyRef = useRef<string>('');
+  const notifyCallbackRef = useRef(onNotifyRaceMessage);
+  notifyCallbackRef.current = onNotifyRaceMessage;
+
+  const photoProgressKey = `${Boolean(profilePhoto)}|${Boolean(cnhFrontPhoto)}|${Boolean(cnhBackPhoto)}|${Boolean(crlvPhoto)}|${Boolean(vehiclePhoto)}`;
+
+  useEffect(() => {
+    if (isAppUserAdmin(currentUser)) return;
+    if (missingCheck.signature === lastNotifiedSignatureRef.current) return;
+
+    const isInitialOrPhotoChange =
+      lastNotifiedSignatureRef.current === '' || lastPhotoKeyRef.current !== photoProgressKey;
+    const delayMs = isInitialOrPhotoChange ? 150 : 650;
+
+    const timer = window.setTimeout(() => {
+      if (missingCheck.signature === lastNotifiedSignatureRef.current) return;
+      lastNotifiedSignatureRef.current = missingCheck.signature;
+      lastPhotoKeyRef.current = photoProgressKey;
+      notifyCallbackRef.current?.(
+        missingCheck.title,
+        missingCheck.message,
+        missingCheck.isComplete ? 'safety' : 'system'
+      );
+    }, delayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [currentUser, missingCheck, photoProgressKey]);
+
+  const renderRaceAutoCheckBanner = () => (
+    <div
+      className={`rounded-2xl p-4 border-2 shadow-sm flex items-start gap-3 ${
+        missingCheck.isComplete
+          ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
+          : 'bg-amber-50 border-amber-400 text-amber-950'
+      }`}
+    >
+      <div
+        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+          missingCheck.isComplete
+            ? 'bg-emerald-500 text-white'
+            : 'bg-amber-400 text-slate-950'
+        }`}
+      >
+        <Bell className="w-5 h-5" />
+      </div>
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <span className="text-[11px] font-mono font-black uppercase tracking-wider">
+            {missingCheck.isComplete
+              ? 'RACE • Cadastro Completo'
+              : `RACE • Faltam ${missingCheck.missingItems.length} ${missingCheck.missingItems.length === 1 ? 'item' : 'itens'}`}
+          </span>
+          {onOpenNotifications && (
+            <button
+              type="button"
+              onClick={onOpenNotifications}
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-mono font-black cursor-pointer hover:bg-slate-800"
+            >
+              <Bell className="w-3 h-3" />
+              <span>Ver sino ({unreadNotifsCount})</span>
+            </button>
+          )}
+        </div>
+        <p className="text-xs sm:text-sm font-bold leading-snug">{missingCheck.message}</p>
+      </div>
+    </div>
+  );
 
   const getStepMissingMessage = (step: 1 | 2 | 3 | 4 | 5): string | null => {
     if (step === 1 && !profilePhoto) {
@@ -382,12 +522,9 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
   const handleSelectCategory = (key: WorkCategoryKey) => {
     setSelectedKey(key);
-    const cat = WORK_CATEGORIES[key];
     if (!hasExistingVehicleSetup) {
       setModel('');
-      setYear(cat.defaultYear);
-    } else if (!year) {
-      setYear(cat.defaultYear);
+      setYear('');
     }
     if (key === 'motoboy_entregas') {
       setHasTrunk('Sim');
@@ -613,7 +750,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         login: currentUser.login || currentUser.email,
         role: selectedCategory.role,
         tipo: selectedCategory.userTipo,
-        placa: cleanPlate,
+        placa: validatedPlate,
         avatar: finalAvatarUrl,
         rating: newDriver.rating,
         driverData: newDriver,
@@ -627,7 +764,7 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         aceitou_termos: true,
         aceitou_lgpd: true,
         data_aceite: confirmedTimestamp,
-      }, true);
+      }, !preserveCurrentSession);
 
       await saveDriverApplicationSupabase({
         id: newDriver.id,
@@ -638,10 +775,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
         category: selectedCategory.vehicleCategory,
         vehicleModel: cleanModel,
         vehicleColor: cleanColor,
-        vehiclePlate: cleanPlate,
+        vehiclePlate: validatedPlate,
         vehicleYear: yearNum,
-        cnh: cleanCnh,
-        cpf: cleanCpf,
+        cnh: validatedCnh,
+        cpf: validatedCpf,
         pixKey: cleanPix,
         avatar: finalAvatarUrl,
         cnhFrontPhoto,
@@ -659,12 +796,12 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
 
       const updRes = await updateMotoristaSupabase(currentUser.email, {
         categoria: selectedCategory.title,
-        placa: cleanPlate,
+        placa: validatedPlate,
         modelo: cleanModel,
         ano: yearNum,
         cor: cleanColor,
-        cnh: cleanCnh,
-        cpf: cleanCpf,
+        cnh: validatedCnh,
+        cpf: validatedCpf,
         tipo: selectedCategory.userTipo,
         documentos_aceitos: true,
         aceitou_contrato: true,
@@ -683,10 +820,10 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
           senha: '',
           tipo: selectedCategory.userTipo,
           categoria: selectedCategory.title,
-          placa: cleanPlate,
+          placa: validatedPlate,
           modelo: cleanModel,
           ano: yearNum,
-          cnh: cleanCnh,
+          cnh: validatedCnh,
           foto: finalAvatarUrl,
           documentos_aceitos: true,
           aceitou_contrato: true,
@@ -699,6 +836,15 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
       try {
         confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
       } catch {}
+
+      if (lastNotifiedSignatureRef.current !== 'COMPLETE') {
+        lastNotifiedSignatureRef.current = 'COMPLETE';
+        notifyCallbackRef.current?.(
+          'RACE • Cadastro Completo',
+          'Cadastro completo! AGUARDANDO APROVAÇÃO! - Equipe RACE',
+          'safety'
+        );
+      }
 
       onCompleteDriverRegister(newDriver);
     } finally {
@@ -720,26 +866,46 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
               Complete seu cadastro para começar a trabalhar
             </span>
           </div>
-          {!isMandatorySetup && onBackToRides ? (
-            <button
-              type="button"
-              onClick={onBackToRides}
-              className="text-slate-600 hover:text-slate-900 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Voltar</span>
-            </button>
-          ) : onLogout ? (
-            <button
-              type="button"
-              onClick={onLogout}
-              className="text-xs font-bold text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sair</span>
-            </button>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {onOpenNotifications && (
+              <button
+                type="button"
+                onClick={onOpenNotifications}
+                className="relative p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-amber-400 border border-zinc-700 cursor-pointer"
+                title="Notificações RACE"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadNotifsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center">
+                    {unreadNotifsCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {!isMandatorySetup && onBackToRides ? (
+              <button
+                type="button"
+                onClick={onBackToRides}
+                className="text-slate-600 hover:text-slate-900 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Voltar</span>
+              </button>
+            ) : onLogout ? (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="text-xs font-bold text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sair</span>
+              </button>
+            ) : null}
+          </div>
         </div>
+
+        {/* Mensagem automática da Equipe RACE indicando o que falta no cadastro */}
+        {renderRaceAutoCheckBanner()}
 
         {/* Banner Lançamento RACE no topo da tela de escolha */}
         <LaunchPromoBanner />
@@ -1025,10 +1191,30 @@ export const DriverWorkSelectionView: React.FC<DriverWorkSelectionViewProps> = (
             <ArrowLeft className="w-4 h-4" />
             <span>Trocar modalidade</span>
           </button>
-          <span className="text-xs font-mono font-black text-slate-950 bg-amber-400 px-3.5 py-1.5 rounded-full">
-            {selectedCategory.title}
-          </span>
+          <div className="flex items-center gap-2">
+            {onOpenNotifications && (
+              <button
+                type="button"
+                onClick={onOpenNotifications}
+                className="relative p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-amber-400 border border-zinc-700 cursor-pointer"
+                title="Notificações RACE"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadNotifsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center">
+                    {unreadNotifsCount}
+                  </span>
+                )}
+              </button>
+            )}
+            <span className="text-xs font-mono font-black text-slate-950 bg-amber-400 px-3.5 py-1.5 rounded-full">
+              {selectedCategory.title}
+            </span>
+          </div>
         </div>
+
+        {/* Mensagem automática da Equipe RACE (atualiza em tempo real conforme cada item é enviado) */}
+        {renderRaceAutoCheckBanner()}
 
         {/* Banner de Reprovação (se ADM reprovou algum documento) */}
         {isRejectedResubmission && (

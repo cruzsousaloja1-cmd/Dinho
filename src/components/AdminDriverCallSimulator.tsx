@@ -9,11 +9,12 @@ import {
   RefreshCw,
   RotateCcw,
   Star,
+  UserPlus,
   Volume2,
   XCircle,
 } from 'lucide-react';
 import { MapRealtime } from './MapRealtime';
-import { LocationPoint, RideStatus } from '../types';
+import { Driver, LocationPoint, RideStatus } from '../types';
 import {
   cancelVoiceSpeech,
   notifyNewIncomingRide,
@@ -24,6 +25,7 @@ import {
   calculateRideSplitForDriver,
   isDriverInLaunchZeroFeePromo,
 } from '../services/promoService';
+import { ConductorSignupFlow } from './ConductorSignupFlow';
 
 interface SimulatedCallData {
   id: string;
@@ -104,7 +106,24 @@ const SAMPLE_CALLS: Omit<SimulatedCallData, 'id' | 'confirmationCode'>[] = [
 const formatBRL = (value: number): string =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-export const AdminDriverCallSimulator: React.FC = () => {
+interface AdminDriverCallSimulatorProps {
+  onNewDriverRegistered?: (driver: Driver) => void;
+  onOpenPrivacyPage?: () => void;
+  onOpenAdminPanel?: () => void;
+  onNotifyRaceMessage?: (
+    title: string,
+    message: string,
+    type?: 'ride' | 'financial' | 'safety' | 'system'
+  ) => void;
+}
+
+export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> = ({
+  onNewDriverRegistered,
+  onOpenPrivacyPage,
+  onOpenAdminPanel,
+  onNotifyRaceMessage,
+}) => {
+  const [isRegisteringConductor, setIsRegisteringConductor] = useState(false);
   const [phase, setPhase] = useState<SimPhase>('idle');
   const [callIndex, setCallIndex] = useState(0);
   const [simulatedCall, setSimulatedCall] = useState<SimulatedCallData | null>(null);
@@ -224,8 +243,33 @@ export const AdminDriverCallSimulator: React.FC = () => {
       ? 'searching'
       : 'idle';
 
+  if (isRegisteringConductor) {
+    return (
+      <ConductorSignupFlow
+        onBack={() => setIsRegisteringConductor(false)}
+        onNewDriverRegistered={onNewDriverRegistered}
+        onOpenPrivacyPage={onOpenPrivacyPage}
+        onOpenAdminPanel={onOpenAdminPanel}
+        onNotifyRaceMessage={onNotifyRaceMessage}
+      />
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto space-y-4">
+      {/* Botão verde "Quero ser Condutor - Cadastrar" em cima do Ver como Condutor */}
+      <button
+        type="button"
+        onClick={() => {
+          cancelVoiceSpeech();
+          setIsRegisteringConductor(true);
+        }}
+        className="w-full py-4 px-5 rounded-3xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white border-2 border-emerald-400 shadow-lg shadow-emerald-600/25 font-heading font-black text-base sm:text-lg uppercase tracking-wide flex items-center justify-center gap-3 cursor-pointer transition-all"
+      >
+        <UserPlus className="w-6 h-6 shrink-0" />
+        <span>Quero ser Condutor - Cadastrar</span>
+      </button>
+
       {/* Barra superior: botão Simular chamada de corrida (sem perfil de ADM, sem Meu Painel Condutor) */}
       <div className="bg-slate-950 text-white border border-emerald-500/50 rounded-3xl p-4 sm:p-5 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">

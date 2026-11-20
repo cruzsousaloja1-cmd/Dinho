@@ -1069,7 +1069,7 @@ export default function App() {
   // Dispatch a push notification
   const triggerPush = (title: string, message: string, type: 'ride' | 'financial' | 'safety' | 'system' = 'ride') => {
     const newNotif: PushNotification = {
-      id: `push-${Date.now()}`,
+      id: `push-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       title,
       message,
       time: 'Agora',
@@ -2277,6 +2277,9 @@ export default function App() {
           isMandatorySetup={true}
           onLogout={handleLogout}
           onOpenPrivacyPage={openPrivacyPage}
+          onNotifyRaceMessage={triggerPush}
+          unreadNotifsCount={unreadNotifsCount}
+          onOpenNotifications={() => setIsNotifCenterOpen(true)}
           onCompleteDriverRegister={(newDriver) => {
             const isApproved = newDriver.approvalStatus === 'aprovado';
             const acceptedAt = newDriver.dataAceite || new Date().toISOString();
@@ -2316,9 +2319,19 @@ export default function App() {
             setLoginSuccessBanner(
               isApproved
                 ? `Modalidade configurada! Você já pode ficar ONLINE e receber corridas na RACE.`
-                : `Cadastro enviado! Aguardando aprovação do ADM. Você será avisado quando for aprovado.`
+                : `Cadastro completo! AGUARDANDO APROVAÇÃO! - Equipe RACE`
             );
           }}
+        />
+        <PushNotificationToast
+          notification={currentToast}
+          onDismiss={() => setCurrentToast(null)}
+          isOpenCenter={isNotifCenterOpen}
+          onCloseCenter={() => setIsNotifCenterOpen(false)}
+          notificationsList={notifications}
+          onMarkAllAsRead={() =>
+            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+          }
         />
       </div>
     );
@@ -2485,7 +2498,37 @@ export default function App() {
         <div {...getTabPanelProps('driver_portal')}>
           {isCurrentUserAdmin ? (
             activeTab === 'admin_drivers' ? (
-              <AdminDriverCallSimulator />
+              <AdminDriverCallSimulator
+                onOpenPrivacyPage={openPrivacyPage}
+                onOpenAdminPanel={() => setActiveTab('admin')}
+                onNotifyRaceMessage={triggerPush}
+                onNewDriverRegistered={(newDriver) => {
+                  const em = normalizeEmail(newDriver.email);
+                  if (
+                    isPrimaryAdmEmail(em) ||
+                    em === normalizeEmail(ADMIN_EMAIL) ||
+                    String(newDriver.vehiclePlate || '').trim().toUpperCase() === 'ADM-2026'
+                  ) {
+                    return;
+                  }
+                  const pendingDriver: Driver = {
+                    ...newDriver,
+                    approvalStatus: 'pendente',
+                    status: 'pending_approval',
+                    categoryConfigured: true,
+                    requirementsConfirmed: true,
+                    documentosAceitos: true,
+                  };
+                  setDrivers((prev) => [
+                    pendingDriver,
+                    ...prev.filter(
+                      (d) =>
+                        d.id !== pendingDriver.id &&
+                        normalizeEmail(d.email) !== normalizeEmail(pendingDriver.email)
+                    ),
+                  ]);
+                }}
+              />
             ) : null
           ) : isUserDriver ? (
             <DriverPartnerPortal
@@ -2580,6 +2623,7 @@ export default function App() {
               currentUser={currentUser!}
               onOpenPrivacyPage={openPrivacyPage}
               onOpenAdminPanel={() => setActiveTab('admin')}
+              onNotifyRaceMessage={triggerPush}
               onCompleteDriverRegister={(newDriver) => {
                 if (isAppUserAdmin(currentUser)) {
                   setActiveTab('admin');

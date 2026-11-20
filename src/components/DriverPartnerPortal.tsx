@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Driver, Ride, VehicleCategory, PendingPayment, AppUser, UserRole, UserTipo } from '../types';
 import { formatBRL, WEEKLY_SUBSCRIPTION_PRICE, generateUniqueRideConfirmationCode } from '../services/pricingService';
 import { saveUserAccount, verifyUserLogin, verifyUserLoginAsync, saveSessionUser, isAppUserAdmin } from '../services/userService';
@@ -25,6 +25,7 @@ import {
 import { compressImageToMax200KB, validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isValidEmail, isValidPassword, isValidWhatsApp11 } from '../utils/security';
 import { validateCPF, validateCNH, validatePlate } from '../utils/documentValidation';
+import { checkDriverObjectMissingFields } from '../services/conductorRegistrationCheckService';
 import { notifyNewIncomingRide } from '../services/audioNotificationService';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverWorkSelectionView } from './DriverWorkSelectionView';
@@ -344,6 +345,27 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
   const [dismissedTick, setDismissedTick] = useState(0);
   const dismissedRideIdsRef = useRef<Set<string>>(new Set());
   const announcedRideIdsRef = useRef<Set<string>>(new Set());
+
+  // Verificação automática do que falta no cadastro do condutor (sempre como Equipe RACE)
+  const driverMissingCheck = useMemo(
+    () => checkDriverObjectMissingFields(currentDriver, currentUser?.avatar),
+    [currentDriver, currentUser?.avatar]
+  );
+  const lastDriverMissingSigRef = useRef<string>('');
+  const triggerToastRef = useRef(onTriggerToast);
+  triggerToastRef.current = onTriggerToast;
+
+  useEffect(() => {
+    if (isAppUserAdmin(currentUser) || isApprovedDriver) return;
+    if (isEditingCategory || !isCategoryConfigured) return;
+    if (driverMissingCheck.signature === lastDriverMissingSigRef.current) return;
+    lastDriverMissingSigRef.current = driverMissingCheck.signature;
+    triggerToastRef.current?.(
+      driverMissingCheck.title,
+      driverMissingCheck.message,
+      driverMissingCheck.isComplete ? 'safety' : 'system'
+    );
+  }, [currentUser, isApprovedDriver, isEditingCategory, isCategoryConfigured, driverMissingCheck]);
 
   useEffect(() => {
     setIsOnline(isCategoryConfigured && isDocumentsAccepted && isApprovedDriver && currentDriver.status === 'online');
@@ -2026,18 +2048,19 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               ) : !isApprovedDriver ? (
                 <button
                   type="button"
-                  onClick={toggleOnline}
-                  className={`flex items-center gap-2 px-4 sm:px-5 py-3 rounded-2xl font-heading font-black text-xs sm:text-sm border shrink-0 cursor-pointer ${
+                  disabled={approvalStatus !== 'reprovado'}
+                  onClick={approvalStatus === 'reprovado' ? toggleOnline : undefined}
+                  className={`flex items-center gap-2 px-4 sm:px-5 py-3 rounded-2xl font-heading font-black text-xs sm:text-sm border-2 shrink-0 ${
                     approvalStatus === 'reprovado'
-                      ? 'bg-rose-100 text-rose-800 border-rose-300'
-                      : 'bg-amber-100 text-amber-900 border-amber-300'
+                      ? 'bg-rose-100 text-rose-800 border-rose-300 cursor-pointer'
+                      : 'bg-slate-300 text-slate-500 border-slate-400 cursor-not-allowed'
                   }`}
                 >
                   <Lock className="w-4 h-4 shrink-0" />
                   <span>
                     {approvalStatus === 'reprovado'
                       ? 'Cadastro Reprovado'
-                      : 'Aguardando Aprovação ADM'}
+                      : 'FICAR ONLINE'}
                   </span>
                 </button>
               ) : (
@@ -2063,31 +2086,39 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               </div>
             )}
 
-            {isCategoryConfigured && !isApprovedDriver && (
+            {!isApprovedDriver && !isEditingCategory && (
               <div
                 className={`mt-4 rounded-2xl p-4 border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                   approvalStatus === 'reprovado'
                     ? 'bg-rose-50 border-rose-300 text-rose-950'
+                    : driverMissingCheck.isComplete
+                    ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
                     : 'bg-amber-50 border-amber-300 text-amber-950'
                 }`}
               >
                 <div className="flex items-start gap-3">
                   <Clock
                     className={`w-5 h-5 shrink-0 mt-0.5 ${
-                      approvalStatus === 'reprovado' ? 'text-rose-600' : 'text-amber-600'
+                      approvalStatus === 'reprovado'
+                        ? 'text-rose-600'
+                        : driverMissingCheck.isComplete
+                        ? 'text-emerald-600'
+                        : 'text-amber-600'
                     }`}
                   />
                   <div className="space-y-1 text-xs sm:text-sm">
                     <strong className="font-heading font-black block uppercase tracking-wide">
                       {approvalStatus === 'reprovado'
                         ? 'Documento Reprovado pelo ADM'
-                        : 'Cadastro Pendente — Aguardando Aprovação do ADM'}
+                        : driverMissingCheck.isComplete
+                        ? 'AGUARDANDO APROVAÇÃO'
+                        : 'RACE • Aguardando Completar Cadastro'}
                     </strong>
-                    <p className="font-medium leading-snug">
+                    <p className="font-semibold leading-snug">
                       {approvalStatus === 'reprovado'
                         ? currentDriver.rejectionReason ||
                           'Seu documento [CNH Frente] foi reprovado. Envie novamente.'
-                        : 'Cadastro enviado! Aguardando aprovação do ADM. Você será avisado quando for aprovado.'}
+                        : driverMissingCheck.message}
                     </p>
                   </div>
                 </div>
@@ -2102,7 +2133,11 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                   }}
                   className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-heading font-black text-xs shrink-0 cursor-pointer"
                 >
-                  {approvalStatus === 'reprovado' ? 'Reenviar Documentos' : 'Editar Documentos'}
+                  {approvalStatus === 'reprovado'
+                    ? 'Reenviar Documentos'
+                    : driverMissingCheck.isComplete
+                    ? 'Editar Documentos'
+                    : 'Completar Cadastro'}
                 </button>
               </div>
             )}
@@ -2130,6 +2165,7 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
               isMandatorySetup={!isCategoryConfigured}
               hideLockedOnlineButton={!isCategoryConfigured}
               onOpenPrivacyPage={onOpenPrivacyPage}
+              onNotifyRaceMessage={onTriggerToast}
               onBackToRides={isEditingCategory ? () => setIsEditingCategory(false) : undefined}
               onCompleteDriverRegister={(updatedDriver) => {
                 const approved = updatedDriver.approvalStatus === 'aprovado';
@@ -2138,10 +2174,10 @@ export const DriverPartnerPortal: React.FC<DriverPartnerPortalProps> = ({
                 setIsEditingCategory(false);
                 if (onTriggerToast) {
                   onTriggerToast(
-                    approved ? 'Modalidade atualizada!' : 'Cadastro enviado!',
+                    approved ? 'RACE • Modalidade Atualizada' : 'RACE • Cadastro Completo',
                     approved
-                      ? 'Sua modalidade e dados do veículo foram salvos no Supabase.'
-                      : 'Cadastro enviado! Aguardando aprovação do ADM. Você será avisado quando for aprovado.',
+                      ? 'Sua modalidade e dados do veículo foram salvos no Supabase. - Equipe RACE'
+                      : 'Cadastro completo! AGUARDANDO APROVAÇÃO! - Equipe RACE',
                     'system'
                   );
                 }
