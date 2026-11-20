@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Driver, AppUser } from '../types';
-import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera, Gift } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle, ArrowLeft, Car, Bike, User, CheckCircle2, ShieldCheck, Camera, Gift, Download } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
   saveSessionUser,
@@ -737,6 +737,23 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
         {/* Banner Lançamento RACE no topo da tela preta */}
         <LaunchPromoBanner />
+
+        {/* Botão direto BAIXAR APK (hospedado no próprio site /Dinho/RACE.apk, sem Drive e sem pedir conta) */}
+        {viewMode === 'selection' && (
+          <div className="space-y-2">
+            <a
+              href="https://cruzsousaloja1-cmd.github.io/Dinho/RACE.apk"
+              download="RACE.apk"
+              className="w-full py-4 px-5 rounded-2xl bg-red-600 hover:bg-red-500 active:scale-[0.98] border-2 border-red-400 text-white font-heading font-black text-base sm:text-lg tracking-wide uppercase flex items-center justify-center gap-2.5 shadow-xl transition-all no-underline cursor-pointer"
+            >
+              <Download className="w-5 h-5 shrink-0" />
+              <span>BAIXAR APK</span>
+            </a>
+            <p className="text-[11px] text-zinc-400 text-center font-medium">
+              Download direto do app RACE para Android &bull; Sem Google Drive
+            </p>
+          </div>
+        )}
 
         {/* 1. TELA PRINCIPAL: ESCOLHER ENTRE OS 3 CADASTROS OU ENTRAR */}
         {viewMode === 'selection' && (

@@ -1,8 +1,8 @@
-
 name: Deploy Race
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -11,6 +11,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run build
+      - name: Garantir RACE.apk disponível direto em /Dinho/RACE.apk
+        run: |
+          if [ -f "public/RACE.apk" ] && [ ! -f "dist/RACE.apk" ]; then
+            cp "public/RACE.apk" "dist/RACE.apk"
+          elif [ -f "RACE.apk" ] && [ ! -f "dist/RACE.apk" ]; then
+            cp "RACE.apk" "dist/RACE.apk"
+          fi
+          ls -lh dist/RACE.apk 2>/dev/null || echo "Aviso: envie RACE.apk na pasta public/RACE.apk ou na raiz do repositório para habilitar o download direto."
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
