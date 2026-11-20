@@ -98,6 +98,12 @@ import {
 } from '../utils/documentValidation';
 import { validateAndCompressPhotoFile, validatePhotoMax2MB } from '../utils/imageCompression';
 import { isAppUserAdmin, isAdminTipoValue, saveSessionUser } from '../services/userService';
+import {
+  evaluateConductorMissingFields,
+  buildPendingConductorWhatsAppMessage,
+  buildPendingConductorWhatsAppUrl,
+  savePendingConductorBellMessageCloud,
+} from '../services/conductorRegistrationCheckService';
 import { MyReferralsControlSection } from './MyReferralsControlSection';
 import { MapRealtime } from './MapRealtime';
 import {
@@ -225,6 +231,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [adminReferrals, setAdminReferrals] = useState<AdminReferralItem[]>([]);
   const [driverApplicationsMap, setDriverApplicationsMap] = useState<Record<string, DriverApplicationRecord>>({});
   const [processingApprovalEmail, setProcessingApprovalEmail] = useState<string | null>(null);
+  const [sentPendingMsgEmails, setSentPendingMsgEmails] = useState<Record<string, boolean>>({});
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [supabaseUsersError, setSupabaseUsersError] = useState<string | null>(null);
   const [userStatusMap, setUserStatusMap] = useState<Record<string, { status: 'liberado' | 'bloqueado' | 'pendente'; expiresAt?: string }>>({});
@@ -3019,6 +3026,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   },
                 ];
                 const hasAll5Photos = docItems.every((d) => Boolean(String(d.url || '').trim()));
+                const isMotoApp =
+                  app.category === 'moto_passageiro' || app.category === 'moto_entrega';
+                const missingCheck = evaluateConductorMissingFields({
+                  profilePhoto: app.avatar,
+                  cnhFrontPhoto: app.cnhFrontPhoto,
+                  cnhBackPhoto: app.cnhBackPhoto,
+                  crlvPhoto: app.crlvPhoto,
+                  vehiclePhoto: app.vehiclePhoto,
+                  vehicleModel: app.vehicleModel,
+                  vehicleColor: app.vehicleColor,
+                  vehiclePlate: app.vehiclePlate,
+                  vehicleYear: app.vehicleYear,
+                  cpf: app.cpf,
+                  cnh: app.cnh,
+                  pixKey: app.pixKey,
+                  isMoto: isMotoApp,
+                });
+                const waMessage = buildPendingConductorWhatsAppMessage({
+                  name: app.name,
+                  missingItems: missingCheck.missingItems,
+                });
+                const waUrl = buildPendingConductorWhatsAppUrl(
+                  app.whatsapp || app.phone,
+                  waMessage
+                );
+                const normalizedAppEmail = String(app.email || '').trim().toLowerCase();
+                const wasMsgSent = Boolean(sentPendingMsgEmails[normalizedAppEmail]);
+
                 return (
                   <div
                     key={app.email}
@@ -3139,6 +3174,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                         ))}
                       </div>
+                    </div>
+
+                    {/* Botão verde: Enviar mensagem - Aguardando completar cadastro (WhatsApp + Sino do Condutor) */}
+                    <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3.5 space-y-2.5">
+                      <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => {
+                          savePendingConductorBellMessageCloud(
+                            app.email,
+                            waMessage,
+                            missingCheck.missingItems
+                          ).catch(() => {});
+                          setSentPendingMsgEmails((prev) => ({
+                            ...prev,
+                            [normalizedAppEmail]: true,
+                          }));
+                        }}
+                        className="w-full px-4 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-heading font-black text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer text-center"
+                      >
+                        <MessageCircle className="w-4 h-4 shrink-0" />
+                        <span>Enviar mensagem - Aguardando completar cadastro</span>
+                      </a>
+                      <p className="text-[11px] text-emerald-900 font-medium leading-snug">
+                        <strong>Mensagem pronta (Equipe RACE):</strong> {waMessage}
+                      </p>
+                      {wasMsgSent && (
+                        <p className="text-[11px] font-bold text-emerald-700 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>WhatsApp aberto e mensagem salva no sino 🔔 do condutor quando ele abrir o link.</span>
+                        </p>
+                      )}
                     </div>
 
                     {/* Botões ❌ Reprovar e ✅ Ativar */}

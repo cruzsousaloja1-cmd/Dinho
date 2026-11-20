@@ -1,5 +1,18 @@
 import { Driver } from '../types';
+import { supabase } from '../supabase';
 import { validateCNH, validateCPF, validatePlate } from '../utils/documentValidation';
+
+export const RACE_APP_PUBLIC_LINK = 'https://cruzsousaloja1-cmd.github.io/Dinho/';
+
+const PENDING_BELL_MSG_STORAGE_PREFIX = 'race_pending_conductor_msg_v1:';
+
+export interface PendingConductorBellMessage {
+  email: string;
+  title: string;
+  message: string;
+  missingItems: string[];
+  sentAt: string;
+}
 
 export interface ConductorMissingCheckInput {
   profilePhoto?: string | null;
@@ -122,3 +135,146 @@ export function checkDriverObjectMissingFields(
     isMoto,
   });
 }
+
+/**
+ * Monta a mensagem oficial do WhatsApp da Equipe RACE para o condutor pendente
+ * (sempre como RACE, nunca com nome pessoal do ADM).
+ */
+export function buildPendingConductorWhatsAppMessage(params: {
+  name?: string | null;
+  missingItems: string[];
+}): string {
+  const firstName =
+    String(params.name || 'Condutor')
+      .trim()
+      .split(/\s+/)[0] || 'Condutor';
+
+  if (params.missingItems.length > 0) {
+    return `Olá ${firstName}! Você está Aguardando completar cadastro no RACE. Falta: ${params.missingItems.join(', ')}. Complete aqui: ${RACE_APP_PUBLIC_LINK} - Equipe RACE`;
+  }
+
+  return `Olá ${firstName}! Seu cadastro no RACE está completo e AGUARDANDO APROVAÇÃO! Acompanhe aqui: ${RACE_APP_PUBLIC_LINK} - Equipe RACE`;
+}
+
+/**
+ * Gera o link direto do WhatsApp com o telefone do condutor e a mensagem pronta.
+ */
+export function buildPendingConductorWhatsAppUrl(
+  phoneOrWhatsApp: string | undefined | null,
+  message: string
+): string {
+  const rawDigits = String(phoneOrWhatsApp || '').replace(/\D/g, '');
+  const waPhone =
+    rawDigits.length === 10 || rawDigits.length === 11
+      ? `55${rawDigits}`
+      : rawDigits;
+  const encodedText = encodeURIComponent(message);
+  return waPhone
+    ? `https://wa.me/${waPhone}?text=${encodedText}`
+    : `https://wa.me/?text=${encodedText}`;
+}
+
+function buildSafeEmailFileKey(email: string): string {
+  return String(email || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_');
+}
+
+/**
+ * Salva a mesma mensagem enviada pelo ADM no Supabase Storage e localStorage
+ * para aparecer automaticamente no sino 🔔 do condutor quando ele abrir o app/link.
+ */
+export async function savePendingConductorBellMessageCloud(
+  email: string,
+  message: string,
+  missingItems: string[]
+): Promise<PendingConductorBellMessage | null> {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return null;
+
+  const record: PendingConductorBellMessage = {
+    email: cleanEmail,
+    title:
+      missingItems.length > 0
+        ? 'RACE • Aguardando Completar Cadastro'
+        : 'RACE • Cadastro Completo',
+    message,
+    missingItems,
+    sentAt: new Date().toISOString(),
+  };
+
+  try {
+    localStorage.setItem(
+      `${PENDING_BELL_MSG_STORAGE_PREFIX}${cleanEmail}`,
+      JSON.stringify(record)
+    );
+  } catch {
+    // ignore storage errors
+  }
+
+  try {
+    const safeKey = buildSafeEmailFileKey(cleanEmail);
+    const path = `driver-messages/${safeKey}.json`;
+    const blob = new Blob([JSON.stringify(record)], { type: 'application/json' });
+    await supabase.storage.from('avatars').upload(path, blob, {
+      upsert: true,
+      contentType: 'application/json',
+      cacheControl: '30',
+    });
+  } catch {
+    // fallback local já salvo
+  }
+
+  return record;
+}
+
+/**
+ * Busca a última mensagem RACE enviada ao condutor pendente (nuvem + fallback local)
+ * para exibir no sino 🔔 quando o condutor abrir o link.
+ */
+export async function fetchPendingConductorBellMessageCloud(
+  email?: string | null
+): Promise<PendingConductorBellMessage | null> {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return null;
+
+  let localRecord: PendingConductorBellMessage | null = null;
+  try {
+    const raw = localStorage.getItem(`${PENDING_BELL_MSG_STORAGE_PREFIX}${cleanEmail}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.message === 'string' && parsed.message.trim()) {
+        localRecord = parsed;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const safeKey = buildSafeEmailFileKey(cleanEmail);
+    const { data } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(`driver-messages/${safeKey}.json`);
+    if (data?.publicUrl) {
+      const res = await fetch(`${data.publicUrl}?t=${Date.now()}`, { cache: 'no-store' });
+      if (res.ok) {
+        const parsed = await res.json();
+        if (parsed && typeof parsed.message === 'string' && parsed.message.trim()) {
+          if (
+            !localRecord ||
+            new Date(parsed.sentAt || 0).getTime() >= new Date(localRecord.sentAt || 0).getTime()
+          ) {
+            return parsed as PendingConductorBellMessage;
+          }
+        }
+      }
+    }
+  } catch {
+    // usa fallback local
+  }
+
+  return localRecord;
+}
+

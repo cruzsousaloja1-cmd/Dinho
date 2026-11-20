@@ -59,6 +59,7 @@ import {
   cancelVoiceSpeech,
   notifyRideFinished
 } from './services/audioNotificationService';
+import { fetchPendingConductorBellMessageCloud } from './services/conductorRegistrationCheckService';
 import {
   getDriverBalance,
   addDriverEarnings,
@@ -1084,6 +1085,33 @@ export default function App() {
       setCurrentToast((curr) => (curr?.id === newNotif.id ? null : curr));
     }, 6000);
   };
+
+  const deliveredPendingBellKeyRef = useRef<string>('');
+  useEffect(() => {
+    if (!currentUser || isAppUserAdmin(currentUser) || !isAppUserDriver(currentUser)) return;
+    if (currentDriver.approvalStatus === 'aprovado') return;
+    const email = normalizeEmail(currentUser.email);
+    if (!email) return;
+
+    let cancelled = false;
+    fetchPendingConductorBellMessageCloud(email)
+      .then((record) => {
+        if (cancelled || !record || !record.message) return;
+        const deliveryKey = `${email}:${record.sentAt}`;
+        if (deliveredPendingBellKeyRef.current === deliveryKey) return;
+        deliveredPendingBellKeyRef.current = deliveryKey;
+        triggerPush(
+          record.title || 'RACE • Aguardando Completar Cadastro',
+          record.message,
+          record.missingItems.length > 0 ? 'system' : 'safety'
+        );
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.email, currentDriver.approvalStatus]);
 
   // Passenger confirma corrida -> só cria se for Dinheiro ou Asaas RECEIVED/CONFIRMED (e sem dívida bloqueada)
   const handleStartRide = (ride: Ride) => {
