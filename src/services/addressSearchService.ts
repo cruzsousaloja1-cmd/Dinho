@@ -379,14 +379,71 @@ export function isCoordsWithinIndaiatuba(lat: number, lng: number): boolean {
   return lat >= -23.225 && lat <= -22.985 && lng >= -47.345 && lng <= -47.105;
 }
 
-const GPS_PERMISSION_OR_CITY_ERROR =
-  'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
+export const DEFAULT_MANUAL_PICKUP_EXAMPLE =
+  'Rua Adélia Philomena Mattioni, 420 - Jardim do Sol, Indaiatuba-SP';
+
+export const DEFAULT_MANUAL_PICKUP_COORDS = {
+  lat: -23.1128,
+  lng: -47.2245,
+};
+
+export const GPS_MANUAL_FALLBACK_MESSAGE = 'Digite o endereço na mão';
+
+const GPS_PERMISSION_OR_CITY_ERROR = GPS_MANUAL_FALLBACK_MESSAGE;
 
 export const GPS_FALLBACK_SAVED_NOTICE =
   'Usando última localização, ligue o GPS para mais precisão';
 
 const LAST_GPS_LOCATION_STORAGE_KEY = 'race_last_gps_location';
 const STREET_OVERRIDES_STORAGE_KEY = 'race_saved_street_overrides_v1';
+
+/**
+ * Abre as configurações de localização/permissão do app no Median / GoNative WebView Android
+ */
+export function openAppLocationSettings(): boolean {
+  if (typeof window === 'undefined') return false;
+  const win = window as unknown as {
+    median?: {
+      app?: { openAppSettings?: () => void };
+      android?: { geoLocation?: { promptLocationServices?: () => void } };
+      permissions?: { request?: (perms: string[]) => void };
+    };
+    gonative?: {
+      app?: { openAppSettings?: () => void };
+      android?: { geoLocation?: { promptLocationServices?: () => void } };
+      permissions?: { request?: (perms: string[]) => void };
+    };
+  };
+
+  try {
+    const bridge = win.median || win.gonative;
+    if (bridge?.android?.geoLocation?.promptLocationServices) {
+      bridge.android.geoLocation.promptLocationServices();
+    }
+    if (bridge?.app?.openAppSettings) {
+      bridge.app.openAppSettings();
+      return true;
+    }
+    if (bridge?.permissions?.request) {
+      bridge.permissions.request(['android.permission.ACCESS_FINE_LOCATION']);
+      return true;
+    }
+  } catch {
+    // ignore bridge errors
+  }
+
+  try {
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+    if (/median|gonative/i.test(ua)) {
+      window.location.href = 'median://app/openAppSettings';
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+
+  return false;
+}
 
 export interface SavedStreetOverride {
   road: string;
@@ -779,8 +836,17 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
   };
 }
 
+export type GpsErrorCode =
+  | 'PERMISSION_DENIED'
+  | 'POSITION_UNAVAILABLE'
+  | 'TIMEOUT'
+  | 'UNSUPPORTED'
+  | 'OUTSIDE_CITY'
+  | 'GEOCODE_FAILED';
+
 export interface FastGpsLookupResult {
   status: 'ok' | 'fallback_saved' | 'outside_indaiatuba' | 'error';
+  errorCode?: GpsErrorCode;
   lat?: number;
   lng?: number;
   accuracy?: number;
@@ -799,18 +865,21 @@ export interface FastGpsLookupOptions {
 }
 
 /**
- * Busca localização precisa via watchPosition (enableHighAccuracy: true)
- * Aguarda accuracy < 30m antes de converter (exibindo "Buscando GPS preciso..." enquanto > 30m).
- * Caso passe o tempo limite sem < 30m, usa a melhor leitura ao vivo obtida ou a última localização salva em Indaiatuba.
+ * Busca localização atual compatível com Chrome, PWA, Capacitor e WebView do Median:
+ * - Usa navigator.geolocation.getCurrentPosition com enableHighAccuracy: true, timeout: 10000, maximumAge: 0.
+ * - Trata erro PERMISSION_DENIED separadamente (errorCode: 'PERMISSION_DENIED') para exibir botão "Permitir localização".
+ * - Se falhar por timeout/indisponibilidade em ambiente indoor/WebView, tenta leitura rápida por rede antes do fallback manual.
  */
 export function requestCurrentLocationFast(
   options?: FastGpsLookupOptions
 ): Promise<FastGpsLookupResult> {
-  const targetAccuracy = options?.targetAccuracyMeters ?? 30;
-  const maxWaitMs = options?.maxWaitMs ?? 7000;
+  const timeoutMs = options?.maxWaitMs ?? 10000;
 
   return new Promise((resolve) => {
-    const finishWithSavedFallbackOrError = (allowFallback: boolean): void => {
+    const finishWithSavedFallbackOrError = (
+      allowFallback: boolean,
+      errorCode: GpsErrorCode
+    ): void => {
       if (allowFallback) {
         const saved = getLastKnownGpsLocation();
         if (saved) {
@@ -829,31 +898,17 @@ export function requestCurrentLocationFast(
       }
       resolve({
         status: 'error',
-        errorMessage: GPS_PERMISSION_OR_CITY_ERROR,
+        errorCode,
+        errorMessage: GPS_MANUAL_FALLBACK_MESSAGE,
       });
     };
 
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      finishWithSavedFallbackOrError(true);
+      finishWithSavedFallbackOrError(true, 'UNSUPPORTED');
       return;
     }
 
-    let settled = false;
-    let watchId: number | null = null;
-    let bestPosition: GeolocationPosition | null = null;
-
-    const cleanupWatch = () => {
-      if (watchId !== null) {
-        try {
-          navigator.geolocation.clearWatch(watchId);
-        } catch {
-          // ignore
-        }
-        watchId = null;
-      }
-    };
-
-    const resolveFromPosition = async (pos: GeolocationPosition, isImpreciseFallback = false) => {
+    const resolveFromPosition = async (pos: GeolocationPosition, isNetworkFallback = false) => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       const accuracy = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined;
@@ -863,13 +918,13 @@ export function requestCurrentLocationFast(
         if (!geoResult.inIndaiatuba) {
           resolve({
             status: 'outside_indaiatuba',
-            errorMessage:
-              'Sua localização atual está fora de Indaiatuba-SP. Ative o GPS em Indaiatuba ou digite seu endereço com número.',
+            errorCode: 'OUTSIDE_CITY',
+            errorMessage: GPS_MANUAL_FALLBACK_MESSAGE,
           });
           return;
         }
         if (!geoResult.success || !geoResult.fullAddress) {
-          finishWithSavedFallbackOrError(true);
+          finishWithSavedFallbackOrError(true, 'GEOCODE_FAILED');
           return;
         }
         resolve({
@@ -881,69 +936,50 @@ export function requestCurrentLocationFast(
           road: geoResult.road,
           number: geoResult.number,
           neighborhood: geoResult.neighborhood,
-          notice: isImpreciseFallback
-            ? 'GPS aproximado capturado — se precisar, arraste o pino "Você está aqui" no mapa.'
+          notice: isNetworkFallback
+            ? 'Localização aproximada capturada — confira o número se necessário.'
             : undefined,
         });
       } catch {
-        finishWithSavedFallbackOrError(true);
+        finishWithSavedFallbackOrError(true, 'GEOCODE_FAILED');
       }
     };
 
-    options?.onStatusMessage?.('Buscando GPS preciso...');
+    options?.onStatusMessage?.('Buscando GPS...');
 
-    const watchdogTimer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      cleanupWatch();
-
-      if (bestPosition && isCoordsWithinIndaiatuba(bestPosition.coords.latitude, bestPosition.coords.longitude)) {
-        void resolveFromPosition(bestPosition, true);
-        return;
-      }
-
-      finishWithSavedFallbackOrError(true);
-    }, maxWaitMs);
-
-    watchId = navigator.geolocation.watchPosition(
+    // 1ª tentativa oficial: getCurrentPosition com alta precisão (compatível com Median WebView)
+    navigator.geolocation.getCurrentPosition(
       (pos) => {
-        if (settled) return;
-        const acc = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : 999;
-
-        if (!bestPosition || acc < (bestPosition.coords.accuracy ?? 999)) {
-          bestPosition = pos;
-        }
-
-        if (acc < targetAccuracy) {
-          settled = true;
-          clearTimeout(watchdogTimer);
-          cleanupWatch();
-          void resolveFromPosition(pos, false);
-        } else {
-          options?.onStatusMessage?.('Buscando GPS preciso...');
-        }
+        void resolveFromPosition(pos, false);
       },
       (err) => {
-        if (settled) return;
-        const isPermissionDenied = err && err.code === 1;
-        if (isPermissionDenied) {
-          settled = true;
-          clearTimeout(watchdogTimer);
-          cleanupWatch();
-          finishWithSavedFallbackOrError(false);
+        const code = err?.code;
+        if (code === 1) {
+          // PERMISSION_DENIED — retorna código específico para mostrar botão "Permitir localização"
+          finishWithSavedFallbackOrError(false, 'PERMISSION_DENIED');
           return;
         }
-        // Para timeout/unavailable, só encerra se estourar watchdog ou falhar sem melhor leitura
-        settled = true;
-        clearTimeout(watchdogTimer);
-        cleanupWatch();
-        if (bestPosition && isCoordsWithinIndaiatuba(bestPosition.coords.latitude, bestPosition.coords.longitude)) {
-          void resolveFromPosition(bestPosition, true);
-          return;
-        }
-        finishWithSavedFallbackOrError(true);
+
+        // 2ª tentativa rápida por rede/Wi-Fi dentro do WebView quando GPS satélite dá timeout/indisponível
+        navigator.geolocation.getCurrentPosition(
+          (posFallback) => {
+            void resolveFromPosition(posFallback, true);
+          },
+          (errFallback) => {
+            const fallbackCode = errFallback?.code;
+            if (fallbackCode === 1) {
+              finishWithSavedFallbackOrError(false, 'PERMISSION_DENIED');
+              return;
+            }
+            finishWithSavedFallbackOrError(
+              true,
+              fallbackCode === 3 ? 'TIMEOUT' : 'POSITION_UNAVAILABLE'
+            );
+          },
+          { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: maxWaitMs, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
     );
   });
 }

@@ -22,6 +22,10 @@ import {
   saveLastKnownGpsLocation,
   hasAddressNumber,
   extractAddressNumber,
+  openAppLocationSettings,
+  DEFAULT_MANUAL_PICKUP_EXAMPLE,
+  DEFAULT_MANUAL_PICKUP_COORDS,
+  GPS_MANUAL_FALLBACK_MESSAGE,
   AddressSuggestion, 
   POPULAR_DATABASE_LOCATIONS 
 } from '../services/addressSearchService';
@@ -297,10 +301,12 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
   const [gpsButtonText, setGpsButtonText] = useState('Buscando GPS preciso...');
   const [gpsDetectedNotice, setGpsDetectedNotice] = useState<string | null>(null);
   const [gpsErrorNotice, setGpsErrorNotice] = useState<string | null>(null);
+  const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
   const [gpsFallbackNotice, setGpsFallbackNotice] = useState<string | null>(null);
   const [gpsPinCoords, setGpsPinCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [manualPickupNumber, setManualPickupNumber] = useState('');
   const pickupNumberInputRef = useRef<HTMLInputElement | null>(null);
+  const pickupTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [fullscreenAddressField, setFullscreenAddressField] = useState<'pickup' | 'destination' | null>(null);
 
   // Rating modal state
@@ -641,16 +647,38 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
     setActiveDropdown(null);
   };
 
-  // Detecta a localização GPS REAL precisa (watchPosition até accuracy < 30m) sem exibir mapa na digitação
+  // Detecta a localização GPS REAL via getCurrentPosition (compatível com Chrome e WebView do Median)
+  const applyManualAddressFallback = (permissionDenied: boolean) => {
+    setGpsPermissionDenied(permissionDenied);
+    setGpsErrorNotice(GPS_MANUAL_FALLBACK_MESSAGE);
+    if (!pickupInput.trim()) {
+      setPickupInput(DEFAULT_MANUAL_PICKUP_EXAMPLE);
+      setPickup({
+        address: DEFAULT_MANUAL_PICKUP_EXAMPLE,
+        lat: DEFAULT_MANUAL_PICKUP_COORDS.lat,
+        lng: DEFAULT_MANUAL_PICKUP_COORDS.lng,
+      });
+    }
+    setTimeout(() => {
+      pickupTextareaRef.current?.focus();
+    }, 80);
+  };
+
+  const handleOpenLocationSettings = () => {
+    const openedNative = openAppLocationSettings();
+    if (!openedNative) {
+      void handleUseCurrentLocation();
+    }
+  };
+
   const handleUseCurrentLocation = async () => {
     if (isLocatingUser) return;
-    const gpsErrorMsg =
-      'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
 
     setIsLocatingUser(true);
-    setGpsButtonText('Buscando GPS preciso...');
+    setGpsButtonText('Buscando GPS...');
     setGpsDetectedNotice(null);
     setGpsErrorNotice(null);
+    setGpsPermissionDenied(false);
     setGpsFallbackNotice(null);
     setGpsPinCoords(null);
     if (addressValidationError) setAddressValidationError(null);
@@ -658,18 +686,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
     try {
       const result = await requestCurrentLocationFast({
-        targetAccuracyMeters: 30,
-        maxWaitMs: 7000,
+        maxWaitMs: 10000,
         onStatusMessage: (msg) => setGpsButtonText(msg),
       });
-
-      if (result.status === 'outside_indaiatuba') {
-        setGpsErrorNotice(
-          result.errorMessage ||
-            'Sua localização atual está fora de Indaiatuba-SP. Ative o GPS em Indaiatuba ou digite seu endereço com número.'
-        );
-        return;
-      }
 
       if (
         (result.status === 'ok' || result.status === 'fallback_saved') &&
@@ -685,6 +704,8 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         setPickupInput(result.fullAddress);
         setGpsDetectedNotice(result.fullAddress);
         setGpsPinCoords({ lat: result.lat, lng: result.lng });
+        setGpsPermissionDenied(false);
+        setGpsErrorNotice(null);
         onRouteSearched?.(false);
 
         if (result.notice) {
@@ -700,9 +721,9 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
         return;
       }
 
-      setGpsErrorNotice(result.errorMessage || gpsErrorMsg);
+      applyManualAddressFallback(result.errorCode === 'PERMISSION_DENIED');
     } catch {
-      setGpsErrorNotice(gpsErrorMsg);
+      applyManualAddressFallback(false);
     } finally {
       setIsLocatingUser(false);
     }
@@ -1667,6 +1688,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
 
           <div className="relative w-full min-w-0">
             <textarea
+              ref={pickupTextareaRef}
               rows={2}
               value={pickupInput}
               onChange={(e) => handlePickupChange(e.target.value.replace(/\r?\n/g, ' '))}
@@ -1708,6 +1730,7 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                   setPickup(null);
                   setGpsDetectedNotice(null);
                   setGpsErrorNotice(null);
+                  setGpsPermissionDenied(false);
                   setGpsFallbackNotice(null);
                   setGpsPinCoords(null);
                   onRouteSearched?.(false);
@@ -1720,7 +1743,41 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
             )}
           </div>
 
-          {/* Aviso de fallback para última localização salva (> 5s sem resposta de GPS) */}
+          {/* Barra rápida: Usar minha localização + Permitir localização (quando negado) + aviso leve sem travar */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={isLocatingUser}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-emerald-50 border border-slate-300 hover:border-emerald-400 text-slate-800 hover:text-emerald-800 text-xs font-bold rounded-xl cursor-pointer inline-flex items-center gap-1.5 transition-all disabled:opacity-60"
+            >
+              {isLocatingUser ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 shrink-0" />
+              ) : (
+                <Navigation className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              )}
+              <span>{isLocatingUser ? 'Buscando localização...' : 'Usar minha localização'}</span>
+            </button>
+
+            {gpsPermissionDenied && (
+              <button
+                type="button"
+                onClick={handleOpenLocationSettings}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer inline-flex items-center gap-1.5 transition-all shadow-xs"
+              >
+                <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Permitir localização</span>
+              </button>
+            )}
+
+            {gpsErrorNotice && (
+              <span className="text-xs font-bold text-slate-600">
+                {gpsErrorNotice}
+              </span>
+            )}
+          </div>
+
+          {/* Aviso de fallback para última localização salva */}
           {gpsFallbackNotice && (
             <div className="mt-2.5 p-3 bg-amber-50 border-2 border-amber-400 rounded-2xl flex items-start justify-between gap-2 text-xs sm:text-sm text-amber-950 font-bold animate-fade-in shadow-xs">
               <div className="flex items-start gap-2 min-w-0 flex-1">
@@ -1731,24 +1788,6 @@ export const PassengerRideView: React.FC<PassengerRideViewProps> = ({
                 type="button"
                 onClick={() => setGpsFallbackNotice(null)}
                 className="text-amber-700 hover:text-amber-950 font-bold text-xs cursor-pointer p-0.5 shrink-0"
-                title="Fechar"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* Erro ao tentar obter GPS ou localização fora de Indaiatuba */}
-          {gpsErrorNotice && (
-            <div className="mt-2.5 p-3.5 bg-rose-50 border-2 border-rose-400 rounded-2xl flex items-start justify-between gap-2.5 text-xs sm:text-sm text-rose-950 font-bold animate-fade-in shadow-xs">
-              <div className="flex items-start gap-2 min-w-0 flex-1">
-                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-                <span className="leading-snug">{gpsErrorNotice}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setGpsErrorNotice(null)}
-                className="text-rose-700 hover:text-rose-950 font-bold text-xs cursor-pointer p-0.5 shrink-0"
                 title="Fechar"
               >
                 ✕

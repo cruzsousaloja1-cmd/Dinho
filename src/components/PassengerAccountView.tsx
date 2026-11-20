@@ -27,7 +27,13 @@ import {
   Wallet,
   Download
 } from 'lucide-react';
-import { requestCurrentLocationFast } from '../services/addressSearchService';
+import {
+  requestCurrentLocationFast,
+  openAppLocationSettings,
+  DEFAULT_MANUAL_PICKUP_EXAMPLE,
+  DEFAULT_MANUAL_PICKUP_COORDS,
+  GPS_MANUAL_FALLBACK_MESSAGE,
+} from '../services/addressSearchService';
 import { saveSessionUser, isAppUserAdmin, isAppUserDriver } from '../services/userService';
 import { formatBRL } from '../services/pricingService';
 import {
@@ -86,6 +92,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   onWantToBeDriver,
 }) => {
   const [gpsStatus, setGpsStatus] = useState<string | null>(null);
+  const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -473,19 +480,17 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       ? draftAvatar || userAvatar
       : userAvatar || currentUser?.avatar || '';
 
-  // Atualizar endereço com GPS Real em Indaiatuba-SP (máx 5s, sem loop, fallback última localização salva)
+  // Atualizar endereço com GPS Real em Indaiatuba-SP (compatível com Chrome e WebView do Median)
   const handleUpdateGps = async () => {
     if (isLocating) return;
-    const gpsErrorMsg =
-      'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
 
     setIsLocating(true);
-    setGpsStatus('Buscando GPS preciso...');
+    setGpsPermissionDenied(false);
+    setGpsStatus('Buscando GPS...');
 
     try {
       const result = await requestCurrentLocationFast({
-        targetAccuracyMeters: 30,
-        maxWaitMs: 7000,
+        maxWaitMs: 10000,
         onStatusMessage: (msg) => setGpsStatus(msg),
       });
       if (
@@ -496,6 +501,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
       ) {
         setActiveAddress(result.fullAddress);
         if (onUpdateAddress) onUpdateAddress(result.fullAddress, result.lat, result.lng);
+        setGpsPermissionDenied(false);
         setGpsStatus(
           result.status === 'fallback_saved' && result.notice
             ? result.notice
@@ -503,12 +509,23 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         );
         return;
       }
-      setGpsStatus(result.errorMessage || gpsErrorMsg);
+      setGpsPermissionDenied(result.errorCode === 'PERMISSION_DENIED');
+      if (!activeAddress || !activeAddress.trim()) {
+        setActiveAddress(DEFAULT_MANUAL_PICKUP_EXAMPLE);
+        if (onUpdateAddress) {
+          onUpdateAddress(
+            DEFAULT_MANUAL_PICKUP_EXAMPLE,
+            DEFAULT_MANUAL_PICKUP_COORDS.lat,
+            DEFAULT_MANUAL_PICKUP_COORDS.lng
+          );
+        }
+      }
+      setGpsStatus(GPS_MANUAL_FALLBACK_MESSAGE);
     } catch {
-      setGpsStatus(gpsErrorMsg);
+      setGpsPermissionDenied(false);
+      setGpsStatus(GPS_MANUAL_FALLBACK_MESSAGE);
     } finally {
       setIsLocating(false);
-      setTimeout(() => setGpsStatus(null), 6000);
     }
   };
 
@@ -931,15 +948,41 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         </div>
 
         {gpsStatus && (
-          <div className={`border rounded-2xl p-3 text-xs font-bold flex items-center gap-2 ${
-            gpsStatus.includes('Ative o GPS')
-              ? 'bg-rose-50 border-rose-300 text-rose-900'
+          <div className={`border rounded-2xl p-3 text-xs font-bold flex flex-wrap items-center justify-between gap-2 ${
+            gpsStatus === GPS_MANUAL_FALLBACK_MESSAGE
+              ? 'bg-slate-100 border-slate-300 text-slate-800'
               : 'bg-emerald-50 border-emerald-300 text-emerald-900'
           }`}>
-            <CheckCircle2 className={`w-4 h-4 shrink-0 ${
-              gpsStatus.includes('Ative o GPS') ? 'text-rose-600' : 'text-emerald-600'
-            }`} />
-            <span>{gpsStatus}</span>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className={`w-4 h-4 shrink-0 ${
+                gpsStatus === GPS_MANUAL_FALLBACK_MESSAGE ? 'text-slate-600' : 'text-emerald-600'
+              }`} />
+              <span>{gpsStatus}</span>
+            </div>
+            {gpsStatus === GPS_MANUAL_FALLBACK_MESSAGE && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleUpdateGps}
+                  disabled={isLocating}
+                  className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-slate-800 hover:bg-emerald-50 text-xs font-bold cursor-pointer"
+                >
+                  Usar minha localização
+                </button>
+                {gpsPermissionDenied && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const opened = openAppLocationSettings();
+                      if (!opened) void handleUpdateGps();
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Permitir localização
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 

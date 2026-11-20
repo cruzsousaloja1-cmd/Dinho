@@ -5,6 +5,10 @@ import {
   searchAddressAutocomplete, 
   calculateDistanceKm, 
   requestCurrentLocationFast,
+  openAppLocationSettings,
+  DEFAULT_MANUAL_PICKUP_EXAMPLE,
+  DEFAULT_MANUAL_PICKUP_COORDS,
+  GPS_MANUAL_FALLBACK_MESSAGE,
   AddressSuggestion, 
   POPULAR_DATABASE_LOCATIONS 
 } from '../services/addressSearchService';
@@ -58,6 +62,7 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
   const [isSearchingDest, setIsSearchingDest] = useState(false);
   const [isLocatingUser, setIsLocatingUser] = useState(false);
   const [gpsErrorNotice, setGpsErrorNotice] = useState<string | null>(null);
+  const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
 
   const searchTimeoutRef = useRef<any>(null);
 
@@ -144,17 +149,31 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
     setActiveDropdown(null);
   };
 
+  const applyManualPickupFallback = (permissionDenied: boolean) => {
+    setGpsPermissionDenied(permissionDenied);
+    setGpsErrorNotice(GPS_MANUAL_FALLBACK_MESSAGE);
+    if (!pickupInput.trim()) {
+      setPickupInput(DEFAULT_MANUAL_PICKUP_EXAMPLE);
+      if (setPickup) {
+        setPickup({
+          address: DEFAULT_MANUAL_PICKUP_EXAMPLE,
+          lat: DEFAULT_MANUAL_PICKUP_COORDS.lat,
+          lng: DEFAULT_MANUAL_PICKUP_COORDS.lng,
+        });
+      }
+    }
+  };
+
   const handleUseCurrentLocation = async () => {
     if (isLocatingUser) return;
-    const gpsErrorMsg =
-      'Ative o GPS do celular e permita a localização para o RACE, depois clique em MEU GPS de novo';
 
     setIsLocatingUser(true);
     setGpsErrorNotice(null);
+    setGpsPermissionDenied(false);
     setActiveDropdown(null);
 
     try {
-      const result = await requestCurrentLocationFast();
+      const result = await requestCurrentLocationFast({ maxWaitMs: 10000 });
       if (
         (result.status === 'ok' || result.status === 'fallback_saved') &&
         result.fullAddress &&
@@ -163,14 +182,15 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
       ) {
         if (setPickup) setPickup({ address: result.fullAddress, lat: result.lat, lng: result.lng });
         setPickupInput(result.fullAddress);
+        setGpsPermissionDenied(false);
         if (result.status === 'fallback_saved' && result.notice) {
           setGpsErrorNotice(result.notice);
         }
         return;
       }
-      setGpsErrorNotice(result.errorMessage || gpsErrorMsg);
+      applyManualPickupFallback(result.errorCode === 'PERMISSION_DENIED');
     } catch {
-      setGpsErrorNotice(gpsErrorMsg);
+      applyManualPickupFallback(false);
     } finally {
       setIsLocatingUser(false);
     }
@@ -342,15 +362,35 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
                 </div>
               </div>
 
-              {gpsErrorNotice && (
-                <div className={`mt-2 p-2.5 border rounded-xl text-xs font-bold ${
-                  gpsErrorNotice.includes('última localização')
-                    ? 'bg-amber-50 border-amber-300 text-amber-950'
-                    : 'bg-rose-50 border-rose-300 text-rose-900'
-                }`}>
-                  {gpsErrorNotice}
-                </div>
-              )}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleUseCurrentLocation}
+                  disabled={isLocatingUser}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 border border-slate-300 text-slate-800 text-xs font-bold rounded-lg cursor-pointer inline-flex items-center gap-1 disabled:opacity-60"
+                >
+                  <Crosshair className="w-3 h-3 text-emerald-600" />
+                  <span>Usar minha localização</span>
+                </button>
+                {gpsPermissionDenied && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const opened = openAppLocationSettings();
+                      if (!opened) void handleUseCurrentLocation();
+                    }}
+                    className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg cursor-pointer inline-flex items-center gap-1"
+                  >
+                    <MapPin className="w-3 h-3 text-emerald-400" />
+                    <span>Permitir localização</span>
+                  </button>
+                )}
+                {gpsErrorNotice && (
+                  <span className="text-xs font-bold text-slate-600">
+                    {gpsErrorNotice}
+                  </span>
+                )}
+              </div>
 
               {/* Suggestions Dropdown for Coleta */}
               {activeDropdown === 'pickup' && (
