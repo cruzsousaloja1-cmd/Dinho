@@ -156,7 +156,7 @@ export const buildReferralLink = (whatsappOrCode: string): string => {
   const digits = normalizeReferralDigits(whatsappOrCode);
   const cleanCode = digits || (whatsappOrCode || '').trim();
   if (typeof window === 'undefined') {
-    return `https://race.app/Dinho/?indicado=${encodeURIComponent(cleanCode)}`;
+    return `https://cruzsousaloja1-cmd.github.io/Dinho/?indicado=${encodeURIComponent(cleanCode)}`;
   }
   const url = new URL(window.location.href);
   url.search = '';
@@ -280,15 +280,16 @@ export const buildReferralWhatsappShareText = (
   code?: string | null,
   _options?: { isDriver?: boolean }
 ): string => {
-  const cleanCode = String(code || '').trim().toUpperCase() || 'RACE100';
+  const rawCode = String(code || '').trim().toUpperCase();
+  const cleanCode = !rawCode || rawCode === 'JOSE367' ? 'JOSE492' : rawCode;
   return [
     '🏁 LANÇAMENTO RACE!',
-    'Sem taxa até 17/12/2026!',
+    'Sem taxa (0%) até 17/12/2026!',
     'Quanto antes você se cadastrar e indicar, mais tempo sem taxa e mais bônus você ganha!',
     '',
     '━━━━━━━━━━━━━',
     '🚗 PARA VOCÊ QUE VAI CADASTRAR COMO MOTORISTA OU MOTOBOY',
-    '✅ Ganhe 100% das corridas até 17/12/2026',
+    '✅ Ganhe 100% das corridas (0% de taxa) até 17/12/2026',
     '✅ Depois volta para 15% de taxa - você fica com 85%',
     '✅ Pagamento toda sexta-feira via PIX',
     '',
@@ -305,7 +306,7 @@ export const buildReferralWhatsappShareText = (
     'Quanto mais você indicar, mais você ganha!',
     '',
     `🔑 CÓDIGO DE CADASTRO: ${cleanCode}`,
-    '👉 Baixe aqui: cruzsousaloja1-cmd.github.io/Dinho/',
+    '👉 Baixe aqui: https://cruzsousaloja1-cmd.github.io/Dinho/',
   ].join('\n');
 };
 

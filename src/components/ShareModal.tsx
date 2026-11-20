@@ -32,16 +32,22 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   if (!isOpen) return null;
 
   // Resolve target sharing URL
-  const currentUrl = appUrl || (typeof window !== 'undefined' ? window.location.href : 'https://race-app.com');
+  const currentUrl =
+    appUrl ||
+    (typeof window !== 'undefined' && window.location.href.startsWith('http')
+      ? window.location.href
+      : 'https://cruzsousaloja1-cmd.github.io/Dinho/');
 
-  const shareTitle = 'RACE - Mobilidade Urbana & Entregas Inteligentes';
+  const shareTitle = 'RACE - Promoção de Lançamento! Código JOSE492';
   const shareText = 
-`🚀 Conheça a RACE: Mobilidade e Entregas em Indaiatuba!
+`🏁 Conheça a RACE: Mobilidade e Entregas em Indaiatuba!
+⚡ Promoção de Lançamento: 100% das corridas (0% de taxa) até 17/12/2026! Depois volta para 15% de taxa.
 ⭐ Modelo justo: ${WEEKLY_FEE_TEXT}
 🚗 Corridas Econômica: R$ 2,50/km | Confort: R$ 3,50/km
 🏍️ Moto Passageiro: R$ 1,80/km | Flash Entrega: R$ 2,00/km
+🔑 Use o código JOSE492 no cadastro!
 🛡️ Suporte 24h & GPS em tempo real!
-Acesse agora: ${currentUrl}`;
+👉 Acesse agora: https://cruzsousaloja1-cmd.github.io/Dinho/`;
 
   const handleCopyLink = async () => {
     try {

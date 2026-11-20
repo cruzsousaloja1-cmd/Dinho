@@ -2542,7 +2542,7 @@ async function upsertReferralLinkInPagamentos(params: {
 }
 
 /**
- * Normaliza código de indicação: remove espaços e converte para maiúsculo (ex: "jose367 " -> "JOSE367").
+ * Normaliza código de indicação: remove espaços e converte para maiúsculo (ex: "jose492 " -> "JOSE492").
  */
 export function normalizeReferralCodeInput(rawCode?: string | null): string {
   return String(rawCode || '').replace(/\s+/g, '').toUpperCase();
