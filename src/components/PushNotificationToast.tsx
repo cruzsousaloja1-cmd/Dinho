@@ -32,7 +32,7 @@ export const PushNotificationToast: React.FC<PushNotificationToastProps> = ({
               <h5 className="font-heading font-black text-slate-950 text-sm sm:text-base">
                 {notification.title}
               </h5>
-              <p className="text-xs sm:text-sm text-slate-700 mt-0.5 leading-snug font-medium">
+              <p className="text-xs sm:text-sm text-slate-700 mt-0.5 leading-snug font-medium whitespace-pre-line">
                 {notification.message}
               </p>
               <span className="text-xs text-amber-800 font-mono font-bold mt-1.5 block">
@@ -86,7 +86,7 @@ export const PushNotificationToast: React.FC<PushNotificationToastProps> = ({
                   </div>
                   <div className="flex-1">
                     <h5 className="font-black text-slate-950 text-sm sm:text-base">{item.title}</h5>
-                    <p className="text-slate-700 text-xs sm:text-sm mt-1 font-medium">{item.message}</p>
+                    <p className="text-slate-700 text-xs sm:text-sm mt-1 font-medium whitespace-pre-line">{item.message}</p>
                     <span className="text-xs text-slate-500 font-mono font-bold mt-1.5 block">
                       {item.time}
                     </span>

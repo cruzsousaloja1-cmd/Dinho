@@ -3198,9 +3198,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <MessageCircle className="w-4 h-4 shrink-0" />
                         <span>Enviar mensagem - Aguardando completar cadastro</span>
                       </a>
-                      <p className="text-[11px] text-emerald-900 font-medium leading-snug">
-                        <strong>Mensagem pronta (Equipe RACE):</strong> {waMessage}
-                      </p>
+                      <div className="bg-white/90 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-950 font-medium leading-relaxed whitespace-pre-line">
+                        <span className="text-[10px] font-mono font-black uppercase text-emerald-700 block mb-1">
+                          Mensagem pronta (Equipe RACE):
+                        </span>
+                        {waMessage}
+                      </div>
                       {wasMsgSent && (
                         <p className="text-[11px] font-bold text-emerald-700 flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />

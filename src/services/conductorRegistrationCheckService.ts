@@ -30,14 +30,37 @@ export interface ConductorMissingCheckInput {
   isMoto?: boolean;
 }
 
+export interface ConductorMissingItem {
+  key: string;
+  label: string;
+  emoji: string;
+}
+
 export interface ConductorMissingCheckResult {
   missingItems: string[];
+  missingDetails: ConductorMissingItem[];
   completedItems: string[];
   isComplete: boolean;
   title: string;
   message: string;
   signature: string;
 }
+
+const ITEM_EMOJI_MAP: Record<string, string> = {
+  'Foto de Perfil': '🤳',
+  'CNH Frente (foto)': '📸',
+  'CNH Verso (foto)': '📸',
+  CRLV: '📄',
+  'Foto do carro (Frente)': '🚗',
+  'Foto da moto': '🏍️',
+  Modelo: '🚘',
+  Cor: '🎨',
+  Placa: '🔢',
+  Ano: '📅',
+  CPF: '🪪',
+  'Número da CNH': '🆔',
+  'Chave PIX': '💰',
+};
 
 const isNonEmptyText = (value?: string | null): boolean =>
   typeof value === 'string' && value.trim().length > 0;
@@ -52,34 +75,44 @@ const isValidYearInput = (value?: string | number | null): boolean => {
 
 /**
  * Verifica automaticamente todos os 12 itens obrigatórios do cadastro do condutor
- * e gera a mensagem oficial da Equipe RACE listando SOMENTE o que falta
- * (ou confirmando que o cadastro está completo e AGUARDANDO APROVAÇÃO).
+ * diferenciando claramente CNH Frente/Verso (fotos) de Número da CNH (digitado),
+ * sem jamais duplicar CNH na lista.
  */
 export function evaluateConductorMissingFields(
   input: ConductorMissingCheckInput
 ): ConductorMissingCheckResult {
-  const vehiclePhotoLabel = input.isMoto ? 'Foto da moto' : 'Foto do carro';
+  const vehiclePhotoLabel = input.isMoto ? 'Foto da moto' : 'Foto do carro (Frente)';
+  const vehiclePhotoEmoji = input.isMoto ? '🏍️' : '🚗';
 
   const plateValue = String(input.vehiclePlate || '').trim();
   const cpfValue = String(input.cpf || '').trim();
   const cnhValue = String(input.cnh || '').trim();
 
-  const checks: Array<{ label: string; ok: boolean }> = [
-    { label: 'Foto de Perfil', ok: isNonEmptyText(input.profilePhoto) },
-    { label: 'CNH Frente', ok: isNonEmptyText(input.cnhFrontPhoto) },
-    { label: 'CNH Verso', ok: isNonEmptyText(input.cnhBackPhoto) },
-    { label: 'CRLV', ok: isNonEmptyText(input.crlvPhoto) },
-    { label: vehiclePhotoLabel, ok: isNonEmptyText(input.vehiclePhoto) },
-    { label: 'Modelo', ok: isNonEmptyText(input.vehicleModel) },
-    { label: 'Cor', ok: isNonEmptyText(input.vehicleColor) },
-    { label: 'Placa', ok: Boolean(plateValue) && validatePlate(plateValue).valid },
-    { label: 'Ano', ok: isValidYearInput(input.vehicleYear) },
-    { label: 'CPF', ok: Boolean(cpfValue) && validateCPF(cpfValue).valid },
-    { label: 'CNH', ok: Boolean(cnhValue) && validateCNH(cnhValue).valid },
-    { label: 'Chave PIX', ok: isNonEmptyText(input.pixKey) },
+  const checks: Array<{ key: string; label: string; emoji: string; ok: boolean }> = [
+    { key: 'profile_photo', label: 'Foto de Perfil', emoji: '🤳', ok: isNonEmptyText(input.profilePhoto) },
+    { key: 'cnh_front_photo', label: 'CNH Frente (foto)', emoji: '📸', ok: isNonEmptyText(input.cnhFrontPhoto) },
+    { key: 'cnh_back_photo', label: 'CNH Verso (foto)', emoji: '📸', ok: isNonEmptyText(input.cnhBackPhoto) },
+    { key: 'crlv_photo', label: 'CRLV', emoji: '📄', ok: isNonEmptyText(input.crlvPhoto) },
+    { key: 'vehicle_photo', label: vehiclePhotoLabel, emoji: vehiclePhotoEmoji, ok: isNonEmptyText(input.vehiclePhoto) },
+    { key: 'vehicle_model', label: 'Modelo', emoji: '🚘', ok: isNonEmptyText(input.vehicleModel) },
+    { key: 'vehicle_color', label: 'Cor', emoji: '🎨', ok: isNonEmptyText(input.vehicleColor) },
+    { key: 'vehicle_plate', label: 'Placa', emoji: '🔢', ok: Boolean(plateValue) && validatePlate(plateValue).valid },
+    { key: 'vehicle_year', label: 'Ano', emoji: '📅', ok: isValidYearInput(input.vehicleYear) },
+    { key: 'cpf_number', label: 'CPF', emoji: '🪪', ok: Boolean(cpfValue) && validateCPF(cpfValue).valid },
+    { key: 'cnh_number', label: 'Número da CNH', emoji: '🆔', ok: Boolean(cnhValue) && validateCNH(cnhValue).valid },
+    { key: 'pix_key', label: 'Chave PIX', emoji: '💰', ok: isNonEmptyText(input.pixKey) },
   ];
 
-  const missingItems = checks.filter((item) => !item.ok).map((item) => item.label);
+  const missingDetails: ConductorMissingItem[] = [];
+  const seenLabels = new Set<string>();
+  for (const item of checks) {
+    if (!item.ok && !seenLabels.has(item.label)) {
+      seenLabels.add(item.label);
+      missingDetails.push({ key: item.key, label: item.label, emoji: item.emoji });
+    }
+  }
+
+  const missingItems = missingDetails.map((item) => item.label);
   const completedItems = checks.filter((item) => item.ok).map((item) => item.label);
   const isComplete = missingItems.length === 0;
 
@@ -101,6 +134,7 @@ export function evaluateConductorMissingFields(
 
   return {
     missingItems,
+    missingDetails,
     completedItems,
     isComplete,
     title,
@@ -137,8 +171,9 @@ export function checkDriverObjectMissingFields(
 }
 
 /**
- * Monta a mensagem oficial do WhatsApp da Equipe RACE para o condutor pendente
- * (sempre como RACE, nunca com nome pessoal do ADM).
+ * Monta a mensagem oficial do WhatsApp da Equipe RACE para o condutor pendente,
+ * em formato de lista (um embaixo do outro com emoji), sem duplicar CNH
+ * e sempre como Equipe RACE (nunca com nome pessoal do ADM).
  */
 export function buildPendingConductorWhatsAppMessage(params: {
   name?: string | null;
@@ -149,11 +184,34 @@ export function buildPendingConductorWhatsAppMessage(params: {
       .trim()
       .split(/\s+/)[0] || 'Condutor';
 
-  if (params.missingItems.length > 0) {
-    return `Olá ${firstName}! Você está Aguardando completar cadastro no RACE. Falta: ${params.missingItems.join(', ')}. Complete aqui: ${RACE_APP_PUBLIC_LINK} - Equipe RACE`;
+  const uniqueItems = Array.from(new Set(params.missingItems.filter(Boolean)));
+
+  if (uniqueItems.length > 0) {
+    const bulletLines = uniqueItems
+      .map((label) => `${ITEM_EMOJI_MAP[label] || '📌'} ${label}`)
+      .join('\n');
+
+    return [
+      `Olá ${firstName}! 👋`,
+      `Você está Aguardando completar cadastro no RACE.`,
+      ``,
+      `📋 Falta enviar:`,
+      bulletLines,
+      ``,
+      `👉 Complete aqui: ${RACE_APP_PUBLIC_LINK}`,
+      ``,
+      `- Equipe RACE`,
+    ].join('\n');
   }
 
-  return `Olá ${firstName}! Seu cadastro no RACE está completo e AGUARDANDO APROVAÇÃO! Acompanhe aqui: ${RACE_APP_PUBLIC_LINK} - Equipe RACE`;
+  return [
+    `Olá ${firstName}! 👋`,
+    `Seu cadastro no RACE está completo e AGUARDANDO APROVAÇÃO! ✅`,
+    ``,
+    `👉 Acompanhe aqui: ${RACE_APP_PUBLIC_LINK}`,
+    ``,
+    `- Equipe RACE`,
+  ].join('\n');
 }
 
 /**
