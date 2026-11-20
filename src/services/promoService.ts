@@ -363,8 +363,9 @@ export const preloadRaceLogoBlob = (): Promise<Blob | null> => {
   }
   const candidates = Array.from(
     new Set([
-      '/Dinho/logo-race-indaiatuba.png',
       getRaceLogoPublicUrl(),
+      './logo-race-indaiatuba.png',
+      '/Dinho/logo-race-indaiatuba.png',
       '/logo-race-indaiatuba.png',
     ])
   );

@@ -1,8 +1,8 @@
-name: Gerar APK Android RACE (Limpo - Sem Propaganda)
+name: Gerar RACE.apk (Capacitor Limpo - Sem Propaganda)
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -37,17 +37,17 @@ jobs:
       - name: Instalar Capacitor Android e Gerador de Ícones
         run: npm install --no-save --legacy-peer-deps @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 @capacitor/assets@3
 
-      - name: Criar projeto Android nativo limpo (sem AppsGeyser e sem propaganda)
+      - name: Criar projeto Android nativo limpo (sem AppsGeyser, sem WebToApp e sem propaganda)
         run: |
           rm -rf android
           npx cap add android
           npx cap sync android
 
-      - name: Aplicar ícone oficial RACE (R vermelho, fundo preto) e Splash Screen
+      - name: Aplicar ícone oficial RACE (círculo preto, borda vermelha grossa, R + RACE) e Splash Screen
         run: |
           npx @capacitor/assets generate --android --iconBackgroundColor '#000000' --iconBackgroundColorDark '#000000' --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000'
 
-      - name: Garantir permissões de GPS, Câmera e Internet no AndroidManifest.xml
+      - name: Garantir permissões de GPS, Câmera, Notificações e Internet no AndroidManifest.xml
         run: |
           python3 - <<'EOF'
           from pathlib import Path
@@ -58,6 +58,7 @@ jobs:
               '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
               '    <uses-permission android:name="android.permission.CAMERA" />',
               '    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />',
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
           ]
           missing = [p for p in permissions if p.strip() not in content]
           if missing:
@@ -69,31 +70,37 @@ jobs:
               manifest_path.write_text(content, encoding='utf-8')
           EOF
 
-      - name: Compilar APK Android limpo do RACE
+      - name: Aceitar licenças Android SDK (se necessário)
+        run: |
+          if [ -n "$ANDROID_HOME" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          fi
+
+      - name: Compilar RACE.apk limpo via Gradle
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
           mkdir -p ../apk-output
-          cp app/build/outputs/apk/debug/app-debug.apk ../apk-output/RACE-limpo-sem-propaganda.apk
-          ls -lh ../apk-output/RACE-limpo-sem-propaganda.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../apk-output/RACE.apk
+          ls -lh ../apk-output/RACE.apk
 
-      - name: Publicar APK para download direto (Artifact do GitHub Actions)
+      - name: Publicar RACE.apk para download direto (Artifact do GitHub Actions)
         uses: actions/upload-artifact@v4
         with:
-          name: RACE-APK-Limpo-Sem-Propaganda
-          path: apk-output/RACE-limpo-sem-propaganda.apk
+          name: RACE.apk
+          path: apk-output/RACE.apk
           retention-days: 90
 
-      - name: Atualizar Release com link direto para baixar o APK
+      - name: Atualizar Release com link direto para baixar RACE.apk
         uses: softprops/action-gh-release@v2
         with:
           tag_name: race-apk-latest
-          name: RACE APK Oficial (Limpo - Sem Propaganda)
+          name: RACE.apk Oficial (Limpo - Sem Propaganda)
           body: |
-            APK oficial do **RACE** compilado diretamente com Capacitor (sem AppsGeyser, sem faixa inferior, sem "Buy Premium", sem propaganda).
+            APK oficial do **RACE** compilado diretamente pelo GitHub Actions com Capacitor — 100% limpo, sem AppsGeyser, sem WebToApp, sem faixa inferior e sem propaganda.
             - Nome: **RACE**
-            - Ícone: **R vermelho com fundo preto**
-            - Abre direto no app em tela cheia
-          files: apk-output/RACE-limpo-sem-propaganda.apk
+            - Ícone: **Círculo preto com borda vermelha grossa, R estilizado e RACE em vermelho**
+            - Abre direto no app RACE em tela cheia, sem precisar digitar link
+          files: apk-output/RACE.apk
           make_latest: true

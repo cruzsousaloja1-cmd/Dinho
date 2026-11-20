@@ -8,6 +8,7 @@ import { compressImageToMax200KB } from '../utils/imageCompression';
 import { isValidEmail, isValidWhatsApp11, isValidPassword } from '../utils/security';
 import { LegalConsentSection } from './LegalConsentSection';
 import { checkDuplicateRegistrationSupabase } from '../supabase';
+import { getRaceCircleIconUrl } from '../utils/brandAssets';
 
 interface MotoboyRegisterViewProps {
   onRegisterSuccess: (user: AppUser, newMotoboy: Driver) => void;
@@ -179,14 +180,13 @@ export const MotoboyRegisterView: React.FC<MotoboyRegisterViewProps> = ({
   return (
     <div className="min-h-screen bg-[#000000] text-white flex flex-col justify-center items-center px-6 py-12 selection:bg-[#ff6a00] selection:text-white">
       <div className="w-full max-w-sm sm:max-w-md space-y-6 animate-fade-in">
-        {/* Topo: Título RACE em laranja e subtítulo Cadastro Motoboy */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#ff6a00]/10 border border-[#ff6a00]/30 text-[#ff6a00] mb-1">
-            <Bike className="w-8 h-8" />
-          </div>
-          <h1 className="text-5xl sm:text-6xl font-heading font-black text-[#ff6a00] tracking-tighter uppercase select-none">
-            RACE
-          </h1>
+        {/* Topo: Ícone oficial RACE e subtítulo Cadastro Motoboy */}
+        <div className="text-center space-y-2 flex flex-col items-center">
+          <img
+            src={getRaceCircleIconUrl()}
+            alt="RACE"
+            className="w-28 h-28 sm:w-32 sm:h-32 rounded-full object-contain drop-shadow-[0_0_20px_rgba(255,20,40,0.4)] select-none"
+          />
           <p className="text-zinc-300 font-medium text-base sm:text-lg tracking-wide">
             Cadastro Motoboy Parceiro
           </p>

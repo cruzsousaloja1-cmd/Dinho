@@ -31,6 +31,7 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { LaunchPromoBanner } from './LaunchPromoBanner';
 import { DriverBenefitsBox } from './DriverBenefitsBox';
 import { getReferralCodeFromUrl, normalizeReferralDigits } from '../services/promoService';
+import { getRaceCircleIconUrl } from '../utils/brandAssets';
 
 interface DriverLoginScreenProps {
   drivers: Driver[];
@@ -715,11 +716,13 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
     <div className="h-dvh w-full overflow-y-auto overscroll-contain bg-[#000000] text-white px-4 sm:px-6 py-10 selection:bg-[#ff6a00] selection:text-white">
       <div className="min-h-full flex flex-col justify-center items-center">
       <div className="w-full max-w-sm sm:max-w-md space-y-7 animate-fade-in">
-        {/* Topo Oficial RACE Laranja */}
-        <div className="text-center space-y-1.5">
-          <h1 className="text-6xl sm:text-7xl font-heading font-black text-[#ff6a00] tracking-tighter uppercase select-none">
-            RACE
-          </h1>
+        {/* Topo Oficial RACE */}
+        <div className="text-center space-y-2 flex flex-col items-center">
+          <img
+            src={getRaceCircleIconUrl()}
+            alt="RACE"
+            className="w-32 h-32 sm:w-36 sm:h-36 rounded-full object-contain drop-shadow-[0_0_24px_rgba(255,20,40,0.4)] select-none"
+          />
           <p className="text-zinc-300 font-medium text-sm sm:text-base tracking-wide">
             Mobilidade Urbana & Entregas
           </p>

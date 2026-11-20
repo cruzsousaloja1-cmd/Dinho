@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { getRaceCircleIconUrl } from '../utils/brandAssets';
 
 interface SplashScreenProps {
   onComplete: () => void;
@@ -11,6 +12,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 }) => {
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+  const raceIconUrl = getRaceCircleIconUrl();
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -29,10 +31,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       aria-label="RACE - Indaiatuba - SP"
     >
       <div className="flex flex-col items-center justify-center text-center">
-        <h1 className="text-[90px] leading-none font-heading font-black tracking-tight uppercase text-center bg-gradient-to-b from-[#ff0000] via-[#ff2600] to-[#ff6a00] bg-clip-text text-transparent drop-shadow-[0_0_28px_rgba(255,40,0,0.45)]">
-          RACE
-        </h1>
-        <p className="mt-3 text-xs sm:text-sm font-medium text-white tracking-widest text-center">
+        <img
+          src={raceIconUrl}
+          alt="RACE"
+          className="w-56 h-56 sm:w-64 sm:h-64 rounded-full object-contain drop-shadow-[0_0_32px_rgba(255,20,40,0.45)]"
+        />
+        <p className="mt-5 text-xs sm:text-sm font-semibold text-white/90 tracking-widest text-center">
           Indaiatuba - SP
         </p>
       </div>

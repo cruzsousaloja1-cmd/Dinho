@@ -16,6 +16,7 @@ import { AppUser } from '../types';
 import { WEEKLY_FEE_BADGE } from '../config/pricing';
 import { isAppUserAdmin, isAppUserDriver } from '../services/userService';
 import { PWAInstallButton } from './PWAInstallButton';
+import { getRaceCircleIconUrl } from '../utils/brandAssets';
 
 interface HeaderProps {
   unreadNotifsCount: number;
@@ -63,9 +64,13 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-2 sm:gap-2.5 group cursor-pointer" 
             onClick={() => onChangeRole(isAdmin ? 'admin' : 'passenger')}
           >
-            <div className="relative flex items-center justify-center w-9 h-9 sm:w-12 sm:h-12 rounded-2xl bg-slate-950 text-white font-black shadow-md border border-slate-800 shrink-0">
-              <span className="font-heading text-lg sm:text-2xl tracking-tighter italic font-black">R</span>
-              <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow"></div>
+            <div className="relative flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-black shadow-md shrink-0">
+              <img
+                src={getRaceCircleIconUrl()}
+                alt="RACE"
+                className="w-full h-full rounded-full object-contain"
+              />
+              <div className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow"></div>
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
