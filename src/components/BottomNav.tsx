@@ -120,7 +120,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       {
         id: 'admin_drivers' as TabType,
         emoji: '🚗',
-        label: 'Motoristas',
+        label: 'Condutores',
       },
       {
         id: 'admin' as TabType,

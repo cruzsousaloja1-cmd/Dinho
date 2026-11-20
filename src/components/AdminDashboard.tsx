@@ -2591,7 +2591,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           <UserCheck className="w-4 h-4 text-[#ff6a00] shrink-0" />
-          <span>Motoristas</span>
+          <span>Condutores</span>
           {pendingApprovalsList.length > 0 && (
             <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-[#ff6a00] text-white">
               {pendingApprovalsList.length}
@@ -2675,7 +2675,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="mt-1 flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-xs text-slate-500 font-medium">
                   {pendingApprovalsList.length > 0
-                    ? `${pendingApprovalsList.length} pendente(s) em Motoristas > Pendente`
+                    ? `${pendingApprovalsList.length} pendente(s) em Condutores > Pendente`
                     : 'Somente condutores aprovados'}
                 </p>
                 {pendingApprovalsList.length > 0 && (
@@ -2961,7 +2961,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="font-heading font-black text-slate-950 text-xl">
-                    Motorista Pendente — Aprovação Rápida
+                    Condutor Pendente — Aprovação Rápida
                   </h3>
                   <span className="text-xs font-mono font-bold text-slate-500">
                     5 fotos lado a lado (Perfil, CNH Frente, CNH Verso, CRLV e Carro Frente) • Somente aprovados ficam ONLINE
@@ -3613,7 +3613,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             ) : approvedOverviewDrivers.length === 0 ? (
               <div className="text-center py-6 text-slate-500 text-sm">
-                Nenhum condutor ativado ainda. Aprove em Motoristas &gt; Pendente para aparecer aqui.
+                Nenhum condutor ativado ainda. Aprove em Condutores &gt; Pendente para aparecer aqui.
               </div>
             ) : (
               <div className="space-y-3">
@@ -3838,7 +3838,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <Car className="w-4 h-4 text-slate-900" />
-              <span>Motoristas & Motos ({approvedOverviewDrivers.length})</span>
+              <span>Condutores & Motos ({approvedOverviewDrivers.length})</span>
             </button>
 
             <button

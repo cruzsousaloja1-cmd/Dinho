@@ -241,10 +241,10 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
           </div>
           <div>
             <h3 className="font-heading font-black text-base sm:text-lg text-white">
-              Ver como Motorista — Chamada de Corrida
+              Ver como Condutor — Chamada de Corrida
             </h3>
             <p className="text-xs text-zinc-300 font-medium">
-              Teste exatamente como o motorista recebe o chamado, aceita, valida o código de 4 dígitos e finaliza.
+              Teste exatamente como o condutor recebe o chamado, aceita, valida o código de 4 dígitos e finaliza.
             </p>
           </div>
         </div>
@@ -264,7 +264,7 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
             className="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-heading font-black text-xs cursor-pointer flex items-center justify-center gap-1.5"
           >
             <Users className="w-4 h-4 shrink-0" />
-            <span>Todos os Motoristas</span>
+            <span>Todos os Condutores</span>
           </button>
         </div>
       </div>
@@ -346,8 +346,8 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
                 </span>
                 <span className="text-[11px] font-mono font-bold text-amber-300 block">
                   {isPromoZeroFee
-                    ? '100% Motorista • 0% Race até 17/12'
-                    : `85% Motorista • 15% Race`}
+                    ? '100% Condutor • 0% Race até 17/12'
+                    : `85% Condutor • 15% Race`}
                 </span>
               </div>
             </div>
@@ -539,9 +539,9 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
               Corrida Finalizada!
             </h4>
             <p className="text-sm text-emerald-200 font-semibold">
-              Ganho do motorista:{' '}
+              Ganho do condutor:{' '}
               <strong className="text-emerald-400 text-lg">{formatBRL(split.driverEarnings)}</strong>{' '}
-              ({isPromoZeroFee ? '100% Motorista / 0% Race até 17/12' : '85% Motorista / 15% Race'})
+              ({isPromoZeroFee ? '100% Condutor / 0% Race até 17/12' : '85% Condutor / 15% Race'})
             </p>
           </div>
           <button
@@ -587,7 +587,7 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
         <div className="px-4 py-2.5 bg-slate-950 text-white flex items-center justify-between text-xs font-mono">
           <span className="font-bold flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            Mapa de Indaiatuba — Visão do Motorista
+            Mapa de Indaiatuba — Visão do Condutor
           </span>
           <span className="text-emerald-400 font-bold">
             {phase === 'idle'

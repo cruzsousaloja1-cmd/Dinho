@@ -2415,7 +2415,7 @@ export default function App() {
                     : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700'
                 }`}
               >
-                <span>🚗 Ver como Motorista</span>
+                <span>🚗 Ver como Condutor</span>
               </button>
               <button
                 type="button"
@@ -2426,7 +2426,7 @@ export default function App() {
                     : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700'
                 }`}
               >
-                <span>👥 Todos os Motoristas</span>
+                <span>👥 Todos os Condutores</span>
               </button>
             </div>
           </div>
