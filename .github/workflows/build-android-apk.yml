@@ -1,4 +1,4 @@
-name: Gerar RACE.apk (Capacitor Limpo - Sem Propaganda)
+name: Gerar RACE-release.apk Assinado (Capacitor Limpo)
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build-android-apk:
+  build-android-release-apk:
     runs-on: ubuntu-latest
     steps:
       - name: Baixar código do RACE
@@ -47,12 +47,18 @@ jobs:
         run: |
           npx @capacitor/assets generate --android --iconBackgroundColor '#000000' --iconBackgroundColorDark '#000000' --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000'
 
-      - name: Garantir permissões de GPS, Câmera, Notificações e Internet no AndroidManifest.xml
+      - name: Configurar permissões (GPS, Câmera, Notificações) e versão Release
+        env:
+          BUILD_RUN_NUMBER: ${{ github.run_number }}
         run: |
           python3 - <<'EOF'
+          import os
+          import re
           from pathlib import Path
+
+          # 1. Permissões no AndroidManifest.xml
           manifest_path = Path('android/app/src/main/AndroidManifest.xml')
-          content = manifest_path.read_text(encoding='utf-8')
+          manifest = manifest_path.read_text(encoding='utf-8')
           permissions = [
               '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
               '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
@@ -60,47 +66,116 @@ jobs:
               '    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />',
               '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
           ]
-          missing = [p for p in permissions if p.strip() not in content]
+          missing = [p for p in permissions if p.strip() not in manifest]
           if missing:
-              content = content.replace(
+              manifest = manifest.replace(
                   '<uses-permission android:name="android.permission.INTERNET" />',
                   '<uses-permission android:name="android.permission.INTERNET" />\n' + '\n'.join(missing),
                   1,
               )
-              manifest_path.write_text(content, encoding='utf-8')
+              manifest_path.write_text(manifest, encoding='utf-8')
+
+          # 2. Garantir versionCode incremental e release limpo no build.gradle
+          gradle_path = Path('android/app/build.gradle')
+          gradle = gradle_path.read_text(encoding='utf-8')
+          run_num = max(2, int(os.environ.get('BUILD_RUN_NUMBER', '2')))
+          gradle = re.sub(r'versionCode\s+\d+', f'versionCode {run_num}', gradle, count=1)
+          gradle = re.sub(r'versionName\s+"[^"]+"', f'versionName "1.0.{run_num}"', gradle, count=1)
+          gradle_path.write_text(gradle, encoding='utf-8')
           EOF
 
       - name: Aceitar licenças Android SDK (se necessário)
         run: |
-          if [ -n "$ANDROID_HOME" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -n "$SDK_ROOT" ] && [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
           fi
 
-      - name: Compilar RACE.apk limpo via Gradle
+      - name: Restaurar keystore Release do RACE (mantém assinatura consistente)
+        uses: actions/cache@v4
+        with:
+          path: race-keystore
+          key: race-release-keystore-v1
+
+      - name: Preparar keystore Release RSA 2048 do RACE
+        run: |
+          mkdir -p race-keystore
+          if [ ! -f race-keystore/race-release.jks ]; then
+            keytool -genkeypair -v \
+              -keystore race-keystore/race-release.jks \
+              -storetype PKCS12 \
+              -alias racekey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass RaceIndaiatuba2026Release \
+              -keypass RaceIndaiatuba2026Release \
+              -dname "CN=RACE Mobilidade, OU=Mobile, O=RACE Indaiatuba, L=Indaiatuba, ST=SP, C=BR"
+          fi
+          ls -lh race-keystore/race-release.jks
+
+      - name: Compilar APK RELEASE (não debug) via Gradle
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
-          mkdir -p ../apk-output
-          cp app/build/outputs/apk/debug/app-debug.apk ../apk-output/RACE.apk
-          ls -lh ../apk-output/RACE.apk
+          ./gradlew assembleRelease
+          ls -lh app/build/outputs/apk/release/
 
-      - name: Publicar RACE.apk para download direto (Artifact do GitHub Actions)
+      - name: Alinhar (zipalign -p 4) e assinar RACE-release.apk (v1 + v2 + v3) com apksigner
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)"
+          if [ -z "$BUILD_TOOLS" ] || [ ! -x "$BUILD_TOOLS/apksigner" ]; then
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
+            BUILD_TOOLS="$SDK_ROOT/build-tools/35.0.0"
+          fi
+          echo "Build-tools selecionado: $BUILD_TOOLS"
+
+          UNSIGNED_APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n 1)"
+          if [ -z "$UNSIGNED_APK" ] || [ ! -f "$UNSIGNED_APK" ]; then
+            echo "ERRO: APK release não encontrado em android/app/build/outputs/apk/release"
+            exit 1
+          fi
+          echo "APK release gerado pelo Gradle: $UNSIGNED_APK"
+
+          mkdir -p apk-output
+          "$BUILD_TOOLS/zipalign" -v -f -p 4 "$UNSIGNED_APK" apk-output/RACE-aligned.apk
+
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks race-keystore/race-release.jks \
+            --ks-key-alias racekey \
+            --ks-pass pass:RaceIndaiatuba2026Release \
+            --key-pass pass:RaceIndaiatuba2026Release \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out apk-output/RACE-release.apk \
+            apk-output/RACE-aligned.apk
+
+          rm -f apk-output/RACE-aligned.apk
+
+          echo "Verificando assinatura digital do RACE-release.apk..."
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs apk-output/RACE-release.apk
+          ls -lh apk-output/RACE-release.apk
+
+      - name: Publicar RACE-release.apk assinado em Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: RACE.apk
-          path: apk-output/RACE.apk
+          name: RACE-release.apk
+          path: apk-output/RACE-release.apk
           retention-days: 90
 
-      - name: Atualizar Release com link direto para baixar RACE.apk
+      - name: Atualizar Release com link direto para baixar RACE-release.apk
         uses: softprops/action-gh-release@v2
         with:
           tag_name: race-apk-latest
-          name: RACE.apk Oficial (Limpo - Sem Propaganda)
+          name: RACE-release.apk Oficial (Release Assinado - Sem Propaganda)
           body: |
-            APK oficial do **RACE** compilado diretamente pelo GitHub Actions com Capacitor — 100% limpo, sem AppsGeyser, sem WebToApp, sem faixa inferior e sem propaganda.
-            - Nome: **RACE**
+            APK **RELEASE assinado** (v1 + v2 + v3 com `zipalign` + `apksigner`) do **RACE**, compilado diretamente pelo GitHub Actions com Capacitor — 100% limpo, sem debug, sem AppsGeyser, sem WebToApp e sem propaganda.
+            - Arquivo: **RACE-release.apk**
+            - Nome do app: **RACE**
             - Ícone: **Círculo preto com borda vermelha grossa, R estilizado e RACE em vermelho**
-            - Abre direto no app RACE em tela cheia, sem precisar digitar link
-          files: apk-output/RACE.apk
+            - Abre direto no app RACE em tela cheia
+          files: apk-output/RACE-release.apk
           make_latest: true
