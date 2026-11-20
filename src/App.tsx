@@ -115,7 +115,6 @@ export default function App() {
   // Global States
   const [activeTab, setActiveTab] = useState<TabType>(() => resolveInitialTab(initialUser));
   const [admRidesSubView, setAdmRidesSubView] = useState<'passenger' | 'all_rides'>('passenger');
-  const [admDriversSubView, setAdmDriversSubView] = useState<'driver' | 'all_drivers'>('all_drivers');
   const isAdminActiveTab = (tab: TabType) =>
     tab === 'admin' || tab === 'admin_rides' || tab === 'admin_drivers';
   const tabScrollTopsRef = useRef<Partial<Record<TabType, number>>>({});
@@ -128,9 +127,7 @@ export default function App() {
           ? 'rides'
           : 'admin'
         : activeTab === 'admin_drivers'
-        ? admDriversSubView === 'driver'
-          ? 'driver_portal'
-          : 'admin'
+        ? 'driver_portal'
         : activeTab;
     const el = tabPanelRefs.current[panelKey];
     if (el) {
@@ -138,13 +135,13 @@ export default function App() {
     }
     if (
       (activeTab === 'admin_rides' && admRidesSubView === 'passenger') ||
-      (activeTab === 'admin_drivers' && admDriversSubView === 'driver')
+      activeTab === 'admin_drivers'
     ) {
       requestAnimationFrame(() => {
         window.dispatchEvent(new Event('resize'));
       });
     }
-  }, [activeTab, admRidesSubView, admDriversSubView]);
+  }, [activeTab, admRidesSubView]);
 
   const [isFullMapOpen, setIsFullMapOpen] = useState(false);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -179,7 +176,7 @@ export default function App() {
       if (activeTab === 'admin_rides') {
         isActive = admRidesSubView === 'passenger' ? tab === 'rides' : tab === 'admin';
       } else if (activeTab === 'admin_drivers') {
-        isActive = admDriversSubView === 'driver' ? tab === 'driver_portal' : tab === 'admin';
+        isActive = tab === 'driver_portal';
       }
     }
     const bottomPad = isRideActivePhase && tab !== 'driver_portal' ? 'pb-40' : 'pb-28';
@@ -2403,35 +2400,6 @@ export default function App() {
           </div>
         )}
 
-        {isAppUserAdmin(currentUser) && activeTab === 'admin_drivers' && (
-          <div className="shrink-0 bg-slate-950 border-b border-zinc-800 px-3 py-2 z-20">
-            <div className="grid grid-cols-2 gap-2 max-w-xl mx-auto">
-              <button
-                type="button"
-                onClick={() => setAdmDriversSubView('driver')}
-                className={`py-2 px-3 rounded-xl font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  admDriversSubView === 'driver'
-                    ? 'bg-[#ff6a00] text-white shadow'
-                    : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700'
-                }`}
-              >
-                <span>🚗 Ver como Condutor</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdmDriversSubView('all_drivers')}
-                className={`py-2 px-3 rounded-xl font-heading font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  admDriversSubView === 'all_drivers'
-                    ? 'bg-[#ff6a00] text-white shadow'
-                    : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700'
-                }`}
-              >
-                <span>👥 Todos os Condutores</span>
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="flex-1 min-h-0 relative overflow-hidden">
         {/* 1. Corridas (Passageiro / Condutor) */}
         <div {...getTabPanelProps('rides')}>
@@ -2513,13 +2481,11 @@ export default function App() {
           />
         </div>
 
-        {/* 3. Condutor & Cadastro (somente Motorista/Motoboy; no ADM mostra simulador de chamada sem perfil ADM) */}
+        {/* 3. Condutor & Cadastro (no botão Condutores do ADM mostra SÓ a tela de espera e aceite de chamada) */}
         <div {...getTabPanelProps('driver_portal')}>
           {isCurrentUserAdmin ? (
-            activeTab === 'admin_drivers' && admDriversSubView === 'driver' ? (
-              <AdminDriverCallSimulator
-                onOpenAllDrivers={() => setAdmDriversSubView('all_drivers')}
-              />
+            activeTab === 'admin_drivers' ? (
+              <AdminDriverCallSimulator />
             ) : null
           ) : isUserDriver ? (
             <DriverPartnerPortal

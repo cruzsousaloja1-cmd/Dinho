@@ -9,7 +9,6 @@ import {
   RefreshCw,
   RotateCcw,
   Star,
-  Users,
   Volume2,
   XCircle,
 } from 'lucide-react';
@@ -25,10 +24,6 @@ import {
   calculateRideSplitForDriver,
   isDriverInLaunchZeroFeePromo,
 } from '../services/promoService';
-
-interface AdminDriverCallSimulatorProps {
-  onOpenAllDrivers: () => void;
-}
 
 interface SimulatedCallData {
   id: string;
@@ -109,9 +104,7 @@ const SAMPLE_CALLS: Omit<SimulatedCallData, 'id' | 'confirmationCode'>[] = [
 const formatBRL = (value: number): string =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> = ({
-  onOpenAllDrivers,
-}) => {
+export const AdminDriverCallSimulator: React.FC = () => {
   const [phase, setPhase] = useState<SimPhase>('idle');
   const [callIndex, setCallIndex] = useState(0);
   const [simulatedCall, setSimulatedCall] = useState<SimulatedCallData | null>(null);
@@ -253,18 +246,10 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
           <button
             type="button"
             onClick={handleSimulateIncomingCall}
-            className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs sm:text-sm cursor-pointer shadow-md flex items-center justify-center gap-2 transition-all"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-xs sm:text-sm cursor-pointer shadow-md flex items-center justify-center gap-2 transition-all"
           >
             <Volume2 className="w-4 h-4 shrink-0" />
             <span>Simular chamada de corrida</span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenAllDrivers}
-            className="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-heading font-black text-xs cursor-pointer flex items-center justify-center gap-1.5"
-          >
-            <Users className="w-4 h-4 shrink-0" />
-            <span>Todos os Condutores</span>
           </button>
         </div>
       </div>
@@ -555,19 +540,21 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
         </div>
       )}
 
-      {/* TELA INICIAL (ANTES DE SIMULAR) */}
+      {/* TELA DE ESPERA (ANTES DE CHEGAR CHAMADA) */}
       {phase === 'idle' && (
         <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 text-left">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 border border-emerald-300 flex items-center justify-center shrink-0">
+            <div className="relative w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 border border-emerald-300 flex items-center justify-center shrink-0">
               <Car className="w-6 h-6" />
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 animate-ping" />
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white" />
             </div>
             <div>
-              <h4 className="font-heading font-black text-slate-950 text-base">
-                Pronto para testar a chamada de corrida
+              <h4 className="font-heading font-black text-slate-950 text-base sm:text-lg">
+                Aguardando chamada de corrida...
               </h4>
               <p className="text-xs sm:text-sm text-slate-600 font-medium">
-                Toque em <strong>Simular chamada de corrida</strong> para tocar o som e ver foto do passageiro, origem, destino, valor (100% até 17/12), Aceitar/Recusar, código de 4 dígitos e Finalizar.
+                Toque em <strong>Simular chamada de corrida</strong> para testar o som, foto do passageiro, origem, destino, valor (100% até 17/12), Aceitar/Recusar, código de 4 dígitos e Finalizar.
               </p>
             </div>
           </div>
@@ -577,7 +564,7 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
             className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading font-black text-sm cursor-pointer shadow-md flex items-center justify-center gap-2 shrink-0"
           >
             <BellRing className="w-4 h-4 shrink-0" />
-            <span>Simular chamada</span>
+            <span>Simular chamada de corrida</span>
           </button>
         </div>
       )}
