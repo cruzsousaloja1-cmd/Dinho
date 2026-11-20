@@ -25,6 +25,7 @@ import { RideHistoryView } from './components/RideHistoryView';
 import { Support24hModal } from './components/Support24hModal';
 import { SosModal } from './components/SosModal';
 import { PushNotificationToast } from './components/PushNotificationToast';
+import { OfflineIndicator } from './components/PWAInstallButton';
 import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
 import { ForgotPasswordModal } from './components/ForgotPasswordModal';
@@ -2866,6 +2867,9 @@ export default function App() {
         </div>
         </div>
       </main>
+
+      {/* Offline Indicator (PWA) */}
+      <OfflineIndicator />
 
       {/* Floating Push Notification Toast */}
       <PushNotificationToast

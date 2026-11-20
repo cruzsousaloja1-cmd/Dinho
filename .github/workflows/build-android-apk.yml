@@ -1,0 +1,99 @@
+name: Gerar APK Android RACE (Limpo - Sem Propaganda)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código do RACE
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configurar Java 21 (JDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Instalar dependências do projeto
+        run: npm install --legacy-peer-deps
+
+      - name: Compilar app web RACE para Android Capacitor (base relativo ./)
+        env:
+          CAPACITOR_BUILD: 'true'
+        run: npm run build
+
+      - name: Instalar Capacitor Android e Gerador de Ícones
+        run: npm install --no-save --legacy-peer-deps @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 @capacitor/assets@3
+
+      - name: Criar projeto Android nativo limpo (sem AppsGeyser e sem propaganda)
+        run: |
+          rm -rf android
+          npx cap add android
+          npx cap sync android
+
+      - name: Aplicar ícone oficial RACE (R vermelho, fundo preto) e Splash Screen
+        run: |
+          npx @capacitor/assets generate --android --iconBackgroundColor '#000000' --iconBackgroundColorDark '#000000' --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000'
+
+      - name: Garantir permissões de GPS, Câmera e Internet no AndroidManifest.xml
+        run: |
+          python3 - <<'EOF'
+          from pathlib import Path
+          manifest_path = Path('android/app/src/main/AndroidManifest.xml')
+          content = manifest_path.read_text(encoding='utf-8')
+          permissions = [
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+              '    <uses-permission android:name="android.permission.CAMERA" />',
+              '    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />',
+          ]
+          missing = [p for p in permissions if p.strip() not in content]
+          if missing:
+              content = content.replace(
+                  '<uses-permission android:name="android.permission.INTERNET" />',
+                  '<uses-permission android:name="android.permission.INTERNET" />\n' + '\n'.join(missing),
+                  1,
+              )
+              manifest_path.write_text(content, encoding='utf-8')
+          EOF
+
+      - name: Compilar APK Android limpo do RACE
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          mkdir -p ../apk-output
+          cp app/build/outputs/apk/debug/app-debug.apk ../apk-output/RACE-limpo-sem-propaganda.apk
+          ls -lh ../apk-output/RACE-limpo-sem-propaganda.apk
+
+      - name: Publicar APK para download direto (Artifact do GitHub Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RACE-APK-Limpo-Sem-Propaganda
+          path: apk-output/RACE-limpo-sem-propaganda.apk
+          retention-days: 90
+
+      - name: Atualizar Release com link direto para baixar o APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: race-apk-latest
+          name: RACE APK Oficial (Limpo - Sem Propaganda)
+          body: |
+            APK oficial do **RACE** compilado diretamente com Capacitor (sem AppsGeyser, sem faixa inferior, sem "Buy Premium", sem propaganda).
+            - Nome: **RACE**
+            - Ícone: **R vermelho com fundo preto**
+            - Abre direto no app em tela cheia
+          files: apk-output/RACE-limpo-sem-propaganda.apk
+          make_latest: true

@@ -15,6 +15,7 @@ import {
 import { AppUser } from '../types';
 import { WEEKLY_FEE_BADGE } from '../config/pricing';
 import { isAppUserAdmin, isAppUserDriver } from '../services/userService';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   unreadNotifsCount: number;
@@ -187,6 +188,9 @@ export const Header: React.FC<HeaderProps> = ({
             )
           )}
 
+          {/* Instalar App RACE (PWA Limpo sem propaganda) */}
+          <PWAInstallButton />
+
           {/* Compartilhar App */}
           <button
             onClick={onOpenShare}
@@ -235,6 +239,9 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Cluster Mobile (abaixo de 768px - SEMPRE CABE EM 360px) */}
         <div className="flex md:hidden items-center gap-1.5 shrink-0">
+          {/* Instalar App RACE Limpo */}
+          <PWAInstallButton compact />
+
           {/* Botão SOS Rápido */}
           <button
             type="button"
