@@ -8,7 +8,6 @@ import {
   preloadRaceLogoBlob,
   downloadRaceLogoPng,
   PersonalShareRole,
-  ReferralAudienceTab,
 } from '../services/promoService';
 
 interface PersonalReferralShareBoxProps {
@@ -16,20 +15,10 @@ interface PersonalReferralShareBoxProps {
   role: PersonalShareRole;
 }
 
-const AUDIENCE_TABS: { id: ReferralAudienceTab; label: string }[] = [
-  { id: 'passenger', label: 'Passageiro' },
-  { id: 'driver', label: 'Motorista' },
-  { id: 'motoboy', label: 'Motoboy' },
-];
-
 export const PersonalReferralShareBox: React.FC<PersonalReferralShareBoxProps> = ({
   code,
   role,
 }) => {
-  const initialTab: ReferralAudienceTab =
-    role === 'motoboy' ? 'motoboy' : role === 'driver' ? 'driver' : 'passenger';
-
-  const [activeTab, setActiveTab] = useState<ReferralAudienceTab>(initialTab);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showLogoDownloadHint, setShowLogoDownloadHint] = useState(false);
   const [logoSaved, setLogoSaved] = useState(false);
@@ -43,7 +32,7 @@ export const PersonalReferralShareBox: React.FC<PersonalReferralShareBoxProps> =
 
   const raceLogoUrl = getRaceLogoPublicUrl();
   const personalLink = buildPersonalReferralLink(cleanCode);
-  const shareMessage = buildPersonalInstallShareText(cleanCode, activeTab);
+  const shareMessage = buildPersonalInstallShareText(cleanCode, role);
 
   const handleCopyLink = async () => {
     try {
@@ -68,7 +57,9 @@ export const PersonalReferralShareBox: React.FC<PersonalReferralShareBoxProps> =
 
   const handleShareWhatsappWithLogo = async () => {
     try {
-      const res = await shareReferralWithLogo(cleanCode, activeTab);
+      const audience =
+        role === 'motoboy' ? 'motoboy' : role === 'driver' ? 'driver' : 'passenger';
+      const res = await shareReferralWithLogo(cleanCode, audience);
       if (res === 'whatsapp_with_download') {
         setShowLogoDownloadHint(true);
       }
@@ -79,7 +70,7 @@ export const PersonalReferralShareBox: React.FC<PersonalReferralShareBoxProps> =
 
   return (
     <div className="bg-zinc-950 border-2 border-red-600 rounded-3xl p-5 sm:p-6 text-left space-y-4 shadow-2xl">
-      {/* Logo RACE no topo (círculo preto, borda vermelha grossa, RACE vermelho) */}
+      {/* Logo RACE no topo */}
       <div className="flex flex-col items-center gap-2 text-center">
         <img
           src={raceLogoUrl}
@@ -92,27 +83,6 @@ export const PersonalReferralShareBox: React.FC<PersonalReferralShareBoxProps> =
         <span className="text-[11px] font-black uppercase tracking-widest text-red-400">
           Compartilhar RACE • App Oficial (APK)
         </span>
-      </div>
-
-      {/* 3 Abas: Passageiro | Motorista | Motoboy */}
-      <div className="grid grid-cols-3 gap-1.5 bg-black/70 p-1.5 rounded-2xl border border-white/15">
-        {AUDIENCE_TABS.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`min-h-[42px] px-2 py-2 rounded-xl font-heading font-black text-xs sm:text-sm transition-all cursor-pointer ${
-                isActive
-                  ? 'bg-red-600 text-white shadow-md border border-red-400'
-                  : 'bg-transparent text-zinc-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
       </div>
 
       {/* Seu código + Seu link (APK direto) */}
@@ -137,9 +107,9 @@ export const PersonalReferralShareBox: React.FC<PersonalReferralShareBoxProps> =
         </div>
       </div>
 
-      {/* Prévia da mensagem curta da aba selecionada */}
+      {/* Prévia da mensagem exata com quebra de linha (sem #) */}
       <div className="bg-black/60 border border-white/15 rounded-xl p-3.5">
-        <p className="text-xs sm:text-sm text-zinc-100 font-medium break-words leading-relaxed">
+        <p className="text-xs sm:text-sm text-zinc-100 font-medium whitespace-pre-line break-words leading-relaxed">
           {shareMessage}
         </p>
       </div>

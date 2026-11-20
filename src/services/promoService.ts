@@ -316,18 +316,20 @@ export type PersonalShareRole = ReferralAudienceTab | 'admin';
 
 export const buildPersonalInstallShareText = (
   code?: string | null,
-  role: PersonalShareRole = 'passenger'
+  _role: PersonalShareRole = 'passenger'
 ): string => {
   const rawCode = String(code || '').replace(/\s+/g, '').trim().toUpperCase();
   const cleanCode = !rawCode || rawCode === 'JOSE367' ? 'JOSE492' : rawCode;
 
-  if (role === 'motoboy') {
-    return `🏁 Baixa nosso app RACE Mobilidade e Entregas e vem fazer entregas e corridas! 🎉 Sem taxa até 17/12/2026! 👉 Baixa aqui: ${PUBLIC_RACE_APK_URL} 🔑 Código: ${cleanCode} Vem ser RACE! 🔴⚫`;
-  }
-  if (role === 'driver') {
-    return `🏁 Baixa nosso app RACE Mobilidade e Entregas e vem ganhar 100%! 🎉 Sem taxa até 17/12/2026! Depois só 15%! 👉 Baixa aqui: ${PUBLIC_RACE_APK_URL} 🔑 Código: ${cleanCode} Vem ser RACE! 🔴⚫`;
-  }
-  return `🏁 Baixa nosso app RACE Mobilidade e Entregas e aproveita a promoção de lançamento! 🎉 Sem taxa até 17/12/2026! 💰 Ganhe R$10 na 1ª corrida! 👉 Baixa aqui: ${PUBLIC_RACE_APK_URL} 🔑 Código: ${cleanCode} Vem ser RACE! 🔴⚫`;
+  return [
+    '🏁 Baixa nosso app RACE Mobilidade e Entregas e aproveita a promoção de lançamento! 🎉',
+    'Sem taxa até 17/12/2026!',
+    '💰 Ganhe R$10 na 1ª viagem do passageiro indicado.',
+    '💰 Ganhe R$50 quando seu Condutor indicado efetivar 10 corridas.',
+    `Baixa aqui: ${PUBLIC_RACE_APK_URL}`,
+    `🔑 Código: ${cleanCode}`,
+    'Vem ser RACE! 🔴⚫',
+  ].join('\n');
 };
 
 export const buildReferralWhatsappShareText = (
