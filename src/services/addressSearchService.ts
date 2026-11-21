@@ -389,6 +389,9 @@ export const DEFAULT_MANUAL_PICKUP_COORDS = {
 
 export const GPS_MANUAL_FALLBACK_MESSAGE = 'Digite o endereço na mão';
 
+export const GPS_PERMISSION_DENIED_MESSAGE =
+  'Permissão de localização negada. Vá em Configurações do celular > RACE > Permissões > Localização > Permitir o tempo todo, e clique em MEU GPS de novo.';
+
 const GPS_PERMISSION_OR_CITY_ERROR = GPS_MANUAL_FALLBACK_MESSAGE;
 
 export const GPS_FALLBACK_SAVED_NOTICE =
@@ -397,26 +400,206 @@ export const GPS_FALLBACK_SAVED_NOTICE =
 const LAST_GPS_LOCATION_STORAGE_KEY = 'race_last_gps_location';
 const STREET_OVERRIDES_STORAGE_KEY = 'race_saved_street_overrides_v1';
 
+interface MedianBridgeWindow {
+  __MEDIAN_GEOLOCATION_READY__?: boolean;
+  __MEDIAN_GEOLOCATION_CALLBACKS__?: Array<() => void>;
+  median_geolocation_ready?: () => void;
+  gonative_geolocation_ready?: () => void;
+  median?: {
+    app?: { openAppSettings?: () => void };
+    android?: {
+      geoLocation?: {
+        promptAndroidLocationServices?: () => unknown;
+        promptLocationServices?: () => unknown;
+        startWatchingLocation?: () => unknown;
+        isLocationServicesEnabled?: () => Promise<boolean> | boolean;
+      };
+    };
+    permissions?: {
+      request?: (perms: string[] | Record<string, unknown>) => unknown;
+      status?: (perms: string[]) => unknown;
+    };
+  };
+  gonative?: {
+    app?: { openAppSettings?: () => void };
+    android?: {
+      geoLocation?: {
+        promptAndroidLocationServices?: () => unknown;
+        promptLocationServices?: () => unknown;
+        startWatchingLocation?: () => unknown;
+        isLocationServicesEnabled?: () => Promise<boolean> | boolean;
+      };
+    };
+    permissions?: {
+      request?: (perms: string[] | Record<string, unknown>) => unknown;
+      status?: (perms: string[]) => unknown;
+    };
+  };
+}
+
+function getMedianBridgeWindow(): MedianBridgeWindow | null {
+  if (typeof window === 'undefined') return null;
+  return window as unknown as MedianBridgeWindow;
+}
+
+export function isMedianWebView(): boolean {
+  const win = getMedianBridgeWindow();
+  if (!win) return false;
+  if (win.median || win.gonative) return true;
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  return /median|gonative/i.test(ua);
+}
+
+/**
+ * Aguarda o callback oficial do Median `median_geolocation_ready()` quando rodando no APK do Median.
+ * Se já disparou no carregamento da página, resolve imediatamente.
+ */
+export function waitForMedianGeolocationReady(maxWaitMs = 3000): Promise<boolean> {
+  const win = getMedianBridgeWindow();
+  if (!win) return Promise.resolve(false);
+  if (win.__MEDIAN_GEOLOCATION_READY__) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ready: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(ready);
+    };
+
+    const timer = setTimeout(() => finish(Boolean(win.__MEDIAN_GEOLOCATION_READY__)), maxWaitMs);
+
+    if (!Array.isArray(win.__MEDIAN_GEOLOCATION_CALLBACKS__)) {
+      win.__MEDIAN_GEOLOCATION_CALLBACKS__ = [];
+    }
+    win.__MEDIAN_GEOLOCATION_CALLBACKS__.push(() => finish(true));
+
+    // Garante que a função global continue registrada caso não tenha sido carregada antes
+    if (typeof win.median_geolocation_ready !== 'function') {
+      win.median_geolocation_ready = () => {
+        win.__MEDIAN_GEOLOCATION_READY__ = true;
+        const cbs = win.__MEDIAN_GEOLOCATION_CALLBACKS__ || [];
+        win.__MEDIAN_GEOLOCATION_CALLBACKS__ = [];
+        cbs.forEach((cb) => {
+          try {
+            cb();
+          } catch {
+            // ignore
+          }
+        });
+      };
+      win.gonative_geolocation_ready = win.median_geolocation_ready;
+    }
+  });
+}
+
+function invokeMedianBridgeUrl(bridgeUrl: string): void {
+  if (typeof document === 'undefined') return;
+  try {
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.src = bridgeUrl;
+    document.body.appendChild(iframe);
+    setTimeout(() => {
+      try {
+        iframe.remove();
+      } catch {
+        // ignore
+      }
+    }, 500);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Chama o JavaScript Bridge oficial do Median no Android para ativar Location Services
+ * e solicitar permissão de localização em runtime antes de chamar navigator.geolocation.
+ */
+export async function requestMedianRuntimeLocationPermission(): Promise<boolean> {
+  const win = getMedianBridgeWindow();
+  if (!win || !isMedianWebView()) return false;
+
+  const bridge = win.median || win.gonative;
+  let invokedBridge = false;
+
+  const waitShort = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const awaitMaybePromise = async (maybePromise: unknown, timeoutMs = 3000) => {
+    if (maybePromise && typeof (maybePromise as Promise<unknown>).then === 'function') {
+      try {
+        await Promise.race([maybePromise as Promise<unknown>, waitShort(timeoutMs)]);
+      } catch {
+        // ignore bridge promise rejection
+      }
+    }
+  };
+
+  try {
+    if (bridge?.android?.geoLocation?.promptAndroidLocationServices) {
+      invokedBridge = true;
+      await awaitMaybePromise(bridge.android.geoLocation.promptAndroidLocationServices(), 3000);
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (bridge?.android?.geoLocation?.promptLocationServices) {
+      invokedBridge = true;
+      await awaitMaybePromise(bridge.android.geoLocation.promptLocationServices(), 3000);
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (bridge?.permissions?.request) {
+      invokedBridge = true;
+      await awaitMaybePromise(
+        bridge.permissions.request([
+          'android.permission.ACCESS_FINE_LOCATION',
+          'android.permission.ACCESS_COARSE_LOCATION',
+        ]),
+        3000
+      );
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (bridge?.android?.geoLocation?.startWatchingLocation) {
+      invokedBridge = true;
+      bridge.android.geoLocation.startWatchingLocation();
+    }
+  } catch {
+    // ignore
+  }
+
+  // Fallback via URL scheme do Median caso o objeto window.median ainda não tenha exposto geoLocation
+  if (!invokedBridge) {
+    invokeMedianBridgeUrl('median://android/geoLocation/promptLocationServices');
+    invokedBridge = true;
+  }
+
+  return invokedBridge;
+}
+
 /**
  * Abre as configurações de localização/permissão do app no Median / GoNative WebView Android
  */
 export function openAppLocationSettings(): boolean {
-  if (typeof window === 'undefined') return false;
-  const win = window as unknown as {
-    median?: {
-      app?: { openAppSettings?: () => void };
-      android?: { geoLocation?: { promptLocationServices?: () => void } };
-      permissions?: { request?: (perms: string[]) => void };
-    };
-    gonative?: {
-      app?: { openAppSettings?: () => void };
-      android?: { geoLocation?: { promptLocationServices?: () => void } };
-      permissions?: { request?: (perms: string[]) => void };
-    };
-  };
+  const win = getMedianBridgeWindow();
+  if (!win) return false;
 
   try {
     const bridge = win.median || win.gonative;
+    if (bridge?.android?.geoLocation?.promptAndroidLocationServices) {
+      bridge.android.geoLocation.promptAndroidLocationServices();
+    }
     if (bridge?.android?.geoLocation?.promptLocationServices) {
       bridge.android.geoLocation.promptLocationServices();
     }
@@ -425,7 +608,10 @@ export function openAppLocationSettings(): boolean {
       return true;
     }
     if (bridge?.permissions?.request) {
-      bridge.permissions.request(['android.permission.ACCESS_FINE_LOCATION']);
+      bridge.permissions.request([
+        'android.permission.ACCESS_FINE_LOCATION',
+        'android.permission.ACCESS_COARSE_LOCATION',
+      ]);
       return true;
     }
   } catch {
@@ -865,122 +1051,168 @@ export interface FastGpsLookupOptions {
 }
 
 /**
- * Busca localização atual compatível com Chrome, PWA, Capacitor e WebView do Median:
- * - Usa navigator.geolocation.getCurrentPosition com enableHighAccuracy: true, timeout: 10000, maximumAge: 0.
- * - Trata erro PERMISSION_DENIED separadamente (errorCode: 'PERMISSION_DENIED') para exibir botão "Permitir localização".
- * - Se falhar por timeout/indisponibilidade em ambiente indoor/WebView, tenta leitura rápida por rede antes do fallback manual.
+ * Busca localização atual compatível com APK do Median (median_geolocation_ready + JS Bridge)
+ * e com Chrome / AI Studio / PWA via navigator.geolocation.getCurrentPosition:
+ * 1. No Median Android WebView: aguarda median_geolocation_ready() e chama o JavaScript Bridge
+ *    para ativar Location Services e solicitar permissão de localização em runtime.
+ * 2. Quando o Bridge não estiver disponível (Chrome / AI Studio), usa navigator.geolocation.getCurrentPosition
+ *    com enableHighAccuracy: true, timeout: 10000, maximumAge: 0.
+ * 3. Trata PERMISSION_DENIED com orientação clara e sem travar a digitação manual.
  */
-export function requestCurrentLocationFast(
+export async function requestCurrentLocationFast(
   options?: FastGpsLookupOptions
 ): Promise<FastGpsLookupResult> {
   const timeoutMs = options?.maxWaitMs ?? 10000;
+  const inMedian = isMedianWebView();
 
-  return new Promise((resolve) => {
-    const finishWithSavedFallbackOrError = (
-      allowFallback: boolean,
-      errorCode: GpsErrorCode
-    ): void => {
-      if (allowFallback) {
-        const saved = getLastKnownGpsLocation();
-        if (saved) {
-          resolve({
-            status: 'fallback_saved',
-            lat: saved.lat,
-            lng: saved.lng,
-            fullAddress: saved.fullAddress,
-            road: saved.road,
-            number: saved.number,
-            neighborhood: saved.neighborhood,
-            notice: GPS_FALLBACK_SAVED_NOTICE,
-          });
-          return;
-        }
+  const buildFallbackOrError = (
+    allowFallback: boolean,
+    errorCode: GpsErrorCode
+  ): FastGpsLookupResult => {
+    if (allowFallback) {
+      const saved = getLastKnownGpsLocation();
+      if (saved) {
+        return {
+          status: 'fallback_saved',
+          lat: saved.lat,
+          lng: saved.lng,
+          fullAddress: saved.fullAddress,
+          road: saved.road,
+          number: saved.number,
+          neighborhood: saved.neighborhood,
+          notice: GPS_FALLBACK_SAVED_NOTICE,
+        };
       }
-      resolve({
-        status: 'error',
-        errorCode,
-        errorMessage: GPS_MANUAL_FALLBACK_MESSAGE,
-      });
-    };
-
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      finishWithSavedFallbackOrError(true, 'UNSUPPORTED');
-      return;
     }
-
-    const resolveFromPosition = async (pos: GeolocationPosition, isNetworkFallback = false) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const accuracy = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined;
-
-      try {
-        const geoResult = await reverseGeocodeCoords(lat, lng);
-        if (!geoResult.inIndaiatuba) {
-          resolve({
-            status: 'outside_indaiatuba',
-            errorCode: 'OUTSIDE_CITY',
-            errorMessage: GPS_MANUAL_FALLBACK_MESSAGE,
-          });
-          return;
-        }
-        if (!geoResult.success || !geoResult.fullAddress) {
-          finishWithSavedFallbackOrError(true, 'GEOCODE_FAILED');
-          return;
-        }
-        resolve({
-          status: 'ok',
-          lat,
-          lng,
-          accuracy,
-          fullAddress: geoResult.fullAddress,
-          road: geoResult.road,
-          number: geoResult.number,
-          neighborhood: geoResult.neighborhood,
-          notice: isNetworkFallback
-            ? 'Localização aproximada capturada — confira o número se necessário.'
-            : undefined,
-        });
-      } catch {
-        finishWithSavedFallbackOrError(true, 'GEOCODE_FAILED');
-      }
+    return {
+      status: 'error',
+      errorCode,
+      errorMessage:
+        errorCode === 'PERMISSION_DENIED'
+          ? GPS_PERMISSION_DENIED_MESSAGE
+          : GPS_MANUAL_FALLBACK_MESSAGE,
     };
+  };
 
-    options?.onStatusMessage?.('Buscando GPS...');
+  const resolveFromPosition = async (
+    pos: GeolocationPosition,
+    isNetworkFallback = false
+  ): Promise<FastGpsLookupResult> => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const accuracy = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined;
 
-    // 1ª tentativa oficial: getCurrentPosition com alta precisão (compatível com Median WebView)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        void resolveFromPosition(pos, false);
-      },
-      (err) => {
-        const code = err?.code;
-        if (code === 1) {
-          // PERMISSION_DENIED — retorna código específico para mostrar botão "Permitir localização"
-          finishWithSavedFallbackOrError(false, 'PERMISSION_DENIED');
-          return;
-        }
+    try {
+      const geoResult = await reverseGeocodeCoords(lat, lng);
+      if (!geoResult.inIndaiatuba) {
+        return {
+          status: 'outside_indaiatuba',
+          errorCode: 'OUTSIDE_CITY',
+          errorMessage: GPS_MANUAL_FALLBACK_MESSAGE,
+        };
+      }
+      if (!geoResult.success || !geoResult.fullAddress) {
+        return buildFallbackOrError(true, 'GEOCODE_FAILED');
+      }
+      return {
+        status: 'ok',
+        lat,
+        lng,
+        accuracy,
+        fullAddress: geoResult.fullAddress,
+        road: geoResult.road,
+        number: geoResult.number,
+        neighborhood: geoResult.neighborhood,
+        notice: isNetworkFallback
+          ? 'Localização aproximada capturada — confira o número se necessário.'
+          : undefined,
+      };
+    } catch {
+      return buildFallbackOrError(true, 'GEOCODE_FAILED');
+    }
+  };
 
-        // 2ª tentativa rápida por rede/Wi-Fi dentro do WebView quando GPS satélite dá timeout/indisponível
-        navigator.geolocation.getCurrentPosition(
-          (posFallback) => {
-            void resolveFromPosition(posFallback, true);
-          },
-          (errFallback) => {
-            const fallbackCode = errFallback?.code;
-            if (fallbackCode === 1) {
-              finishWithSavedFallbackOrError(false, 'PERMISSION_DENIED');
-              return;
-            }
-            finishWithSavedFallbackOrError(
-              true,
-              fallbackCode === 3 ? 'TIMEOUT' : 'POSITION_UNAVAILABLE'
-            );
-          },
-          { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
-        );
-      },
-      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
-    );
+  const getPositionOnce = (
+    geoOptions: PositionOptions
+  ): Promise<{ pos?: GeolocationPosition; errCode?: number }> =>
+    new Promise((resolve) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        resolve({ errCode: -1 });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ pos }),
+        (err) => resolve({ errCode: err?.code ?? 2 }),
+        geoOptions
+      );
+    });
+
+  // 1. No APK do Median: espera median_geolocation_ready() + chama Bridge de permissão em runtime
+  if (inMedian) {
+    options?.onStatusMessage?.('Ativando GPS do app...');
+    await Promise.allSettled([
+      waitForMedianGeolocationReady(2500),
+      requestMedianRuntimeLocationPermission(),
+    ]);
+    await new Promise((r) => setTimeout(r, 350));
+  }
+
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return buildFallbackOrError(true, 'UNSUPPORTED');
+  }
+
+  options?.onStatusMessage?.('Buscando GPS...');
+
+  // 2. Tentativa principal: alta precisão, timeout 10s
+  let attempt = await getPositionOnce({
+    enableHighAccuracy: true,
+    timeout: timeoutMs,
+    maximumAge: 0,
   });
+
+  if (attempt.pos) {
+    return resolveFromPosition(attempt.pos, false);
+  }
+
+  // Se dentro do Median deu PERMISSION_DENIED na 1ª chamada, aciona Bridge mais uma vez e retenta
+  if (inMedian && attempt.errCode === 1) {
+    options?.onStatusMessage?.('Pedindo permissão GPS...');
+    await requestMedianRuntimeLocationPermission();
+    await waitForMedianGeolocationReady(2000);
+    await new Promise((r) => setTimeout(r, 700));
+
+    attempt = await getPositionOnce({
+      enableHighAccuracy: true,
+      timeout: timeoutMs,
+      maximumAge: 0,
+    });
+    if (attempt.pos) {
+      return resolveFromPosition(attempt.pos, false);
+    }
+  }
+
+  if (attempt.errCode === 1) {
+    return buildFallbackOrError(false, 'PERMISSION_DENIED');
+  }
+
+  // 3. Tentativa rápida por rede/Wi-Fi se satélite der timeout/indisponível
+  const fallbackAttempt = await getPositionOnce({
+    enableHighAccuracy: false,
+    timeout: 5000,
+    maximumAge: 60000,
+  });
+
+  if (fallbackAttempt.pos) {
+    return resolveFromPosition(fallbackAttempt.pos, true);
+  }
+
+  if (fallbackAttempt.errCode === 1) {
+    return buildFallbackOrError(false, 'PERMISSION_DENIED');
+  }
+
+  return buildFallbackOrError(
+    true,
+    fallbackAttempt.errCode === 3 ? 'TIMEOUT' : 'POSITION_UNAVAILABLE'
+  );
 }
 

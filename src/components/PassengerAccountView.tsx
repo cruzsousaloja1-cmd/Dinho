@@ -33,6 +33,7 @@ import {
   DEFAULT_MANUAL_PICKUP_EXAMPLE,
   DEFAULT_MANUAL_PICKUP_COORDS,
   GPS_MANUAL_FALLBACK_MESSAGE,
+  GPS_PERMISSION_DENIED_MESSAGE,
 } from '../services/addressSearchService';
 import { saveSessionUser, isAppUserAdmin, isAppUserDriver } from '../services/userService';
 import { formatBRL } from '../services/pricingService';
@@ -949,18 +950,26 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
         </div>
 
         {gpsStatus && (
-          <div className={`border rounded-2xl p-3 text-xs font-bold flex flex-wrap items-center justify-between gap-2 ${
-            gpsStatus === GPS_MANUAL_FALLBACK_MESSAGE
+          <div className={`border rounded-2xl p-3 text-xs font-bold space-y-2 ${
+            gpsPermissionDenied
+              ? 'bg-amber-50 border-amber-300 text-amber-950'
+              : gpsStatus === GPS_MANUAL_FALLBACK_MESSAGE
               ? 'bg-slate-100 border-slate-300 text-slate-800'
               : 'bg-emerald-50 border-emerald-300 text-emerald-900'
           }`}>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className={`w-4 h-4 shrink-0 ${
-                gpsStatus === GPS_MANUAL_FALLBACK_MESSAGE ? 'text-slate-600' : 'text-emerald-600'
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${
+                gpsPermissionDenied
+                  ? 'text-amber-600'
+                  : gpsStatus === GPS_MANUAL_FALLBACK_MESSAGE
+                  ? 'text-slate-600'
+                  : 'text-emerald-600'
               }`} />
-              <span>{gpsStatus}</span>
+              <span className="leading-relaxed">
+                {gpsPermissionDenied ? GPS_PERMISSION_DENIED_MESSAGE : gpsStatus}
+              </span>
             </div>
-            {gpsStatus === GPS_MANUAL_FALLBACK_MESSAGE && (
+            {(gpsPermissionDenied || gpsStatus === GPS_MANUAL_FALLBACK_MESSAGE) && (
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -968,7 +977,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                   disabled={isLocating}
                   className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-slate-800 hover:bg-emerald-50 text-xs font-bold cursor-pointer"
                 >
-                  Usar minha localização
+                  Tentar de novo
                 </button>
                 {gpsPermissionDenied && (
                   <button
@@ -979,7 +988,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
                     }}
                     className="px-2.5 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold cursor-pointer"
                   >
-                    Permitir localização
+                    Abrir Configurações
                   </button>
                 )}
               </div>

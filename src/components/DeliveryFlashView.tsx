@@ -9,6 +9,7 @@ import {
   DEFAULT_MANUAL_PICKUP_EXAMPLE,
   DEFAULT_MANUAL_PICKUP_COORDS,
   GPS_MANUAL_FALLBACK_MESSAGE,
+  GPS_PERMISSION_DENIED_MESSAGE,
   AddressSuggestion, 
   POPULAR_DATABASE_LOCATIONS 
 } from '../services/addressSearchService';
@@ -362,33 +363,40 @@ export const DeliveryFlashView: React.FC<DeliveryFlashViewProps> = ({
                 </div>
               </div>
 
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleUseCurrentLocation}
-                  disabled={isLocatingUser}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 border border-slate-300 text-slate-800 text-xs font-bold rounded-lg cursor-pointer inline-flex items-center gap-1 disabled:opacity-60"
-                >
-                  <Crosshair className="w-3 h-3 text-emerald-600" />
-                  <span>Usar minha localização</span>
-                </button>
-                {gpsPermissionDenied && (
+              <div className="mt-2 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      const opened = openAppLocationSettings();
-                      if (!opened) void handleUseCurrentLocation();
-                    }}
-                    className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg cursor-pointer inline-flex items-center gap-1"
+                    onClick={handleUseCurrentLocation}
+                    disabled={isLocatingUser}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 border border-slate-300 text-slate-800 text-xs font-bold rounded-lg cursor-pointer inline-flex items-center gap-1 disabled:opacity-60"
                   >
-                    <MapPin className="w-3 h-3 text-emerald-400" />
-                    <span>Permitir localização</span>
+                    <Crosshair className="w-3 h-3 text-emerald-600" />
+                    <span>{gpsErrorNotice ? 'Tentar de novo' : 'Usar minha localização'}</span>
                   </button>
-                )}
-                {gpsErrorNotice && (
-                  <span className="text-xs font-bold text-slate-600">
-                    {gpsErrorNotice}
-                  </span>
+                  {gpsPermissionDenied && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const opened = openAppLocationSettings();
+                        if (!opened) void handleUseCurrentLocation();
+                      }}
+                      className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <MapPin className="w-3 h-3 text-emerald-400" />
+                      <span>Abrir Configurações</span>
+                    </button>
+                  )}
+                  {gpsErrorNotice && !gpsPermissionDenied && (
+                    <span className="text-xs font-bold text-slate-600">
+                      {gpsErrorNotice}
+                    </span>
+                  )}
+                </div>
+                {gpsPermissionDenied && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 text-xs font-semibold text-amber-950 leading-relaxed">
+                    {GPS_PERMISSION_DENIED_MESSAGE}
+                  </div>
                 )}
               </div>
 
