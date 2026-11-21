@@ -59,8 +59,10 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
         scrollWheelZoom: true,
         touchZoom: true,
         doubleClickZoom: true,
-        zoomControl: true,
+        zoomControl: false,
       });
+
+      L.control.zoom({ position: 'topright' }).addTo(map);
 
       // OpenStreetMap Oficial Claro - Ruas nítidas com nomes
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -384,18 +386,18 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
 
   return (
     <div
-      className="relative w-full h-full min-h-[160px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm touch-none overscroll-none"
+      className="relative isolate z-0 w-full h-full min-h-[160px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm touch-none overscroll-none"
       style={{ touchAction: 'none' }}
     >
       {/* Real Map Canvas */}
       <div
         ref={mapContainerRef}
-        className="w-full h-full z-0 touch-none"
+        className="relative w-full h-full z-0 touch-none"
         style={{ touchAction: 'none' }}
       />
 
-      {/* Floating GPS HUD overlay */}
-      <div className="absolute top-2 left-2 z-[400] flex items-center gap-1.5 pointer-events-none">
+      {/* Floating GPS HUD overlay — preso dentro do card do mapa no canto superior esquerdo */}
+      <div className="absolute top-2 left-2 z-[20] flex items-center gap-1.5 pointer-events-none">
         <div className="bg-white/95 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-200 flex items-center gap-1.5 text-xs text-slate-800 shadow-sm">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 radar-pulse" />
           <span className="font-heading font-black text-amber-700 tracking-wide text-[11px]">
@@ -409,14 +411,14 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
 
       {/* Selection Mode helper tip */}
       {selectionMode && (
-        <div className="absolute top-10 left-1/2 -translate-x-1/2 z-[400] bg-amber-500 text-slate-950 px-3 py-1 rounded-full font-bold text-xs shadow-md animate-bounce flex items-center gap-1.5 border border-amber-300">
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 z-[20] bg-amber-500 text-slate-950 px-3 py-1 rounded-full font-bold text-xs shadow-md animate-bounce flex items-center gap-1.5 border border-amber-300">
           <Crosshair className="w-3.5 h-3.5" />
           <span>Toque no mapa para marcar {selectionMode === 'pickup' ? 'embarque' : 'destino'}</span>
         </div>
       )}
 
       {/* Floating GPS Controls */}
-      <div className="absolute bottom-2 right-2 z-[400] flex flex-col gap-1.5">
+      <div className="absolute bottom-2 right-2 z-[20] flex flex-col gap-1.5">
         <button
           type="button"
           onClick={handleCenterOnUser}
@@ -437,7 +439,7 @@ export const MapRealtime: React.FC<MapRealtimeProps> = ({
       </div>
 
       {/* Live Active Legend */}
-      <div className="absolute bottom-2 left-2 z-[400] bg-white/95 backdrop-blur-md px-2 py-0.5 rounded-lg border border-slate-200 flex items-center gap-2 text-[10px] text-slate-700 shadow-sm font-semibold">
+      <div className="absolute bottom-2 left-2 z-[20] bg-white/95 backdrop-blur-md px-2 py-0.5 rounded-lg border border-slate-200 flex items-center gap-2 text-[10px] text-slate-700 shadow-sm font-semibold">
         <div className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-amber-500" />
           <span>Carro</span>

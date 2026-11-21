@@ -72,7 +72,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     ];
 
     return (
-      <nav className="fixed bottom-0 left-0 right-0 z-[100] pointer-events-auto bg-white border-t border-slate-200 px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
+      <nav className="fixed bottom-0 left-0 right-0 z-[100] h-[70px] flex items-center pointer-events-auto bg-white border-t border-slate-200 px-1 pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-8px_20px_rgba(0,0,0,0.08)] w-full max-w-[100vw] box-border">
         <div className="w-full max-w-md mx-auto flex flex-row items-stretch">
           {passengerTabs.map((tab) => {
             const Icon = tab.icon;
@@ -135,7 +135,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     ];
 
     return (
-      <nav className="fixed bottom-0 left-0 right-0 z-[100] pointer-events-auto bg-white border-t border-slate-200 px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
+      <nav className="fixed bottom-0 left-0 right-0 z-[100] h-[70px] flex items-center pointer-events-auto bg-white border-t border-slate-200 px-1 pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-8px_20px_rgba(0,0,0,0.08)] w-full max-w-[100vw] box-border">
         <div className="w-full max-w-md mx-auto flex flex-row items-stretch">
           {adminTabs.map((tab) => {
             const isActive = activeTab === tab.id;
@@ -196,7 +196,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 px-2 sm:px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_20px_rgba(0,0,0,0.06)] w-full max-w-[100vw] box-border">
+    <nav className="fixed bottom-0 left-0 right-0 z-[100] h-[70px] flex items-center pointer-events-auto bg-white border-t border-slate-200 px-2 sm:px-3 pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-8px_20px_rgba(0,0,0,0.08)] w-full max-w-[100vw] box-border">
       <div className={`max-w-2xl mx-auto grid ${driverTabs.length === 5 ? 'grid-cols-5' : 'grid-cols-4'} gap-1.5 items-stretch`}>
         {driverTabs.map((tab) => {
           const Icon = tab.icon;

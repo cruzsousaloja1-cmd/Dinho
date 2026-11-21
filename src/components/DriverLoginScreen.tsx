@@ -738,12 +738,12 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         {/* Banner Lançamento RACE no topo da tela preta */}
         <LaunchPromoBanner />
 
-        {/* Botão direto BAIXAR APK (hospedado no próprio site /Dinho/RACE.apk, sem Drive e sem pedir conta) */}
+        {/* Botão direto BAIXAR APK (hospedado no próprio site /Dinho/app-release.apk, sem Drive e sem pedir conta) */}
         {viewMode === 'selection' && (
           <div className="space-y-2">
             <a
-              href="https://cruzsousaloja1-cmd.github.io/Dinho/RACE.apk"
-              download="RACE.apk"
+              href="https://cruzsousaloja1-cmd.github.io/Dinho/app-release.apk"
+              download="app-release.apk"
               className="w-full py-4 px-5 rounded-2xl bg-red-600 hover:bg-red-500 active:scale-[0.98] border-2 border-red-400 text-white font-heading font-black text-base sm:text-lg tracking-wide uppercase flex items-center justify-center gap-2.5 shadow-xl transition-all no-underline cursor-pointer"
             >
               <Download className="w-5 h-5 shrink-0" />

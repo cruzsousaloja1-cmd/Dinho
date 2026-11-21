@@ -256,7 +256,7 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4">
+    <div className="max-w-3xl mx-auto space-y-4 pb-[90px]">
       {/* Botão verde "Quero ser Condutor - Cadastrar" em cima do Ver como Condutor */}
       <button
         type="button"
@@ -613,8 +613,8 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
         </div>
       )}
 
-      {/* MAPA DE INDAIATUBA EM TEMPO REAL */}
-      <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-md">
+      {/* MAPA DE INDAIATUBA EM TEMPO REAL — isolado e com folga de 90px acima do rodapé */}
+      <div className="relative isolate z-0 bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-md">
         <div className="px-4 py-2.5 bg-slate-950 text-white flex items-center justify-between text-xs font-mono">
           <span className="font-bold flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -632,7 +632,7 @@ export const AdminDriverCallSimulator: React.FC<AdminDriverCallSimulatorProps> =
               : 'Concluída'}
           </span>
         </div>
-        <div className="h-[300px] sm:h-[340px] w-full relative">
+        <div className="h-[210px] sm:h-[250px] w-full relative isolate z-0 overflow-hidden">
           <MapRealtime
             drivers={[]}
             pickup={simulatedCall?.pickup || null}

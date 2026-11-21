@@ -11,14 +11,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run build
-      - name: Garantir RACE.apk disponível direto em /Dinho/RACE.apk
+      - name: Garantir app-release.apk disponível direto em /Dinho/app-release.apk
         run: |
-          if [ -f "public/RACE.apk" ] && [ ! -f "dist/RACE.apk" ]; then
-            cp "public/RACE.apk" "dist/RACE.apk"
-          elif [ -f "RACE.apk" ] && [ ! -f "dist/RACE.apk" ]; then
-            cp "RACE.apk" "dist/RACE.apk"
+          if [ -f "public/app-release.apk" ] && [ ! -f "dist/app-release.apk" ]; then
+            cp "public/app-release.apk" "dist/app-release.apk"
+          elif [ -f "app-release.apk" ] && [ ! -f "dist/app-release.apk" ]; then
+            cp "app-release.apk" "dist/app-release.apk"
           fi
-          ls -lh dist/RACE.apk 2>/dev/null || echo "Aviso: envie RACE.apk na pasta public/RACE.apk ou na raiz do repositório para habilitar o download direto."
+          ls -lh dist/app-release.apk 2>/dev/null || echo "Aviso: envie app-release.apk na pasta public/ ou na raiz do repositório para habilitar o download direto."
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

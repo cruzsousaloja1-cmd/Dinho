@@ -153,7 +153,7 @@ export const normalizeReferralDigits = (raw?: string | null): string => {
 };
 
 export const PUBLIC_RACE_INSTALL_URL = 'https://cruzsousaloja1-cmd.github.io/Dinho/';
-export const PUBLIC_RACE_APK_URL = 'https://cruzsousaloja1-cmd.github.io/Dinho/RACE.apk';
+export const PUBLIC_RACE_APK_URL = 'https://cruzsousaloja1-cmd.github.io/Dinho/app-release.apk';
 
 const URL_REFERRAL_STORAGE_KEY = 'race_url_referral_code';
 
