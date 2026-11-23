@@ -25,7 +25,8 @@ import {
   Copy,
   Gift,
   Wallet,
-  Download
+  Download,
+  FileText
 } from 'lucide-react';
 import {
   requestCurrentLocationFast,
@@ -55,6 +56,7 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { DriverBenefitsBox } from './DriverBenefitsBox';
 import { MyReferralsControlSection } from './MyReferralsControlSection';
 import { PersonalReferralShareBox } from './PersonalReferralShareBox';
+import { LegalDocumentModal, FullLegalDocType } from './LegalDocumentModal';
 import {
   buildReferralWhatsappShareText,
   getLaunchPromoCountdownText,
@@ -111,6 +113,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
   const [profileSuccessMsg, setProfileSuccessMsg] = useState<string | null>(null);
   const [profileErrorMsg, setProfileErrorMsg] = useState<string | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [openLegalDoc, setOpenLegalDoc] = useState<FullLegalDocType | null>(null);
   const [referralCode, setReferralCode] = useState<string>(
     currentUser?.codigoIndicacao || currentUser?.driverData?.codigoIndicacao || ''
   );
@@ -1159,20 +1162,24 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           <span>Falar com suporte no WhatsApp</span>
         </a>
 
-        <div className="flex justify-center">
-          <a
-            href={`${import.meta.env.BASE_URL}privacidade`}
-            onClick={(e) => {
-              if (onOpenPrivacyPage) {
-                e.preventDefault();
-                onOpenPrivacyPage();
-              }
-            }}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 underline underline-offset-4 py-1"
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          <button
+            type="button"
+            onClick={() => setOpenLegalDoc('termos')}
+            className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 active:scale-[0.99] text-slate-900 border-2 border-slate-200 hover:border-[#ff6a00]/60 font-heading font-black text-xs sm:text-sm rounded-2xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Política de Privacidade (LGPD)</span>
-          </a>
+            <FileText className="w-4 h-4 text-[#ff6a00] shrink-0" />
+            <span>Termos de Uso</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOpenLegalDoc('privacidade')}
+            className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 active:scale-[0.99] text-slate-900 border-2 border-slate-200 hover:border-emerald-500/60 font-heading font-black text-xs sm:text-sm rounded-2xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Política de Privacidade</span>
+          </button>
         </div>
       </div>
 
@@ -1198,6 +1205,11 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           setProfileSuccessMsg(msg || 'Senha alterada com sucesso!');
           setTimeout(() => setProfileSuccessMsg(null), 6000);
         }}
+      />
+
+      <LegalDocumentModal
+        doc={openLegalDoc}
+        onClose={() => setOpenLegalDoc(null)}
       />
     </div>
   );
