@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { LEGAL_DOCUMENTS } from './LegalConsentSection';
 
-export type FullLegalDocType = 'termos' | 'privacidade';
+export type FullLegalDocType = 'termos' | 'privacidade' | 'contrato';
 
 interface LegalDocumentModalProps {
   doc: FullLegalDocType | null;
@@ -31,13 +31,21 @@ export const LegalDocumentModal: React.FC<LegalDocumentModalProps> = ({
   if (!doc) return null;
 
   const isTerms = doc === 'termos';
+  const isContract = doc === 'contrato';
+  const isPrivacy = doc === 'privacidade';
+
+  const headerTitle = isTerms
+    ? 'Termos de Uso • RACE'
+    : isContract
+    ? 'Contrato de Parceria • RACE'
+    : 'Privacidade (LGPD) • RACE';
 
   return (
     <div
       className="fixed inset-0 z-[1600] bg-slate-50 text-slate-900 flex flex-col overflow-hidden animate-fade-in"
       role="dialog"
       aria-modal="true"
-      aria-label={isTerms ? 'Termos de Uso RACE' : 'Política de Privacidade RACE'}
+      aria-label={headerTitle}
     >
       {/* Topo fixo com Voltar */}
       <header className="px-4 py-3.5 border-b border-slate-200 bg-white flex items-center justify-between gap-3 shrink-0 shadow-xs">
@@ -53,11 +61,13 @@ export const LegalDocumentModal: React.FC<LegalDocumentModalProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           {isTerms ? (
             <Scale className="w-4 h-4 text-[#ff6a00] shrink-0" />
+          ) : isContract ? (
+            <FileText className="w-4 h-4 text-blue-600 shrink-0" />
           ) : (
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           )}
           <span className="text-xs font-mono font-bold text-slate-700 uppercase truncate">
-            {isTerms ? 'Termos de Uso • RACE' : 'Privacidade (LGPD) • RACE'}
+            {headerTitle}
           </span>
         </div>
       </header>
@@ -65,7 +75,7 @@ export const LegalDocumentModal: React.FC<LegalDocumentModalProps> = ({
       {/* Conteúdo completo rolável */}
       <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:py-7">
         <div className="max-w-2xl mx-auto space-y-5 pb-6">
-          {isTerms ? (
+          {isTerms && (
             <>
               <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-2.5">
                 <div className="inline-flex items-center gap-2 bg-orange-50 text-orange-800 border border-orange-200 px-3 py-1 rounded-full text-xs font-heading font-black uppercase tracking-wider">
@@ -73,40 +83,42 @@ export const LegalDocumentModal: React.FC<LegalDocumentModalProps> = ({
                   <span>Documento Oficial • Indaiatuba-SP</span>
                 </div>
                 <h2 className="font-heading font-black text-xl sm:text-2xl text-slate-950 leading-tight">
-                  Termos de Uso — RACE Mobilidade e Entregas
+                  {LEGAL_DOCUMENTS.termos.title}
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                  Regras gerais de utilização do aplicativo <strong>RACE</strong> para Passageiros,
-                  Motoristas e Motoboys parceiros em <strong>Indaiatuba-SP</strong>.
+                  {LEGAL_DOCUMENTS.termos.subtitle}
+                </p>
+              </div>
+
+              <section className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-2.5 text-sm text-slate-800 leading-relaxed">
+                {LEGAL_DOCUMENTS.termos.clauses.map((clause, idx) => (
+                  <p
+                    key={idx}
+                    className="bg-slate-50 border border-slate-200 rounded-xl p-3 font-medium"
+                  >
+                    {clause}
+                  </p>
+                ))}
+              </section>
+            </>
+          )}
+
+          {isContract && (
+            <>
+              <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-2.5">
+                <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-800 border border-blue-200 px-3 py-1 rounded-full text-xs font-heading font-black uppercase tracking-wider">
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <span>Parceria Oficial • Indaiatuba-SP</span>
+                </div>
+                <h2 className="font-heading font-black text-xl sm:text-2xl text-slate-950 leading-tight">
+                  {LEGAL_DOCUMENTS.contrato.title}
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  {LEGAL_DOCUMENTS.contrato.subtitle}
                 </p>
               </div>
 
               <section className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-3">
-                <div className="flex items-center gap-2 text-slate-950">
-                  <FileText className="w-5 h-5 text-[#ff6a00] shrink-0" />
-                  <h3 className="font-heading font-black text-base sm:text-lg">
-                    {LEGAL_DOCUMENTS.termos.title}
-                  </h3>
-                </div>
-                <div className="space-y-2.5 text-sm text-slate-800 leading-relaxed">
-                  {LEGAL_DOCUMENTS.termos.clauses.map((clause, idx) => (
-                    <p
-                      key={idx}
-                      className="bg-slate-50 border border-slate-200 rounded-xl p-3 font-medium"
-                    >
-                      {clause}
-                    </p>
-                  ))}
-                </div>
-              </section>
-
-              <section className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-3">
-                <div className="flex items-center gap-2 text-slate-950">
-                  <FileText className="w-5 h-5 text-blue-600 shrink-0" />
-                  <h3 className="font-heading font-black text-base sm:text-lg">
-                    {LEGAL_DOCUMENTS.contrato.title}
-                  </h3>
-                </div>
                 <p className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
                   Promoção de Lançamento: taxa 0% (100% para o condutor) até 17/12/2026. Após essa
                   data, vigora a taxa padrão de 15% (85% para o condutor), com repasse toda
@@ -124,7 +136,9 @@ export const LegalDocumentModal: React.FC<LegalDocumentModalProps> = ({
                 </div>
               </section>
             </>
-          ) : (
+          )}
+
+          {isPrivacy && (
             <>
               <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-2.5">
                 <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1 rounded-full text-xs font-heading font-black uppercase tracking-wider">

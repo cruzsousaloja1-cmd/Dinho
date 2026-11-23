@@ -1162,7 +1162,7 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           <span>Falar com suporte no WhatsApp</span>
         </a>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
           <button
             type="button"
             onClick={() => setOpenLegalDoc('termos')}
@@ -1179,6 +1179,15 @@ export const PassengerAccountView: React.FC<PassengerAccountViewProps> = ({
           >
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>Política de Privacidade</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOpenLegalDoc('contrato')}
+            className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 active:scale-[0.99] text-slate-900 border-2 border-slate-200 hover:border-blue-500/60 font-heading font-black text-xs sm:text-sm rounded-2xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>Contrato de Parceria</span>
           </button>
         </div>
       </div>

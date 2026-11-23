@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express, { type Request, type Response } from 'express';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -394,6 +395,7 @@ async function handleAdminDeleteAuthUser(req: Request, res: Response): Promise<v
 
 async function startServer() {
   const app = express();
+  const httpServer = http.createServer(app);
   app.use(express.json({ limit: '1mb' }));
 
   app.get(['/api/asaas/status', '/Dinho/api/asaas/status'], (_req, res) => {
@@ -419,9 +421,15 @@ async function startServer() {
       app.use('/Dinho', express.static(publicDir));
       app.use(express.static(publicDir));
     }
+    const disableHmr = process.env.DISABLE_HMR === 'true';
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        ws: { server: httpServer },
+        hmr: disableHmr ? false : true,
+        watch: disableHmr ? null : undefined,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -439,7 +447,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(
       `RACE server running on http://0.0.0.0:${PORT} (ASAAS_API_KEY configured: ${Boolean(
         getAsaasApiKey()
