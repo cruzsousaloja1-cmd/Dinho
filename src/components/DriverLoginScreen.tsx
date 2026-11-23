@@ -94,6 +94,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
   const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
+  const [selectionTermsError, setSelectionTermsError] = useState<string | null>(null);
   const [openLegalDoc, setOpenLegalDoc] = useState<FullLegalDocType | null>(null);
 
   // Foto de perfil do cadastro (Galeria do Celular ou Câmera)
@@ -118,11 +119,15 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
 
   // Iniciar fluxo de cadastro para a categoria escolhida
   const handleStartRegister = (role: RegistrationRole) => {
+    if (!acceptedLegalTerms) {
+      setSelectionTermsError('Você precisa aceitar os Termos para continuar');
+      return;
+    }
+    setSelectionTermsError(null);
     setRegRole(role);
     setRegErrorMessage(null);
     setRegIndicadoPorError(null);
     setRegSuccessMessage(null);
-    setAcceptedLegalTerms(false);
     const urlCode = getReferralCodeFromUrl();
     if (urlCode && !regIndicadoPor.trim()) {
       setRegIndicadoPor(urlCode);
@@ -778,6 +783,69 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
             </div>
 
             <DriverBenefitsBox compact />
+
+            {/* Checkbox obrigatório de Termos de Uso e Política de Privacidade (LGPD) antes de cadastrar */}
+            <div className="space-y-2">
+              <div
+                className={`p-3.5 rounded-2xl border-2 transition-colors ${
+                  acceptedLegalTerms
+                    ? 'bg-emerald-950/30 border-emerald-500/60'
+                    : selectionTermsError
+                    ? 'bg-red-950/40 border-red-500'
+                    : 'bg-[#121212] border-zinc-700'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <input
+                    id="selection-accept-terms-checkbox"
+                    type="checkbox"
+                    checked={acceptedLegalTerms}
+                    onChange={(e) => {
+                      setAcceptedLegalTerms(e.target.checked);
+                      if (e.target.checked) {
+                        setSelectionTermsError(null);
+                      }
+                    }}
+                    className="mt-0.5 w-5 h-5 accent-emerald-500 rounded cursor-pointer shrink-0"
+                  />
+                  <div className="flex-1 text-xs sm:text-sm text-zinc-200 leading-relaxed font-medium">
+                    <label
+                      htmlFor="selection-accept-terms-checkbox"
+                      className="cursor-pointer select-none"
+                    >
+                      Li e aceito os{' '}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setOpenLegalDoc('termos')}
+                      className="text-[#ff6a00] hover:text-orange-400 font-black underline underline-offset-2 cursor-pointer"
+                    >
+                      Termos de Uso
+                    </button>
+                    <label
+                      htmlFor="selection-accept-terms-checkbox"
+                      className="cursor-pointer select-none"
+                    >
+                      {' '}e a{' '}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setOpenLegalDoc('privacidade')}
+                      className="text-[#ff6a00] hover:text-orange-400 font-black underline underline-offset-2 cursor-pointer"
+                    >
+                      Política de Privacidade (LGPD)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {selectionTermsError && (
+                <div className="bg-red-950/90 border-2 border-red-500 text-red-200 text-xs sm:text-sm p-3 rounded-2xl font-bold flex items-center gap-2 shadow-md">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>{selectionTermsError}</span>
+                </div>
+              )}
+            </div>
 
             {/* Os 3 Botões de Cadastro Oficiais */}
             <div className="space-y-3">
@@ -1735,6 +1803,7 @@ export const DriverLoginScreen: React.FC<DriverLoginScreenProps> = ({
         onClose={() => setOpenLegalDoc(null)}
         onAccept={() => {
           setAcceptedLegalTerms(true);
+          setSelectionTermsError(null);
           setOpenLegalDoc(null);
           if (regErrorMessage === 'Você precisa aceitar os Termos para continuar') {
             setRegErrorMessage(null);
